@@ -1,0 +1,173 @@
+#!/usr/bin/env python
+
+import os, sys, argparse, re
+
+import numpy
+import Bio.SeqIO, Bio.Seq
+
+class pad_padseqs:
+    def __init__(self, original_seq, codon_table='Standard', padchar='N'):
+        self.new_seqs = list()
+        self.num_stops = list()
+        self.headn = list()
+        self.tailn = list()
+        self.original_seq = str(original_seq)
+        self.codon_table = codon_table
+        self.padchar = padchar
+    def add(self, headn=0, tailn=0):
+        new_seq = Bio.Seq.Seq((self.padchar*headn)+self.original_seq+(self.padchar*tailn))
+        self.new_seqs.append(new_seq)
+        self.num_stops.append(str(new_seq.translate(self.codon_table))[:-3].count('*'))
+        self.headn.append(headn)
+        self.tailn.append(tailn)
+    def get_minimum_num_stop(self):
+        min_index = numpy.argmin(self.num_stops)
+        out = {
+            'new_seq':self.new_seqs[min_index],
+            'num_stop':self.num_stops[min_index],
+            'headn':self.headn[min_index],
+            'tailn':self.tailn[min_index],
+        }
+        return out
+
+def command_pad(args):
+    if not args.quiet:
+        sys.stderr.write('cdskit pad: start\n')
+    if (args.verbose)&(not args.quiet):
+        sys.stderr.write(str(args)+'\n')
+    if args.seqfile=='-':
+        parsed = sys.stdin
+    else:
+        parsed = args.seqfile
+    records = list(Bio.SeqIO.parse(parsed, args.seqformat))
+    if not args.quiet:
+        sys.stderr.write('number of input sequences: {}\n'.format(len(records)))
+    is_no_stop = list()
+    for record in records:
+        seqlen = len(record.seq)
+        adjlen = ((seqlen//3)+1)*3
+        tailpad_seq = Bio.Seq.Seq(str(record.seq).rjust(adjlen, args.padchar))
+        num_stop_input = str(tailpad_seq.translate(args.codontable))[:-3].count('*')
+        if ((num_stop_input)|(seqlen % 3)):
+            num_missing = adjlen - seqlen
+            padseqs = pad_padseqs(original_seq=record.seq, codon_table=args.codontable, padchar=args.padchar)
+            if num_missing==0:
+                padseqs.add(headn=1, tailn=2)
+                padseqs.add(headn=2, tailn=1)
+            elif num_missing==1:
+                padseqs.add(headn=0, tailn=1)
+                padseqs.add(headn=1, tailn=0)
+                padseqs.add(headn=2, tailn=2)
+            elif num_missing==2:
+                padseqs.add(headn=0, tailn=2)
+                padseqs.add(headn=2, tailn=0)
+                padseqs.add(headn=1, tailn=1)
+            best_padseq = padseqs.get_minimum_num_stop()
+            record.seq = best_padseq['new_seq']
+            if best_padseq['num_stop']==0:
+                is_no_stop.append(True)
+            else:
+                is_no_stop.append(False)
+            if not args.quiet:
+                sys.stderr.write('{name}, original_seqlen = {seqlen}, head_padding = {headn}, tail_padding = {tailn}, '
+                                 'original_num_stop = {num_stop_input}, new_num_stop = {num_stop_new}\n'.format(
+                    name=record.name, seqlen=seqlen, headn=best_padseq['headn'], tailn=best_padseq['tailn'],
+                    num_stop_input=num_stop_input, num_stop_new=best_padseq['num_stop']))
+        else:
+            is_no_stop.append(True)
+    if args.nopseudo:
+        records = [ records[i] for i in range(len(records)) if is_no_stop[i] ]
+    if args.outfile=='-':
+        Bio.SeqIO.write(records, sys.stdout, args.seqformat)
+    else:
+        Bio.SeqIO.write(records, args.outfile, args.seqformat)
+    if not args.quiet:
+        sys.stderr.write('number of output sequences: {}\n'.format(len(records)))
+        sys.stderr.write('cdskit pad: end\n')
+
+def command_aggregate(args):
+    print(type(args.expression))
+    if (args.expression[0]=='-')&(len(args.expression)==1):
+        args.expression = [':.*', '\..*', '_i.*']
+    print('The following patterns are removed from seq names and identical names are considered as a group to be aggregated:')
+    print(args.expression)
+
+    entries = open(args.seqfile).read().split('>')
+    print('Infile: Number of sequences =', len(entries))
+    uniq = {}
+    for entry in entries:
+        if len(entry)!=0:
+            name,seq = entry.split('\n',1)
+            for dp in args.expression:
+                name = re.sub(dp,'',name)
+            name = name+'\n'
+            if name in uniq.keys():
+                if len(uniq[name]) < len(seq):
+                    uniq[name] = seq
+            else:
+                uniq[name] = seq
+    print('Outfile: Number of sequences =', len(uniq))
+    sorted_names = sorted(uniq.keys())
+    if os.path.exists(args.outfile):
+        os.remove(args.outfile)
+    with open(args.outfile,'a') as f:
+        for sn in sorted_names:
+            f.write('>'+sn+uniq[sn])
+
+def command_help(args):
+    print(parser.parse_args([args.command, '--help']))
+
+
+# Main parser
+parser = argparse.ArgumentParser(description='A toolkit for protein-coding DNA sequences in evolutionary biology')
+subparsers = parser.add_subparsers()
+
+# Sub-parser: pad
+parser_pad = subparsers.add_parser('pad', help='see `cdskit pad -h`')
+parser_pad.add_argument('-s', '--seqfile', metavar='PATH', default='-', type=str, required=False, action='store',
+                        help='default=%(default): Input sequence file. Use "-" for STDIN.')
+parser_pad.add_argument('-f', '--seqformat', metavar='STR', default='fasta', type=str, required=False, action='store',
+                        help='default=%(default): Input sequence format. See Biopython documentation for available options. Only fasta is supported currently.')
+parser_pad.add_argument('-o', '--outfile', metavar='PATH', default='-', type=str, required=False, action='store',
+                        help='default=%(default): Output sequence file. Use "-" for STDOUT.')
+parser_pad.add_argument('-d', '--codontable', metavar='CHAR', default='Standard', type=str, required=False, action='store',
+                        help='default=%(default): Codon table to be used. See Biopython documentation for available options.')
+parser_pad.add_argument('-c', '--padchar', metavar='CHAR', default='N', type=str, required=False, action='store',
+                        help='default=%(default): A character to be used to pad when the sequence length is not multiple of three.')
+parser_pad.add_argument('-n', '--nopseudo', default=False, required=False, action='store_true',
+                        help='default=%(default): Drop sequences that contain stop codon(s) even after padding to 5\'- or 3\'- terminal.')
+parser_pad.add_argument('-q', '--quiet', default=False, required=False, action='store_true',
+                        help='default=%(default): Set this if you do not want progress information from the program.')
+parser_pad.add_argument('-v', '--verbose', default=False, required=False, action='store_true',
+                        help='default=%(default): Set this if you want to get more information from the program.')
+parser_pad.set_defaults(handler=command_pad)
+
+# Sub-parser: aggregate
+parser_aggregate = subparsers.add_parser('aggregate', help='see `cdskit aggregate -h`')
+parser_aggregate.add_argument('-s', '--seqfile', metavar='PATH', default='-', type=str, required=False, action='store',
+                        help='default=%(default): Input sequence file. Use "-" for STDIN. STDIN not supported currently.')
+parser_aggregate.add_argument('-f', '--seqformat', metavar='STR', default='fasta', type=str, required=False, action='store',
+                        help='default=%(default): Input sequence format. See Biopython documentation for available options.')
+parser_aggregate.add_argument('-o', '--outfile', metavar='PATH', default='-', type=str, required=False, action='store',
+                        help='default=%(default): Output sequence file. Use "-" for STDOUT. STDOUT not supported currently.')
+parser_aggregate.add_argument('-m', '--mode', metavar='REGEX', default='longest', type=str, required=False, action='store', choices=['longest',],
+                        help='default=%(default): Type of sequences to keep.')
+parser_aggregate.add_argument('-x', '--expression', metavar='REGEX', default='-', type=str, required=False, action='store', nargs='+',
+                        help='default=%(default): A regular expression to aggregate the sequences. Multiple values can be specified.')
+parser_aggregate.add_argument('-q', '--quiet', default=False, required=False, action='store_true',
+                        help='default=%(default): Set this if you do not want progress information from the program.')
+parser_aggregate.add_argument('-v', '--verbose', default=False, required=False, action='store_true',
+                        help='default=%(default): Set this if you want to get more information from the program.')
+parser_aggregate.set_defaults(handler=command_aggregate)
+
+# Sub-parser: help
+parser_help = subparsers.add_parser('help', help='show help messages')
+parser_help.add_argument('command', help='command name which help is shown')
+parser_help.set_defaults(handler=command_help)
+
+# Handler
+args = parser.parse_args()
+if hasattr(args, 'handler'):
+    args.handler(args)
+else:
+    parser.print_help()
