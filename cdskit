@@ -130,21 +130,23 @@ def command_aggregate(args):
         sys.stderr.write('cdskit aggregate: start\n')
     if (args.expression[0]=='-')&(len(args.expression)==1):
         args.expression = [':.*', '\..*', '_i.*']
-    sys.stderr.write('regular expressions to aggregate sequences: '+' '.join(args.expression)+'\n')
-    sys.stderr.write('criterion for aggregated sequences to retain: '+args.mode+'\n')
+    if not args.quiet:
+        sys.stderr.write('regular expressions to aggregate sequences: '+' '.join(args.expression)+'\n')
+        sys.stderr.write('criterion for aggregated sequences to retain: '+args.mode+'\n')
     records = read_seqs(args)
     uniq = {}
     for record in records:
+        newname = record.name
         for expr in args.expression:
-            record.name = re.sub(expr, '', record.name)
-        if record.name in uniq.keys():
+            newname = re.sub(expr, '', newname)
+        if newname in uniq.keys():
             if args.mode=='longest':
-                if len(uniq[record.name].seq) < len(record.seq):
-                    uniq[record.name] = record
+                if len(uniq[newname].seq) < len(record.seq):
+                    uniq[newname] = record
             else:
                 sys.stderr.write('different modes to be supported in future.')
         else:
-            uniq[record.name] = record
+            uniq[newname] = record
     out_records = list(uniq.values())
     write_seqs(out_records, args)
     if not args.quiet:
@@ -152,13 +154,13 @@ def command_aggregate(args):
 
 parser_aggregate = subparsers.add_parser('aggregate', help='see `cdskit aggregate -h`')
 parser_aggregate.add_argument('-s', '--seqfile', metavar='PATH', default='-', type=str, required=False, action='store',
-                        help='default=%(default): Input sequence file. Use "-" for STDIN. STDIN not supported currently.')
+                        help='default=%(default): Input sequence file. Use "-" for STDIN.')
 parser_aggregate.add_argument('-f', '--seqformat', metavar='STR', default='fasta', type=str, required=False, action='store',
                         help='default=%(default): Input sequence format. See Biopython documentation for available options.')
 parser_aggregate.add_argument('-o', '--outfile', metavar='PATH', default='-', type=str, required=False, action='store',
-                        help='default=%(default): Output sequence file. Use "-" for STDOUT. STDOUT not supported currently.')
+                        help='default=%(default): Output sequence file. Use "-" for STDOUT.')
 parser_aggregate.add_argument('-m', '--mode', metavar='REGEX', default='longest', type=str, required=False, action='store', choices=['longest',],
-                        help='default=%(default): Type of sequences to keep.')
+                        help='default=%(default): Criterion to keep a sequence during aggregation.')
 parser_aggregate.add_argument('-x', '--expression', metavar='REGEX', default='-', type=str, required=False, action='store', nargs='+',
                         help='default=%(default): A regular expression to aggregate the sequences. Multiple values can be specified.')
 parser_aggregate.add_argument('-q', '--quiet', default=False, required=False, action='store_true',
