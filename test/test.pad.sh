@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 
-export PATH="`dirname \`pwd\``:${PATH}"
+wd=`pwd`
+wd=`dirname "${wd}"`
+export PATH="${wd}:${PATH}"
 
 echo "Test: stdin to stdout"
 cat ../data/example_pad.fasta | cdskit pad

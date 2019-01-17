@@ -1,6 +1,19 @@
 #!/usr/bin/env bash
 
-export PATH="`dirname \`pwd\``:${PATH}"
+wd=`pwd`
+wd=`dirname "${wd}"`
+export PATH="${wd}:${PATH}"
 
-echo "Test: file to file"
-cdskit aggregate --seqfile ../data/example_pad.fasta --outfile ../data/example_pad.aggregate.fasta --expression "-"
+echo "Test: file to stdout"
+cdskit aggregate --seqfile ../data/example_aggregate.fasta --outfile - --expression -
+
+echo "Test: pipe"
+cat ../data/example_pad.fasta \
+| cdskit pad --seqfile - --outfile - \
+| cdskit aggregate --seqfile - --outfile - \
+> ../data/example_pad.pipe.aggregate.fasta
+
+echo "Test: file to file, large"
+cdskit aggregate --seqfile ../data/longest_orfs.cds --outfile ../data/longest_orfs.aggregate.fasta --expression -
+
+rm ../data/*.aggregate.fasta
