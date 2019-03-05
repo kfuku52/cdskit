@@ -9,8 +9,8 @@ cdskit aggregate --seqfile ../data/example_aggregate.fasta --outfile - --express
 
 echo "Test: pipe"
 cat ../data/example_pad.fasta \
-| cdskit pad --seqfile - --outfile - \
-| cdskit aggregate --seqfile - --outfile - \
+| cdskit pad \
+| cdskit aggregate \
 > ../data/example_pad.pipe.aggregate.fasta
 
 #echo "Test: file to file, large"
