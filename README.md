@@ -8,8 +8,14 @@
 * [biopython](https://biopython.org/)
 * [numpy](http://www.numpy.org/)
 
-# Usage
-Try `cdskit -h` for complete options.
+## Installation
+```
+# Installation with pip
+pip install git+https://github.com/kfuku52/cdskit
+
+# This should show complete options
+cdskit -h 
+```
 
 # Example
 
