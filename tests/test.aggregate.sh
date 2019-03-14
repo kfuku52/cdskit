@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 
-wd=`pwd`
-wd=`dirname "${wd}"`
-export PATH="${wd}:${PATH}"
+pip install '/Users/kef74yk/Dropbox_w/repos/cdskit'
+
+wd="/Users/kef74yk/Dropbox_w/repos/cdskit/tests/"
+cd ${wd}
 
 echo "Test: file to stdout"
-cdskit aggregate --seqfile ../data/example_aggregate.fasta --outfile - --expression ":.*" "\|.*"
+cdskit aggregate --seqfile ../data/example_aggregate.fasta --outfile -  --expression ":.*" "\|.*"
 
 echo "Test: pipe"
 cat ../data/example_pad.fasta \

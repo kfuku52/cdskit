@@ -1,0 +1,106 @@
+#!/usr/bin/env python
+
+import argparse
+
+
+# Main parser
+parser = argparse.ArgumentParser(description='A toolkit for protein-coding DNA sequences in evolutionary biology')
+subparsers = parser.add_subparsers()
+
+
+
+def command_aggregate(args):
+    from cdskit.aggregate import aggregate_main
+    aggregate_main(args)
+
+parser_aggregate = subparsers.add_parser('aggregate', help='see `cdskit aggregate -h`')
+parser_aggregate.add_argument('-s', '--seqfile', metavar='PATH', default='-', type=str, required=False, action='store',
+                        help='default=%(default)s: Input sequence file. Use "-" for STDIN.')
+parser_aggregate.add_argument('-if', '--inseqformat', metavar='STR', default='fasta', type=str, required=False, action='store',
+                        help='default=%(default)s: Input sequence format. See Biopython documentation for available options.')
+parser_aggregate.add_argument('-of', '--outseqformat', metavar='STR', default='fasta', type=str, required=False, action='store',
+                              help='default=%(default)s: Output sequence format. See Biopython documentation for available options.')
+parser_aggregate.add_argument('-o', '--outfile', metavar='PATH', default='-', type=str, required=False, action='store',
+                        help='default=%(default)s: Output sequence file. Use "-" for STDOUT.')
+parser_aggregate.add_argument('-m', '--mode', metavar='REGEX', default='longest', type=str, required=False, action='store', choices=['longest',],
+                        help='default=%(default)s: Criterion to keep a sequence during aggregation.')
+parser_aggregate.add_argument('-x', '--expression', metavar='REGEX', default='-', type=str, required=False, action='store', nargs='+',
+                        help='default=%(default)s: A regular expression to aggregate the sequences. Multiple values can be specified.')
+parser_aggregate.add_argument('-q', '--quiet', default=False, required=False, action='store_true',
+                        help='default=%(default)s: Set this if you do not want progress information from the program.')
+parser_aggregate.add_argument('-v', '--verbose', default=False, required=False, action='store_true',
+                        help='default=%(default)s: Set this if you want to get more information from the program.')
+parser_aggregate.set_defaults(handler=command_aggregate)
+
+
+def command_mask(args):
+    from cdskit.mask import mask_main
+    mask_main(args)
+
+parser_mask = subparsers.add_parser('mask', help='see `cdskit mask -h`')
+parser_mask.add_argument('-s', '--seqfile', metavar='PATH', default='-', type=str, required=False, action='store',
+                         help='default=%(default)s: Input sequence file. Use "-" for STDIN.')
+parser_mask.add_argument('-if', '--inseqformat', metavar='STR', default='fasta', type=str, required=False, action='store',
+                              help='default=%(default)s: Input sequence format. See Biopython documentation for available options.')
+parser_mask.add_argument('-of', '--outseqformat', metavar='STR', default='fasta', type=str, required=False, action='store',
+                              help='default=%(default)s: Output sequence format. See Biopython documentation for available options.')
+parser_mask.add_argument('-o', '--outfile', metavar='PATH', default='-', type=str, required=False, action='store',
+                         help='default=%(default)s: Output sequence file. Use "-" for STDOUT.')
+parser_mask.add_argument('-d', '--codontable', metavar='STR', default='Standard', type=str, required=False, action='store',
+                         help='default=%(default)s: Codon table to be used. See Biopython documentation for available options.')
+parser_mask.add_argument('-c', '--maskchar', metavar='CHAR', default='N', type=str, required=False, action='store', choices=['N','-'],
+                         help='default=%(default)s: A character to be used to mask codons.')
+parser_mask.add_argument('-a', '--ambiguouscodon', metavar='yes|no', default='yes', type=str, required=False, action='store', choices=['yes','no'],
+                         help='default=%(default)s: Mask ambiguous codons.')
+parser_mask.add_argument('-t', '--stopcodon', metavar='yes|no', default='yes', type=str, required=False, action='store', choices=['yes','no'],
+                         help='default=%(default)s: Mask stop codons.')
+parser_mask.add_argument('-q', '--quiet', default=False, required=False, action='store_true',
+                         help='default=%(default)s: Set this if you do not want progress information from the program.')
+parser_mask.add_argument('-v', '--verbose', default=False, required=False, action='store_true',
+                         help='default=%(default)s: Set this if you want to get more information from the program.')
+parser_mask.set_defaults(handler=command_mask)
+
+
+def command_pad(args):
+    from cdskit.pad import pad_main
+    pad_main(args)
+
+parser_pad = subparsers.add_parser('pad', help='see `cdskit pad -h`')
+parser_pad.add_argument('-s', '--seqfile', metavar='PATH', default='-', type=str, required=False, action='store',
+                        help='default=%(default)s: Input sequence file. Use "-" for STDIN.')
+parser_pad.add_argument('-if', '--inseqformat', metavar='STR', default='fasta', type=str, required=False, action='store',
+                              help='default=%(default)s: Input sequence format. See Biopython documentation for available options.')
+parser_pad.add_argument('-of', '--outseqformat', metavar='STR', default='fasta', type=str, required=False, action='store',
+                              help='default=%(default)s: Output sequence format. See Biopython documentation for available options.')
+parser_pad.add_argument('-o', '--outfile', metavar='PATH', default='-', type=str, required=False, action='store',
+                        help='default=%(default)s: Output sequence file. Use "-" for STDOUT.')
+parser_pad.add_argument('-d', '--codontable', metavar='STR', default='Standard', type=str, required=False, action='store',
+                        help='default=%(default)s: Codon table to be used. See Biopython documentation for available options.')
+parser_pad.add_argument('-c', '--padchar', metavar='CHAR', default='N', type=str, required=False, action='store', choices=['N','-'],
+                        help='default=%(default)s: A character to be used to pad when the sequence length is not multiple of three.')
+parser_pad.add_argument('-n', '--nopseudo', default=False, required=False, action='store_true',
+                        help='default=%(default)s: Drop sequences that contain stop codon(s) even after padding to 5\'- or 3\'- terminal.')
+parser_pad.add_argument('-q', '--quiet', default=False, required=False, action='store_true',
+                        help='default=%(default)s: Set this if you do not want progress information from the program.')
+parser_pad.add_argument('-v', '--verbose', default=False, required=False, action='store_true',
+                        help='default=%(default)s: Set this if you want to get more information from the program.')
+parser_pad.set_defaults(handler=command_pad)
+
+
+
+
+def command_help(args):
+    print(parser.parse_args([args.command, '--help']))
+
+parser_help = subparsers.add_parser('help', help='show help messages')
+parser_help.add_argument('command', help='command name which help is shown')
+parser_help.set_defaults(handler=command_help)
+
+
+
+# Handler
+args = parser.parse_args()
+if hasattr(args, 'handler'):
+    args.handler(args)
+else:
+    parser.print_help()

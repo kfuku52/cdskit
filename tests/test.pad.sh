@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 
-wd=`pwd`
-wd=`dirname "${wd}"`
-export PATH="${wd}:${PATH}"
+pip install '/Users/kef74yk/Dropbox_w/repos/cdskit'
+
+wd="/Users/kef74yk/Dropbox_w/repos/cdskit/tests/"
+cd ${wd}
 
 echo "Test: stdin to stdout"
 cat ../data/example_pad.fasta | cdskit pad
@@ -15,3 +16,6 @@ cdskit pad --seqfile ../data/longest_orfs.cds --outfile ../data/longest_orfs.out
 
 echo "Test: --nopseudo"
 cdskit pad --nopseudo --seqfile ../data/example_pad.fasta --outfile ../data/example_pad.out.nopseudo.fasta
+
+
+

@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
         name             = 'cdskit',
-        version          = "0.1",
+        version          = "0.2",
         description      = 'Tools for processing protein-coding sequences',
         license          = "BSD 3-clause License",
         author           = "Kenji Fukushima",
@@ -11,5 +11,5 @@ setup(
         keywords         = '',
         packages         = find_packages(),
         install_requires = ['numpy','biopython',],
-        scripts          = ['cdskit',],
+        scripts          = ['cdskit/cdskit',],
 )
