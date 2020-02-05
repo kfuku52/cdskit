@@ -22,7 +22,7 @@ parser_aggregate.add_argument('-of', '--outseqformat', metavar='STR', default='f
                               help='default=%(default)s: Output sequence format. See Biopython documentation for available options.')
 parser_aggregate.add_argument('-o', '--outfile', metavar='PATH', default='-', type=str, required=False, action='store',
                         help='default=%(default)s: Output sequence file. Use "-" for STDOUT.')
-parser_aggregate.add_argument('-m', '--mode', metavar='REGEX', default='longest', type=str, required=False, action='store', choices=['longest',],
+parser_aggregate.add_argument('-m', '--mode', metavar='STR', default='longest', type=str, required=False, action='store', choices=['longest',],
                         help='default=%(default)s: Criterion to keep a sequence during aggregation.')
 parser_aggregate.add_argument('-x', '--expression', metavar='REGEX', default='-', type=str, required=False, action='store', nargs='+',
                         help='default=%(default)s: A regular expression to aggregate the sequences. Multiple values can be specified.')

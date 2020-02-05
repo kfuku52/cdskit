@@ -47,6 +47,7 @@ def pad_main(args):
             num_missing = adjlen - seqlen
             seqs = padseqs(original_seq=record.seq, codon_table=args.codontable, padchar=args.padchar)
             if (num_missing==0)|(num_missing==3):
+                seqs.add(headn=0, tailn=0)
                 seqs.add(headn=1, tailn=2)
                 seqs.add(headn=2, tailn=1)
             elif num_missing==1:
