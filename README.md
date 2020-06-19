@@ -111,6 +111,8 @@ ATGTCGAGATCCCGAGAATTGCGAGTAAGCACCAGCTTCTCAAAACCAAAATAA
 ---ATGNNNATTNNNTTGNNN---
 ```
 
+## Hammer down long sequences
+`cdskit hammer --seqfile input.fasta --outfile output.fasta --nail 4`
 
 ### Pipe for streamlined analysis
 
