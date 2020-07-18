@@ -5,7 +5,6 @@ import Bio.SeqIO
 import numpy
 from cdskit.util import *
 
-
 class padseqs:
     def __init__(self, original_seq, codon_table='Standard', padchar='N'):
         self.new_seqs = list()
@@ -46,18 +45,21 @@ def pad_main(args):
         if ((num_stop_input)|(seqlen % 3)):
             num_missing = adjlen - seqlen
             seqs = padseqs(original_seq=record.seq, codon_table=args.codontable, padchar=args.padchar)
-            if (num_missing==0)|(num_missing==3):
-                seqs.add(headn=0, tailn=0)
-                seqs.add(headn=1, tailn=2)
-                seqs.add(headn=2, tailn=1)
-            elif num_missing==1:
-                seqs.add(headn=0, tailn=1)
-                seqs.add(headn=1, tailn=0)
-                seqs.add(headn=2, tailn=2)
-            elif num_missing==2:
-                seqs.add(headn=0, tailn=2)
-                seqs.add(headn=2, tailn=0)
-                seqs.add(headn=1, tailn=1)
+            if num_stop_input:
+                if (num_missing==0)|(num_missing==3):
+                    seqs.add(headn=0, tailn=0)
+                    seqs.add(headn=1, tailn=2)
+                    seqs.add(headn=2, tailn=1)
+                elif num_missing==1:
+                    seqs.add(headn=0, tailn=1)
+                    seqs.add(headn=1, tailn=0)
+                    seqs.add(headn=2, tailn=2)
+                elif num_missing==2:
+                    seqs.add(headn=0, tailn=2)
+                    seqs.add(headn=2, tailn=0)
+                    seqs.add(headn=1, tailn=1)
+            if ((~num_stop_input)&(seqlen % 3)):
+                seqs.add(headn=0, tailn=num_missing)
             best_padseq = seqs.get_minimum_num_stop()
             record.seq = best_padseq['new_seq']
             if best_padseq['num_stop']==0:
