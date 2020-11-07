@@ -35,7 +35,7 @@ def pad_main(args):
         sys.stderr.write('cdskit pad: start\n')
     if (args.verbose)&(not args.quiet):
         sys.stderr.write(str(args)+'\n')
-    records = read_seqs(args)
+    records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat, quiet=args.quiet)
     is_no_stop = list()
     for record in records:
         seqlen = len(record.seq)

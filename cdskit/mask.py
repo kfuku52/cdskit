@@ -7,7 +7,7 @@ from cdskit.util import *
 def mask_main(args):
     if not args.quiet:
         sys.stderr.write('cdskit mask: start\n')
-    records = read_seqs(args)
+    records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat, quiet=args.quiet)
     for record in records:
         nucseq = str(record.seq)
         nucseq_len = len(nucseq)

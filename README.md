@@ -1,6 +1,6 @@
 ## Overview
 
-**cdskit** is a pre- and post-processing tool for protein-coding sequences. 
+**cdskit** is a pre- and post-processing tool for protein-coding nucleotide sequences. 
 [All sequence formats supported by biopython](https://biopython.org/wiki/SeqIO) are available in this tool for both input and output.
 
 ## Dependency
@@ -19,7 +19,7 @@ cdskit -h
 
 ## Example
 
-### Padding truncated coding sequences to make them in-frame
+### Making nucleotide sequences in-frame by N-padding
 
 `cdskit pad --seqfile input.fasta --outfile output.fasta`
 
@@ -84,7 +84,7 @@ ATGCAACTAAGCGGTAATCTAAGCGGTAATTGA
 >seq2|2.length=54nt
 ATGTCGAGATCCCGAGAATTGCGAGTAAGCACCAGCTTCTCAAAACCAAAATAA
 ```
-### Mask ambiguous and/or stop codons
+### Masking ambiguous and/or stop codons
 `cdskit mask --seqfile input.fasta --outfile output.fasta`
 
 ```
@@ -111,11 +111,57 @@ ATGTCGAGATCCCGAGAATTGCGAGTAAGCACCAGCTTCTCAAAACCAAAATAA
 ---ATGNNNATTNNNTTGNNN---
 ```
 
+## Back-translating trimmed protein alignment
+`cdskit backtrim --seqfile untrimmed_codon.fasta --trimmed_aa_aln trimmed_protein.fasta --outfile trimmed_codon.fasta`
+
+#### untrimmed_codon.fasta
+![](img/backtrim_untrimmed_codon.png)
+
+#### trimmed_codon.fasta
+![](img/backtrim_trimmed_codon.png)
+
+#### trimmed_aa_aln.fasta
+![](img/backtrim_trimmed_protein.png)
+
+#### Translated sequences of trimmed_codon.fasta
+![](img/backtrim_trimmed_codon_translated.png)
+
 ## Hammer down long sequences
 `cdskit hammer --seqfile input.fasta --outfile output.fasta --nail 4`
 
-### Pipe for streamlined analysis
+```
+# input.fasta
+>seq1
+---ATGTAAATTATGTTGAAG---TGATGA---
+>seq2
+---ATGTNAATTATGTTGAAG---TATTGA---
+>seq3
+---ATGTGAATTATGTTGAAG---TATTGA---
+>seq4
+---ATGTAAATT---TTGANG---TATTGATTTTCATCA
+>seq5
+---ATGTAAATTATGTTGANG---TATTGATTTTCATCA
+>seq6
+---ATGTAAATT---TTGANG---TATTGATTTTCATCA
+```
 
+```
+# output.fasta
+>seq1
+ATGATTATGTTGTGA
+>seq2
+ATGATTATGTTGTAT
+>seq3
+ATGATTATGTTGTAT
+>seq4
+ATGATT---TTGTAT
+>seq5
+ATGATTATGTTGTAT
+>seq6
+ATGATT---TTGTAT
+```
+### Pipe for streamlined analysis
+The streamlined processing may be combined with other sequence processing tools such as [SeqKit](https://bioinf.shenwei.me/seqkit/).
 ```
 cat input.fasta \
 | cdskit pad \

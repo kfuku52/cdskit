@@ -6,7 +6,7 @@ def hammer_main(args):
         sys.stderr.write('cdskit hammer: start\n')
     if (args.verbose)&(not args.quiet):
         sys.stderr.write(str(args)+'\n')
-    records = read_seqs(args)
+    records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat, quiet=args.quiet)
     max_len = max([ len(r.seq) for r in records ])//3
     missing_site = numpy.zeros(shape=[max_len,], dtype=int)
     for record in records:

@@ -24,6 +24,11 @@ p_parent.add_argument('-v', '--verbose', default=False, required=False, action='
                  help='default=%(default)s: Set this if you want to get more information from the program.')
 p_parent.add_argument('--version', action='version', version='cdskit version ' + __version__)
 
+p_codon = argparse.ArgumentParser(add_help=False)
+p_codon.add_argument('-d', '--codontable', metavar='STR', default='Standard', type=str, required=False, action='store',
+                      help='default=%(default)s: Codon table to be used. See Biopython documentation for available options.')
+
+
 def command_aggregate(args):
     from cdskit.aggregate import aggregate_main
     aggregate_main(args)
@@ -42,9 +47,7 @@ def command_mask(args):
     from cdskit.mask import mask_main
     mask_main(args)
 
-p_mask = subparsers.add_parser('mask', help='see `cdskit mask -h`', parents=[p_parent])
-p_mask.add_argument('-d', '--codontable', metavar='STR', default='Standard', type=str, required=False, action='store',
-                    help='default=%(default)s: Codon table to be used. See Biopython documentation for available options.')
+p_mask = subparsers.add_parser('mask', help='see `cdskit mask -h`', parents=[p_parent,p_codon])
 p_mask.add_argument('-c', '--maskchar', metavar='CHAR', default='N', type=str, required=False, action='store',
                     choices=['N', '-'],
                     help='default=%(default)s: A character to be used to mask codons.')
@@ -61,9 +64,7 @@ def command_pad(args):
     from cdskit.pad import pad_main
     pad_main(args)
 
-p_pad = subparsers.add_parser('pad', help='see `cdskit pad -h`', parents=[p_parent])
-p_pad.add_argument('-d', '--codontable', metavar='STR', default='Standard', type=str, required=False, action='store',
-                   help='default=%(default)s: Codon table to be used. See Biopython documentation for available options.')
+p_pad = subparsers.add_parser('pad', help='see `cdskit pad -h`', parents=[p_parent,p_codon])
 p_pad.add_argument('-c', '--padchar', metavar='CHAR', default='N', type=str, required=False, action='store',
                    choices=['N', '-'],
                    help='default=%(default)s: A character to be used to pad when the sequence length is not multiple of three.')
@@ -76,14 +77,23 @@ def command_hammer(args):
     from cdskit.hammer import hammer_main
     hammer_main(args)
 
-p_hammer = subparsers.add_parser('hammer', help='see `cdskit hammer -h`', parents=[p_parent])
-p_hammer.add_argument('-d', '--codontable', metavar='STR', default='Standard', type=str, required=False, action='store',
-                   help='default=%(default)s: Codon table to be used. See Biopython documentation for available options.')
+p_hammer = subparsers.add_parser('hammer', help='see `cdskit hammer -h`', parents=[p_parent,p_codon])
 p_hammer.add_argument('-n', '--nail', default=4, type=int, required=False, action='store',
                    help='default=%(default)s: Threshold number of "nail sequences" to hammer down. '
                         'Codons are removed if there are no more than this number of non-missing sequences. '
                         'For meaningful convergence analysis, this value should be 4 or more.')
 p_hammer.set_defaults(handler=command_hammer)
+
+
+def command_backtrim(args):
+    from cdskit.backtrim import backtrim_main
+    backtrim_main(args)
+
+p_backtrim = subparsers.add_parser('backtrim', help='see `cdskit backtrim -h`', parents=[p_parent,p_codon])
+p_backtrim.add_argument('-a', '--trimmed_aa_aln', metavar='PATH', default='', type=str, required=True, action='store',
+                        help='default=%(default)s: PATH to the trimmed amino acid alignment. '
+                             'In addition to this, please specify the untrimmed CDS alignment by --seqfile.')
+p_backtrim.set_defaults(handler=command_backtrim)
 
 
 # Handler

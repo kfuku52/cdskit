@@ -12,7 +12,7 @@ def aggregate_main(args):
     if not args.quiet:
         sys.stderr.write('regular expressions to aggregate sequences: '+' '.join(args.expression)+'\n')
         sys.stderr.write('criterion for aggregated sequences to retain: '+args.mode+'\n')
-    records = read_seqs(args)
+    records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat, quiet=args.quiet)
     uniq = {}
     for record in records:
         newname = record.name
