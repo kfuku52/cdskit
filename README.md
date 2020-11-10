@@ -13,11 +13,11 @@
 # Installation with pip
 pip install git+https://github.com/kfuku52/cdskit
 
-# This should show complete options
+# This should show complete options if installation is successful
 cdskit -h 
 ```
 
-## Example
+## Examples
 
 ### Making nucleotide sequences in-frame by N-padding
 
@@ -114,17 +114,7 @@ ATGTCGAGATCCCGAGAATTGCGAGTAAGCACCAGCTTCTCAAAACCAAAATAA
 ## Back-translating trimmed protein alignment
 `cdskit backtrim --seqfile untrimmed_codon.fasta --trimmed_aa_aln trimmed_protein.fasta --outfile trimmed_codon.fasta`
 
-#### untrimmed_codon.fasta
-![](img/backtrim_untrimmed_codon.png)
-
-#### trimmed_codon.fasta
-![](img/backtrim_trimmed_codon.png)
-
-#### trimmed_aa_aln.fasta
-![](img/backtrim_trimmed_protein.png)
-
-#### Translated sequences of trimmed_codon.fasta
-![](img/backtrim_trimmed_codon_translated.png)
+![](img/backtrim.svg)
 
 ## Hammer down long sequences
 `cdskit hammer --seqfile input.fasta --outfile output.fasta --nail 4`
