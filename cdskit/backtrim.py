@@ -53,7 +53,8 @@ def backtrim_main(args):
     trimmed_cdn_records = list()
     for i in numpy.arange(len(cdn_records)):
         trimmed_seq = ''.join(cdn_array[i,kept_cdn_sites])
-        trimmed_record = Bio.SeqRecord.SeqRecord(seq=Bio.Seq.Seq(trimmed_seq), id=cdn_records[i].id)
+        trimmed_record = Bio.SeqRecord.SeqRecord(seq=Bio.Seq.Seq(trimmed_seq),
+                                                 id=cdn_records[i].id, name='', description='')
         trimmed_cdn_records.append(trimmed_record)
     if not args.quiet:
         txt = 'Number of aligned nucleotide sites in untrimmed codon sequences: {}\n'

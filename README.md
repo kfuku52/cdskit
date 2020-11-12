@@ -1,7 +1,6 @@
 ## Overview
 
-**cdskit** is a pre- and post-processing tool for protein-coding nucleotide sequences. 
-[All sequence formats supported by biopython](https://biopython.org/wiki/SeqIO) are available in this tool for both input and output.
+**cdskit** is a pre- and post-processing tool for protein-coding nucleotide sequences. Many functions manipulate sequences without causing frameshift. [All sequence formats supported by biopython](https://biopython.org/wiki/SeqIO) are available in this tool for both inputs and outputs.
 
 ## Dependency
 * [python 3](https://www.python.org/)
