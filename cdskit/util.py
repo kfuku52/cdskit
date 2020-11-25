@@ -19,7 +19,7 @@ def write_seqs(records, args):
     if args.outfile=='-':
         Bio.SeqIO.write(records, sys.stdout, args.outseqformat)
     else:
-        Bio.SeqIO.write(records, args.outfile, args.inseqformat)
+        Bio.SeqIO.write(records, args.outfile, args.outseqformat)
 
 def check_aligned(records):
     seqlens = [ len(seq.seq) for seq in records ]
