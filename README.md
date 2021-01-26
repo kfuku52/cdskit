@@ -149,7 +149,31 @@ ATGATTATGTTGTAT
 >seq6
 ATGATT---TTGTAT
 ```
-### Pipe for streamlined analysis
+
+## Print a subset of sequences with regex
+`cdskit printseq -s input.fasta -n seq_[AG] --show_seqname yes`
+
+```aidl
+# input.fasta
+>seq_A
+AAAAAAAAAAAA
+>seq_T
+TTTTTTTTTTTT
+>seq_G
+GGGGGGGGGGGG
+>seq_C
+CCCCCCCCCCCC
+```
+
+```aidl
+# output
+>seq_A
+AAAAAAAAAAAA
+>seq_G
+GGGGGGGGGGGG
+```
+
+## Pipe for streamlined analysis
 The streamlined processing may be combined with other sequence processing tools such as [SeqKit](https://bioinf.shenwei.me/seqkit/).
 ```
 cat input.fasta \

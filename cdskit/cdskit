@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import argparse
+from distutils.util import strtobool
 
 from cdskit.__init__ import __version__
 
@@ -94,6 +95,19 @@ p_backtrim.add_argument('-a', '--trimmed_aa_aln', metavar='PATH', default='', ty
                         help='default=%(default)s: PATH to the trimmed amino acid alignment. '
                              'In addition to this, please specify the untrimmed CDS alignment by --seqfile.')
 p_backtrim.set_defaults(handler=command_backtrim)
+
+
+def command_printseq(args):
+    from cdskit.printseq import printseq_main
+    printseq_main(args)
+
+p_printseq = subparsers.add_parser('printseq', help='see `cdskit printseq -h`', parents=[p_parent,p_codon])
+p_printseq.add_argument('-n', '--seqname', default='', type=str, required=False, action='store',
+                        help='default=%(default)s: Name of the sequence to print. Regex is supported.')
+p_printseq.add_argument('--show_seqname', metavar='yes|no', default='no', type=strtobool, required=False, action='store',
+                        help='default=%(default)s: Whether to show sequence name starting with ">".')
+
+p_printseq.set_defaults(handler=command_printseq)
 
 
 # Handler
