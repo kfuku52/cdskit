@@ -151,7 +151,7 @@ ATGATT---TTGTAT
 ```
 
 ## Print a subset of sequences with regex
-`cdskit printseq -s input.fasta -n seq_[AG] --show_seqname yes`
+`cdskit printseq -s input.fasta -n seq_[AG]`
 
 ```aidl
 # input.fasta

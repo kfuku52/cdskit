@@ -104,7 +104,7 @@ def command_printseq(args):
 p_printseq = subparsers.add_parser('printseq', help='see `cdskit printseq -h`', parents=[p_parent,p_codon])
 p_printseq.add_argument('-n', '--seqname', default='', type=str, required=False, action='store',
                         help='default=%(default)s: Name of the sequence to print. Regex is supported.')
-p_printseq.add_argument('--show_seqname', metavar='yes|no', default='no', type=strtobool, required=False, action='store',
+p_printseq.add_argument('--show_seqname', metavar='yes|no', default='yes', type=strtobool, required=False, action='store',
                         help='default=%(default)s: Whether to show sequence name starting with ">".')
 
 p_printseq.set_defaults(handler=command_printseq)
