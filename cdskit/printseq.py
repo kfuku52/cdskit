@@ -9,7 +9,7 @@ def printseq_main(args):
         sys.stderr.write(str(args)+'\n')
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat, quiet=args.quiet)
     for record in records:
-        if re.search(args.seqname, record.name):
+        if re.match(args.seqname, record.name):
             seqtxt = str(record.seq)
             if (args.show_seqname):
                 print('>'+record.name)
