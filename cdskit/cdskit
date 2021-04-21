@@ -44,6 +44,41 @@ p_aggregate.add_argument('-x', '--expression', metavar='REGEX', default='-', typ
 p_aggregate.set_defaults(handler=command_aggregate)
 
 
+def command_backtrim(args):
+    from cdskit.backtrim import backtrim_main
+    backtrim_main(args)
+
+p_backtrim = subparsers.add_parser('backtrim', help='see `cdskit backtrim -h`', parents=[p_parent,p_codon])
+p_backtrim.add_argument('-a', '--trimmed_aa_aln', metavar='PATH', default='', type=str, required=True, action='store',
+                        help='default=%(default)s: PATH to the trimmed amino acid alignment. '
+                             'In addition to this, please specify the untrimmed CDS alignment by --seqfile.')
+p_backtrim.set_defaults(handler=command_backtrim)
+
+
+def command_parsegb(args):
+    from cdskit.parsegb import parsegb_main
+    parsegb_main(args)
+
+p_parsegb = subparsers.add_parser('parsegb', help='see `cdskit parsegb -h`', parents=[p_parent])
+p_parsegb.add_argument('--seqnamefmt', metavar='CHAR', default='organism_accessions', type=str, required=False, action='store',
+                             help='default=%(default)s: Underline-separated list of sequence name elements.')
+p_parsegb.add_argument('--extract_cds', metavar='yes|no', default='yes', type=strtobool, required=False, action='store',
+                       help='default=%(default)s: Whether to extract the CDS feature.')
+p_parsegb.set_defaults(handler=command_parsegb)
+
+
+def command_hammer(args):
+    from cdskit.hammer import hammer_main
+    hammer_main(args)
+
+p_hammer = subparsers.add_parser('hammer', help='see `cdskit hammer -h`', parents=[p_parent,p_codon])
+p_hammer.add_argument('-n', '--nail', default=4, type=int, required=False, action='store',
+                      help='default=%(default)s: Threshold number of "nail sequences" to hammer down. '
+                           'Codons are removed if there are no more than this number of non-missing sequences. '
+                           'For meaningful convergence analysis, this value should be 4 or more.')
+p_hammer.set_defaults(handler=command_hammer)
+
+
 def command_mask(args):
     from cdskit.mask import mask_main
     mask_main(args)
@@ -72,29 +107,6 @@ p_pad.add_argument('-c', '--padchar', metavar='CHAR', default='N', type=str, req
 p_pad.add_argument('-n', '--nopseudo', default=False, required=False, action='store_true',
                    help='default=%(default)s: Drop sequences that contain stop codon(s) even after padding to 5\'- or 3\'- terminal.')
 p_pad.set_defaults(handler=command_pad)
-
-
-def command_hammer(args):
-    from cdskit.hammer import hammer_main
-    hammer_main(args)
-
-p_hammer = subparsers.add_parser('hammer', help='see `cdskit hammer -h`', parents=[p_parent,p_codon])
-p_hammer.add_argument('-n', '--nail', default=4, type=int, required=False, action='store',
-                   help='default=%(default)s: Threshold number of "nail sequences" to hammer down. '
-                        'Codons are removed if there are no more than this number of non-missing sequences. '
-                        'For meaningful convergence analysis, this value should be 4 or more.')
-p_hammer.set_defaults(handler=command_hammer)
-
-
-def command_backtrim(args):
-    from cdskit.backtrim import backtrim_main
-    backtrim_main(args)
-
-p_backtrim = subparsers.add_parser('backtrim', help='see `cdskit backtrim -h`', parents=[p_parent,p_codon])
-p_backtrim.add_argument('-a', '--trimmed_aa_aln', metavar='PATH', default='', type=str, required=True, action='store',
-                        help='default=%(default)s: PATH to the trimmed amino acid alignment. '
-                             'In addition to this, please specify the untrimmed CDS alignment by --seqfile.')
-p_backtrim.set_defaults(handler=command_backtrim)
 
 
 def command_printseq(args):
