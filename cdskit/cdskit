@@ -30,6 +30,25 @@ p_codon.add_argument('-d', '--codontable', metavar='STR', default='Standard', ty
                       help='default=%(default)s: Codon table to be used. See Biopython documentation for available options.')
 
 
+def command_accession2fasta(args):
+    from cdskit.accession2fasta import accession2fasta_main
+    accession2fasta_main(args)
+p_accession2fasta = subparsers.add_parser('accession2fasta', help='see `cdskit accession2fasta -h`', parents=[p_parent])
+p_accession2fasta.add_argument('--accession_file', metavar='PATH', default='', type=str, required=False, action='store',
+                               help='default=%(default)s: PATH to the accession-per-line text file.')
+p_accession2fasta.add_argument('--email', metavar='aaa@bbb.com', default='', type=str, required=False, action='store',
+                               help='default=%(default)s: Your email address. This is necessary for NCBI\'s E-utilities. '
+                                    'For details, see here: https://biopython.org/docs/1.75/api/Bio.Entrez.html')
+p_accession2fasta.add_argument('--extract_cds', metavar='yes|no', default='yes', type=strtobool, required=False, action='store',
+                               help='default=%(default)s: Whether to extract the CDS feature.')
+p_accession2fasta.add_argument('--ncbi_database', metavar='STR', default='nucleotide', type=str, required=False,
+                               action='store', choices=['nucleotide', ],
+                               help='default=%(default)s: NCBI database to search.')
+p_accession2fasta.add_argument('--seqnamefmt', metavar='STR', default='organism_accessions', type=str, required=False, action='store',
+                               help='default=%(default)s: Underline-separated list of sequence name elements.')
+p_accession2fasta.set_defaults(handler=command_accession2fasta)
+
+
 def command_aggregate(args):
     from cdskit.aggregate import aggregate_main
     aggregate_main(args)
@@ -60,7 +79,7 @@ def command_parsegb(args):
     parsegb_main(args)
 
 p_parsegb = subparsers.add_parser('parsegb', help='see `cdskit parsegb -h`', parents=[p_parent])
-p_parsegb.add_argument('--seqnamefmt', metavar='CHAR', default='organism_accessions', type=str, required=False, action='store',
+p_parsegb.add_argument('--seqnamefmt', metavar='STR', default='organism_accessions', type=str, required=False, action='store',
                              help='default=%(default)s: Underline-separated list of sequence name elements.')
 p_parsegb.add_argument('--extract_cds', metavar='yes|no', default='yes', type=strtobool, required=False, action='store',
                        help='default=%(default)s: Whether to extract the CDS feature.')
