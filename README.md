@@ -19,6 +19,8 @@ cdskit -h
 ## Subcommands
 See [wiki](https://github.com/kfuku52/cdskit/wiki) for the complete description.
 
+`accession2fasta`: Retrieve fasta sequences from a list of GenBank accessions
+
 `aggregate`: Extracting the longest sequences combined with regex in sequence names
 
 `backtrim`: Back-translating trimmed protein alignment

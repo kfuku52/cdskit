@@ -1,12 +1,13 @@
 from Bio import Entrez
 from Bio import SeqIO
+import numpy
 
 import sys
 import time
 
 from cdskit.util import *
 
-def accession2seq_record(accessions, database, batch_size=1000):
+def accession2seq_record(accessions, database, quiet, batch_size=1000):
     num_accession = len(accessions)
     start_time = time.time()
     seq_records = list()
@@ -41,7 +42,7 @@ def accession2fasta_main(args):
     if args.email!='':
         Bio.Entrez.email = args.email
     accessions = read_item_per_line_file(file=args.accession_file)
-    records = accession2seq_record(accessions, args.ncbi_database)
+    records = accession2seq_record(accessions, args.ncbi_database, args.quiet)
     for i in range(len(records)):
         records[i].name = ''
         records[i].description = ''
