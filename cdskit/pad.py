@@ -40,7 +40,7 @@ def pad_main(args):
     for record in records:
         seqlen = len(record.seq)
         adjlen = ((seqlen//3)+1)*3
-        tailpad_seq = Bio.Seq.Seq(str(record.seq).rjust(adjlen, args.padchar))
+        tailpad_seq = Bio.Seq.Seq(str(record.seq).ljust(adjlen, args.padchar))
         num_stop_input = str(tailpad_seq.translate(args.codontable))[:-3].count('*')
         if ((num_stop_input)|(seqlen % 3)):
             num_missing = adjlen - seqlen
@@ -67,8 +67,8 @@ def pad_main(args):
             else:
                 is_no_stop.append(False)
             if not args.quiet:
-                sys.stderr.write('{name}, original_seqlen = {seqlen}, head_padding = {headn}, tail_padding = {tailn}, '
-                                 'original_num_stop = {num_stop_input}, new_num_stop = {num_stop_new}\n'.format(
+                sys.stderr.write('{name}, original_seqlen={seqlen}, head_padding={headn}, tail_padding={tailn}, '
+                                 'original_num_stop={num_stop_input}, new_num_stop={num_stop_new}\n'.format(
                     name=record.name, seqlen=seqlen, headn=best_padseq['headn'], tailn=best_padseq['tailn'],
                     num_stop_input=num_stop_input, num_stop_new=best_padseq['num_stop']))
         else:
