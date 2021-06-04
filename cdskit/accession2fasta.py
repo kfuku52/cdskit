@@ -20,13 +20,13 @@ def accession2seq_record(accessions, database, quiet, batch_size=1000):
         seq_records += list(Bio.SeqIO.parse(handle, 'gb'))
     if not quiet:
         sys.stderr.write('Number of input accessions: {:,}\n'.format(num_accession))
-        sys.stderr.write('Number of retrieved records {:,}\n'.format(len(seq_records)))
+        sys.stderr.write('Number of retrieved records: {:,}\n'.format(len(seq_records)))
     if (num_accession!=len(seq_records)):
         missing_ids = []
         for accession in accessions:
             flag_found = False
             for seq_record in seq_records:
-                if (accession==seq_record.id):
+                if (accession in seq_record.id):
                     flag_found = True
                     break
             if not flag_found:
