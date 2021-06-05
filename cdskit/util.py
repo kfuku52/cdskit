@@ -79,4 +79,5 @@ def replace_seq2cds(record):
     if flag_no_cds:
         txt = 'Removed from output. No CDS found in: {}\n'
         sys.stderr.write(txt.format(record.id))
+        return None
     return record
