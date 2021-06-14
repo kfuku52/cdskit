@@ -33,6 +33,7 @@ p_codon.add_argument('-d', '--codontable', metavar='STR', default='Standard', ty
 def command_accession2fasta(args):
     from cdskit.accession2fasta import accession2fasta_main
     accession2fasta_main(args)
+
 p_accession2fasta = subparsers.add_parser('accession2fasta', help='see `cdskit accession2fasta -h`', parents=[p_parent])
 p_accession2fasta.add_argument('--accession_file', metavar='PATH', default='', type=str, required=False, action='store',
                                help='default=%(default)s: PATH to the accession-per-line text file.')
@@ -137,8 +138,14 @@ p_printseq.add_argument('-n', '--seqname', default='', type=str, required=False,
                         help='default=%(default)s: Name of the sequence to print. Regex is supported.')
 p_printseq.add_argument('--show_seqname', metavar='yes|no', default='yes', type=strtobool, required=False, action='store',
                         help='default=%(default)s: Whether to show sequence name starting with ">".')
-
 p_printseq.set_defaults(handler=command_printseq)
+
+def command_stats(args):
+    from cdskit.stats import stats_main
+    stats_main(args)
+
+p_stats = subparsers.add_parser('stats', help='see `cdskit stats -h`', parents=[p_parent])
+p_stats.set_defaults(handler=command_stats)
 
 
 # Handler

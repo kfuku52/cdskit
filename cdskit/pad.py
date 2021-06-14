@@ -3,7 +3,10 @@
 import Bio.Seq
 import Bio.SeqIO
 import numpy
+
 from cdskit.util import *
+
+import sys
 
 class padseqs:
     def __init__(self, original_seq, codon_table='Standard', padchar='N'):
