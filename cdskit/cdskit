@@ -26,8 +26,9 @@ p_parent.add_argument('-v', '--verbose', default=False, required=False, action='
 p_parent.add_argument('--version', action='version', version='cdskit version ' + __version__)
 
 p_codon = argparse.ArgumentParser(add_help=False)
-p_codon.add_argument('-d', '--codontable', metavar='STR', default='Standard', type=str, required=False, action='store',
-                      help='default=%(default)s: Codon table to be used. See Biopython documentation for available options.')
+p_codon.add_argument('-d', '--codontable', metavar='INT', default=1, type=int, required=False, action='store',
+                      help='default=%(default)s: Codon table ID to be used. '
+                           'See here for details: https://www.ncbi.nlm.nih.gov/Taxonomy/Utils/wprintgc.cgi')
 
 
 def command_accession2fasta(args):
