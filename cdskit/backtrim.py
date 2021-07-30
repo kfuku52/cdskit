@@ -30,15 +30,24 @@ def backtrim_main(args):
         for ci in remaining_tcdn_sites:
             if numpy.array_equal(pep_array[:,pi], tcdn_array[:,ci]):
                 same_sites.append(ci)
-        if (len(same_sites))>1:
+        if (len(same_sites)==1):
+            kept_aa_sites.append(same_sites[0])
+            remaining_tcdn_sites = remaining_tcdn_sites[remaining_tcdn_sites!=same_sites[0]]
+        elif (len(same_sites)>1):
             multiple_matches = multiple_matches | set(same_sites)
             if args.verbose:
                 txt = 'The trimmed protein site {} has multiple matches to codon sites({}). Reporting the first match. '
-                txt = txt.format(str(pi), ','.join([ str(ss) for ss in same_sites ]))
-                txt = txt+'Site pattern: {}\n'.format(''.join(pep_array[:,pi]))
+                txt = txt.format(pi, ','.join([ str(ss) for ss in same_sites ]))
+                txt += 'Site pattern: {}\n'.format(''.join(pep_array[:,pi]))
                 sys.stderr.write(txt)
-        kept_aa_sites.append(same_sites[0])
-        remaining_tcdn_sites = remaining_tcdn_sites[remaining_tcdn_sites!=same_sites[0]]
+            kept_aa_sites.append(same_sites[0])
+            remaining_tcdn_sites = remaining_tcdn_sites[remaining_tcdn_sites!=same_sites[0]]
+        elif (len(same_sites)==0):
+            if args.verbose:
+                txt = 'The codon site {} could not be matched to trimmed protein sites. '
+                txt += 'The site may contain only missing, ambiguous, and/or stop codons. '
+                txt += 'The site will be excluded from the output.\n'
+                sys.stderr.write(txt.format(ci))
     if not args.quiet:
         num_trimmed_multiple_hit_sites = len(multiple_matches-set(kept_aa_sites))
         txt = '{} codon sites matched to {} protein sites. '
