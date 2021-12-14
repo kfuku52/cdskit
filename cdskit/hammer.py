@@ -10,7 +10,7 @@ def hammer_main(args):
     max_len = max([ len(r.seq) for r in records ])//3
     missing_site = numpy.zeros(shape=[max_len,], dtype=int)
     for record in records:
-        aaseq = record.seq.translate(table=args.codontable, to_stop=False, gap="-")
+        aaseq = str(record.seq.translate(table=args.codontable, to_stop=False, gap="-"))
         for i in numpy.arange(len(aaseq)):
             if aaseq[i] in ['-','?','X','*']:
                 missing_site[i] += 1
