@@ -141,6 +141,19 @@ p_printseq.add_argument('--show_seqname', metavar='yes|no', default='yes', type=
                         help='default=%(default)s: Whether to show sequence name starting with ">".')
 p_printseq.set_defaults(handler=command_printseq)
 
+def command_rmseq(args):
+    from cdskit.rmseq import rmseq_main
+    rmseq_main(args)
+
+p_rmseq = subparsers.add_parser('rmseq', help='see `cdskit rmseq -h`', parents=[p_parent,p_codon])
+p_rmseq.add_argument('--seqname', default='', type=str, required=False, action='store',
+                        help='default=%(default)s: Names of sequences to remove. Regex is supported.')
+p_rmseq.add_argument('--problematic_char', default='NX-?', type=str, required=False, action='store',
+                        help='default=%(default)s: Problematic characters considered by --problematic_percent. Without separator.')
+p_rmseq.add_argument('--problematic_percent', default=0, type=float, required=False, action='store',
+                        help='default=%(default)s: Sequences containing >= this percentage of --problematic_char are removed.')
+p_rmseq.set_defaults(handler=command_rmseq)
+
 def command_stats(args):
     from cdskit.stats import stats_main
     stats_main(args)
