@@ -12,12 +12,12 @@ def read_seqs(seqfile, seqformat, quiet):
         parsed = seqfile
     records = list(Bio.SeqIO.parse(parsed, seqformat))
     if not quiet:
-        sys.stderr.write('Number of input sequences: {}\n'.format(len(records)))
+        sys.stderr.write('Number of input sequences: {:,}\n'.format(len(records)))
     return records
 
 def write_seqs(records, args):
     if not args.quiet:
-        sys.stderr.write('Number of output sequences: {}\n'.format(len(records)))
+        sys.stderr.write('Number of output sequences: {:,}\n'.format(len(records)))
     if args.outfile=='-':
         Bio.SeqIO.write(records, sys.stdout, args.outseqformat)
     else:
