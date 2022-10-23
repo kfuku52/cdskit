@@ -1,4 +1,7 @@
 import numpy
+
+import copy
+
 from cdskit.util import *
 
 def hammer_main(args):
@@ -6,10 +9,11 @@ def hammer_main(args):
         sys.stderr.write('cdskit hammer: start\n')
     if (args.verbose)&(not args.quiet):
         sys.stderr.write(str(args)+'\n')
+    original_records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat, quiet=args.quiet)
     for current_nail in numpy.flip(numpy.arange(4)+1):
-        records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat, quiet=args.quiet)
-        max_len = max([ len(r.seq) for r in records ])//3
-        missing_site = numpy.zeros(shape=[max_len,], dtype=int)
+        records = copy.deepcopy(original_records)
+        max_len = max([len(r.seq) for r in records]) // 3
+        missing_site = numpy.zeros(shape=[max_len, ], dtype=int)
         for record in records:
             aaseq = str(record.seq.translate(table=args.codontable, to_stop=False, gap="-"))
             for i in numpy.arange(len(aaseq)):
