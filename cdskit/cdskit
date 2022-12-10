@@ -93,10 +93,11 @@ def command_hammer(args):
     hammer_main(args)
 
 p_hammer = subparsers.add_parser('hammer', help='see `cdskit hammer -h`', parents=[p_parent,p_codon])
-p_hammer.add_argument('--nail', metavar='INT', default=4, type=int, required=False, action='store',
+p_hammer.add_argument('--nail', metavar='INT/all', default='4', type=str, required=False, action='store',
                       help='default=%(default)s: Threshold number of "nail sequences" to hammer down. '
                            'Codons are removed if there are no more than this number of non-missing sequences. '
-                           'For meaningful convergence analysis, this value should be 4 or more.')
+                           'e.g., For meaningful analysis of molecular convergence, this value should be 4 or more. '
+                           'Specifying "all" sets it to the number of input sequences and produces no-gap outputs.')
 p_hammer.add_argument('--prevent_gap_only', metavar='yes|no', default='yes', type=strtobool, required=False, action='store',
                        help='default=%(default)s: Whether to decrease --nail when gap-only sequences are generated.')
 p_hammer.set_defaults(handler=command_hammer)

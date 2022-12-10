@@ -10,7 +10,17 @@ def hammer_main(args):
     if (args.verbose)&(not args.quiet):
         sys.stderr.write(str(args)+'\n')
     original_records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat, quiet=args.quiet)
-    for current_nail in numpy.flip(numpy.arange(4)+1):
+    if args.nail=='all':
+        nail_value = len(original_records)
+        txt = '--nail all was specified. Set to {:,}\n'
+        sys.stderr.write(txt.format(nail_value))
+    elif (int(args.nail)>len(original_records)):
+        nail_value = len(original_records)
+        txt = '--nail ({:,}) is greater than the number of input sequences ({:,}). Decreased to {:,}\n'
+        sys.stderr.write(txt.format(int(args.nail), len(original_records), nail_value))
+    else:
+        nail_value = int(args.nail)
+    for current_nail in numpy.flip(numpy.arange(nail_value)+1):
         records = copy.deepcopy(original_records)
         max_len = max([len(r.seq) for r in records]) // 3
         missing_site = numpy.zeros(shape=[max_len, ], dtype=int)
