@@ -5,11 +5,8 @@ import copy
 from cdskit.util import *
 
 def hammer_main(args):
-    if not args.quiet:
-        sys.stderr.write('cdskit hammer: start\n')
-    if (args.verbose)&(not args.quiet):
-        sys.stderr.write(str(args)+'\n')
-    original_records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat, quiet=args.quiet)
+    sys.stderr.write('cdskit hammer: start\n')
+    original_records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
     if args.nail=='all':
         nail_value = len(original_records)
         txt = '--nail all was specified. Set to {:,}\n'
@@ -35,8 +32,7 @@ def hammer_main(args):
         non_missing_idx = numpy.argwhere(non_missing_site>=current_nail)
         non_missing_idx = numpy.reshape(non_missing_idx, newshape=[non_missing_idx.shape[0],])
         num_removed_site = max_len - non_missing_idx.shape[0]
-        if not args.quiet:
-            sys.stderr.write('{:,} out of {:,} codon sites will be removed.\n'.format(num_removed_site, max_len))
+        sys.stderr.write('{:,} out of {:,} codon sites will be removed.\n'.format(num_removed_site, max_len))
         for record in records:
             seq = str(record.seq)
             new_seq = ''.join([ seq[nmi*3:nmi*3+3] for nmi in non_missing_idx ])
@@ -57,5 +53,4 @@ def hammer_main(args):
                 continue
         break
     write_seqs(records, args)
-    if not args.quiet:
-        sys.stderr.write('cdskit hammer: end\n')
+    sys.stderr.write('cdskit hammer: end\n')

@@ -6,12 +6,9 @@ def check_same_seq_num(cdn_records, pep_records):
     assert len(cdn_records)==len(pep_records), err_txt
 
 def backtrim_main(args):
-    if not args.quiet:
-        sys.stderr.write('cdskit backtrim: start\n')
-    if (args.verbose)&(not args.quiet):
-        sys.stderr.write(str(args)+'\n')
-    cdn_records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat, quiet=args.quiet)
-    pep_records = read_seqs(seqfile=args.trimmed_aa_aln, seqformat=args.inseqformat, quiet=args.quiet)
+    sys.stderr.write('cdskit backtrim: start\n')
+    cdn_records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
+    pep_records = read_seqs(seqfile=args.trimmed_aa_aln, seqformat=args.inseqformat)
     check_same_seq_num(cdn_records, pep_records)
     check_aligned(records=cdn_records)
     check_aligned(records=pep_records)
@@ -35,25 +32,22 @@ def backtrim_main(args):
             remaining_tcdn_sites = remaining_tcdn_sites[remaining_tcdn_sites!=same_sites[0]]
         elif (len(same_sites)>1):
             multiple_matches = multiple_matches | set(same_sites)
-            if args.verbose:
-                txt = 'The trimmed protein site {} has multiple matches to codon sites({}). Reporting the first match. '
-                txt = txt.format(pi, ','.join([ str(ss) for ss in same_sites ]))
-                txt += 'Site pattern: {}\n'.format(''.join(pep_array[:,pi]))
-                sys.stderr.write(txt)
+            txt = 'The trimmed protein site {} has multiple matches to codon sites({}). Reporting the first match. '
+            txt = txt.format(pi, ','.join([ str(ss) for ss in same_sites ]))
+            txt += 'Site pattern: {}\n'.format(''.join(pep_array[:,pi]))
+            sys.stderr.write(txt)
             kept_aa_sites.append(same_sites[0])
             remaining_tcdn_sites = remaining_tcdn_sites[remaining_tcdn_sites!=same_sites[0]]
         elif (len(same_sites)==0):
-            if args.verbose:
-                txt = 'The codon site {} could not be matched to trimmed protein sites. '
-                txt += 'The site may contain only missing, ambiguous, and/or stop codons. '
-                txt += 'The site will be excluded from the output.\n'
-                sys.stderr.write(txt.format(ci))
-    if not args.quiet:
-        num_trimmed_multiple_hit_sites = len(multiple_matches-set(kept_aa_sites))
-        txt = '{} codon sites matched to {} protein sites. '
-        txt = txt+'Trimmed {} codon sites that matched to multiple protein sites.\n'
-        txt = txt.format(len(kept_aa_sites), pep_array.shape[1], num_trimmed_multiple_hit_sites)
-        sys.stderr.write(txt)
+            txt = 'The codon site {} could not be matched to trimmed protein sites. '
+            txt += 'The site may contain only missing, ambiguous, and/or stop codons. '
+            txt += 'The site will be excluded from the output.\n'
+            sys.stderr.write(txt.format(ci))
+    num_trimmed_multiple_hit_sites = len(multiple_matches-set(kept_aa_sites))
+    txt = '{} codon sites matched to {} protein sites. '
+    txt = txt+'Trimmed {} codon sites that matched to multiple protein sites.\n'
+    txt = txt.format(len(kept_aa_sites), pep_array.shape[1], num_trimmed_multiple_hit_sites)
+    sys.stderr.write(txt)
     kept_aa_sites = numpy.array(kept_aa_sites)
     codon_pos1 = kept_aa_sites * 3 + 0
     codon_pos2 = kept_aa_sites * 3 + 1
@@ -65,11 +59,9 @@ def backtrim_main(args):
         trimmed_record = Bio.SeqRecord.SeqRecord(seq=Bio.Seq.Seq(trimmed_seq),
                                                  id=cdn_records[i].id, name='', description='')
         trimmed_cdn_records.append(trimmed_record)
-    if not args.quiet:
-        txt = 'Number of aligned nucleotide sites in untrimmed codon sequences: {}\n'
-        sys.stderr.write(txt.format(len(cdn_records[0].seq)))
-        txt = 'Number of aligned nucleotide sites in trimmed codon sequences: {}\n'
-        sys.stderr.write(txt.format(len(trimmed_cdn_records[0].seq)))
+    txt = 'Number of aligned nucleotide sites in untrimmed codon sequences: {}\n'
+    sys.stderr.write(txt.format(len(cdn_records[0].seq)))
+    txt = 'Number of aligned nucleotide sites in trimmed codon sequences: {}\n'
+    sys.stderr.write(txt.format(len(trimmed_cdn_records[0].seq)))
     write_seqs(records=trimmed_cdn_records, args=args)
-    if not args.quiet:
-        sys.stderr.write('cdskit backtrim: end\n')
+    sys.stderr.write('cdskit backtrim: end\n')

@@ -34,11 +34,8 @@ class padseqs:
         return out
 
 def pad_main(args):
-    if not args.quiet:
-        sys.stderr.write('cdskit pad: start\n')
-    if (args.verbose)&(not args.quiet):
-        sys.stderr.write(str(args)+'\n')
-    records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat, quiet=args.quiet)
+    sys.stderr.write('cdskit pad: start\n')
+    records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
     is_no_stop = list()
     seqnum_padded = 0
     for record in records:
@@ -70,13 +67,12 @@ def pad_main(args):
                 is_no_stop.append(True)
             else:
                 is_no_stop.append(False)
-            if not args.quiet:
-                txt = '{name}, original_seqlen={seqlen}, head_padding={headn}, tail_padding={tailn}, '
-                txt += 'original_num_stop={num_stop_input}, new_num_stop={num_stop_new}\n'
-                txt = txt.format(name=record.name, seqlen=seqlen, headn=best_padseq['headn'],
-                                 tailn=best_padseq['tailn'], num_stop_input=num_stop_input,
-                                 num_stop_new=best_padseq['num_stop'])
-                sys.stderr.write(txt)
+            txt = '{name}, original_seqlen={seqlen}, head_padding={headn}, tail_padding={tailn}, '
+            txt += 'original_num_stop={num_stop_input}, new_num_stop={num_stop_new}\n'
+            txt = txt.format(name=record.name, seqlen=seqlen, headn=best_padseq['headn'],
+                             tailn=best_padseq['tailn'], num_stop_input=num_stop_input,
+                             num_stop_new=best_padseq['num_stop'])
+            sys.stderr.write(txt)
             if not ((best_padseq['headn']==0)&(best_padseq['tailn']==0)):
                 seqnum_padded += 1
         else:
@@ -85,5 +81,4 @@ def pad_main(args):
         records = [ records[i] for i in range(len(records)) if is_no_stop[i] ]
     sys.stderr.write('Number of padded sequences: {:,} / {:,}\n'.format(seqnum_padded, len(records)))
     write_seqs(records, args)
-    if not args.quiet:
-        sys.stderr.write('cdskit pad: end\n')
+    sys.stderr.write('cdskit pad: end\n')

@@ -6,7 +6,7 @@ from distutils.util import strtobool
 from cdskit.__init__ import __version__
 
 # Main parser
-psr = argparse.ArgumentParser(description='A toolkit for protein-coding DNA sequences in evolutionary biology')
+psr = argparse.ArgumentParser(description='A toolkit to handle protein-coding DNA sequences in frame')
 subparsers = psr.add_subparsers()
 
 # Parent parser for shared options
@@ -19,10 +19,6 @@ p_parent.add_argument('-if', '--inseqformat', metavar='STR', default='fasta', ty
                  help='default=%(default)s: Input sequence format. See Biopython documentation for available options.')
 p_parent.add_argument('-of', '--outseqformat', metavar='STR', default='fasta', type=str, required=False, action='store',
                  help='default=%(default)s: Output sequence format. See Biopython documentation for available options.')
-p_parent.add_argument('-q', '--quiet', default=False, required=False, action='store_true',
-                 help='default=%(default)s: Set this if you do not want progress information from the program.')
-p_parent.add_argument('-v', '--verbose', default=False, required=False, action='store_true',
-                 help='default=%(default)s: Set this if you want to get more information from the program.')
 p_parent.add_argument('--version', action='version', version='cdskit version ' + __version__)
 
 p_codon = argparse.ArgumentParser(add_help=False)

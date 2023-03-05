@@ -5,14 +5,10 @@ from cdskit.util import *
 
 
 def aggregate_main(args):
-    if not args.quiet:
-        sys.stderr.write('cdskit aggregate: start\n')
-    if (args.expression[0]=='-')&(len(args.expression)==1):
-        args.expression = [':.*', '\..*', '_i.*']
-    if not args.quiet:
-        sys.stderr.write('regular expressions to aggregate sequences: '+' '.join(args.expression)+'\n')
-        sys.stderr.write('criterion for aggregated sequences to retain: '+args.mode+'\n')
-    records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat, quiet=args.quiet)
+    sys.stderr.write('cdskit aggregate: start\n')
+    sys.stderr.write('Regular expressions to aggregate sequences: '+' '.join(args.expression)+'\n')
+    sys.stderr.write('Criterion for aggregated sequences to retain: '+args.mode+'\n')
+    records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
     uniq = {}
     for record in records:
         newname = record.name
@@ -28,5 +24,4 @@ def aggregate_main(args):
             uniq[newname] = record
     out_records = list(uniq.values())
     write_seqs(out_records, args)
-    if not args.quiet:
-        sys.stderr.write('cdskit aggregate: end\n')
+    sys.stderr.write('cdskit aggregate: end\n')

@@ -5,9 +5,8 @@ import Bio.Seq
 from cdskit.util import *
 
 def mask_main(args):
-    if not args.quiet:
-        sys.stderr.write('cdskit mask: start\n')
-    records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat, quiet=args.quiet)
+    sys.stderr.write('cdskit mask: start\n')
+    records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
     for record in records:
         nucseq = str(record.seq)
         nucseq_len = len(nucseq)
@@ -39,5 +38,4 @@ def mask_main(args):
         if flag2:
             record.seq = Bio.Seq.Seq(nucseq)
     write_seqs(records, args)
-    if not args.quiet:
-        sys.stderr.write('cdskit mask: end\n')
+    sys.stderr.write('cdskit mask: end\n')

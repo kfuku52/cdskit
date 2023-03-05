@@ -3,11 +3,8 @@ import re
 from cdskit.util import *
 
 def rmseq_main(args):
-    if not args.quiet:
-        sys.stderr.write('cdskit rmseq: start\n')
-    if (args.verbose)&(not args.quiet):
-        sys.stderr.write(str(args)+'\n')
-    records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat, quiet=args.quiet)
+    sys.stderr.write('cdskit rmseq: start\n')
+    records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
     new_records = list()
     for record in records:
         flag = True
@@ -23,5 +20,4 @@ def rmseq_main(args):
         if flag:
             new_records.append(record)
     write_seqs(new_records, args)
-    if not args.quiet:
-        sys.stderr.write('cdskit rmseq: end\n')
+    sys.stderr.write('cdskit rmseq: end\n')

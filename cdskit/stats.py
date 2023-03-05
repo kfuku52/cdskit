@@ -6,11 +6,8 @@ def num_masked_bp(seq):
     return sum(1 for bp in seq if bp.islower())
 
 def stats_main(args):
-    if not args.quiet:
-        sys.stderr.write('cdskit stats: start\n')
-    if (args.verbose)&(not args.quiet):
-        sys.stderr.write(str(args)+'\n')
-    records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat, quiet=args.quiet)
+    sys.stderr.write('cdskit stats: start\n')
+    records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
     num_seq = len(records)
     bp_masked = 0
     bp_all = 0
@@ -22,5 +19,4 @@ def stats_main(args):
     print('Total length: {:,}'.format(bp_all))
     print('Total softmasked length: {:,}'.format(bp_masked))
 
-    if not args.quiet:
-        sys.stderr.write('cdskit stats: end\n')
+    sys.stderr.write('cdskit stats: end\n')
