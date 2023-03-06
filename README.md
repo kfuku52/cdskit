@@ -3,7 +3,6 @@
 ## Overview
 **CDSKIT** is a Python program that manipulates protein-coding nucleotide sequences. This program is designed to handle DNA sequences using codons (sets of three nucleotides) as the unit, and therefore, edits the coding sequences without causing a frameshift. [All sequence formats supported by Biopython](https://biopython.org/wiki/SeqIO) are available in this tool for both inputs and outputs.
 
-
 ## Installation
 ```
 # Installation with pip
@@ -13,8 +12,8 @@ pip install git+https://github.com/kfuku52/cdskit
 cdskit -h 
 ```
 
-## Commands
-See [wiki](https://github.com/kfuku52/cdskit/wiki) for detailed descriptions.
+## Functions
+See [Wiki](https://github.com/kfuku52/cdskit/wiki) for detailed descriptions.
 
 `accession2fasta`: Retrieving fasta sequences from a list of GenBank accessions
 
@@ -36,13 +35,16 @@ See [wiki](https://github.com/kfuku52/cdskit/wiki) for detailed descriptions.
 
 `stats`: Printing sequence statistics.
 
-
 ## Pipe for streamlined analysis
-CDSKIT is designed with data flow through standard input. Streamlined processing may be combined with other sequence processing tools such as [SeqKit](https://bioinf.shenwei.me/seqkit/).
+CDSKIT is designed for data flow through [standard input and output](https://en.wikipedia.org/wiki/Standard_streams). Streamlined processing may be combined with other sequence processing tools such as [SeqKit](https://bioinf.shenwei.me/seqkit/).
 ```
 seqkit seq input.fasta | cdskit pad | cdskit mask | cdskit aggregate > output.fasta
 ```
 
-# Licensing
+## Citation
+There is no published paper on CDSKIT itself, but we used and cited CSUBST in several papers including [Fukushima & Pollock (2023, Nat Ecol Evol 7: 155-170)](https://www.nature.com/articles/s41559-022-01932-7).
+
+
+## Licensing
 This program is BSD-licensed (3 clause). See [LICENSE](LICENSE) for details.
 
