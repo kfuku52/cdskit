@@ -49,4 +49,3 @@ def accession2fasta_main(args):
             records[i] = replace_seq2cds(record=records[i])
     records = [ record for record in records if record is not None ]
     write_seqs(records, args)
-    sys.stderr.write('cdskit accession2fasta: end\n')

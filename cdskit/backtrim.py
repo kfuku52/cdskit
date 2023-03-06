@@ -6,7 +6,6 @@ def check_same_seq_num(cdn_records, pep_records):
     assert len(cdn_records)==len(pep_records), err_txt
 
 def backtrim_main(args):
-    sys.stderr.write('cdskit backtrim: start\n')
     cdn_records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
     pep_records = read_seqs(seqfile=args.trimmed_aa_aln, seqformat=args.inseqformat)
     check_same_seq_num(cdn_records, pep_records)
@@ -64,4 +63,3 @@ def backtrim_main(args):
     txt = 'Number of aligned nucleotide sites in trimmed codon sequences: {}\n'
     sys.stderr.write(txt.format(len(trimmed_cdn_records[0].seq)))
     write_seqs(records=trimmed_cdn_records, args=args)
-    sys.stderr.write('cdskit backtrim: end\n')

@@ -1,6 +1,9 @@
 #!/usr/bin/env python
 
 import argparse
+import sys
+
+from datetime import datetime
 from distutils.util import strtobool
 
 from cdskit.__init__ import __version__
@@ -29,7 +32,9 @@ p_codon.add_argument('-d', '--codontable', metavar='INT', default=1, type=int, r
 
 def command_accession2fasta(args):
     from cdskit.accession2fasta import accession2fasta_main
+    sys.stderr.write('cdskit accession2fasta: started at {}\n'.format(datetime.now()))
     accession2fasta_main(args)
+    sys.stderr.write('cdskit accession2fasta: ended at {}\n'.format(datetime.now()))
 
 help_accession2fasta = 'Retrieving fasta sequences from a list of GenBank accessions. See `cdskit accession2fasta -h`'
 p_accession2fasta = subparsers.add_parser('accession2fasta', help=help_accession2fasta, parents=[p_parent])
@@ -53,7 +58,9 @@ p_accession2fasta.set_defaults(handler=command_accession2fasta)
 
 def command_aggregate(args):
     from cdskit.aggregate import aggregate_main
+    sys.stderr.write('cdskit aggregate: started at {}\n'.format(datetime.now()))
     aggregate_main(args)
+    sys.stderr.write('cdskit aggregate: ended at {}\n'.format(datetime.now()))
 
 help_aggregate = 'Extracting the longest sequences combined with a sequence name regex. See `cdskit aggregate -h`'
 p_aggregate = subparsers.add_parser('aggregate', help=help_aggregate, parents=[p_parent])
@@ -68,7 +75,9 @@ p_aggregate.set_defaults(handler=command_aggregate)
 
 def command_backtrim(args):
     from cdskit.backtrim import backtrim_main
+    sys.stderr.write('cdskit backtrim: started at {}\n'.format(datetime.now()))
     backtrim_main(args)
+    sys.stderr.write('cdskit backtrim: ended at {}\n'.format(datetime.now()))
 
 help_backtrim = 'Back-translating a trimmed protein alignment. See `cdskit backtrim -h`'
 p_backtrim = subparsers.add_parser('backtrim', help=help_backtrim, parents=[p_parent,p_codon])
@@ -80,7 +89,9 @@ p_backtrim.set_defaults(handler=command_backtrim)
 
 def command_hammer(args):
     from cdskit.hammer import hammer_main
+    sys.stderr.write('cdskit hammer: started at {}\n'.format(datetime.now()))
     hammer_main(args)
+    sys.stderr.write('cdskit hammer: ended at {}\n'.format(datetime.now()))
 
 help_hammer = 'Removing less-occupied codon columns from a gappy alignment. See `cdskit hammer -h`'
 p_hammer = subparsers.add_parser('hammer', help=help_hammer, parents=[p_parent,p_codon])
@@ -95,7 +106,9 @@ p_hammer.set_defaults(handler=command_hammer)
 
 def command_mask(args):
     from cdskit.mask import mask_main
+    sys.stderr.write('cdskit mask: started at {}\n'.format(datetime.now()))
     mask_main(args)
+    sys.stderr.write('cdskit mask: ended at {}\n'.format(datetime.now()))
 
 help_mask = 'Masking ambiguous and/or stop codons. See `cdskit mask -h`'
 p_mask = subparsers.add_parser('mask', help=help_mask, parents=[p_parent,p_codon])
@@ -114,7 +127,9 @@ p_mask.set_defaults(handler=command_mask)
 
 def command_pad(args):
     from cdskit.pad import pad_main
+    sys.stderr.write('cdskit pad: started at {}\n'.format(datetime.now()))
     pad_main(args)
+    sys.stderr.write('cdskit pad: ended at {}\n'.format(datetime.now()))
 
 help_pad = 'Making nucleotide sequences in-frame by head and tail paddings. See `cdskit pad -h`'
 p_pad = subparsers.add_parser('pad', help=help_pad, parents=[p_parent,p_codon])
@@ -128,7 +143,9 @@ p_pad.set_defaults(handler=command_pad)
 
 def command_parsegb(args):
     from cdskit.parsegb import parsegb_main
+    sys.stderr.write('cdskit parsegb: started at {}\n'.format(datetime.now()))
     parsegb_main(args)
+    sys.stderr.write('cdskit parsegb: ended at {}\n'.format(datetime.now()))
 
 help_parsegb = 'Converting the GenBank format. See `cdskit parsegb -h`'
 p_parsegb = subparsers.add_parser('parsegb', help=help_parsegb, parents=[p_parent])
@@ -144,7 +161,9 @@ p_parsegb.set_defaults(handler=command_parsegb)
 
 def command_printseq(args):
     from cdskit.printseq import printseq_main
+    sys.stderr.write('cdskit printseq: started at {}\n'.format(datetime.now()))
     printseq_main(args)
+    sys.stderr.write('cdskit printseq: ended at {}\n'.format(datetime.now()))
 
 help_printseq = 'Print a subset of sequences with a regex. See `cdskit printseq -h`'
 p_printseq = subparsers.add_parser('printseq', help=help_printseq, parents=[p_parent,p_codon])
@@ -157,7 +176,9 @@ p_printseq.set_defaults(handler=command_printseq)
 
 def command_rmseq(args):
     from cdskit.rmseq import rmseq_main
+    sys.stderr.write('cdskit rmseq: started at {}\n'.format(datetime.now()))
     rmseq_main(args)
+    sys.stderr.write('cdskit rmseq: ended at {}\n'.format(datetime.now()))
 
 help_rmseq = 'Removing a subset of sequences by using a sequence name regex and by detecting problematic sequence characters. See `cdskit rmseq -h`'
 p_rmseq = subparsers.add_parser('rmseq', help=help_rmseq, parents=[p_parent,p_codon])
@@ -171,7 +192,9 @@ p_rmseq.set_defaults(handler=command_rmseq)
 
 def command_stats(args):
     from cdskit.stats import stats_main
+    sys.stderr.write('cdskit stats: started at {}\n'.format(datetime.now()))
     stats_main(args)
+    sys.stderr.write('cdskit stats: ended at {}\n'.format(datetime.now()))
 
 help_stats = 'Printing sequence statistics. See `cdskit stats -h`'
 p_stats = subparsers.add_parser('stats', help=help_stats, parents=[p_parent])

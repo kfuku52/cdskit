@@ -6,7 +6,6 @@ def num_masked_bp(seq):
     return sum(1 for bp in seq if bp.islower())
 
 def stats_main(args):
-    sys.stderr.write('cdskit stats: start\n')
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
     num_seq = len(records)
     bp_masked = 0
@@ -33,5 +32,3 @@ def stats_main(args):
     print('Total gap (-) length: {:,}'.format(bp_gap))
     gc_content = ((bp_G + bp_C) / (bp_A + bp_T)) * 100
     print('GC content: {:,.1f}%'.format(gc_content))
-
-    sys.stderr.write('cdskit stats: end\n')

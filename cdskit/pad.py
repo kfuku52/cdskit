@@ -34,7 +34,6 @@ class padseqs:
         return out
 
 def pad_main(args):
-    sys.stderr.write('cdskit pad: start\n')
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
     is_no_stop = list()
     seqnum_padded = 0
@@ -81,4 +80,3 @@ def pad_main(args):
         records = [ records[i] for i in range(len(records)) if is_no_stop[i] ]
     sys.stderr.write('Number of padded sequences: {:,} / {:,}\n'.format(seqnum_padded, len(records)))
     write_seqs(records, args)
-    sys.stderr.write('cdskit pad: end\n')

@@ -5,8 +5,7 @@ from cdskit.util import *
 
 
 def aggregate_main(args):
-    sys.stderr.write('cdskit aggregate: start\n')
-    sys.stderr.write('Regular expressions to aggregate sequences: '+' '.join(args.expression)+'\n')
+    sys.stderr.write('Regular expressions for aggregating sequences: '+' '.join(args.expression)+'\n')
     sys.stderr.write('Criterion for aggregated sequences to retain: '+args.mode+'\n')
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
     uniq = {}
@@ -24,4 +23,3 @@ def aggregate_main(args):
             uniq[newname] = record
     out_records = list(uniq.values())
     write_seqs(out_records, args)
-    sys.stderr.write('cdskit aggregate: end\n')

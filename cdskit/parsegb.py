@@ -5,7 +5,6 @@ import sys
 from cdskit.util import *
 
 def parsegb_main(args):
-    sys.stderr.write('cdskit parsegb: start\n')
     records = read_seqs(seqfile=args.seqfile, seqformat='genbank')
     for i in range(len(records)):
         if (args.list_seqname_keys):
@@ -17,4 +16,3 @@ def parsegb_main(args):
             records[i] = replace_seq2cds(records[i])
     records = [ record for record in records if record is not None ]
     write_seqs(records, args)
-    sys.stderr.write('cdskit parsegb: end\n')

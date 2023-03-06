@@ -5,7 +5,6 @@ import copy
 from cdskit.util import *
 
 def hammer_main(args):
-    sys.stderr.write('cdskit hammer: start\n')
     original_records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
     if args.nail=='all':
         nail_value = len(original_records)
@@ -53,4 +52,3 @@ def hammer_main(args):
                 continue
         break
     write_seqs(records, args)
-    sys.stderr.write('cdskit hammer: end\n')
