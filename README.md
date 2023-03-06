@@ -15,25 +15,25 @@ cdskit -h
 ## Functions
 See [Wiki](https://github.com/kfuku52/cdskit/wiki) for detailed descriptions.
 
-`accession2fasta`: Retrieving fasta sequences from a list of GenBank accessions
+- `accession2fasta`: Retrieving fasta sequences from a list of GenBank accessions
 
-`aggregate`: Extracting the longest sequences combined with a sequence name regex
+- `aggregate`: Extracting the longest sequences combined with a sequence name regex
 
-`backtrim`: Back-translating a trimmed protein alignment
+- `backtrim`: Back-translating a trimmed protein alignment
 
-`hammer`: Removing less-occupied codon columns from a gappy alignment
+- `hammer`: Removing less-occupied codon columns from a gappy alignment
 
-`mask`: Masking ambiguous and/or stop codons
+- `mask`: Masking ambiguous and/or stop codons
 
-`pad`: Making nucleotide sequences in-frame by head and tail paddings
+- `pad`: Making nucleotide sequences in-frame by head and tail paddings
 
-`parsegb`: Converting the GenBank format
+- `parsegb`: Converting the GenBank format
 
-`printseq`: Print a subset of sequences with a regex
+- `printseq`: Print a subset of sequences with a regex
 
-`rmseq`: Removing a subset of sequences by using a sequence name regex and by detecting problematic sequence characters.
+- `rmseq`: Removing a subset of sequences by using a sequence name regex and by detecting problematic sequence characters.
 
-`stats`: Printing sequence statistics.
+- `stats`: Printing sequence statistics.
 
 ## Streamlined analysis
 CDSKIT is designed for data flow through [standard input and output](https://en.wikipedia.org/wiki/Standard_streams). Streamlined processing may be combined with other sequence processing tools, such as [SeqKit](https://bioinf.shenwei.me/seqkit/), with pipes (`|`).
