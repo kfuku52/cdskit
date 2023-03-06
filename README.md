@@ -1,11 +1,7 @@
 ## Overview
 
-**cdskit** is a pre- and post-processing tool for protein-coding nucleotide sequences. Many functions manipulate sequences without causing frameshift. [All sequence formats supported by biopython](https://biopython.org/wiki/SeqIO) are available in this tool for both inputs and outputs.
+**CDSKIT** is a Python program that manipulates protein-coding nucleotide sequences. A unique feature of this program is to handle sequences using codons (sets of three nucleotides) as the unit, and therefore, edits the coding sequences without causing a frameshift. [All sequence formats supported by biopython](https://biopython.org/wiki/SeqIO) are available in this tool for both inputs and outputs.
 
-## Dependency
-* [python 3](https://www.python.org/)
-* [biopython](https://biopython.org/)
-* [numpy](http://www.numpy.org/)
 
 ## Installation
 ```
@@ -39,14 +35,11 @@ See [wiki](https://github.com/kfuku52/cdskit/wiki) for the complete description.
 
 `stats`: Printing sequence statistics.
 
+
 ## Pipe for streamlined analysis
-The streamlined processing may be combined with other sequence processing tools such as [SeqKit](https://bioinf.shenwei.me/seqkit/).
+Streamlined processing may be combined with other sequence processing tools such as [SeqKit](https://bioinf.shenwei.me/seqkit/).
 ```
-cat input.fasta \
-| cdskit pad \
-| cdskit mask \
-| cdskit aggregate \
-> output.fasta
+seqkit seq input.fasta | cdskit pad | cdskit mask | cdskit aggregate > output.fasta
 ```
 
 # Licensing

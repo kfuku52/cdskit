@@ -45,9 +45,9 @@ p_accession2fasta.add_argument('--ncbi_database', metavar='STR', default='nucleo
                                help='default=%(default)s: NCBI database to search.')
 p_accession2fasta.add_argument('--seqnamefmt', metavar='STR', default='organism_accessions', type=str, required=False, action='store',
                                help='default=%(default)s: Underline-separated list of output sequence name elements. '
-                                    'Try --list_seqnamefmt to check available values.')
+                                    'Try --list_seqname_keys to check available values.')
 p_accession2fasta.add_argument('--list_seqname_keys', metavar='yes|no', default='no', type=strtobool, required=False, action='store',
-                               help='default=%(default)s: Listing the keys available for --seqnamefmt.')
+                               help='default=%(default)s: Listing the keys (and values) available for --seqnamefmt.')
 p_accession2fasta.set_defaults(handler=command_accession2fasta)
 
 
@@ -86,11 +86,10 @@ help_hammer = '"Hammer down" long alignments. See `cdskit hammer -h`'
 p_hammer = subparsers.add_parser('hammer', help=help_hammer, parents=[p_parent,p_codon])
 p_hammer.add_argument('--nail', metavar='INT/all', default='4', type=str, required=False, action='store',
                       help='default=%(default)s: Threshold number of "nail sequences" to hammer down. '
-                           'Codons are removed if there are no more than this number of non-missing sequences. '
-                           'e.g., For meaningful analysis of molecular convergence, this value should be 4 or more. '
-                           'Specifying "all" sets it to the number of input sequences and produces no-gap outputs.')
+                           'Codon columns are removed if there are no more than this number of non-missing sequences. '
+                           '"all" generates a completely no-gap output.')
 p_hammer.add_argument('--prevent_gap_only', metavar='yes|no', default='yes', type=strtobool, required=False, action='store',
-                       help='default=%(default)s: Whether to decrease --nail when gap-only sequences are generated.')
+                       help='default=%(default)s: Whether to relax (decrease) --nail when a gap-only sequence is generated.')
 p_hammer.set_defaults(handler=command_hammer)
 
 
@@ -105,7 +104,8 @@ p_mask.add_argument('-c', '--maskchar', metavar='CHAR', default='N', type=str, r
                     help='default=%(default)s: A character to be used to mask codons.')
 p_mask.add_argument('-a', '--ambiguouscodon', metavar='yes|no', default='yes', type=str, required=False, action='store',
                     choices=['yes', 'no'],
-                    help='default=%(default)s: Mask ambiguous codons.')
+                    help='default=%(default)s: Mask ambiguous codons. '
+                         'e.g., "AAN", which may code Asn or Lys in the standard genetic code.')
 p_mask.add_argument('-t', '--stopcodon', metavar='yes|no', default='yes', type=str, required=False, action='store',
                     choices=['yes', 'no'],
                     help='default=%(default)s: Mask stop codons.')
@@ -133,7 +133,10 @@ def command_parsegb(args):
 help_parsegb = 'Converting the GenBank format. See `cdskit parsegb -h`'
 p_parsegb = subparsers.add_parser('parsegb', help=help_parsegb, parents=[p_parent])
 p_parsegb.add_argument('--seqnamefmt', metavar='STR', default='organism_accessions', type=str, required=False, action='store',
-                             help='default=%(default)s: Underline-separated list of sequence name elements.')
+                       help='default=%(default)s: Underline-separated list of sequence name elements. '
+                            'Use --list_seqname_keys to browse available values.')
+p_parsegb.add_argument('--list_seqname_keys', metavar='yes|no', default='no', type=strtobool, required=False, action='store',
+                       help='default=%(default)s: Listing the keys (and values) available for --seqnamefmt.')
 p_parsegb.add_argument('--extract_cds', metavar='yes|no', default='yes', type=strtobool, required=False, action='store',
                        help='default=%(default)s: Whether to extract the CDS feature.')
 p_parsegb.set_defaults(handler=command_parsegb)
@@ -148,7 +151,8 @@ p_printseq = subparsers.add_parser('printseq', help=help_printseq, parents=[p_pa
 p_printseq.add_argument('-n', '--seqname', default='', type=str, required=False, action='store',
                         help='default=%(default)s: Name of the sequence to print. Regex is supported.')
 p_printseq.add_argument('--show_seqname', metavar='yes|no', default='yes', type=strtobool, required=False, action='store',
-                        help='default=%(default)s: Whether to show sequence name starting with ">".')
+                        help='default=%(default)s: Whether to show sequence name starting with ">". '
+                             '"no" prints sequences only.')
 p_printseq.set_defaults(handler=command_printseq)
 
 def command_rmseq(args):
