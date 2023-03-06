@@ -37,8 +37,10 @@ See [Wiki](https://github.com/kfuku52/cdskit/wiki) for detailed descriptions.
 
 ## Pipe for streamlined analysis
 CDSKIT is designed for data flow through [standard input and output](https://en.wikipedia.org/wiki/Standard_streams). Streamlined processing may be combined with other sequence processing tools such as [SeqKit](https://bioinf.shenwei.me/seqkit/).
+
 ```
-seqkit seq input.fasta | cdskit pad | cdskit mask | cdskit aggregate > output.fasta
+# Example 
+seqkit seq input.fasta.gz | cdskit pad | cdskit mask | seqkit translate | cdskit aggregate -x ":.*"  > output.fasta
 ```
 
 ## Citation
