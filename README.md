@@ -19,21 +19,25 @@ cdskit -h
 ## Subcommands
 See [wiki](https://github.com/kfuku52/cdskit/wiki) for the complete description.
 
-`accession2fasta`: Retrieve fasta sequences from a list of GenBank accessions
+`accession2fasta`: Retrieving fasta sequences from a list of GenBank accessions
 
-`aggregate`: Extracting the longest sequences combined with regex in sequence names
+`aggregate`: Extracting the longest sequences combined with a sequence name regex
 
-`backtrim`: Back-translating trimmed protein alignment
+`backtrim`: Back-translating a trimmed protein alignment
 
 `hammer`: "Hammer down" long alignments
 
 `mask`: Masking ambiguous and/or stop codons
 
-`pad`: Making nucleotide sequences in-frame by N-padding
+`pad`: Making nucleotide sequences in-frame by head and tail paddings
 
-`parsegb`: Parsing the GenBank format
+`parsegb`: Converting the GenBank format
 
-`printseq`: Print a subset of sequences with regex
+`printseq`: Print a subset of sequences with a regex
+
+`rmseq`: Removing a subset of sequences by using a sequence name regex and by detecting problematic sequence characters.
+
+`stats`: Printing sequence statistics.
 
 ## Pipe for streamlined analysis
 The streamlined processing may be combined with other sequence processing tools such as [SeqKit](https://bioinf.shenwei.me/seqkit/).
