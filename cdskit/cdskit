@@ -23,7 +23,7 @@ p_parent.add_argument('--version', action='version', version='cdskit version ' +
 
 p_codon = argparse.ArgumentParser(add_help=False)
 p_codon.add_argument('-d', '--codontable', metavar='INT', default=1, type=int, required=False, action='store',
-                      help='default=%(default)s: Codon table ID to be used. '
+                      help='default=%(default)s: Codon table ID. The standard code is "1". '
                            'See here for details: https://www.ncbi.nlm.nih.gov/Taxonomy/Utils/wprintgc.cgi')
 
 
@@ -36,7 +36,7 @@ p_accession2fasta = subparsers.add_parser('accession2fasta', help=help_accession
 p_accession2fasta.add_argument('--accession_file', metavar='PATH', default='', type=str, required=False, action='store',
                                help='default=%(default)s: PATH to the accession-per-line text file.')
 p_accession2fasta.add_argument('--email', metavar='aaa@bbb.com', default='', type=str, required=False, action='store',
-                               help='default=%(default)s: Your email address. This is necessary for NCBI\'s E-utilities. '
+                               help='default=%(default)s: Your email address. This is passed to the NCBI\'s E-utilities. '
                                     'For details, see here: https://biopython.org/docs/1.75/api/Bio.Entrez.html')
 p_accession2fasta.add_argument('--extract_cds', metavar='yes|no', default='yes', type=strtobool, required=False, action='store',
                                help='default=%(default)s: Whether to extract the CDS feature.')
@@ -44,7 +44,10 @@ p_accession2fasta.add_argument('--ncbi_database', metavar='STR', default='nucleo
                                action='store', choices=['nucleotide', ],
                                help='default=%(default)s: NCBI database to search.')
 p_accession2fasta.add_argument('--seqnamefmt', metavar='STR', default='organism_accessions', type=str, required=False, action='store',
-                               help='default=%(default)s: Underline-separated list of sequence name elements.')
+                               help='default=%(default)s: Underline-separated list of output sequence name elements. '
+                                    'Try --list_seqnamefmt to check available values.')
+p_accession2fasta.add_argument('--list_seqname_keys', metavar='yes|no', default='no', type=strtobool, required=False, action='store',
+                               help='default=%(default)s: Listing the keys available for --seqnamefmt.')
 p_accession2fasta.set_defaults(handler=command_accession2fasta)
 
 
