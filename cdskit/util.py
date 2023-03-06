@@ -21,10 +21,27 @@ def write_seqs(records, args):
     else:
         Bio.SeqIO.write(records, args.outfile, args.outseqformat)
 
-def check_aligned(records):
+def stop_if_not_multiple_of_three(records):
+    flag_stop = False
+    for record in records:
+        is_multiple_of_three = (len(record.seq)%3==0)
+        if not is_multiple_of_three:
+            txt = 'Sequence length is not multiple of three: {}\n'.format(record.id)
+            sys.stderr.write(txt)
+            flag_stop = True
+    if flag_stop:
+        txt = 'Input sequence length should be multiple of three. ' \
+              'Consider applying `cdskit pad` if the input is truncated coding sequences. Exiting.\n'
+        sys.stderr.write(txt)
+        sys.exit(1)
+
+def stop_if_not_aligned(records):
     seqlens = [ len(seq.seq) for seq in records ]
     is_all_same_len = all([ seqlen==seqlens[0] for seqlen in seqlens ])
-    assert is_all_same_len, 'Non-identical sequence lengths were detected. Check if the input sequence is aligned.'
+    if not is_all_same_len:
+        txt = 'Sequence lengths were not identical. Please make sure input sequences are correctly aligned. Exiting.\n'
+        sys.stderr.write(txt)
+        sys.exit(1)
 
 def translate_records(records, codontable):
     pep_records = list()

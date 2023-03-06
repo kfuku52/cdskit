@@ -6,6 +6,8 @@ from cdskit.util import *
 
 def mask_main(args):
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
+    stop_if_not_multiple_of_three(records)
+    stop_if_not_aligned(records)
     for record in records:
         nucseq = str(record.seq)
         nucseq_len = len(nucseq)

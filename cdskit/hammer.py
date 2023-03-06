@@ -6,6 +6,8 @@ from cdskit.util import *
 
 def hammer_main(args):
     original_records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
+    stop_if_not_multiple_of_three(original_records)
+    stop_if_not_aligned(original_records)
     if args.nail=='all':
         nail_value = len(original_records)
         txt = '--nail all was specified. Set to {:,}\n'

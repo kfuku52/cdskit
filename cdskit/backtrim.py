@@ -8,9 +8,10 @@ def check_same_seq_num(cdn_records, pep_records):
 def backtrim_main(args):
     cdn_records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
     pep_records = read_seqs(seqfile=args.trimmed_aa_aln, seqformat=args.inseqformat)
+    stop_if_not_multiple_of_three(cdn_records)
     check_same_seq_num(cdn_records, pep_records)
-    check_aligned(records=cdn_records)
-    check_aligned(records=pep_records)
+    stop_if_not_aligned(records=cdn_records)
+    stop_if_not_aligned(records=pep_records)
     # check_same_order()
     tcdn_records = translate_records(records=cdn_records, codontable=args.codontable)
     tcdn_array = records2array(records=tcdn_records)
