@@ -1,6 +1,7 @@
-## Overview
+![](logo/logo_cdskit_large.svg)
 
-**CDSKIT** is a Python program that manipulates protein-coding nucleotide sequences. A unique feature of this program is to handle sequences using codons (sets of three nucleotides) as the unit, and therefore, edits the coding sequences without causing a frameshift. [All sequence formats supported by biopython](https://biopython.org/wiki/SeqIO) are available in this tool for both inputs and outputs.
+## Overview
+**CDSKIT** is a Python program that manipulates protein-coding nucleotide sequences. This program is designed to handle DNA sequences using codons (sets of three nucleotides) as the unit, and therefore, edits the coding sequences without causing a frameshift. [All sequence formats supported by Biopython](https://biopython.org/wiki/SeqIO) are available in this tool for both inputs and outputs.
 
 
 ## Installation
@@ -12,8 +13,8 @@ pip install git+https://github.com/kfuku52/cdskit
 cdskit -h 
 ```
 
-## Subcommands
-See [wiki](https://github.com/kfuku52/cdskit/wiki) for the complete description.
+## Commands
+See [wiki](https://github.com/kfuku52/cdskit/wiki) for detailed descriptions.
 
 `accession2fasta`: Retrieving fasta sequences from a list of GenBank accessions
 
@@ -21,7 +22,7 @@ See [wiki](https://github.com/kfuku52/cdskit/wiki) for the complete description.
 
 `backtrim`: Back-translating a trimmed protein alignment
 
-`hammer`: "Hammer down" long alignments
+`hammer`: Removing less-occupied codon columns from a gappy alignment
 
 `mask`: Masking ambiguous and/or stop codons
 
@@ -37,7 +38,7 @@ See [wiki](https://github.com/kfuku52/cdskit/wiki) for the complete description.
 
 
 ## Pipe for streamlined analysis
-Streamlined processing may be combined with other sequence processing tools such as [SeqKit](https://bioinf.shenwei.me/seqkit/).
+CDSKIT is designed with data flow through standard input. Streamlined processing may be combined with other sequence processing tools such as [SeqKit](https://bioinf.shenwei.me/seqkit/).
 ```
 seqkit seq input.fasta | cdskit pad | cdskit mask | cdskit aggregate > output.fasta
 ```

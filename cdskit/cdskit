@@ -82,7 +82,7 @@ def command_hammer(args):
     from cdskit.hammer import hammer_main
     hammer_main(args)
 
-help_hammer = '"Hammer down" long alignments. See `cdskit hammer -h`'
+help_hammer = 'Removing less-occupied codon columns from a gappy alignment. See `cdskit hammer -h`'
 p_hammer = subparsers.add_parser('hammer', help=help_hammer, parents=[p_parent,p_codon])
 p_hammer.add_argument('--nail', metavar='INT/all', default='4', type=str, required=False, action='store',
                       help='default=%(default)s: Threshold number of "nail sequences" to hammer down. '
