@@ -42,7 +42,7 @@ seqkit seq input.fasta | cdskit pad | cdskit mask | cdskit aggregate > output.fa
 ```
 
 ## Citation
-There is no published paper on CDSKIT itself, but we used and cited CSUBST in several papers including [Fukushima & Pollock (2023, Nat Ecol Evol 7: 155-170)](https://www.nature.com/articles/s41559-022-01932-7).
+There is no published paper on CDSKIT itself, but we used and cited CDSKIT in several papers including [Fukushima & Pollock (2023, Nat Ecol Evol 7: 155-170)](https://www.nature.com/articles/s41559-022-01932-7).
 
 
 ## Licensing
