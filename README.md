@@ -1,4 +1,4 @@
-![](logo/logo_cdskit_large.svg)
+![](logo/logo_cdskit_large.png)
 
 ## Overview
 **CDSKIT** is a Python program that manipulates protein-coding nucleotide sequences. This program is designed to handle DNA sequences using codons (sets of three nucleotides) as the unit, and therefore, edits the coding sequences without causing a frameshift. [All sequence formats supported by Biopython](https://biopython.org/wiki/SeqIO) are available in this tool for both inputs and outputs.
@@ -15,25 +15,25 @@ cdskit -h
 ## Functions
 See [Wiki](https://github.com/kfuku52/cdskit/wiki) for detailed descriptions.
 
-- `accession2fasta`: Retrieving fasta sequences from a list of GenBank accessions
+- [`accession2fasta`](https://github.com/kfuku52/cdskit/wiki/cdskit-accession2fasta): Retrieving fasta sequences from a list of GenBank accessions
 
-- `aggregate`: Extracting the longest sequences combined with a sequence name regex
+- [`aggregate`](https://github.com/kfuku52/cdskit/wiki/cdskit-aggregate): Extracting the longest sequences combined with a sequence name regex
 
-- `backtrim`: Back-translating a trimmed protein alignment
+- [`backtrim`](https://github.com/kfuku52/cdskit/wiki/cdskit-backtrim): Back-translating a trimmed protein alignment
 
-- `hammer`: Removing less-occupied codon columns from a gappy alignment
+- [`hammer`](https://github.com/kfuku52/cdskit/wiki/cdskit-hammer): Removing less-occupied codon columns from a gappy alignment
 
-- `mask`: Masking ambiguous and/or stop codons
+- [`mask`](https://github.com/kfuku52/cdskit/wiki/cdskit-mask): Masking ambiguous and/or stop codons
 
-- `pad`: Making nucleotide sequences in-frame by head and tail paddings
+- [`pad`](https://github.com/kfuku52/cdskit/wiki/cdskit-pad): Making nucleotide sequences in-frame by head and tail paddings
 
-- `parsegb`: Converting the GenBank format
+- [`parsegb`](https://github.com/kfuku52/cdskit/wiki/cdskit-parsegb): Converting the GenBank format
 
-- `printseq`: Print a subset of sequences with a regex
+- [`printseq`](https://github.com/kfuku52/cdskit/wiki/cdskit-printseq): Print a subset of sequences with a regex
 
-- `rmseq`: Removing a subset of sequences by using a sequence name regex and by detecting problematic sequence characters.
+- [`rmseq`](https://github.com/kfuku52/cdskit/wiki/cdskit-rmseq): Removing a subset of sequences by using a sequence name regex and by detecting problematic sequence characters.
 
-- `stats`: Printing sequence statistics.
+- [`stats`](https://github.com/kfuku52/cdskit/wiki/cdskit-stats): Printing sequence statistics.
 
 ## Streamlined analysis
 CDSKIT is designed for data flow through [standard input and output](https://en.wikipedia.org/wiki/Standard_streams). Streamlined processing may be combined with other sequence processing tools, such as [SeqKit](https://bioinf.shenwei.me/seqkit/), with pipes (`|`).
