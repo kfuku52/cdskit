@@ -10,8 +10,6 @@ def mask_main(args):
     for record in records:
         nucseq = str(record.seq)
         nucseq_len = len(nucseq)
-        err_text1 = 'Sequence length not multiple of three. Apply `cdskit pad` first.'+record.name
-        assert (nucseq_len%3==0), err_text1
         flag1 = False
         for i in range(int(nucseq_len/3)):
             start = i * 3
