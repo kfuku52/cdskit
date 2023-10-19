@@ -32,16 +32,14 @@ def stop_if_not_multiple_of_three(records):
     if flag_stop:
         txt = 'Input sequence length should be multiple of three. ' \
               'Consider applying `cdskit pad` if the input is truncated coding sequences. Exiting.\n'
-        sys.stderr.write(txt)
-        sys.exit(1)
+        raise Exception(txt)
 
 def stop_if_not_aligned(records):
     seqlens = [ len(seq.seq) for seq in records ]
     is_all_same_len = all([ seqlen==seqlens[0] for seqlen in seqlens ])
     if not is_all_same_len:
         txt = 'Sequence lengths were not identical. Please make sure input sequences are correctly aligned. Exiting.\n'
-        sys.stderr.write(txt)
-        sys.exit(1)
+        raise Exception(txt)
 
 def translate_records(records, codontable):
     pep_records = list()
@@ -52,8 +50,6 @@ def translate_records(records, codontable):
     return pep_records
 
 def records2array(records):
-    seqlen = max([ len(record.seq) for record in records ])
-    seqnum = len(records)
     seqchars = list()
     for record in records:
         seqchars.append(list(record.seq))
