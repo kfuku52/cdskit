@@ -12,7 +12,7 @@ pip install git+https://github.com/kfuku52/cdskit
 cdskit -h 
 ```
 
-## Functions
+## Subcommands
 See [Wiki](https://github.com/kfuku52/cdskit/wiki) for detailed descriptions.
 
 - [`accession2fasta`](https://github.com/kfuku52/cdskit/wiki/cdskit-accession2fasta): Retrieving fasta sequences from a list of GenBank accessions
