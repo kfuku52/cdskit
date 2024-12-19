@@ -22,4 +22,4 @@ def aggregate_main(args):
         else:
             uniq[newname] = record
     out_records = list(uniq.values())
-    write_seqs(out_records, args)
+    write_seqs(records=out_records, outfile=args.outfile, outseqformat=args.outseqformat)

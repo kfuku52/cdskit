@@ -15,4 +15,4 @@ def parsegb_main(args):
         if args.extract_cds:
             records[i] = replace_seq2cds(records[i])
     records = [ record for record in records if record is not None ]
-    write_seqs(records, args)
+    write_seqs(records=records, outfile=args.outfile, outseqformat=args.outseqformat)

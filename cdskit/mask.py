@@ -35,4 +35,4 @@ def mask_main(args):
                 nucseq = nucseq[:match.start() * 3]+args.maskchar * num_stop * 3+nucseq[match.end() * 3:]
         if flag2:
             record.seq = Bio.Seq.Seq(nucseq)
-    write_seqs(records, args)
+    write_seqs(records=records, outfile=args.outfile, outseqformat=args.outseqformat)

@@ -79,4 +79,4 @@ def pad_main(args):
     if args.nopseudo:
         records = [ records[i] for i in range(len(records)) if is_no_stop[i] ]
     sys.stderr.write('Number of padded sequences: {:,} / {:,}\n'.format(seqnum_padded, len(records)))
-    write_seqs(records, args)
+    write_seqs(records=records, outfile=args.outfile, outseqformat=args.outseqformat)

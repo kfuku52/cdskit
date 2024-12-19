@@ -2,6 +2,7 @@ import Bio.Seq
 import Bio.SeqIO
 import numpy
 
+import io
 import re
 import sys
 
@@ -14,12 +15,12 @@ def read_seqs(seqfile, seqformat):
     sys.stderr.write('Number of input sequences: {:,}\n'.format(len(records)))
     return records
 
-def write_seqs(records, args):
+def write_seqs(records, outfile, outseqformat):
     sys.stderr.write('Number of output sequences: {:,}\n'.format(len(records)))
-    if args.outfile=='-':
-        Bio.SeqIO.write(records, sys.stdout, args.outseqformat)
+    if outfile=='-':
+        Bio.SeqIO.write(records, sys.stdout, outseqformat)
     else:
-        Bio.SeqIO.write(records, args.outfile, args.outseqformat)
+        Bio.SeqIO.write(records, outfile, outseqformat)
 
 def stop_if_not_multiple_of_three(records):
     flag_stop = False
@@ -92,3 +93,42 @@ def replace_seq2cds(record):
         sys.stderr.write(txt.format(record.id))
         return None
     return record
+
+def read_gff(gff_file):
+    header_lines = []
+    data_lines = []
+    with open(gff_file, 'r', encoding='utf-8') as f:
+        for line in f:
+            line_strip = line.strip()
+            if line_strip.startswith('#'):
+                header_lines.append(line_strip)
+            else:
+                if line_strip != '':
+                    data_lines.append(line_strip)
+    dtype = [
+        ('seqid', 'U100'),
+        ('source', 'U100'),
+        ('type', 'U100'),
+        ('start', 'i4'),
+        ('end', 'i4'),
+        ('score', 'U100'),
+        ('strand', 'U10'),
+        ('phase', 'U10'),
+        ('attributes', 'U500')
+    ]
+    data = numpy.genfromtxt(
+        io.StringIO("\n".join(data_lines)),
+        dtype=dtype,
+        delimiter='\t',
+        autostrip=True
+    )
+    gff = {'header': header_lines, 'data': data}
+    return gff
+
+def write_gff(gff, outfile):
+    with open(outfile, 'w') as f:
+        for line in gff['header']:
+            f.write(line+'\n')
+        for row in gff['data']:
+            row_str = '\t'.join([ str(r) for r in row ])
+            f.write(row_str+'\n')

@@ -103,6 +103,28 @@ p_hammer.add_argument('--prevent_gap_only', metavar='yes|no', default='yes', typ
                        help='default=%(default)s: Whether to relax (decrease) --nail when a gap-only sequence is generated.')
 p_hammer.set_defaults(handler=command_hammer)
 
+def command_intersection(args):
+    from cdskit.intersection import intersection_main
+    sys.stderr.write('cdskit intersection: started at {}\n'.format(datetime.now()))
+    intersection_main(args)
+    sys.stderr.write('cdskit intersection: ended at {}\n'.format(datetime.now()))
+
+help_intersection = 'Dropping non-overlapping sequence labels between two sequences files or between a sequence file and a gff file. See `cdskit intersection -h`'
+p_intersection = subparsers.add_parser('intersection', help=help_intersection, parents=[p_parent, ])
+p_intersection.add_argument('--seqfile2', metavar='PATH', default='-', type=str, required=False, action='store',
+                            help='default=%(default)s: Input sequence file 2.')
+p_intersection.add_argument('--inseqformat2', metavar='STR', default='fasta', type=str, required=False, action='store',
+                            help='default=%(default)s: Input sequence format for --seqfile2.')
+p_intersection.add_argument('--outfile2', metavar='PATH', default='seqfile2.out', type=str, required=False, action='store',
+                            help='default=%(default)s: Output sequence file 2.')
+p_intersection.add_argument('--outseqformat2', metavar='STR', default='fasta', type=str, required=False,
+                            action='store',
+                            help='default=%(default)s: Output sequence format for --outfile2.')
+p_intersection.add_argument('--ingff', metavar='PATH', default='-', type=str, required=False, action='store',
+                            help='default=%(default)s: Input gff file.')
+p_intersection.add_argument('--outgff', metavar='PATH', default='out.gff', type=str, required=False, action='store',
+                            help='default=%(default)s: Output gff file.')
+p_intersection.set_defaults(handler=command_intersection)
 
 def command_mask(args):
     from cdskit.mask import mask_main

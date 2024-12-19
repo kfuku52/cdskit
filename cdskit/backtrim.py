@@ -63,4 +63,4 @@ def backtrim_main(args):
     sys.stderr.write(txt.format(len(cdn_records[0].seq)))
     txt = 'Number of aligned nucleotide sites in trimmed codon sequences: {}\n'
     sys.stderr.write(txt.format(len(trimmed_cdn_records[0].seq)))
-    write_seqs(records=trimmed_cdn_records, args=args)
+    write_seqs(records=trimmed_cdn_records, outfile=args.outfile, outseqformat=args.outseqformat)

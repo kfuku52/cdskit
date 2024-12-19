@@ -18,4 +18,4 @@ def rmseq_main(args):
                 flag = False
         if flag:
             new_records.append(record)
-    write_seqs(new_records, args)
+    write_seqs(records=new_records, outfile=args.outfile, outseqformat=args.outseqformat)

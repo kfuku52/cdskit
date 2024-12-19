@@ -53,4 +53,4 @@ def hammer_main(args):
             if flag_gap_only:
                 continue
         break
-    write_seqs(records, args)
+    write_seqs(records=records, outfile=args.outfile, outseqformat=args.outseqformat)
