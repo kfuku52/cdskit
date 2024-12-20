@@ -30,5 +30,5 @@ def stats_main(args):
     print('Total softmasked length: {:,}'.format(bp_masked))
     print('Total N length: {:,}'.format(bp_N))
     print('Total gap (-) length: {:,}'.format(bp_gap))
-    gc_content = ((bp_G + bp_C) / (bp_A + bp_T)) * 100
+    gc_content = ((bp_G + bp_C) / bp_all) * 100
     print('GC content: {:,.1f}%'.format(gc_content))
