@@ -124,6 +124,8 @@ p_intersection.add_argument('--ingff', metavar='PATH', default='-', type=str, re
                             help='default=%(default)s: Input gff file.')
 p_intersection.add_argument('--outgff', metavar='PATH', default='out.gff', type=str, required=False, action='store',
                             help='default=%(default)s: Output gff file.')
+p_intersection.add_argument('--fix_outrange_gff_records', metavar='yes|no', default='yes', type=strtobool, required=False, action='store',
+                            help='default=%(default)s: Fix gff records that have coordinates out of the sequence range.')
 p_intersection.set_defaults(handler=command_intersection)
 
 def command_mask(args):

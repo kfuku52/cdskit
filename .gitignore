@@ -1,2 +1,6 @@
 /data/*
 /.vscode/*
+/cdskit/__pycache__/*
+/.DS_Store
+/tests/*
+/cdskit.iml

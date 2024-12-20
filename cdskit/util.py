@@ -99,12 +99,13 @@ def read_gff(gff_file):
     data_lines = []
     with open(gff_file, 'r', encoding='utf-8') as f:
         for line in f:
-            line_strip = line.strip()
-            if line_strip.startswith('#'):
-                header_lines.append(line_strip)
+            line = line.strip()
+            if not line:
+                continue
+            if line[0] == '#':
+                header_lines.append(line)
             else:
-                if line_strip != '':
-                    data_lines.append(line_strip)
+                data_lines.append(line)
     dtype = [
         ('seqid', 'U100'),
         ('source', 'U100'),
@@ -116,19 +117,18 @@ def read_gff(gff_file):
         ('phase', 'U10'),
         ('attributes', 'U500')
     ]
-    data = numpy.genfromtxt(
-        io.StringIO("\n".join(data_lines)),
-        dtype=dtype,
-        delimiter='\t',
-        autostrip=True
-    )
-    gff = {'header': header_lines, 'data': data}
-    return gff
+    data = numpy.genfromtxt(io.StringIO('\n'.join(data_lines)), dtype=dtype, delimiter='\t', autostrip=True)
+    sys.stderr.write('Number of input GFF header lines: {:,}\n'.format(len(header_lines)))
+    sys.stderr.write('Number of input GFF records: {:,}\n'.format(len(data)))
+    sys.stderr.write('Number of input GFF unique seqids: {:,}\n'.format(len(numpy.unique(data['seqid']))))
+    return {'header': header_lines, 'data': data}
 
 def write_gff(gff, outfile):
+    sys.stderr.write('Number of output GFF header lines: {:,}\n'.format(len(gff['header'])))
+    sys.stderr.write('Number of output GFF records: {:,}\n'.format(len(gff['data'])))
+    sys.stderr.write('Number of output GFF unique seqids: {:,}\n'.format(len(numpy.unique(gff['data']['seqid']))))
     with open(outfile, 'w') as f:
-        for line in gff['header']:
-            f.write(line+'\n')
+        if gff['header']:
+            f.write('\n'.join(gff['header']) + '\n')
         for row in gff['data']:
-            row_str = '\t'.join([ str(r) for r in row ])
-            f.write(row_str+'\n')
+            f.write('\t'.join(map(str, row)) + '\n')
