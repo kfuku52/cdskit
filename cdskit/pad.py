@@ -38,13 +38,14 @@ def pad_main(args):
     is_no_stop = list()
     seqnum_padded = 0
     for record in records:
-        seqlen = len(record.seq)
+        clean_seq = str(record.seq).replace('X', 'N')
+        seqlen = len(clean_seq)
         adjlen = ((seqlen//3)+1)*3
-        tailpad_seq = Bio.Seq.Seq(str(record.seq).ljust(adjlen, args.padchar))
+        tailpad_seq = Bio.Seq.Seq(str(clean_seq).ljust(adjlen, args.padchar))
         num_stop_input = str(tailpad_seq.translate(args.codontable))[:-3].count('*')
         if ((num_stop_input)|(seqlen % 3)):
             num_missing = adjlen - seqlen
-            seqs = padseqs(original_seq=record.seq, codon_table=args.codontable, padchar=args.padchar)
+            seqs = padseqs(original_seq=clean_seq, codon_table=args.codontable, padchar=args.padchar)
             if num_stop_input:
                 if (num_missing==0)|(num_missing==3):
                     seqs.add(headn=0, tailn=0)
@@ -61,7 +62,7 @@ def pad_main(args):
             if ((~num_stop_input)&(seqlen % 3)):
                 seqs.add(headn=0, tailn=num_missing)
             best_padseq = seqs.get_minimum_num_stop()
-            record.seq = best_padseq['new_seq']
+            clean_seq = best_padseq['new_seq']
             if best_padseq['num_stop']==0:
                 is_no_stop.append(True)
             else:
