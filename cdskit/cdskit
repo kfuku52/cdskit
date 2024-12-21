@@ -128,6 +128,24 @@ p_intersection.add_argument('--fix_outrange_gff_records', metavar='yes|no', defa
                             help='default=%(default)s: Fix gff records that have coordinates out of the sequence range.')
 p_intersection.set_defaults(handler=command_intersection)
 
+
+def command_label(args):
+    from cdskit.label import label_main
+    sys.stderr.write('cdskit label: started at {}\n'.format(datetime.now()))
+    label_main(args)
+    sys.stderr.write('cdskit label: ended at {}\n'.format(datetime.now()))
+
+help_label = 'Modifying sequence labels. See `cdskit label -h`'
+p_label = subparsers.add_parser('label', help=help_label, parents=[p_parent, ])
+p_label.add_argument('--replace_chars', metavar='FROM1FROM2...--TO', default='', type=str, required=False, action='store',
+                     help='default=%(default)s: Replace sequence label characters. For example, "!@#$%^&*+=/?<>|--_" replaces various characters with underbar ("_").')
+p_label.add_argument('--clip_len', metavar='INT', default=0, type=int, required=False, action='store',
+                     help='default=%(default)s: Maximum length of sequence labels. Longer labels are truncated.')
+p_label.add_argument('--unique', metavar='yes|no', default='no', type=strtobool, required=False, action='store',
+                     help='default=%(default)s: Make sequence labels unique by adding suffix (_1, _2, ...).')
+p_label.set_defaults(handler=command_label)
+
+
 def command_mask(args):
     from cdskit.mask import mask_main
     sys.stderr.write('cdskit mask: started at {}\n'.format(datetime.now()))

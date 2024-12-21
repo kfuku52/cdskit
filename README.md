@@ -25,6 +25,8 @@ See [Wiki](https://github.com/kfuku52/cdskit/wiki) for detailed descriptions.
 
 - [`intersection`](https://github.com/kfuku52/cdskit/wiki/cdskit-intersection): Dropping non-overlapping sequence labels between two sequences files or between a sequence file and a gff file
 
+- [`label`](https://github.com/kfuku52/cdskit/wiki/cdskit-label): Modifying sequence labels
+
 - [`mask`](https://github.com/kfuku52/cdskit/wiki/cdskit-mask): Masking ambiguous and/or stop codons
 
 - [`pad`](https://github.com/kfuku52/cdskit/wiki/cdskit-pad): Making nucleotide sequences in-frame by head and tail paddings
