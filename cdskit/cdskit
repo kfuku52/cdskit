@@ -232,6 +232,16 @@ p_rmseq.add_argument('--problematic_percent', default=0, type=float, required=Fa
                         help='default=%(default)s: Sequences containing >= this percentage of --problematic_char are removed.')
 p_rmseq.set_defaults(handler=command_rmseq)
 
+def command_split(args):
+    from cdskit.split import split_main
+    sys.stderr.write('cdskit split: started at {}\n'.format(datetime.now()))
+    split_main(args)
+    sys.stderr.write('cdskit split: ended at {}\n'.format(datetime.now()))
+
+help_split = 'Splitting 1st, 2nd, and 3rd codon positions. See `cdskit split -h`'
+p_split = subparsers.add_parser('split', help=help_split, parents=[p_parent])
+p_split.set_defaults(handler=command_split)
+
 def command_stats(args):
     from cdskit.stats import stats_main
     sys.stderr.write('cdskit stats: started at {}\n'.format(datetime.now()))

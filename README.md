@@ -37,6 +37,8 @@ See [Wiki](https://github.com/kfuku52/cdskit/wiki) for detailed descriptions.
 
 - [`rmseq`](https://github.com/kfuku52/cdskit/wiki/cdskit-rmseq): Removing a subset of sequences by using a sequence name regex and by detecting problematic sequence characters.
 
+- [`split`](https://github.com/kfuku52/cdskit/wiki/cdskit-split): Splitting 1st, 2nd, and 3rd codon positions.
+
 - [`stats`](https://github.com/kfuku52/cdskit/wiki/cdskit-stats): Printing sequence statistics.
 
 ## Streamlined analysis
