@@ -13,16 +13,21 @@ psr = argparse.ArgumentParser(description='A toolkit to handle protein-coding DN
 subparsers = psr.add_subparsers()
 
 # Parent parser for shared options
-p_parent = argparse.ArgumentParser(add_help=False)
-p_parent.add_argument('-s', '--seqfile', metavar='PATH', default='-', type=str, required=False, action='store',
+
+p_version = argparse.ArgumentParser(add_help=False)
+p_version.add_argument('--version', action='version', version='cdskit version ' + __version__)
+
+p_infile = argparse.ArgumentParser(add_help=False)
+p_infile.add_argument('-s', '--seqfile', metavar='PATH', default='-', type=str, required=False, action='store',
                  help='default=%(default)s: Input sequence file. Use "-" for STDIN.')
-p_parent.add_argument('-o', '--outfile', metavar='PATH', default='-', type=str, required=False, action='store',
-                 help='default=%(default)s: Output sequence file. Use "-" for STDOUT.')
-p_parent.add_argument('-if', '--inseqformat', metavar='STR', default='fasta', type=str, required=False, action='store',
+p_infile.add_argument('-if', '--inseqformat', metavar='STR', default='fasta', type=str, required=False, action='store',
                  help='default=%(default)s: Input sequence format. See Biopython documentation for available options. https://biopython.org/wiki/SeqIO')
-p_parent.add_argument('-of', '--outseqformat', metavar='STR', default='fasta', type=str, required=False, action='store',
+
+p_outfile = argparse.ArgumentParser(add_help=False)
+p_outfile.add_argument('-o', '--outfile', metavar='PATH', default='-', type=str, required=False, action='store',
+                 help='default=%(default)s: Output sequence file. Use "-" for STDOUT.')
+p_outfile.add_argument('-of', '--outseqformat', metavar='STR', default='fasta', type=str, required=False, action='store',
                  help='default=%(default)s: Output sequence format. See Biopython documentation for available options. https://biopython.org/wiki/SeqIO')
-p_parent.add_argument('--version', action='version', version='cdskit version ' + __version__)
 
 p_codon = argparse.ArgumentParser(add_help=False)
 p_codon.add_argument('-d', '--codontable', metavar='INT', default=1, type=int, required=False, action='store',
@@ -37,7 +42,7 @@ def command_accession2fasta(args):
     sys.stderr.write('cdskit accession2fasta: ended at {}\n'.format(datetime.now()))
 
 help_accession2fasta = 'Retrieving fasta sequences from a list of GenBank accessions. See `cdskit accession2fasta -h`'
-p_accession2fasta = subparsers.add_parser('accession2fasta', help=help_accession2fasta, parents=[p_parent])
+p_accession2fasta = subparsers.add_parser('accession2fasta', help=help_accession2fasta, parents=[p_version,p_outfile])
 p_accession2fasta.add_argument('--accession_file', metavar='PATH', default='', type=str, required=False, action='store',
                                help='default=%(default)s: PATH to the accession-per-line text file.')
 p_accession2fasta.add_argument('--email', metavar='aaa@bbb.com', default='', type=str, required=False, action='store',
@@ -63,7 +68,7 @@ def command_aggregate(args):
     sys.stderr.write('cdskit aggregate: ended at {}\n'.format(datetime.now()))
 
 help_aggregate = 'Extracting the longest sequences combined with a sequence name regex. See `cdskit aggregate -h`'
-p_aggregate = subparsers.add_parser('aggregate', help=help_aggregate, parents=[p_parent])
+p_aggregate = subparsers.add_parser('aggregate', help=help_aggregate, parents=[p_version,p_infile,p_outfile])
 p_aggregate.add_argument('-m', '--mode', metavar='STR', default='longest', type=str, required=False, action='store',
                          choices=['longest', ],
                          help='default=%(default)s: Criterion to keep a sequence during aggregation.')
@@ -80,7 +85,7 @@ def command_backtrim(args):
     sys.stderr.write('cdskit backtrim: ended at {}\n'.format(datetime.now()))
 
 help_backtrim = 'Back-translating a trimmed protein alignment. See `cdskit backtrim -h`'
-p_backtrim = subparsers.add_parser('backtrim', help=help_backtrim, parents=[p_parent,p_codon])
+p_backtrim = subparsers.add_parser('backtrim', help=help_backtrim, parents=[p_version,p_infile,p_outfile,p_codon])
 p_backtrim.add_argument('-a', '--trimmed_aa_aln', metavar='PATH', default='', type=str, required=True, action='store',
                         help='default=%(default)s: PATH to the trimmed amino acid alignment. '
                              'In addition to this, please specify the untrimmed CDS alignment by --seqfile.')
@@ -94,7 +99,7 @@ def command_hammer(args):
     sys.stderr.write('cdskit hammer: ended at {}\n'.format(datetime.now()))
 
 help_hammer = 'Removing less-occupied codon columns from a gappy alignment. See `cdskit hammer -h`'
-p_hammer = subparsers.add_parser('hammer', help=help_hammer, parents=[p_parent,p_codon])
+p_hammer = subparsers.add_parser('hammer', help=help_hammer, parents=[p_version,p_infile,p_outfile,p_codon])
 p_hammer.add_argument('--nail', metavar='INT/all', default='4', type=str, required=False, action='store',
                       help='default=%(default)s: Threshold number of "nail sequences" to hammer down. '
                            'Codon columns are removed if there are no more than this number of non-missing sequences. '
@@ -110,7 +115,7 @@ def command_intersection(args):
     sys.stderr.write('cdskit intersection: ended at {}\n'.format(datetime.now()))
 
 help_intersection = 'Dropping non-overlapping sequence labels between two sequences files or between a sequence file and a gff file. See `cdskit intersection -h`'
-p_intersection = subparsers.add_parser('intersection', help=help_intersection, parents=[p_parent, ])
+p_intersection = subparsers.add_parser('intersection', help=help_intersection, parents=[p_version,p_infile,p_outfile])
 p_intersection.add_argument('--seqfile2', metavar='PATH', default='-', type=str, required=False, action='store',
                             help='default=%(default)s: Input sequence file 2.')
 p_intersection.add_argument('--inseqformat2', metavar='STR', default='fasta', type=str, required=False, action='store',
@@ -136,7 +141,7 @@ def command_label(args):
     sys.stderr.write('cdskit label: ended at {}\n'.format(datetime.now()))
 
 help_label = 'Modifying sequence labels. See `cdskit label -h`'
-p_label = subparsers.add_parser('label', help=help_label, parents=[p_parent, ])
+p_label = subparsers.add_parser('label', help=help_label, parents=[p_version,p_infile,p_outfile])
 p_label.add_argument('--replace_chars', metavar='FROM1FROM2...--TO', default='', type=str, required=False, action='store',
                      help='default=%(default)s: Replace sequence label characters. For example, "!@#$%^&*+=/?<>|--_" replaces various characters with underbar ("_").')
 p_label.add_argument('--clip_len', metavar='INT', default=0, type=int, required=False, action='store',
@@ -153,7 +158,7 @@ def command_mask(args):
     sys.stderr.write('cdskit mask: ended at {}\n'.format(datetime.now()))
 
 help_mask = 'Masking ambiguous and/or stop codons. See `cdskit mask -h`'
-p_mask = subparsers.add_parser('mask', help=help_mask, parents=[p_parent,p_codon])
+p_mask = subparsers.add_parser('mask', help=help_mask, parents=[p_version,p_infile,p_outfile,p_codon])
 p_mask.add_argument('-c', '--maskchar', metavar='CHAR', default='N', type=str, required=False, action='store',
                     choices=['N', '-'],
                     help='default=%(default)s: A character to be used to mask codons.')
@@ -174,7 +179,7 @@ def command_pad(args):
     sys.stderr.write('cdskit pad: ended at {}\n'.format(datetime.now()))
 
 help_pad = 'Making nucleotide sequences in-frame by head and tail paddings. See `cdskit pad -h`'
-p_pad = subparsers.add_parser('pad', help=help_pad, parents=[p_parent,p_codon])
+p_pad = subparsers.add_parser('pad', help=help_pad, parents=[p_version,p_infile,p_outfile,p_codon])
 p_pad.add_argument('-c', '--padchar', metavar='CHAR', default='N', type=str, required=False, action='store',
                    choices=['N', '-'],
                    help='default=%(default)s: A character to be used to pad when the sequence length is not multiple of three.')
@@ -190,7 +195,7 @@ def command_parsegb(args):
     sys.stderr.write('cdskit parsegb: ended at {}\n'.format(datetime.now()))
 
 help_parsegb = 'Converting the GenBank format. See `cdskit parsegb -h`'
-p_parsegb = subparsers.add_parser('parsegb', help=help_parsegb, parents=[p_parent])
+p_parsegb = subparsers.add_parser('parsegb', help=help_parsegb, parents=[p_version,p_infile,p_outfile])
 p_parsegb.add_argument('--seqnamefmt', metavar='STR', default='organism_accessions', type=str, required=False, action='store',
                        help='default=%(default)s: Underline-separated list of sequence name elements. '
                             'Use --list_seqname_keys to browse available values.')
@@ -208,7 +213,7 @@ def command_printseq(args):
     sys.stderr.write('cdskit printseq: ended at {}\n'.format(datetime.now()))
 
 help_printseq = 'Print a subset of sequences with a regex. See `cdskit printseq -h`'
-p_printseq = subparsers.add_parser('printseq', help=help_printseq, parents=[p_parent,p_codon])
+p_printseq = subparsers.add_parser('printseq', help=help_printseq, parents=[p_version,p_infile])
 p_printseq.add_argument('-n', '--seqname', default='', type=str, required=False, action='store',
                         help='default=%(default)s: Name of the sequence to print. Regex is supported.')
 p_printseq.add_argument('--show_seqname', metavar='yes|no', default='yes', type=strtobool, required=False, action='store',
@@ -223,7 +228,7 @@ def command_rmseq(args):
     sys.stderr.write('cdskit rmseq: ended at {}\n'.format(datetime.now()))
 
 help_rmseq = 'Removing a subset of sequences by using a sequence name regex and by detecting problematic sequence characters. See `cdskit rmseq -h`'
-p_rmseq = subparsers.add_parser('rmseq', help=help_rmseq, parents=[p_parent,p_codon])
+p_rmseq = subparsers.add_parser('rmseq', help=help_rmseq, parents=[p_version,p_infile,p_outfile])
 p_rmseq.add_argument('--seqname', default='', type=str, required=False, action='store',
                         help='default=%(default)s: Names of sequences to remove. Regex is supported.')
 p_rmseq.add_argument('--problematic_char', default='NX-?', type=str, required=False, action='store',
@@ -239,7 +244,7 @@ def command_split(args):
     sys.stderr.write('cdskit split: ended at {}\n'.format(datetime.now()))
 
 help_split = 'Splitting 1st, 2nd, and 3rd codon positions. See `cdskit split -h`'
-p_split = subparsers.add_parser('split', help=help_split, parents=[p_parent])
+p_split = subparsers.add_parser('split', help=help_split, parents=[p_version,p_infile])
 p_split.set_defaults(handler=command_split)
 
 def command_stats(args):
@@ -249,7 +254,7 @@ def command_stats(args):
     sys.stderr.write('cdskit stats: ended at {}\n'.format(datetime.now()))
 
 help_stats = 'Printing sequence statistics. See `cdskit stats -h`'
-p_stats = subparsers.add_parser('stats', help=help_stats, parents=[p_parent])
+p_stats = subparsers.add_parser('stats', help=help_stats, parents=[p_version,p_infile])
 p_stats.set_defaults(handler=command_stats)
 
 
