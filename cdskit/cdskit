@@ -244,7 +244,9 @@ def command_split(args):
     sys.stderr.write('cdskit split: ended at {}\n'.format(datetime.now()))
 
 help_split = 'Splitting 1st, 2nd, and 3rd codon positions. See `cdskit split -h`'
-p_split = subparsers.add_parser('split', help=help_split, parents=[p_version,p_infile])
+p_split = subparsers.add_parser('split', help=help_split, parents=[p_version,p_infile,p_outfile])
+p_split.add_argument('--prefix', default='INFILE', type=str, required=False, action='store',
+                        help='default=%(default)s: Output prefix PATH.')
 p_split.set_defaults(handler=command_split)
 
 def command_stats(args):
