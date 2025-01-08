@@ -37,8 +37,8 @@ def pad_main(args):
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
     is_no_stop = list()
     seqnum_padded = 0
-    for record in records:
-        clean_seq = str(record.seq).replace('X', 'N')
+    for i in range(len(records)):
+        clean_seq = str(records[i].seq).replace('X', 'N')
         seqlen = len(clean_seq)
         adjlen = ((seqlen//3)+1)*3
         tailpad_seq = Bio.Seq.Seq(str(clean_seq).ljust(adjlen, args.padchar))
@@ -62,16 +62,13 @@ def pad_main(args):
             if ((~num_stop_input)&(seqlen % 3)):
                 seqs.add(headn=0, tailn=num_missing)
             best_padseq = seqs.get_minimum_num_stop()
-            clean_seq = best_padseq['new_seq']
+            records[i].seq = best_padseq['new_seq']
             if best_padseq['num_stop']==0:
                 is_no_stop.append(True)
             else:
                 is_no_stop.append(False)
-            txt = '{name}, original_seqlen={seqlen}, head_padding={headn}, tail_padding={tailn}, '
-            txt += 'original_num_stop={num_stop_input}, new_num_stop={num_stop_new}\n'
-            txt = txt.format(name=record.name, seqlen=seqlen, headn=best_padseq['headn'],
-                             tailn=best_padseq['tailn'], num_stop_input=num_stop_input,
-                             num_stop_new=best_padseq['num_stop'])
+            txt = f'{records[i].name}, original_seqlen={seqlen}, head_padding={best_padseq["headn"]}, tail_padding={best_padseq["tailn"]}, '
+            txt += f'original_num_stop={num_stop_input}, new_num_stop={best_padseq["num_stop"]}\n'
             sys.stderr.write(txt)
             if not ((best_padseq['headn']==0)&(best_padseq['tailn']==0)):
                 seqnum_padded += 1
