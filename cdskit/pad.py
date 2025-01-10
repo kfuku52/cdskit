@@ -20,7 +20,7 @@ class padseqs:
     def add(self, headn=0, tailn=0):
         new_seq = Bio.Seq.Seq((self.padchar*headn)+self.original_seq+(self.padchar*tailn))
         self.new_seqs.append(new_seq)
-        self.num_stops.append(str(new_seq.translate(self.codon_table))[:-3].count('*'))
+        self.num_stops.append(str(new_seq[:-3].translate(self.codon_table)).count('*'))
         self.headn.append(headn)
         self.tailn.append(tailn)
     def get_minimum_num_stop(self):
@@ -42,7 +42,7 @@ def pad_main(args):
         seqlen = len(clean_seq)
         adjlen = ((seqlen//3)+1)*3
         tailpad_seq = Bio.Seq.Seq(str(clean_seq).ljust(adjlen, args.padchar))
-        num_stop_input = str(tailpad_seq.translate(args.codontable))[:-3].count('*')
+        num_stop_input = str(tailpad_seq[:-3].translate(args.codontable)).count('*')
         if ((num_stop_input)|(seqlen % 3)):
             num_missing = adjlen - seqlen
             seqs = padseqs(original_seq=clean_seq, codon_table=args.codontable, padchar=args.padchar)
