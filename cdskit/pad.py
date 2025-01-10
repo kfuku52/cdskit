@@ -40,8 +40,12 @@ def pad_main(args):
     for i in range(len(records)):
         clean_seq = str(records[i].seq).replace('X', 'N')
         seqlen = len(clean_seq)
-        adjlen = ((seqlen//3)+1)*3
-        tailpad_seq = Bio.Seq.Seq(str(clean_seq).ljust(adjlen, args.padchar))
+        if seqlen % 3 == 0:
+            adjlen = seqlen
+            tailpad_seq = Bio.Seq.Seq(clean_seq)
+        else:
+            adjlen = ((seqlen//3)+1)*3
+            tailpad_seq = Bio.Seq.Seq(str(clean_seq).ljust(adjlen, args.padchar))
         num_stop_input = str(tailpad_seq[:-3].translate(args.codontable)).count('*')
         if ((num_stop_input)|(seqlen % 3)):
             num_missing = adjlen - seqlen
