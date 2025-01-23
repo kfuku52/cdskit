@@ -132,3 +132,19 @@ def write_gff(gff, outfile):
             f.write('\n'.join(gff['header']) + '\n')
         for row in gff['data']:
             f.write('\t'.join(map(str, row)) + '\n')
+
+def coordinates2ranges(gff_coordinates):
+    ranges = list()
+    if len(gff_coordinates)==0:
+        return ranges
+    start = gff_coordinates[0]
+    end = gff_coordinates[0]
+    for i in range(1, len(gff_coordinates)):
+        if gff_coordinates[i]==end+1:
+            end = gff_coordinates[i]
+        else:
+            ranges.append((start, end))
+            start = gff_coordinates[i]
+            end = gff_coordinates[i]
+    ranges.append((start, end))
+    return ranges

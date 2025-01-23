@@ -34,6 +34,13 @@ p_codon.add_argument('-d', '--codontable', metavar='INT', default=1, type=int, r
                       help='default=%(default)s: Codon table ID. The standard code is "1". '
                            'See here for details: https://www.ncbi.nlm.nih.gov/Taxonomy/Utils/wprintgc.cgi')
 
+p_gffio = argparse.ArgumentParser(add_help=False)
+p_gffio.add_argument('--ingff', metavar='PATH', default=None, type=str, required=False, action='store',
+                     help='default=%(default)s: Input gff file.')
+p_gffio.add_argument('--outgff', metavar='PATH', default='out.gff', type=str, required=False, action='store',
+                     help='default=%(default)s: Output gff file.')
+
+
 
 def command_accession2fasta(args):
     from cdskit.accession2fasta import accession2fasta_main
@@ -92,6 +99,23 @@ p_backtrim.add_argument('-a', '--trimmed_aa_aln', metavar='PATH', default='', ty
 p_backtrim.set_defaults(handler=command_backtrim)
 
 
+def command_gapjust(args):
+    from cdskit.gapjust import gapjust_main
+    sys.stderr.write('cdskit gapjust: started at {}\n'.format(datetime.now()))
+    gapjust_main(args)
+    sys.stderr.write('cdskit gapjust: ended at {}\n'.format(datetime.now()))
+
+help_gapjust = 'Adjusting consecutive Ns to the fixed length. See `cdskit gapjust -h`'
+p_gapjust = subparsers.add_parser('gapjust', help=help_gapjust, parents=[p_version,p_infile,p_outfile,p_gffio,])
+p_gapjust.add_argument('--gap_len', metavar='INT', default=100, type=int, required=False, action='store',
+                        help='default=%(default)s: Gap length. Ns will be added or removed to make the gap length fixed.')
+p_gapjust.add_argument('--gap_just_min', metavar='INT', default=None, type=int, required=False, action='store',
+                        help='default=%(default)s: Minimum gap length to be adjusted. Ns will be extended if the gap length is equal to or greater than this value.')
+p_gapjust.add_argument('--gap_just_max', metavar='INT', default=None, type=int, required=False, action='store',
+                        help='default=%(default)s: Maximum gap length to be adjusted. Ns will be shortened if the gap length is equal to or smaller than this value.')
+p_gapjust.set_defaults(handler=command_gapjust)
+
+
 def command_hammer(args):
     from cdskit.hammer import hammer_main
     sys.stderr.write('cdskit hammer: started at {}\n'.format(datetime.now()))
@@ -115,8 +139,8 @@ def command_intersection(args):
     sys.stderr.write('cdskit intersection: ended at {}\n'.format(datetime.now()))
 
 help_intersection = 'Dropping non-overlapping sequence labels between two sequences files or between a sequence file and a gff file. See `cdskit intersection -h`'
-p_intersection = subparsers.add_parser('intersection', help=help_intersection, parents=[p_version,p_infile,p_outfile])
-p_intersection.add_argument('--seqfile2', metavar='PATH', default='-', type=str, required=False, action='store',
+p_intersection = subparsers.add_parser('intersection', help=help_intersection, parents=[p_version,p_infile,p_outfile,p_gffio])
+p_intersection.add_argument('--seqfile2', metavar='PATH', default=None, type=str, required=False, action='store',
                             help='default=%(default)s: Input sequence file 2.')
 p_intersection.add_argument('--inseqformat2', metavar='STR', default='fasta', type=str, required=False, action='store',
                             help='default=%(default)s: Input sequence format for --seqfile2.')
@@ -125,10 +149,6 @@ p_intersection.add_argument('--outfile2', metavar='PATH', default='seqfile2.out'
 p_intersection.add_argument('--outseqformat2', metavar='STR', default='fasta', type=str, required=False,
                             action='store',
                             help='default=%(default)s: Output sequence format for --outfile2.')
-p_intersection.add_argument('--ingff', metavar='PATH', default='-', type=str, required=False, action='store',
-                            help='default=%(default)s: Input gff file.')
-p_intersection.add_argument('--outgff', metavar='PATH', default='out.gff', type=str, required=False, action='store',
-                            help='default=%(default)s: Output gff file.')
 p_intersection.add_argument('--fix_outrange_gff_records', metavar='yes|no', default='yes', type=strtobool, required=False, action='store',
                             help='default=%(default)s: Fix gff records that have coordinates out of the sequence range.')
 p_intersection.set_defaults(handler=command_intersection)

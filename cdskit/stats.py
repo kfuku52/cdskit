@@ -16,6 +16,8 @@ def stats_main(args):
     bp_C = 0
     bp_N = 0
     bp_gap = 0
+    min_consecutive_N_length = 999999999
+    max_consecutive_N_length = 0
     for record in records:
         bp_masked += num_masked_bp(record.seq)
         bp_all += len(record.seq)
@@ -25,6 +27,12 @@ def stats_main(args):
         bp_C += record.seq.count('C')
         bp_N += record.seq.count('N')
         bp_gap += record.seq.count('-')
+        gap_coordinates = [ m.start() for m in re.finditer('N', str(record.seq)) ]
+        gap_ranges = coordinates2ranges(gff_coordinates=gap_coordinates)
+        gap_lengths = [ end-start+1 for start, end in gap_ranges ]
+        if gap_lengths:
+            min_consecutive_N_length = min(min_consecutive_N_length, min(gap_lengths))
+            max_consecutive_N_length = max(max_consecutive_N_length, max(gap_lengths))
     print('Number of sequences: {:,}'.format(num_seq))
     print('Total length: {:,}'.format(bp_all))
     print('Total softmasked length: {:,}'.format(bp_masked))

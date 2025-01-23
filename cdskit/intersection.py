@@ -5,7 +5,7 @@ from cdskit.util import *
 def intersection_main(args):
     original_records1 = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
     original_records1_names = [rec.name for rec in original_records1]
-    if args.seqfile2 != '-':
+    if args.seqfile2 is not None:
         original_records2 = read_seqs(seqfile=args.seqfile2, seqformat=args.inseqformat2)
         original_records2_names = [rec.name for rec in original_records2]
         intersection_names = set(original_records1_names) & set(original_records2_names)
@@ -13,7 +13,7 @@ def intersection_main(args):
         intersection_records2 = [rec for rec in original_records2 if rec.name in intersection_names]
         write_seqs(records=intersection_records1, outfile=args.outfile, outseqformat=args.outseqformat)
         write_seqs(records=intersection_records2, outfile=args.outfile2, outseqformat=args.outseqformat2)
-    elif args.ingff != '-':
+    elif args.ingff is not None:
         original_gff = read_gff(gff_file=args.ingff)
         original_gff_names = numpy.unique(original_gff['data']['seqid'])
         intersection_names = set(original_records1_names) & set(original_gff_names)
