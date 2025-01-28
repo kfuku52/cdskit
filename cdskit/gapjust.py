@@ -188,16 +188,17 @@ def gapjust_main(args):
                 # phase remains as is
 
             # Count how many changed
-            changed_start = (seq_gff_start_original != seq_gff_start_updated)
-            changed_end   = (seq_gff_end_original   != seq_gff_end_updated)
             is_gene = numpy.array([
                 (gff['data'][ix]['type'] == 'gene')
                 for ix in index_gff_seq
-            ])
+            ], dtype=bool)
+            changed_start = (seq_gff_start_original != seq_gff_start_updated)
+            changed_end = (seq_gff_end_original != seq_gff_end_updated)
 
             num_justified_start_coordinate += changed_start.sum()
             num_justified_end_coordinate   += changed_end.sum()
-            num_justified_gff_gene         += (is_gene & (changed_start | changed_end)).sum()
+            justified_changes = numpy.logical_and(is_gene, numpy.logical_or(changed_start, changed_end))
+            num_justified_gff_gene += justified_changes.sum()
 
         # Summary
         sys.stderr.write(
