@@ -4,43 +4,35 @@ on: [push]
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
     strategy:
       matrix:
         python-version: ["pypy3.10", "3.9", "3.10", "3.11", "3.12", "3.13"]
 
     steps:
-      - uses: actions/checkout@v4
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-      # You can test your matrix by printing the current Python version
-      - name: Display Python version
-        run: python -c "import sys; print(sys.version)"
+    - uses: actions/checkout@v4
 
-#      - name: Set up Python
-#        uses: actions/setup-python@v5
-#        with:
-#          python-version: '3.8'
-    
-      - name: Install Miniconda
-        uses: conda-incubator/setup-miniconda@v2
-        with:
-          activate-environment: base
-          auto-activate-base: true
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
 
-      - name: Create and activate a new environment
-        run: |
-          conda create --name build-env python=${{ matrix.python-version }} -y
-          conda activate build-env
-    
-      - name: Install Conda Build
-        run: conda install conda-build
-    
-      - name: Build Conda Recipe
-        run: conda build conda-recipe/
+    - name: Install Miniconda
+      uses: conda-incubator/setup-miniconda@v2
+      with:
+        activate-environment: base
+        auto-activate-base: true
+
+    - name: Create and activate a new environment
+      run: |
+        conda create --name build-env python=${{ matrix.python-version }} -y
+        echo "conda activate build-env" >> $GITHUB_ENV
+
+    - name: Install Conda Build
+      run: conda install conda-build
+
+    - name: Build Conda Recipe
+      run: conda build conda-recipe/
 
   upload:
     needs: build
@@ -63,7 +55,7 @@ jobs:
     - name: Create and activate a new environment
       run: |
         conda create --name upload-env python=${{ matrix.python-version }} -y
-        conda activate upload-env
+        echo "conda activate upload-env" >> $GITHUB_ENV
 
     - name: Install anaconda-client
       run: conda install anaconda-client
@@ -72,45 +64,3 @@ jobs:
       run: |
         anaconda login --username ${{ secrets.ANACONDA_USERNAME }} --password ${{ secrets.ANACONDA_PASSWORD }}
         anaconda upload /path/to/your/conda-package.tar.bz2 --label main
-
-    
-
-# # This workflow will install Python dependencies, run tests and lint with a single version of Python
-# # For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python
-
-# name: Python application
-
-# on:
-#   push:
-#     branches: [ "master" ]
-#   pull_request:
-#     branches: [ "master" ]
-
-# permissions:
-#   contents: read
-
-# jobs:
-#   build:
-
-#     runs-on: ubuntu-latest
-
-#     steps:
-#     - uses: actions/checkout@v4
-#     - name: Set up Python 3.10
-#       uses: actions/setup-python@v3
-#       with:
-#         python-version: "3.10"
-#     - name: Install dependencies
-#       run: |
-#         python -m pip install --upgrade pip
-#         pip install flake8 pytest
-#         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-#     - name: Lint with flake8
-#       run: |
-#         # stop the build if there are Python syntax errors or undefined names
-#         flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-#         # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
-#         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
-#     - name: Test with pytest
-#       run: |
-#         pytest
