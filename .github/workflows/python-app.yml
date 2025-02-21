@@ -1,4 +1,4 @@
-name: Python package
+name: Conda Recipe Build and Upload
 
 on: [push]
 
@@ -30,13 +30,17 @@ jobs:
         with:
           activate-environment: base
           auto-activate-base: true
+
+      - name: Create and activate a new environment
+        run: |
+          conda create --name build-env python=${{ matrix.python-version }} -y
+          conda activate build-env
     
       - name: Install Conda Build
         run: conda install conda-build
     
       - name: Build Conda Recipe
         run: conda build conda-recipe/
-
 
   upload:
     needs: build
@@ -55,6 +59,11 @@ jobs:
       with:
         activate-environment: base
         auto-activate-base: true
+
+    - name: Create and activate a new environment
+      run: |
+        conda create --name upload-env python=${{ matrix.python-version }} -y
+        conda activate upload-env
 
     - name: Install anaconda-client
       run: conda install anaconda-client
