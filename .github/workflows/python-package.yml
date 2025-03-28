@@ -8,6 +8,7 @@ on:
     branches: [ "sub1" ]
   pull_request:
     branches: [ "sub1" ]
+  workflow_dispatch:  # 手動実行を許可
 
 jobs:
   build:
