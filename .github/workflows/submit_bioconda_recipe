@@ -1,0 +1,47 @@
+name: Submit Bioconda Recipe
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  submit-bioconda:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: リポジトリのチェックアウト
+        uses: actions/checkout@v4
+
+      - name: Biocondaのセットアップ
+        run: |
+          git clone https://github.com/bioconda/bioconda-recipes.git
+          cd bioconda-recipes
+          git remote add fork https://github.com/kamome1201/bioconda-recipes.git
+          git fetch --all
+          git checkout -b add-your-package
+
+      - name: Condaレシピの追加
+        run: |
+          mkdir -p bioconda-recipes/recipes/cdskit
+          cp meta.yaml bioconda-recipes/recipes/cdskit/
+          cp build.sh bioconda-recipes/recipes/cdskit/
+          cp your-package.tar.gz bioconda-recipes/recipes/cdskit/
+
+      - name: BiocondaのCIテスト
+        run: |
+          cd bioconda-recipes
+          conda install -y -c conda-forge conda-build
+          conda build recipes/cdskit
+
+      - name: GitHubへプッシュ & PR作成
+        env:
+          GITHUB_TOKEN: ${{ secrets.BIOCONDA_PAT }}
+        run: |
+          cd bioconda-recipes
+          git config --global user.email "usuke.a62@gmail.com"
+          git config --global user.name "kamome1201"
+          git add recipes/cdskit
+          git commit -m "Add new package: cdskit"
+          git push fork cdskit
+          gh pr create --base master --head add-your-package --title "Add cdskit" --body "Auto-generated Bioconda recipe"
