@@ -27,11 +27,19 @@ def test_match_case():
     assert match_test(1) == "one"
     assert match_test(3) == "other"
 
+# Python 3.11 以上でのみ ExceptionGroup をインポート
+if sys.version_info >= (3, 11):
+    from exceptiongroup import ExceptionGroup  # Python 3.11 以上のみ
+else:
+    ExceptionGroup = None  # それ以前のバージョンでは None を設定
+
 @pytest.mark.skipif(sys.version_info < (3,11), reason="Python 3.11 未満では実行しない")
 def test_exception_group():
     """Python 3.11 以上で追加された ExceptionGroup のテスト"""
+    if ExceptionGroup is None:
+        pytest.skip("ExceptionGroup は Python 3.11 以上でのみ利用可能")
+
     try:
         raise ExceptionGroup("multiple errors", [ValueError("error1"), TypeError("error2")])
     except ExceptionGroup as e:
         assert len(e.exceptions) == 2
-
