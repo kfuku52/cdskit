@@ -26,6 +26,7 @@ jobs:
       - name: meta.yamlの自動生成
         run: |
           mkdir -p recipes/cdskit
+          ls -l bioconda-recipes/recipes
           cat <<EOF > recipes/cdskit/meta.yaml
           {% set name = "cdskit" %}
           {% set version = "0.1.0" %}
