@@ -20,11 +20,11 @@ jobs:
           cat <<EOF > bioconda-recipes/recipes/cdskit/meta.yaml
           package:
             name: "cdskit"
-            version: "1.0.0"
+            version: "0.1.0"
 
           source:
-            url: "https://example.com/your-package.tar.gz"
-            sha256: "your_sha256_hash"
+            url: "https://github.com/kamome1201/cdskit/archive/refs/tags/0.1.0.tar.gz"
+            sha256: "61b6a2b402a21427f4181ddaff6d9f635ab14f0a44c6bfe1958a02061f20130e"
 
           build:
             number: 0
@@ -41,7 +41,7 @@ jobs:
               - cdskit
 
           about:
-            home: "https://github.com/your-repo/cdskit"
+            home: "https://github.com/kamome1201/cdskit"
             license: "MIT"
             summary: "A toolkit for CDS analysis"
           EOF
