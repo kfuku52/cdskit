@@ -14,20 +14,37 @@ jobs:
       - name: リポジトリのチェックアウト
         uses: actions/checkout@v4
 
-      - name: Biocondaのセットアップ
-        run: |
-          git clone https://github.com/bioconda/bioconda-recipes.git
-          cd bioconda-recipes
-          git remote add fork https://github.com/kamome1201/bioconda-recipes.git
-          git fetch --all
-          git checkout -b add-your-package
-
-      - name: Condaレシピの追加
+      - name: meta.yamlの自動生成
         run: |
           mkdir -p bioconda-recipes/recipes/cdskit
-          cp cdskit/meta.yaml bioconda-recipes/recipes/cdskit/
-          cp cdskit/build.sh bioconda-recipes/recipes/cdskit/
-          cp cdskit/your-package.tar.gz bioconda-recipes/recipes/cdskit/
+          cat <<EOF > bioconda-recipes/recipes/cdskit/meta.yaml
+          package:
+            name: "cdskit"
+            version: "1.0.0"
+
+          source:
+            url: "https://example.com/your-package.tar.gz"
+            sha256: "your_sha256_hash"
+
+          build:
+            number: 0
+            script: "build.sh"
+
+          requirements:
+            build:
+              - python
+            run:
+              - python
+
+          test:
+            imports:
+              - cdskit
+
+          about:
+            home: "https://github.com/your-repo/cdskit"
+            license: "MIT"
+            summary: "A toolkit for CDS analysis"
+          EOF
 
       - name: BiocondaのCIテスト
         run: |
@@ -42,7 +59,7 @@ jobs:
           cd bioconda-recipes
           git config --global user.email "usuke.a62@gmail.com"
           git config --global user.name "kamome1201"
-          git add recipes/cdskit
-          git commit -m "Add new package: cdskit"
+          git add recipes/cdskit/meta.yaml
+          git commit -m "Auto-generate meta.yaml and add cdskit recipe"
           git push fork add-your-package
           gh pr create --base main --head add-your-package --title "Add cdskit" --body "Auto-generated Bioconda recipe"
