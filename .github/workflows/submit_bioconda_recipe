@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:  # 手動実行を許可
 
 jobs:
   submit-bioconda:
