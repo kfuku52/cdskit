@@ -13,14 +13,26 @@ jobs:
     steps:
       - name: リポジトリのチェックアウト
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false  # 後でトークンを明示的に設定するため
+
+      - name: Bioconda 環境のセットアップ
+        run: |
+          sudo apt-get update && sudo apt-get install -y git
+          conda create -n bioconda -y -c conda-forge -c bioconda bioconda-utils conda-build
+          echo "source activate bioconda" >> ~/.bashrc
+          source ~/.bashrc
 
       - name: meta.yamlの自動生成
         run: |
-          mkdir -p bioconda-recipes/recipes/cdskit
-          cat <<EOF > bioconda-recipes/recipes/cdskit/meta.yaml
+          mkdir -p recipes/cdskit
+          cat <<EOF > recipes/cdskit/meta.yaml
+          {% set name = "cdskit" %}
+          {% set version = "0.1.0" %}
+          
           package:
-            name: "cdskit"
-            version: "0.1.0"
+            name: '{{ name|lower }}'
+            version: '{{ version }}'
 
           source:
             url: "https://github.com/kamome1201/cdskit/archive/refs/tags/0.1.0.tar.gz"
@@ -28,7 +40,10 @@ jobs:
 
           build:
             number: 0
-            script: "build.sh"
+            noarch: python
+            entry_points:
+              - biotdg = biotdg:main
+            script: "{{ PYTHON }} -m pip install . -vv --ignore-installed --no-deps"
 
           requirements:
             build:
@@ -43,23 +58,33 @@ jobs:
           about:
             home: "https://github.com/kamome1201/cdskit"
             license: "MIT"
-            summary: "A toolkit for CDS analysis"
+            summary: "CDSKIT is a Python program that processes DNA sequences, especially protein-coding sequences."
           EOF
 
-      - name: BiocondaのCIテスト
+      - name: BiocondaのCIテスト (`bioconda-utils build` を使用)
         run: |
-          cd bioconda-recipes
-          conda install -y -c conda-forge conda-build
-          conda build recipes/cdskit
+          source activate bioconda
+          bioconda-utils build --packages recipes/cdskit --docker --mulled-test
 
-      - name: GitHubへプッシュ & PR作成
+      - name: Biocondaフォークリポジトリへプッシュ & PR作成
         env:
           GITHUB_TOKEN: ${{ secrets.BIOCONDA_PAT }}
         run: |
-          cd bioconda-recipes
           git config --global user.email "usuke.a62@gmail.com"
           git config --global user.name "kamome1201"
+          
+          # Fork したリポジトリをセットアップ
+          git remote add fork https://github.com/kamome1201/bioconda-recipes.git
+          
+          # 新しいブランチを作成
+          git checkout -b add-cdskit
           git add recipes/cdskit/meta.yaml
           git commit -m "Auto-generate meta.yaml and add cdskit recipe"
-          git push fork add-your-package
-          gh pr create --base main --head add-your-package --title "Add cdskit" --body "Auto-generated Bioconda recipe"
+          git push fork add-cdskit
+
+          # PRの作成
+          GH_TOKEN=${{ secrets.BIOCONDA_PAT }} gh pr create \
+            --base main \
+            --head kamome1201:add-cdskit \
+            --title "Add cdskit" \
+            --body "Auto-generated Bioconda recipe"
