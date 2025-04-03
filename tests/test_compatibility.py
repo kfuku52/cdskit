@@ -15,17 +15,21 @@ def test_typing_annotations():
 @pytest.mark.skipif(sys.version_info < (3,10), reason="Python 3.10 未満では実行しない")
 def test_match_case():
     """Python 3.10 以上で追加された match-case 文のテスト"""
-    def match_test(value):
-        match value:
-            case 1:
-                return "one"
-            case 2:
-                return "two"
-            case _:
-                return "other"
     
-    assert match_test(1) == "one"
-    assert match_test(3) == "other"
+    if sys.version_info >= (3,10):
+        exec("""
+def match_test(value):
+    match value:
+        case 1:
+            return "one"
+        case 2:
+            return "two"
+        case _:
+            return "other"
+
+assert match_test(1) == "one"
+assert match_test(3) == "other"
+""")
 
 # Python 3.11 以上では builtins から ExceptionGroup を取得
 try:
