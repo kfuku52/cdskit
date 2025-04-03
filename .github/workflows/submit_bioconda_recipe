@@ -25,9 +25,9 @@ jobs:
       - name: Condaレシピの追加
         run: |
           mkdir -p bioconda-recipes/recipes/cdskit
-          cp meta.yaml bioconda-recipes/recipes/cdskit/
-          cp build.sh bioconda-recipes/recipes/cdskit/
-          cp your-package.tar.gz bioconda-recipes/recipes/cdskit/
+          cp cdskit/meta.yaml bioconda-recipes/recipes/cdskit/
+          cp cdskit/build.sh bioconda-recipes/recipes/cdskit/
+          cp cdskit/your-package.tar.gz bioconda-recipes/recipes/cdskit/
 
       - name: BiocondaのCIテスト
         run: |
@@ -44,5 +44,5 @@ jobs:
           git config --global user.name "kamome1201"
           git add recipes/cdskit
           git commit -m "Add new package: cdskit"
-          git push fork cdskit
-          gh pr create --base master --head add-your-package --title "Add cdskit" --body "Auto-generated Bioconda recipe"
+          git push fork add-your-package
+          gh pr create --base main --head add-your-package --title "Add cdskit" --body "Auto-generated Bioconda recipe"
