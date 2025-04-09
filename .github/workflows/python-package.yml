@@ -3,10 +3,10 @@ name: Python Compatibility Check
 on:
   push:
     branches:
-      - main
+      - sub1
   pull_request:
     branches:
-      - main
+      - sub1
   workflow_dispatch:  # 手動実行を許可
 
 jobs:
