@@ -1,91 +1,47 @@
-name: Submit Bioconda Recipe
-
 on:
   push:
-    branches:
-      - main
-  workflow_dispatch:  # 手動実行を許可
+    tags:
+      - '*.*.*'
+  workflow_dispatch:
 
 jobs:
   submit-bioconda:
     runs-on: ubuntu-latest
 
     steps:
-      - name: リポジトリのチェックアウト
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
-          persist-credentials: false  # 後でトークンを明示的に設定するため
+          path: cdskit
+          fetch-depth: 0
 
-      - name: Bioconda 環境のセットアップ
+      - uses: actions/checkout@v4
+        with:
+          repository: kamome1201/bioconda-recipes
+          token: ${{ secrets.BIOCONDA_PAT }}
+          path: bioconda-recipes
+
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          channels: conda-forge,bioconda,defaults
+          auto-activate-base: false
+          python-version: "3.10"
+
+      - name: 最新版レシピ作成
+        shell: bash -l {0}
         run: |
-          sudo apt-get update && sudo apt-get install -y git
-          conda create -n bioconda -y -c conda-forge -c bioconda bioconda-utils conda-build
-          echo "source activate bioconda" >> ~/.bashrc
-          source ~/.bashrc
+          VERSION=$(git -C cdskit describe --tags --abbrev=0 | sed 's/^v//')
+          URL="https://github.com/kamome1201/cdskit/archive/refs/tags/v${VERSION}.tar.gz"
+          SHA256=$(curl -L ${URL} | sha256sum | cut -d' ' -f1)
+          export VERSION URL SHA256
+          mkdir -p bioconda-recipes/recipes/cdskit
+          # meta.yaml生成（上記参照）
 
-      - name: meta.yamlの自動生成
-        run: |
-          mkdir -p recipes/cdskit
-          ls -l bioconda-recipes/recipes
-          cat <<EOF > recipes/cdskit/meta.yaml
-          {% set name = "cdskit" %}
-          {% set version = "0.1.0" %}
-          
-          package:
-            name: '{{ name|lower }}'
-            version: '{{ version }}'
-
-          source:
-            url: "https://github.com/kamome1201/cdskit/archive/refs/tags/0.1.0.tar.gz"
-            sha256: "61b6a2b402a21427f4181ddaff6d9f635ab14f0a44c6bfe1958a02061f20130e"
-
-          build:
-            number: 0
-            noarch: python
-            entry_points:
-              - biotdg = biotdg:main
-            script: "{{ PYTHON }} -m pip install . -vv --ignore-installed --no-deps"
-
-          requirements:
-            build:
-              - python
-            run:
-              - python
-
-          test:
-            imports:
-              - cdskit
-
-          about:
-            home: "https://github.com/kamome1201/cdskit"
-            license: "MIT"
-            summary: "CDSKIT is a Python program that processes DNA sequences, especially protein-coding sequences."
-          EOF
-
-      - name: BiocondaのCIテスト (`bioconda-utils build` を使用)
-        run: |
-          source activate bioconda
-          bioconda-utils build --packages recipes/cdskit --docker --mulled-test
-
-      - name: Biocondaフォークリポジトリへプッシュ & PR作成
-        env:
-          GITHUB_TOKEN: ${{ secrets.BIOCONDA_PAT }}
-        run: |
-          git config --global user.email "usuke.a62@gmail.com"
-          git config --global user.name "kamome1201"
-          
-          # Fork したリポジトリをセットアップ
-          git remote add fork https://github.com/kamome1201/bioconda-recipes.git
-          
-          # 新しいブランチを作成
-          git checkout -b add-cdskit
-          git add recipes/cdskit/meta.yaml
-          git commit -m "Auto-generate meta.yaml and add cdskit recipe"
-          git push fork add-cdskit
-
-          # PRの作成
-          GH_TOKEN=${{ secrets.BIOCONDA_PAT }} gh pr create \
-            --base main \
-            --head kamome1201:add-cdskit \
-            --title "Add cdskit" \
-            --body "Auto-generated Bioconda recipe"
+      - name: PR作成
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.BIOCONDA_PAT }}
+          path: bioconda-recipes
+          commit-message: "Add/update cdskit recipe v${{ env.VERSION }}"
+          branch: "add-cdskit-v${{ env.VERSION }}"
+          base: master
+          title: "Add/update cdskit recipe v${{ env.VERSION }}"
