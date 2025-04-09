@@ -14,7 +14,8 @@ jobs:
           path: cdskit
           fetch-depth: 0
 
-      - uses: actions/checkout@v4
+      - name: フォークしたbioconda-recipesをチェックアウト
+        uses: actions/checkout@v4
         with:
           repository: kamome1201/bioconda-recipes
           token: ${{ secrets.BIOCONDA_PAT }}
