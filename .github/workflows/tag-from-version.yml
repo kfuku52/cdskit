@@ -1,0 +1,43 @@
+name: Auto Tag from Version
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Extract version from __init__.py
+        id: get_version
+        run: |
+          VERSION=$(grep -oP "__version__\s*=\s*'\K[0-9.]+" cdskit/__init__.py)
+          echo "Extracted version: $VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Check if tag exists
+        id: check_tag
+        run: |
+          TAG="v${{ steps.get_version.outputs.version }}"
+          echo "Checking tag $TAG"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag already exists. Skipping."
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Tag does not exist. Will create."
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+
+      - name: Create and push tag
+        if: steps.check_tag.outputs.exists == 'false'
+        run: |
+          git config user.name "kamome1201"
+          git config user.email "usuke.a62@gmail.com"
+          git tag "v${{ steps.get_version.outputs.version }}"
+          git push origin "v${{ steps.get_version.outputs.version }}"
