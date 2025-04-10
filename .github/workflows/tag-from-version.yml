@@ -33,6 +33,7 @@ jobs:
           else
             echo "Tag does not exist. Will create."
             echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Create and push tag
         if: steps.check_tag.outputs.exists == 'false'
@@ -41,3 +42,8 @@ jobs:
           git config user.email "usuke.a62@gmail.com"
           git tag "${{ steps.get_version.outputs.version }}"
           git push origin "${{ steps.get_version.outputs.version }}"
+          
+      - name: Fail if tag exists
+        if: steps.check_tag.outputs.exists == 'true'
+        run: |
+          echo "Tag already exists. Nothing to do."
