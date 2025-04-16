@@ -4,12 +4,21 @@
 **CDSKIT** ([/sidieskit/](http://ipa-reader.xyz/?text=sidieskit&voice=Joanna)) is a Python program that processes DNA sequences, especially protein-coding sequences. Many functions of this program are designed to handle DNA sequences using codons (sets of three nucleotides) as the unit, and therefore, edits the coding sequences without causing a frameshift. [All sequence formats supported by Biopython](https://biopython.org/wiki/SeqIO) are available in this tool for both inputs and outputs.
 
 ## Installation
-```
-# Installation with pip
-pip install git+https://github.com/kfuku52/cdskit
+The latest version of CDSKIT is available from [Bioconda](https://anaconda.org/bioconda/cdskit). For users requiring a `conda` installation, please refer to [Miniforge](https://github.com/conda-forge/miniforge) for a lightweight conda environment.
 
-# This should show complete options if installation is successful
+#### Install from Bioconda
+```
+conda install bioconda::cdskit
+```
+
+#### Verify the installation by displaying the available options
+```
 cdskit -h 
+```
+
+#### (For advanced users) Install the development version from GitHub
+```
+pip install git+https://github.com/kfuku52/cdskit
 ```
 
 ## Subcommands
