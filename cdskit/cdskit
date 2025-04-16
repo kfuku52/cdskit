@@ -41,6 +41,15 @@ p_gffio.add_argument('--outgff', metavar='PATH', default='out.gff', type=str, re
 
 
 
+def strtobool(val):
+    val = val.lower()
+    if val in ("y", "yes", "t", "true", "on", "1"):
+        return True
+    elif val in ("n", "no", "f", "false", "off", "0"):
+        return False
+    else:
+        raise ValueError(f"invalid truth value {val!r}")
+
 def command_accession2fasta(args):
     from cdskit.accession2fasta import accession2fasta_main
     sys.stderr.write('cdskit accession2fasta: started at {}\n'.format(datetime.now()))
@@ -277,15 +286,6 @@ def command_stats(args):
 help_stats = 'Printing sequence statistics. See `cdskit stats -h`'
 p_stats = subparsers.add_parser('stats', help=help_stats, parents=[p_version,p_infile])
 p_stats.set_defaults(handler=command_stats)
-
-def strtobool(val):
-    val = val.lower()
-    if val in ("y", "yes", "t", "true", "on", "1"):
-        return True
-    elif val in ("n", "no", "f", "false", "off", "0"):
-        return False
-    else:
-        raise ValueError(f"invalid truth value {val!r}")
 
 
 # Handler
