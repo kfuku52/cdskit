@@ -4,7 +4,6 @@ import argparse
 import sys
 
 from datetime import datetime
-from distutils.util import strtobool
 
 from cdskit.__init__ import __version__
 
@@ -278,6 +277,15 @@ def command_stats(args):
 help_stats = 'Printing sequence statistics. See `cdskit stats -h`'
 p_stats = subparsers.add_parser('stats', help=help_stats, parents=[p_version,p_infile])
 p_stats.set_defaults(handler=command_stats)
+
+def strtobool(val):
+    val = val.lower()
+    if val in ("y", "yes", "t", "true", "on", "1"):
+        return True
+    elif val in ("n", "no", "f", "false", "off", "0"):
+        return False
+    else:
+        raise ValueError(f"invalid truth value {val!r}")
 
 
 # Handler
