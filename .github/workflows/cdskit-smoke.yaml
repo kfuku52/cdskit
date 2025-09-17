@@ -2,7 +2,7 @@ name: cdskit smoke
 
 on:
   push:
-    branches: [ master, main ]
+    branches: [ "**" ]
   pull_request:
   workflow_dispatch:
 
