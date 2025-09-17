@@ -59,4 +59,6 @@ jobs:
           ATGA
           FA
           cdskit -h | head -n 20
-          cat mini.fa | cdskit pad | cdskit split | head -n 20
+          # pad → printseq の最短パイプが通るか
+          cat mini.fa | cdskit pad | cdskit printseq | head -n 20
+
