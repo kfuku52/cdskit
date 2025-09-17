@@ -20,12 +20,7 @@ def test_cli_help_runs():
 
 def test_minimal_pipeline_pad_and_split():
     # 最小のFASTA（長さが3の倍数ではない）を作って、padでフレーム調整
-    fasta = dedent(""">
-    s1
-    ATGAA
-    >s2
-    ATGA
-    """).strip().replace("\n", "\n")
+    fasta = ">s1\nATGAA\n>s2\nATGA\n"
     # pad
     pad_out = run(["cdskit", "pad"], inp=fasta).stdout.decode()
     # 3の倍数になっているかをBiopythonで検証
