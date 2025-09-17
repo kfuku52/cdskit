@@ -28,8 +28,8 @@ def test_minimal_pipeline_pad_and_split():
     lengths_mod = [len(rec.seq) % 3 for rec in SeqIO.parse(tmp, "fasta")]
     assert all(m == 0 for m in lengths_mod)
 
-    # printseq で FASTA が stdout に出ることを確認
-    printed = run(["cdskit", "printseq"], inp=pad_out).stdout.decode()
+    # printseq はデフォルトでファイルI/Oなので、stdin/stdout を明示
+    printed = run(["cdskit", "printseq", "-i", "-", "-o", "-"], inp=pad_out).stdout.decode()
     tmp2 = Path("tmp_print.fa"); tmp2.write_text(printed)
     n_records = sum(1 for _ in SeqIO.parse(tmp2, "fasta"))
     assert n_records == 2
