@@ -1,0 +1,62 @@
+name: cdskit smoke
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  pip-smoke:
+    name: pip smoke (py${{ matrix.python-version }} • ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install package & test deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install pytest biopython
+
+      - name: Run smoke tests
+        run: |
+          pytest -q
+
+  bioconda-smoke:
+    # Biocondaの公開パッケージが入るかの健全性チェック
+    name: bioconda smoke (py3.11 • ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up micromamba
+        uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-name: cdskit-smoke
+          create-args: >-
+            python=3.11
+            cdskit
+          channels: conda-forge,bioconda
+
+      - name: Run a tiny pipeline
+        shell: bash -l {0}
+        run: |
+          cat > mini.fa <<'FA'
+          >s1
+          ATGAA
+          >s2
+          ATGA
+          FA
+          # ヘルプが出るか
+          cdskit -h | head -n 20
+          # 最小入力で pad→split が動くか
+          cat mini.fa | cdskit pad | cdskit split | head -n 20
