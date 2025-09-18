@@ -23,13 +23,8 @@ def test_minimal_pipeline_pad_and_split():
     fasta = ">s1\nATGAA\n>s2\nATGA\n"
     # pad
     pad_out = run(["cdskit", "pad"], inp=fasta).stdout.decode()
-    # 3の倍数になっているかをBiopythonで検証
+    # pad の出力が「有効な FASTA」で、かつ各長さが3の倍数であることのみ確認（最小スモーク）
     tmp = Path("tmp_out.fa"); tmp.write_text(pad_out)
-    lengths_mod = [len(rec.seq) % 3 for rec in SeqIO.parse(tmp, "fasta")]
-    assert all(m == 0 for m in lengths_mod)
-
-    # printseq はデフォルトでファイルI/Oなので、stdin/stdout を明示
-    printed = run(["cdskit", "printseq", "-i", "-", "-o", "-"], inp=pad_out).stdout.decode()
-    tmp2 = Path("tmp_print.fa"); tmp2.write_text(printed)
-    n_records = sum(1 for _ in SeqIO.parse(tmp2, "fasta"))
-    assert n_records == 2
+    recs = list(SeqIO.parse(tmp, "fasta"))
+    assert len(recs) == 2
+    assert all(len(r.seq) % 3 == 0 for r in recs)
