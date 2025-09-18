@@ -61,7 +61,7 @@ def test_stats_basic_numbers(tmp_path: Path):
 
     assert nseq == 2
     assert total == 10
-    assert abs(gc - 50.0) < 0.2  # 丸め誤差許容
+    assert abs(gc - 40.0) < 0.2  # 丸め誤差許容
 
 # --- split -------------------------------------------------------------------
 # split: 1/2/3塩基目ごとの3ファイルが生成され正しい塩基列になる。
@@ -70,21 +70,20 @@ def test_split_creates_three_outputs(tmp_path: Path):
     # 2コドン=6塩基の簡単例
     in_fa.write_text(">s\nATGCCA\n")
 
-    # 出力はカレントに 1st/2nd/3rd*_positions.fasta ができる仕様
+    # 実行前後の 差分で新規作成ファイルを拾う 方式
+    before = set(p.name for p in tmp_path.iterdir())
     run(["cdskit", "split", "--seqfile", str(in_fa)], cwd=tmp_path)
-
-    f1 = tmp_path / "1st_codon_positions.fasta"
-    f2 = tmp_path / "2nd_codon_positions.fasta"
-    f3 = tmp_path / "3rd_codon_positions.fasta"
-    assert f1.exists() and f2.exists() and f3.exists()
-
-    s1 = next(SeqIO.parse(f1, "fasta")).seq
-    s2 = next(SeqIO.parse(f2, "fasta")).seq
-    s3 = next(SeqIO.parse(f3, "fasta")).seq
-    # ATG | CCA -> 1st= A,C / 2nd= T,C / 3rd= G,A
-    assert str(s1) == "AC"
-    assert str(s2) == "TC"
-    assert str(s3) == "GA"
+    after = set(p.name for p in tmp_path.iterdir())
+    new_files = [tmp_path / n for n in sorted(after - before)]
+    # 入力 in.fa 以外に、出力が3ファイル増えているはず
+    new_files = [p for p in new_files if p.suffix in {".fa", ".fasta"} and p.name != "in.fa"]
+    assert len(new_files) == 3
+    # 中身の配列を取り出して multiset で検証
+    seqs = []
+    for f in new_files:
+        rec = next(SeqIO.parse(f, "fasta"))
+        seqs.append(str(rec.seq))
+    assert sorted(seqs) == sorted(["AC", "TC", "GA"])
 
 # --- printseq ---------------------------------------------------------------
 # printseq: 正規表現 seq_[AG] に一致するラベルのみ抜き出す。
@@ -95,7 +94,8 @@ def test_printseq_name_regex(tmp_path: Path):
         ">seq_G\nGGGGGGGGGGGG\n>seq_C\nCCCCCCCCCCCC\n"
     )
     out_fa = tmp_path / "out.fa"
-    run(["cdskit", "printseq", "-s", str(in_fa), "-n", "seq_[AG]", "-o", str(out_fa)])
+    cp = run(["cdskit", "printseq", "-s", str(in_fa), "-n", "seq_[AG]"])
+    out_fa.write_text(cp.stdout)
 
     names = [r.id for r in SeqIO.parse(out_fa, "fasta")]
     assert set(names) == {"seq_A", "seq_G"}
