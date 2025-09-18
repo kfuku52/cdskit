@@ -308,6 +308,7 @@ def cdskit_backtrim_to_file(untrimmed_codon_fa: Path, trimmed_aa_aln_fa: Path, o
 
 
 # =========================== backtrim ===========================
+# backtrim：AA 側のトリム（M-PG-）に対応してコドン側が 3 か所だけ残ること。Wikiの使い方どおり --trimmed_aa_aln 系を試します。
 
 def test_backtrim_respects_trimmed_aa(tmp_path: Path):
     """
@@ -340,6 +341,7 @@ def test_backtrim_respects_trimmed_aa(tmp_path: Path):
     assert set(aas) == {"MPG"}
 
 # =========================== hammer ===========================
+# hammer：ギャップだらけの列を除去し、アラインメント幅が縮むこと（Wikiの例と同趣旨）。
 
 def test_hammer_reduces_alignment_width(tmp_path: Path):
     """
@@ -347,13 +349,14 @@ def test_hammer_reduces_alignment_width(tmp_path: Path):
     → アラインメント幅が狭くなることを確認（レコード数は保持）。
     """
     in_fa = tmp_path / "in.fa"
+# すべて長さ18。ギャップ列を多めに含める（hammerで幅が縮む）
     in_fa.write_text(
-        ">seq1\n---ATGTAAATTATGTTGAAG---TGATGA---\n"
-        ">seq2\n---ATGTNAATTATGTTGAAG---TATTGA---\n"
-        ">seq3\n---ATGTGAATTATGTTGAAG---TATTGA---\n"
-        ">seq4\n---ATGTAAATT---TTGANG---TATTGATTTTCATCA\n"
-        ">seq5\n---ATGTAAATTATGTTGANG---TATTGATTTTCATCA\n"
-        ">seq6\n---ATGTAAATT---TTGANG---TATTGATTTTCATCA\n"
+        ">seq1\nATG---AAACCCGGGTTT\n"
+        ">seq2\nATG---AAACCC---TTT\n"
+        ">seq3\nATGAAANNNCCC---TTT\n"
+        ">seq4\nATG---AAACCCGGG---\n"
+        ">seq5\nATG---NNNCCC---TTT\n"
+        ">seq6\nATG---AAACCCGGGTTT\n"
     )
     out_fa = tmp_path / "out.fa"
     cdskit_to_file("hammer", in_fa, out_fa, extra_args=["--nail", "4"])
@@ -369,6 +372,7 @@ def test_hammer_reduces_alignment_width(tmp_path: Path):
     # https://github.com/kfuku52/cdskit/wiki/cdskit-hammer
 
 # =========================== parsegb ===========================
+# parsegb：GenBank → FASTA に変換され、配列長が一致すること。
 
 def test_parsegb_basic_conversion(tmp_path: Path):
     """
@@ -376,17 +380,18 @@ def test_parsegb_basic_conversion(tmp_path: Path):
     ヘッダ名は実装依存なので件数と配列長のみ確認。
     """
     gb = tmp_path / "in.gb"
-    # 最小限のGenBankレコード（1本、24bp）
+    # 最小GenBank（1本、24bp）。ORIGIN は 24 塩基に合わせておく。
     gb.write_text(
         "LOCUS       TESTREC                 24 bp    DNA     linear   XXX 01-JAN-2000\n"
         "DEFINITION  dummy.\n"
         "ACCESSION   ABC123\n"
         "ORIGIN\n"
-        "        1 atgcgtacgt acgtacgtacg ta\n"
+        "        1 atgcatgcat gcatgcatgc atgc\n"
         "//\n"
     )
     out_fa = tmp_path / "out.fa"
-    cdskit_to_file("parsegb", gb, out_fa)
+    # organism 等を使わない名前フォーマットに固定
+    cdskit_to_file("parsegb", gb, out_fa, extra_args=["--seqnamefmt", "accessions"])
 
     recs = list(SeqIO.parse(out_fa, "fasta"))
     assert len(recs) == 1
