@@ -24,7 +24,6 @@ jobs:
         with:
           environment-file: ci/environment.yml   # ← 置き場所に合わせて
           environment-name: cdskit               # ← これで env 名を定義
-          cache-environment: true
           init-shell: bash
           generate-run-shell: true               # ← micromamba-shell が使えるようになる
           cache-environment: false     # ← 警告を出していた restore/save をやめる
