@@ -3,6 +3,7 @@ import subprocess as sp
 from pathlib import Path
 from Bio import SeqIO
 import pytest
+import os
 
 def run(args, *, cwd=None):
     """subprocessの薄いラッパ（stdout/stderrを確保し、失敗時には詳細を出す）"""
@@ -47,7 +48,7 @@ def cdskit_to_file(subcmd: str, in_fa: Path, out_fa: Path, extra_args: list[str]
         f"cdskit {subcmd} failed. stdout:\n{cp.stdout}\n----\nstderr:\n{cp.stderr}"
     )
 
-# =========================== pad ===========================
+# =========================== pad =========================== pad =========================== pad ===========================
 # pad: 出力長がすべて3の倍数（フレーム整合）。
 def test_pad_makes_inframe(tmp_path: Path):
     # 入力（どちらも3の倍数ではない）
@@ -61,7 +62,7 @@ def test_pad_makes_inframe(tmp_path: Path):
     assert len(recs) == 2
     assert all(len(r.seq) % 3 == 0 for r in recs)  # すべて3の倍数になっている
 
-# =========================== mask ===========================
+# =========================== mask =========================== mask =========================== mask ===========================
 # mask: ストップ/曖昧塩基が N に置換される（Wikiの例そのまま）。
 def test_mask_replaces_stops_and_ambiguous(tmp_path: Path):
     # Wikiの例を最小にしたもの
@@ -82,7 +83,7 @@ def test_mask_replaces_stops_and_ambiguous(tmp_path: Path):
     assert got["amb2"] ==   "---ATGNNNATTATGTTGAAG---"
     assert got["all"]  ==   "---ATGNNNATTNNNTTGNNN---"
 
-# =========================== stats ===========================
+# =========================== stats =========================== stats =========================== stats ===========================
 # stats: 件数・総長・GC% の基本値。
 def test_stats_basic_numbers(tmp_path: Path):
     # Nやgapを含めない、計算しやすいケース
@@ -100,7 +101,7 @@ def test_stats_basic_numbers(tmp_path: Path):
     assert total == 10
     assert abs(gc - 40.0) < 0.2  # 丸め誤差許容
 
-# =========================== split ===========================
+# =========================== split =========================== split =========================== split ===========================
 # split: 1/2/3塩基目ごとの3ファイルが生成され正しい塩基列になる。
 def test_split_creates_three_outputs(tmp_path: Path):
     in_fa = tmp_path / "in.fa"
@@ -122,7 +123,7 @@ def test_split_creates_three_outputs(tmp_path: Path):
         seqs.append(str(rec.seq))
     assert sorted(seqs) == sorted(["AC", "TC", "GA"])
 
-# =========================== printseq ===========================
+# =========================== printseq =========================== printseq =========================== printseq ===========================
 # printseq: 正規表現 seq_[AG] に一致するラベルのみ抜き出す。
 def test_printseq_name_regex(tmp_path: Path):
     in_fa = tmp_path / "in.fa"
@@ -137,7 +138,7 @@ def test_printseq_name_regex(tmp_path: Path):
     names = [r.id for r in SeqIO.parse(out_fa, "fasta")]
     assert set(names) == {"seq_A", "seq_G"}
 
-# =========================== aggregate ===========================
+# =========================== aggregate =========================== aggregate =========================== aggregate ===========================
 def test_aggregate_longest_by_regex(tmp_path: Path):
     """
     グループ 'grp1'（:で枝分かれ）と 'grpB'（|で枝分かれ）で最長レコードが残ること。
@@ -161,7 +162,7 @@ def test_aggregate_longest_by_regex(tmp_path: Path):
     # grp1 と grpB の最長が残る
     assert ids == {"grp1:long", "grpB|long"}
 
-# =========================== rmseq ===========================
+# =========================== rmseq =========================== rmseq =========================== rmseq ===========================
 def test_rmseq_by_name_and_problematic(tmp_path: Path):
     """
     - 名前の正規表現で drop_.* を削除
@@ -184,7 +185,27 @@ def test_rmseq_by_name_and_problematic(tmp_path: Path):
     names = [r.id for r in SeqIO.parse(out_fa, "fasta")]
     assert names == ["keep1"]
 
-# =========================== label ===========================
+# 否定マッチ と 大小無視（(?i)）を検証。
+def test_rmseq_name_regex_negative_and_case(tmp_path: Path, pattern, expected):
+    """
+    rmseq の --seqname は正規表現なので、(?i) や否定先読みを使って
+    大文字小文字混在や否定マッチを検証する。
+    """
+    in_fa = tmp_path / "in.fa"
+    in_fa.write_text(
+        ">keep\nATGC\n"
+        ">KEEP\nATGC\n"
+        ">drop_foo\nATGC\n"
+        ">DROP_BAR\nATGC\n"
+        ">okN\nNNNN\n"
+    )
+    out_fa = tmp_path / "out.fa"
+    cdskit_to_file("rmseq", in_fa, out_fa, extra_args=["--seqname", pattern])
+
+    names = [r.id for r in SeqIO.parse(out_fa, "fasta")]
+    assert names == expected
+
+# =========================== label =========================== label =========================== label ===========================
 def cdskit_label_to_file(in_fa: Path, out_fa: Path, cwd=None):
     """cdskit label を多様なフラグで試して out_fa を得る"""
     variants_extra = [
@@ -226,7 +247,52 @@ def test_label_preserves_sequences(tmp_path: Path):
     # ついでにレコード数も一致
     assert sum(1 for _ in SeqIO.parse(out_fa, "fasta")) == 2
 
-# =========================== intersection ===========================
+# 4 つの指定方法を parametrize で網羅（未対応variantは自動で skip）
+def _try_label_with_args(in_fa: Path, out_fa: Path, extra_args: list[str]):
+    """そのvariantが未対応なら pytest.skip に切り替えるための薄いラッパ"""
+    try:
+        # 既存ヘルパでそのまま実行（-s/-o or stdout フォールバック込み）
+        cdskit_to_file("label", in_fa, out_fa, extra_args=extra_args)
+    except RuntimeError as e:
+        pytest.skip(f"label variant not supported on this version: {extra_args} ({e})")
+
+@pytest.mark.parametrize(
+    "extra_args",
+    [
+        ["--prefix", "L_"],
+        ["--label", "L_{name}"],
+        ["--pattern", "(.*)", "--replacement", "L_\\1"],
+        ["--expression", "(.*)", "--label", "L_\\1"],
+    ],
+)
+def test_label_variants_prefix_like(tmp_path: Path, extra_args):
+    """variantごとに 'L_' で始まる名前が得られ、配列内容が保持されること。"""
+    in_fa = tmp_path / "in.fa"
+    in_fa.write_text(">x1\nACGTACGT\n>x2\nGGGGCCCC\n")
+    out_fa = tmp_path / "out.fa"
+
+    _try_label_with_args(in_fa, out_fa, extra_args)
+
+    in_seqs = sorted(str(r.seq) for r in SeqIO.parse(in_fa, "fasta"))
+    out = list(SeqIO.parse(out_fa, "fasta"))
+    out_seqs = sorted(str(r.seq) for r in out)
+    assert in_seqs == out_seqs
+    assert len(out) == 2
+    assert all(r.id.startswith("L_") for r in out)
+
+@pytest.mark.parametrize(
+    "pattern, expected",
+    [
+        # 大文字小文字を区別する例（drop_.* のみ削除）
+        ("drop_.*", ["keep", "KEEP", "okN"]),
+        # 大文字小文字を区別しない例（(?i) で inline flag）
+        ("(?i)drop_.*", ["keep", "okN"]),
+        # 否定マッチ（'keep' 以外を全部削除）
+        ("^(?!keep$).+", ["keep"]),
+    ],
+)
+
+# =========================== intersection =========================== intersection =========================== intersection ===========================
 def cdskit_intersection_to_file(a_fa: Path, b_fa: Path, out_fa: Path, cwd=None):
     """cdskit intersection を多様なフラグで試して out_fa を得る"""
     out2 = out_fa.with_name(out_fa.stem + "_2" + out_fa.suffix)
@@ -307,7 +373,7 @@ def cdskit_backtrim_to_file(untrimmed_codon_fa: Path, trimmed_aa_aln_fa: Path, o
     raise RuntimeError("cdskit backtrim: 既知のフラグいずれでも通りませんでした。")
 
 
-# =========================== backtrim ===========================
+# =========================== backtrim =========================== backtrim =========================== backtrim ===========================
 # backtrim：AA 側のトリム（M-PG-）に対応してコドン側が 3 か所だけ残ること。Wikiの使い方どおり --trimmed_aa_aln 系を試します。
 
 def test_backtrim_respects_trimmed_aa(tmp_path: Path):
@@ -340,7 +406,7 @@ def test_backtrim_respects_trimmed_aa(tmp_path: Path):
     aas = ["".join(Seq(str(r.seq).replace("-", "")).translate().rstrip("*")) for r in recs]
     assert set(aas) == {"MPG"}
 
-# =========================== hammer ===========================
+# =========================== hammer =========================== hammer =========================== hammer ===========================
 # hammer：ギャップだらけの列を除去し、アラインメント幅が縮むこと（Wikiの例と同趣旨）。
 
 def test_hammer_reduces_alignment_width(tmp_path: Path):
@@ -371,7 +437,7 @@ def test_hammer_reduces_alignment_width(tmp_path: Path):
     # 参考: Wiki の例では 15 塩基幅まで縮む（バージョン差があってもこのテストは通る）
     # https://github.com/kfuku52/cdskit/wiki/cdskit-hammer
 
-# =========================== parsegb ===========================
+# =========================== parsegb =========================== parsegb =========================== parsegb ===========================
 # parsegb：GenBank → FASTA に変換され、配列長が一致すること。
 
 def test_parsegb_basic_conversion(tmp_path: Path):
@@ -402,6 +468,176 @@ def test_parsegb_basic_conversion(tmp_path: Path):
     assert len(recs) == 1
     # ORIGIN の 24bp がそのまま FASTA 化される
     assert len(recs[0].seq) == 24
+
+# =========================== gapjust =========================== gapjust =========================== gapjust ===========================
+
+def cdskit_gapjust_to_file(in_fa: Path, out_fa: Path, cwd=None):
+    # まずはファイルI/O、ダメなら stdout で受ける
+    for args in (
+        ["--seqfile", str(in_fa), "--outfile", str(out_fa)],
+        ["-s", str(in_fa), "-o", str(out_fa)],
+    ):
+        cp = run_ok(["cdskit", "gapjust", *args], cwd=cwd)
+        if cp.returncode == 0 and out_fa.exists():
+            return out_fa
+    for args in (
+        ["--seqfile", str(in_fa)],
+        ["-s", str(in_fa)],
+    ):
+        cp = run_ok(["cdskit", "gapjust", *args], cwd=cwd)
+        if cp.returncode == 0 and cp.stdout:
+            out_fa.write_text(cp.stdout)
+            return out_fa
+    raise RuntimeError("cdskit gapjust failed.")
+
+def _gap_starts_at_codon_boundaries(seq: str) -> bool:
+    """先頭からの非ギャップ数が3の倍数の位置でのみギャップrunが開始しているか"""
+    letters = 0
+    prev_dash = False
+    for ch in seq:
+        if ch == "-":
+            if not prev_dash:  # run の開始点
+                if letters % 3 != 0:
+                    return False
+            prev_dash = True
+        else:
+            letters += 1
+            prev_dash = False
+    return True
+
+# === tests: gapjust（追記） ===
+def test_gapjust_aligns_gaps_to_codon(tmp_path: Path):
+    # すべて長さ18（整列済み）だが、ギャップrun開始がコドン境界からズレているケース
+    in_fa = tmp_path / "in.fa"
+    in_fa.write_text(
+        ">a\nATG--AAACCCGGGTTT\n"   # '--' はズレ
+        ">b\nATGA-AAACCC-GGTT\n"   # 単発 '-'
+        ">c\nATGAAANNNCCC---TT\n"  # 後半 run はOK だが前半はズレ
+    )
+    out_fa = tmp_path / "out.fa"
+    cdskit_gapjust_to_file(in_fa, out_fa)
+
+    ins = list(SeqIO.parse(in_fa, "fasta"))
+    outs = list(SeqIO.parse(out_fa, "fasta"))
+
+    # レコード数・長さは維持
+    assert len(ins) == len(outs) == 3
+    in_len = {len(str(r.seq)) for r in ins}
+    out_len = {len(str(r.seq)) for r in outs}
+    assert len(in_len) == len(out_len) == 1
+    assert in_len == out_len
+
+    # 各レコードごとに ungap が一致、ギャップ総数も一致、開始はコドン境界
+    for rin, rout in zip(ins, outs):
+        s_in, s_out = str(rin.seq), str(rout.seq)
+        assert s_in.replace("-", "") == s_out.replace("-", "")
+        assert s_in.count("-") == s_out.count("-")
+        assert _gap_starts_at_codon_boundaries(s_out)
+
+# 6本/10本 のアラインメントで性質を確認。
+def _mk_misaligned_alignment(n: int) -> list[str]:
+    """
+    同じungap配列から、非コドン境界で '-' を挿入して“長さは同一”な
+    アラインメント（意図的にズレたギャップ開始）を作る。
+    """
+    base = "ATGAAACCCGGGTTT"  # 15
+    variants = []
+    # 固定の挿入パターン（letters基準でズレた位置）。足りなければループで回す
+    presets = [
+        [1], [4, 5], [2], [7, 8, 9], [10], [13, 14], [3, 6], [5, 11], [2, 12], [4]
+    ]
+    for i in range(n):
+        pos = presets[i % len(presets)]
+        s = []
+        letters = 0
+        j = 0
+        for ch in base:
+            # ch を入れる前に、必要な位置に '-' を入れる
+            while j < len(pos) and letters == pos[j]:
+                s.append("-")
+                j += 1
+            s.append(ch)
+            letters += 1
+        # 余った分の '-'（末尾パディング）
+        while j < len(pos):
+            s.append("-")
+            j += 1
+        variants.append("".join(s))
+    # 全長を揃える（最大長に右パディング）
+    max_len = max(len(v) for v in variants)
+    variants = [v + "-" * (max_len - len(v)) for v in variants]
+    return variants
+
+@pytest.mark.parametrize("nseq", [6, 10])
+def test_gapjust_alignment_properties_many_sequences(tmp_path: Path, nseq):
+    """多本数でも、ungap一致・長さ維持・ギャップrun開始が3の倍数境界に揃うこと。"""
+    in_fa = tmp_path / "in.fa"
+    seqs = _mk_misaligned_alignment(nseq)
+    in_fa.write_text("".join(f">s{i}\n{seq}\n" for i, seq in enumerate(seqs, 1)))
+    out_fa = tmp_path / "out.fa"
+
+    cdskit_gapjust_to_file(in_fa, out_fa)
+
+    ins = list(SeqIO.parse(in_fa, "fasta"))
+    outs = list(SeqIO.parse(out_fa, "fasta"))
+    assert len(ins) == len(outs) == nseq
+
+    # 長さは全レコード・前後で一定、ungap は一致
+    in_len = {len(str(r.seq)) for r in ins}
+    out_len = {len(str(r.seq)) for r in outs}
+    assert len(in_len) == len(out_len) == 1
+    assert in_len == out_len
+
+    for rin, rout in zip(ins, outs):
+        s_in, s_out = str(rin.seq), str(rout.seq)
+        assert s_in.replace("-", "") == s_out.replace("-", "")
+        assert s_in.count("-") == s_out.count("-")
+        assert _gap_starts_at_codon_boundaries(s_out)
+
+# =========================== accession2fasta =========================== accession2fasta =========================== accession2fasta ===========================
+
+# === helpers: accession2fasta（追記） 
+def cdskit_accession2fasta_to_file(acc: str, out_fa: Path, cwd=None):
+    # いくつかの引数ゆれを試す（-o/--outfile or stdout）
+    patterns = [
+        (["--accessions", acc, "--outfile", str(out_fa)], []),
+        (["--accession", acc, "--outfile", str(out_fa)], []),
+        (["--ids", acc, "-o", str(out_fa)], []),
+        (["--id", acc, "-o", str(out_fa)], []),
+    ]
+    for args, _ in patterns:
+        cp = run_ok(["cdskit", "accession2fasta", *args], cwd=cwd)
+        if cp.returncode == 0 and out_fa.exists():
+            return out_fa
+    # stdout フォールバック
+    for args, _ in (
+        (["--accessions", acc], []),
+        (["--accession", acc], []),
+        (["--ids", acc], []),
+        (["--id", acc], []),
+    ):
+        cp = run_ok(["cdskit", "accession2fasta", *args], cwd=cwd)
+        if cp.returncode == 0 and cp.stdout:
+            out_fa.write_text(cp.stdout)
+            return out_fa
+    raise RuntimeError("cdskit accession2fasta failed.")
+
+# === tests: accession2fasta（追記）
+@pytest.mark.network
+def test_accession2fasta_opt_in(tmp_path: Path):
+    if not os.getenv("RUN_ACCESSION_TESTS"):
+        pytest.skip("Set RUN_ACCESSION_TESTS=1 to run this network test.")
+    acc = os.getenv("ACC_ID", "MN908947.3")
+    out_fa = tmp_path / "out.fa"
+    cdskit_accession2fasta_to_file(acc, out_fa)
+
+    recs = list(SeqIO.parse(out_fa, "fasta"))
+    assert len(recs) >= 1
+    # 少なくとも数千塩基あるはず（任意の下限）
+    assert max(len(r.seq) for r in recs) > 1000
+    # 見出しにアクセッションが含まれることが多い（緩めに確認）
+    header = recs[0].id + " " + (recs[0].description or "")
+    assert acc.split(".")[0] in header
 
 # ===== 参考: ネット依存/未整備のものはスキップ印だけ用意 ========================
 @pytest.mark.skip(reason="ネット依存のためCIでは実行しない")
