@@ -39,15 +39,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Set up micromamba
-        uses: mamba-org/setup-micromamba@v2
+      - uses: mamba-org/setup-micromamba@v1
         with:
-          environment-name: cdskit-smoke
+          environment-file: ci/environment.yml   # 既存の yml
+          environment-name: cdskit               # ← activate-environment の代わり
+          cache-environment: true
           init-shell: bash
-          activate-environment: cdskit-smoke
-          create-args: >-
-            -c conda-forge -c bioconda
-            python=3.11
-            cdskit
+          generate-run-shell: true
+
+      - name: Run smoke tests
+        shell: micromamba-shell {0}              # ← これで env が有効化されたシェルになる
+        run: |
+          pytest -q
 
       - name: Run a tiny pipeline
         shell: bash -l {0}
