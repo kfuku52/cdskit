@@ -1,4 +1,4 @@
-name: cdskit smoke
+name: cdskit ci
 
 on:
   push:
