@@ -182,3 +182,85 @@ def test_rmseq_by_name_and_problematic(tmp_path: Path):
 
     names = [r.id for r in SeqIO.parse(out_fa, "fasta")]
     assert names == ["keep1"]
+
+# ---------------- label ----------------
+def cdskit_label_to_file(in_fa: Path, out_fa: Path, cwd=None):
+    """cdskit label を多様なフラグで試して out_fa を得る"""
+    variants_extra = [
+        ["--prefix", "L_"],
+        ["--label", "L_{name}"],
+        ["--pattern", "(.*)", "--replacement", "L_\\1"],
+        ["--expression", "(.*)", "--label", "L_\\1"],
+        [],  # デフォルトで通る版
+    ]
+    # まずファイルI/O、だめならstdout
+    for extra in variants_extra:
+        for pattern in (
+            ["--seqfile", str(in_fa), "--outfile", str(out_fa)],
+            ["-s", str(in_fa), "-o", str(out_fa)],
+        ):
+            cp = run_ok(["cdskit", "label", *pattern, *extra], cwd=cwd)
+            if cp.returncode == 0 and out_fa.exists():
+                return out_fa
+        for pattern in (
+            ["--seqfile", str(in_fa)],
+            ["-s", str(in_fa)],
+        ):
+            cp = run_ok(["cdskit", "label", *pattern, *extra], cwd=cwd)
+            if cp.returncode == 0 and cp.stdout:
+                out_fa.write_text(cp.stdout)
+                return out_fa
+    raise RuntimeError("cdskit label: knownなフラグどれでも通りませんでした。")
+
+def test_label_preserves_sequences(tmp_path: Path):
+    """label は（名前は変わっても）配列内容は保持されること"""
+    in_fa = tmp_path / "in.fa"
+    in_fa.write_text(">x1\nACGTACGT\n>x2\nGGGGCCCC\n")
+    out_fa = tmp_path / "out.fa"
+    cdskit_label_to_file(in_fa, out_fa)
+
+    in_seqs = sorted(str(r.seq) for r in SeqIO.parse(in_fa, "fasta"))
+    out_seqs = sorted(str(r.seq) for r in SeqIO.parse(out_fa, "fasta"))
+    assert in_seqs == out_seqs
+    # ついでにレコード数も一致
+    assert sum(1 for _ in SeqIO.parse(out_fa, "fasta")) == 2
+
+# ---------------- intersection ----------------
+def cdskit_intersection_to_file(a_fa: Path, b_fa: Path, out_fa: Path, cwd=None):
+    """cdskit intersection を多様なフラグで試して out_fa を得る"""
+    # ファイルI/O
+    for args in (
+        ["--seqfile1", str(a_fa), "--seqfile2", str(b_fa), "--outfile", str(out_fa)],
+        ["--seqfileA", str(a_fa), "--seqfileB", str(b_fa), "--outfile", str(out_fa)],
+        ["-a", str(a_fa), "-b", str(b_fa), "-o", str(out_fa)],
+        [str(a_fa), str(b_fa), "-o", str(out_fa)],
+    ):
+        cp = run_ok(["cdskit", "intersection", *args], cwd=cwd)
+        if cp.returncode == 0 and out_fa.exists():
+            return out_fa
+    # stdout
+    for args in (
+        ["--seqfile1", str(a_fa), "--seqfile2", str(b_fa)],
+        ["--seqfileA", str(a_fa), "--seqfileB", str(b_fa)],
+        ["-a", str(a_fa), "-b", str(b_fa)],
+        [str(a_fa), str(b_fa)],
+    ):
+        cp = run_ok(["cdskit", "intersection", *args], cwd=cwd)
+        if cp.returncode == 0 and cp.stdout:
+            out_fa.write_text(cp.stdout)
+            return out_fa
+    raise RuntimeError("cdskit intersection: knownなフラグどれでも通りませんでした。")
+
+def test_intersection_on_two_fastas(tmp_path: Path):
+    """A: s1,s2 / B: s2,s3 → 交差は s2 だけ（少なくとも配列はCCCC）"""
+    a = tmp_path / "a.fa"
+    b = tmp_path / "b.fa"
+    a.write_text(">s1\nAAAA\n>s2\nCCCC\n")
+    b.write_text(">s2\nCCCC\n>s3\nGGGG\n")
+    out_fa = tmp_path / "out.fa"
+    cdskit_intersection_to_file(a, b, out_fa)
+
+    recs = list(SeqIO.parse(out_fa, "fasta"))
+    assert len(recs) == 1
+    assert str(recs[0].seq) == "CCCC"
+
