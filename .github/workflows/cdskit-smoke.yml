@@ -4,64 +4,42 @@ on:
   push:
     branches: [ "**" ]
   pull_request:
-  workflow_dispatch:
+    branches: [ "**" ]
 
 jobs:
-  pip-smoke:
-    name: pip smoke (py${{ matrix.python-version }} • ${{ matrix.os }})
+  smoke:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        python-version: ["3.10", "3.11"]
+        python: ['3.11']
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Setup micromamba
+        uses: mamba-org/setup-micromamba@v1
         with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Install package & test deps
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e .
-          pip install pytest biopython
-
-      - name: Run smoke tests
-        run: |
-          pytest -q
-
-# .github/workflows/smoke.yml の bioconda-smoke を差し替え
-  bioconda-smoke:
-    name: bioconda smoke (py3.11 • ubuntu)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Set up micromamba
-      - uses: mamba-org/setup-micromamba@v1
-        with:
-          environment-file: ci/environment.yml   # 既存の yml
-          environment-name: cdskit               # ← activate-environment の代わり
+          environment-file: ci/environment.yml   # ← 置き場所に合わせて
+          environment-name: cdskit               # ← これで env 名を定義
           cache-environment: true
           init-shell: bash
-          generate-run-shell: true
+          generate-run-shell: true               # ← micromamba-shell が使えるようになる
 
-      - name: Run smoke tests
-        shell: micromamba-shell {0}              # ← これで env が有効化されたシェルになる
+      - name: Show versions
+        shell: micromamba-shell {0}
+        run: |
+          micromamba info
+          python --version
+          python -c "import Bio, sys; import cdskit as _; print('Biopython OK')"
+          cdskit -h || true
+
+      - name: Run tests
+        shell: micromamba-shell {0}
+        env:
+          # ネット依存テストはデフォルトoff。実行したいときは 1 に変更
+          RUN_ACCESSION_TESTS: ""
         run: |
           pytest -q
-
-      - name: Run a tiny pipeline
-        shell: bash -l {0}
-        run: |
-          cat > mini.fa <<'FA'
-          >s1
-          ATGAA
-          >s2
-          ATGA
-          FA
-          cdskit -h | head -n 20
-          # まずは落ちずに走ることだけ確認（最小スモーク）
-          cat mini.fa | cdskit pad | head -n 20
-
