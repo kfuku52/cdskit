@@ -2,6 +2,7 @@ import re
 import subprocess as sp
 from pathlib import Path
 from Bio import SeqIO
+import pytest
 
 def run(args, *, cwd=None):
     """subprocessの薄いラッパ（stdout/stderrを確保し、失敗時には詳細を出す）"""
@@ -46,7 +47,7 @@ def cdskit_to_file(subcmd: str, in_fa: Path, out_fa: Path, extra_args: list[str]
         f"cdskit {subcmd} failed. stdout:\n{cp.stdout}\n----\nstderr:\n{cp.stderr}"
     )
 
-# --- pad ---------------------------------------------------------------------
+# =========================== pad ===========================
 # pad: 出力長がすべて3の倍数（フレーム整合）。
 def test_pad_makes_inframe(tmp_path: Path):
     # 入力（どちらも3の倍数ではない）
@@ -60,7 +61,7 @@ def test_pad_makes_inframe(tmp_path: Path):
     assert len(recs) == 2
     assert all(len(r.seq) % 3 == 0 for r in recs)  # すべて3の倍数になっている
 
-# --- mask --------------------------------------------------------------------
+# =========================== mask ===========================
 # mask: ストップ/曖昧塩基が N に置換される（Wikiの例そのまま）。
 def test_mask_replaces_stops_and_ambiguous(tmp_path: Path):
     # Wikiの例を最小にしたもの
@@ -81,7 +82,7 @@ def test_mask_replaces_stops_and_ambiguous(tmp_path: Path):
     assert got["amb2"] ==   "---ATGNNNATTATGTTGAAG---"
     assert got["all"]  ==   "---ATGNNNATTNNNTTGNNN---"
 
-# --- stats -------------------------------------------------------------------
+# =========================== stats ===========================
 # stats: 件数・総長・GC% の基本値。
 def test_stats_basic_numbers(tmp_path: Path):
     # Nやgapを含めない、計算しやすいケース
@@ -99,7 +100,7 @@ def test_stats_basic_numbers(tmp_path: Path):
     assert total == 10
     assert abs(gc - 40.0) < 0.2  # 丸め誤差許容
 
-# --- split -------------------------------------------------------------------
+# =========================== split ===========================
 # split: 1/2/3塩基目ごとの3ファイルが生成され正しい塩基列になる。
 def test_split_creates_three_outputs(tmp_path: Path):
     in_fa = tmp_path / "in.fa"
@@ -121,7 +122,7 @@ def test_split_creates_three_outputs(tmp_path: Path):
         seqs.append(str(rec.seq))
     assert sorted(seqs) == sorted(["AC", "TC", "GA"])
 
-# --- printseq ---------------------------------------------------------------
+# =========================== printseq ===========================
 # printseq: 正規表現 seq_[AG] に一致するラベルのみ抜き出す。
 def test_printseq_name_regex(tmp_path: Path):
     in_fa = tmp_path / "in.fa"
@@ -136,7 +137,7 @@ def test_printseq_name_regex(tmp_path: Path):
     names = [r.id for r in SeqIO.parse(out_fa, "fasta")]
     assert set(names) == {"seq_A", "seq_G"}
 
-# ---------------- aggregate ----------------
+# =========================== aggregate ===========================
 def test_aggregate_longest_by_regex(tmp_path: Path):
     """
     グループ 'grp1'（:で枝分かれ）と 'grpB'（|で枝分かれ）で最長レコードが残ること。
@@ -160,7 +161,7 @@ def test_aggregate_longest_by_regex(tmp_path: Path):
     # grp1 と grpB の最長が残る
     assert ids == {"grp1:long", "grpB|long"}
 
-# ---------------- rmseq ----------------
+# =========================== rmseq ===========================
 def test_rmseq_by_name_and_problematic(tmp_path: Path):
     """
     - 名前の正規表現で drop_.* を削除
@@ -183,7 +184,7 @@ def test_rmseq_by_name_and_problematic(tmp_path: Path):
     names = [r.id for r in SeqIO.parse(out_fa, "fasta")]
     assert names == ["keep1"]
 
-# ---------------- label ----------------
+# =========================== label ===========================
 def cdskit_label_to_file(in_fa: Path, out_fa: Path, cwd=None):
     """cdskit label を多様なフラグで試して out_fa を得る"""
     variants_extra = [
@@ -225,7 +226,7 @@ def test_label_preserves_sequences(tmp_path: Path):
     # ついでにレコード数も一致
     assert sum(1 for _ in SeqIO.parse(out_fa, "fasta")) == 2
 
-# ---------------- intersection ----------------
+# =========================== intersection ===========================
 def cdskit_intersection_to_file(a_fa: Path, b_fa: Path, out_fa: Path, cwd=None):
     """cdskit intersection を多様なフラグで試して out_fa を得る"""
     out2 = out_fa.with_name(out_fa.stem + "_2" + out_fa.suffix)
@@ -275,3 +276,128 @@ def test_intersection_on_two_fastas(tmp_path: Path):
     assert len(recs) == 1
     assert str(recs[0].seq) == "CCCC"
 
+def cdskit_backtrim_to_file(untrimmed_codon_fa: Path, trimmed_aa_aln_fa: Path, out_fa: Path, cwd=None):
+    """
+    backtrim は AA のトリム済みアラインメントを手掛かりにコドン側をトリムする。
+    フラグ名の表記ゆれ（--trimmed_aa_aln など）に対応して out_fa を得る。
+    """
+    variants_flag = [
+        ["--trimmed_aa_aln", str(trimmed_aa_aln_fa)],
+        ["--trimmed_aa_alignment", str(trimmed_aa_aln_fa)],
+        ["--aa_aln", str(trimmed_aa_aln_fa)],
+        ["-t", str(trimmed_aa_aln_fa)],
+    ]
+    # まずファイルI/O、だめなら stdout を out_fa へ
+    for extra in variants_flag:
+        for pattern in (
+            ["--seqfile", str(untrimmed_codon_fa), "--outfile", str(out_fa)],
+            ["-s", str(untrimmed_codon_fa), "-o", str(out_fa)],
+        ):
+            cp = run_ok(["cdskit", "backtrim", *pattern, *extra], cwd=cwd)
+            if cp.returncode == 0 and out_fa.exists():
+                return out_fa
+        for pattern in (
+            ["--seqfile", str(untrimmed_codon_fa)],
+            ["-s", str(untrimmed_codon_fa)],
+        ):
+            cp = run_ok(["cdskit", "backtrim", *pattern, *extra], cwd=cwd)
+            if cp.returncode == 0 and cp.stdout:
+                out_fa.write_text(cp.stdout)
+                return out_fa
+    raise RuntimeError("cdskit backtrim: 既知のフラグいずれでも通りませんでした。")
+
+
+# =========================== backtrim ===========================
+
+def test_backtrim_respects_trimmed_aa(tmp_path: Path):
+    """
+    コドン列: MKPGF (= 5 aa) → AA側トリムで 'M-PG-' としたら
+    backtrim の出力は 'ATG'+'CCC'+'GGG' (= 9nt) だけが残るはず、という最小検証。
+    """
+    # 5コドン（MKPGF）×2本。翻訳は MKPGF
+    untrimmed = tmp_path / "untrimmed_codon.fa"
+    untrimmed.write_text(
+        ">s1\nATGAAACCCGGGTTT\n"
+        ">s2\nATGAAACCCGGGTTT\n"
+    )
+    # トリム済みAA アラインメント（2 と 5 を削除）: 'M-PG-'
+    trimmed_aa = tmp_path / "trimmed_aa.fa"
+    trimmed_aa.write_text(
+        ">s1\nM-PG-\n"
+        ">s2\nM-PG-\n"
+    )
+    out_fa = tmp_path / "trimmed_codon.fa"
+    cdskit_backtrim_to_file(untrimmed, trimmed_aa, out_fa)
+
+    recs = list(SeqIO.parse(out_fa, "fasta"))
+    assert len(recs) == 2
+    # 期待: 3コドンだけ残る → 9 塩基
+    assert all(len(r.seq) == 9 for r in recs)
+    # 翻訳して gap を除けば 'MPG' になる（Biopython の簡易翻訳で確認）
+    # ※ '-' は非標準文字なので取り除いてから翻訳
+    from Bio.Seq import Seq
+    aas = ["".join(Seq(str(r.seq).replace("-", "")).translate().rstrip("*")) for r in recs]
+    assert set(aas) == {"MPG"}
+
+# =========================== hammer ===========================
+
+def test_hammer_reduces_alignment_width(tmp_path: Path):
+    """
+    hammer はギャップが多いコドン列の列（カラム）を落とす。
+    → アラインメント幅が狭くなることを確認（レコード数は保持）。
+    """
+    in_fa = tmp_path / "in.fa"
+    in_fa.write_text(
+        ">seq1\n---ATGTAAATTATGTTGAAG---TGATGA---\n"
+        ">seq2\n---ATGTNAATTATGTTGAAG---TATTGA---\n"
+        ">seq3\n---ATGTGAATTATGTTGAAG---TATTGA---\n"
+        ">seq4\n---ATGTAAATT---TTGANG---TATTGATTTTCATCA\n"
+        ">seq5\n---ATGTAAATTATGTTGANG---TATTGATTTTCATCA\n"
+        ">seq6\n---ATGTAAATT---TTGANG---TATTGATTTTCATCA\n"
+    )
+    out_fa = tmp_path / "out.fa"
+    cdskit_to_file("hammer", in_fa, out_fa, extra_args=["--nail", "4"])
+
+    before_len = max(len(str(r.seq)) for r in SeqIO.parse(in_fa, "fasta"))
+    after = list(SeqIO.parse(out_fa, "fasta"))
+    after_len = max(len(str(r.seq)) for r in after)
+    assert len(after) == 6
+    assert after_len < before_len  # 幅が縮む
+    # 出力が FASTA として妥当（長さは揃っている＝アラインメント維持）
+    assert len({len(str(r.seq)) for r in after}) == 1
+    # 参考: Wiki の例では 15 塩基幅まで縮む（バージョン差があってもこのテストは通る）
+    # https://github.com/kfuku52/cdskit/wiki/cdskit-hammer
+
+# =========================== parsegb ===========================
+
+def test_parsegb_basic_conversion(tmp_path: Path):
+    """
+    GenBank を FASTA に変換する最小ケース。
+    ヘッダ名は実装依存なので件数と配列長のみ確認。
+    """
+    gb = tmp_path / "in.gb"
+    # 最小限のGenBankレコード（1本、24bp）
+    gb.write_text(
+        "LOCUS       TESTREC                 24 bp    DNA     linear   XXX 01-JAN-2000\n"
+        "DEFINITION  dummy.\n"
+        "ACCESSION   ABC123\n"
+        "ORIGIN\n"
+        "        1 atgcgtacgt acgtacgtacg ta\n"
+        "//\n"
+    )
+    out_fa = tmp_path / "out.fa"
+    cdskit_to_file("parsegb", gb, out_fa)
+
+    recs = list(SeqIO.parse(out_fa, "fasta"))
+    assert len(recs) == 1
+    # ORIGIN の 24bp がそのまま FASTA 化される
+    assert len(recs[0].seq) == 24
+
+# ===== 参考: ネット依存/未整備のものはスキップ印だけ用意 ========================
+@pytest.mark.skip(reason="ネット依存のためCIでは実行しない")
+def test_accession2fasta_skipped():
+    pass
+
+@pytest.mark.skip(reason="Wiki未整備。仕様が固まったら追加予定")
+def test_gapjust_todo():
+    pass
