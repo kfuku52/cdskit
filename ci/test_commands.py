@@ -10,6 +10,42 @@ def run(args, *, cwd=None):
         raise RuntimeError(f"cmd failed: {args}\nstdout:\n{cp.stdout}\nstderr:\n{cp.stderr}")
     return cp
 
+def run_ok(args, *, cwd=None):
+    """失敗しても例外にしない版（フォールバック用）"""
+    return sp.run(args, capture_output=True, text=True, cwd=cwd)
+
+def cdskit_to_file(subcmd: str, in_fa: Path, out_fa: Path, extra_args: list[str] | None = None, cwd=None):
+    """
+    cdskit <subcmd> を「出力ファイル」を得る形で実行する。
+    - まず (--seqfile/--outfile) と (-s/-o) を試す
+    - ダメなら stdout で受けて out_fa に書き出す
+    いずれも失敗なら RuntimeError
+    """
+    extra_args = extra_args or []
+
+    # 1) ファイルI/Oの典型形
+    for pattern in (
+        ["--seqfile", str(in_fa), "--outfile", str(out_fa)],
+        ["-s", str(in_fa), "-o", str(out_fa)],
+    ):
+        cp = run_ok(["cdskit", subcmd, *pattern, *extra_args], cwd=cwd)
+        if cp.returncode == 0 and out_fa.exists():
+            return out_fa
+
+    # 2) stdout フォールバック
+    for pattern in (
+        ["--seqfile", str(in_fa)],
+        ["-s", str(in_fa)],
+    ):
+        cp = run_ok(["cdskit", subcmd, *pattern, *extra_args], cwd=cwd)
+        if cp.returncode == 0 and cp.stdout:
+            out_fa.write_text(cp.stdout)
+            return out_fa
+
+    raise RuntimeError(
+        f"cdskit {subcmd} failed. stdout:\n{cp.stdout}\n----\nstderr:\n{cp.stderr}"
+    )
+
 # --- pad ---------------------------------------------------------------------
 # pad: 出力長がすべて3の倍数（フレーム整合）。
 def test_pad_makes_inframe(tmp_path: Path):
@@ -99,3 +135,50 @@ def test_printseq_name_regex(tmp_path: Path):
 
     names = [r.id for r in SeqIO.parse(out_fa, "fasta")]
     assert set(names) == {"seq_A", "seq_G"}
+
+# ---------------- aggregate ----------------
+def test_aggregate_longest_by_regex(tmp_path: Path):
+    """
+    グループ 'grp1'（:で枝分かれ）と 'grpB'（|で枝分かれ）で最長レコードが残ること。
+    """
+    in_fa = tmp_path / "in.fa"
+    in_fa.write_text(
+        ">grp1:short\nATG\n"
+        ">grp1:long\nATGATG\n"
+        ">grpB|short\nATG\n"
+        ">grpB|long\nATGATGATG\n"
+    )
+    out_fa = tmp_path / "out.fa"
+    # Wikiの例と同じ指定（:.* と \|.* をグルーピングに使う）:
+    # cdskit aggregate --seqfile in --outfile out --expression ':.*' '\|.*'
+    cdskit_to_file(
+        "aggregate", in_fa, out_fa,
+        extra_args=["--expression", ":.*", r"\|.*"],
+    )
+
+    ids = {rec.id for rec in SeqIO.parse(out_fa, "fasta")}
+    # grp1 と grpB の最長が残る
+    assert ids == {"grp1:long", "grpB|long"}
+
+# ---------------- rmseq ----------------
+def test_rmseq_by_name_and_problematic(tmp_path: Path):
+    """
+    - 名前の正規表現で drop_.* を削除
+    - problematic_percent=50 で N ばかりの配列を削除
+    → keep1 のみ残る
+    """
+    in_fa = tmp_path / "in.fa"
+    in_fa.write_text(
+        ">keep1\nATGCATGC\n"
+        ">drop_foo\nATGCATGC\n"
+        ">badN\nNNNNNNNN\n"
+    )
+    out_fa = tmp_path / "out.fa"
+    # Wiki例：cdskit rmseq -s input --seqname 'Arabidopsis_thaliana.*' --problematic_percent 50 -o output
+    cdskit_to_file(
+        "rmseq", in_fa, out_fa,
+        extra_args=["--seqname", "drop_.*", "--problematic_percent", "50"],
+    )
+
+    names = [r.id for r in SeqIO.parse(out_fa, "fasta")]
+    assert names == ["keep1"]
