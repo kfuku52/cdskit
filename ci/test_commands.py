@@ -228,20 +228,30 @@ def test_label_preserves_sequences(tmp_path: Path):
 # ---------------- intersection ----------------
 def cdskit_intersection_to_file(a_fa: Path, b_fa: Path, out_fa: Path, cwd=None):
     """cdskit intersection を多様なフラグで試して out_fa を得る"""
-    # ファイルI/O
+    out2 = out_fa.with_name(out_fa.stem + "_2" + out_fa.suffix)
+
+    # 1) ファイルI/O（まず公式Wikiの形: --seqfile / --seqfile2）
     for args in (
-        ["--seqfile1", str(a_fa), "--seqfile2", str(b_fa), "--outfile", str(out_fa)],
-        ["--seqfileA", str(a_fa), "--seqfileB", str(b_fa), "--outfile", str(out_fa)],
+        # 両方の出力を要求する版
+        ["--seqfile", str(a_fa), "--seqfile2", str(b_fa),
+         "--outfile", str(out_fa), "--outfile2", str(out2)],
+        # 片方だけ指定で通る版
+        ["--seqfile", str(a_fa), "--seqfile2", str(b_fa),
+         "--outfile", str(out_fa)],
+        # 他の表記揺れ
+        ["--seqfile1", str(a_fa), "--seqfile2", str(b_fa),
+         "--outfile", str(out_fa)],
         ["-a", str(a_fa), "-b", str(b_fa), "-o", str(out_fa)],
         [str(a_fa), str(b_fa), "-o", str(out_fa)],
     ):
         cp = run_ok(["cdskit", "intersection", *args], cwd=cwd)
         if cp.returncode == 0 and out_fa.exists():
             return out_fa
-    # stdout
+
+    # 2) stdout フォールバック
     for args in (
+        ["--seqfile", str(a_fa), "--seqfile2", str(b_fa)],
         ["--seqfile1", str(a_fa), "--seqfile2", str(b_fa)],
-        ["--seqfileA", str(a_fa), "--seqfileB", str(b_fa)],
         ["-a", str(a_fa), "-b", str(b_fa)],
         [str(a_fa), str(b_fa)],
     ):
@@ -249,6 +259,7 @@ def cdskit_intersection_to_file(a_fa: Path, b_fa: Path, out_fa: Path, cwd=None):
         if cp.returncode == 0 and cp.stdout:
             out_fa.write_text(cp.stdout)
             return out_fa
+
     raise RuntimeError("cdskit intersection: knownなフラグどれでも通りませんでした。")
 
 def test_intersection_on_two_fastas(tmp_path: Path):
