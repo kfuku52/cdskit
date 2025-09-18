@@ -380,11 +380,16 @@ def test_parsegb_basic_conversion(tmp_path: Path):
     ヘッダ名は実装依存なので件数と配列長のみ確認。
     """
     gb = tmp_path / "in.gb"
-    # 最小GenBank（1本、24bp）。ORIGIN は 24 塩基に合わせておく。
+    # 最小GenBank（1本、24bp）。FEATURES に CDS を含める（parsegb は注釈を用いる想定）:
     gb.write_text(
-        "LOCUS       TESTREC                 24 bp    DNA     linear   XXX 01-JAN-2000\n"
+        "LOCUS       TESTREC                 24 bp    DNA     linear   UNA 01-JAN-2000\n"
         "DEFINITION  dummy.\n"
         "ACCESSION   ABC123\n"
+        "FEATURES             Location/Qualifiers\n"
+        "     source          1..24\n"
+        "                     /organism=\"Synthetic construct\"\n"
+        "     CDS             1..24\n"
+        "                     /product=\"dummy\"\n"
         "ORIGIN\n"
         "        1 atgcatgcat gcatgcatgc atgc\n"
         "//\n"
