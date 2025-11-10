@@ -171,7 +171,7 @@ def command_label(args):
 help_label = 'Modifying sequence labels. See `cdskit label -h`'
 p_label = subparsers.add_parser('label', help=help_label, parents=[p_version,p_infile,p_outfile])
 p_label.add_argument('--replace_chars', metavar='FROM1FROM2...--TO', default='', type=str, required=False, action='store',
-                     help='default=%(default)s: Replace sequence label characters. For example, "!@#$%^&*+=/?<>|--_" replaces various characters with underbar ("_").')
+                     help='default=%(default)s: Replace sequence label characters. For example, "!@#$%%^&*+=/?<>|--_" replaces various characters with underbar ("_").')
 p_label.add_argument('--clip_len', metavar='INT', default=0, type=int, required=False, action='store',
                      help='default=%(default)s: Maximum length of sequence labels. Longer labels are truncated.')
 p_label.add_argument('--unique', metavar='yes|no', default='no', type=strtobool, required=False, action='store',
