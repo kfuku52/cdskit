@@ -13,7 +13,7 @@ def label_main(args):
         for i in range(len(records)):
             if any(c in records[i].id for c in from_chars):
                 replace_count += 1
-                records[i].id = records[i].id.translate(str.maketrans(''.join(from_chars), to_chars))
+                records[i].id = records[i].id.translate(str.maketrans(''.join(from_chars), ''.join(to_chars)))
         sys.stderr.write('Number of character-replaced sequence labels: {:,}\n'.format(replace_count))
     if args.clip_len != 0:
         clip_count = 0

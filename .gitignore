@@ -3,6 +3,6 @@
 /cdskit/__pycache__/*
 /.DS_Store
 /*/.DS_Store
-/tests/*
 /cdskit.iml
 cdskit/.DS_Store
+/tests/__pycache__/*

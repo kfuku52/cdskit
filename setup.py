@@ -18,5 +18,6 @@ setup(
         keywords         = 'codon sequences',
         packages         = find_packages(),
         install_requires = ['numpy','biopython',],
+        extras_require   = {'test': ['pytest', 'pytest-cov'],},
         scripts          = ['cdskit/cdskit',],
 )

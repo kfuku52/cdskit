@@ -118,6 +118,9 @@ def read_gff(gff_file):
         ('attributes', 'U500')
     ]
     data = numpy.genfromtxt(io.StringIO('\n'.join(data_lines)), dtype=dtype, delimiter='\t', autostrip=True)
+    # Handle single record case: numpy.genfromtxt returns 0-d array for single line
+    if data.ndim == 0:
+        data = numpy.array([data])
     sys.stderr.write('Number of input GFF header lines: {:,}\n'.format(len(header_lines)))
     sys.stderr.write('Number of input GFF records: {:,}\n'.format(len(data)))
     sys.stderr.write('Number of input GFF unique seqids: {:,}\n'.format(len(numpy.unique(data['seqid']))))
