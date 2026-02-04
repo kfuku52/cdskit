@@ -31,7 +31,7 @@ def hammer_main(args):
                 missing_site[len(aaseq):] += 1
         non_missing_site = len(records) - missing_site
         non_missing_idx = numpy.argwhere(non_missing_site>=current_nail)
-        non_missing_idx = numpy.reshape(non_missing_idx, newshape=[non_missing_idx.shape[0],])
+        non_missing_idx = non_missing_idx.flatten()
         num_removed_site = max_len - non_missing_idx.shape[0]
         sys.stderr.write('{:,} out of {:,} codon sites will be removed.\n'.format(num_removed_site, max_len))
         for record in records:

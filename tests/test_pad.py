@@ -72,6 +72,9 @@ class TestPadMain:
         expected_path = data_dir / "pad_01" / "output.fasta"
         output_path = temp_dir / "output.fasta"
 
+        if not input_path.exists():
+            pytest.skip("pad_01 test data not found")
+
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
