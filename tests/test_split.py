@@ -12,11 +12,19 @@ from Bio.SeqRecord import SeqRecord
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from cdskit.split import split_main
+from cdskit.split import resolve_output_prefix, split_main
 
 
 class TestSplitMain:
     """Tests for split_main function."""
+
+    def test_resolve_output_prefix_prefers_explicit_prefix(self, mock_args):
+        args = mock_args(seqfile='input.fasta', prefix='custom_prefix', outfile='ignored')
+        assert resolve_output_prefix(args) == 'custom_prefix'
+
+    def test_resolve_output_prefix_uses_outfile_as_fallback(self, mock_args):
+        args = mock_args(seqfile='input.fasta', prefix='INFILE', outfile='from_outfile')
+        assert resolve_output_prefix(args) == 'from_outfile'
 
     def test_split_basic(self, temp_dir, mock_args):
         """Test basic split functionality - extract codon positions."""
@@ -115,6 +123,26 @@ class TestSplitMain:
 
         # Files should be named after input file
         expected_1st = temp_dir / "myseqs.fasta_1st_codon_positions.fasta"
+        assert expected_1st.exists()
+
+    def test_split_outfile_fallback_prefix(self, temp_dir, mock_args):
+        """When --prefix is INFILE, --outfile is used as fallback prefix."""
+        input_path = temp_dir / "myseqs.fasta"
+
+        records = [
+            SeqRecord(Seq("ATGCCC"), id="seq1", description=""),
+        ]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(input_path),
+            prefix='INFILE',
+            outfile=str(temp_dir / "from_outfile"),
+        )
+
+        split_main(args)
+
+        expected_1st = temp_dir / "from_outfile_1st_codon_positions.fasta"
         assert expected_1st.exists()
 
     def test_split_output_lengths(self, temp_dir, mock_args):

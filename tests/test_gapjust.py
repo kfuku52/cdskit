@@ -13,7 +13,12 @@ from Bio.SeqRecord import SeqRecord
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from cdskit.gapjust import gapjust_main, update_gap_ranges, vectorized_coordinate_update
+from cdskit.gapjust import (
+    gapjust_main,
+    should_justify_gap,
+    update_gap_ranges,
+    vectorized_coordinate_update,
+)
 
 
 class TestUpdateGapRanges:
@@ -100,6 +105,25 @@ class TestVectorizedCoordinateUpdate:
         # Second coordinate (50) shifts by 10 + 5 = 15 from both edits
         assert list(new_starts) == [20, 65]
         assert list(new_ends) == [30, 75]
+
+
+class TestShouldJustifyGap:
+    """Tests for should_justify_gap helper."""
+
+    def test_skip_when_already_target_length(self):
+        assert should_justify_gap(5, 5) is False
+
+    def test_extension_honors_min_threshold(self):
+        # Extension (3 -> 5) is skipped because 3 < min(4)
+        assert should_justify_gap(3, 5, gap_just_min=4) is False
+        # Extension is allowed when gap length is at least min
+        assert should_justify_gap(4, 5, gap_just_min=4) is True
+
+    def test_shortening_honors_max_threshold(self):
+        # Shortening (8 -> 5) is skipped because 8 > max(7)
+        assert should_justify_gap(8, 5, gap_just_max=7) is False
+        # Shortening is allowed when gap length is at most max
+        assert should_justify_gap(7, 5, gap_just_max=7) is True
 
 
 class TestGapjustMain:
@@ -361,6 +385,58 @@ class TestGapjustMain:
         seq_without_n = seq_str.replace('N', '')
         original_without_n = "ATGCCCGGGAAATTT"
         assert seq_without_n == original_without_n
+
+    def test_gapjust_min_threshold_for_extension(self, temp_dir, mock_args):
+        """Gaps smaller than --gap_just_min should not be extended."""
+        input_path = temp_dir / "input.fasta"
+        output_path = temp_dir / "output.fasta"
+
+        records = [
+            SeqRecord(Seq("ATGNNAAA"), id="skip_small_gap", description=""),       # 2 Ns
+            SeqRecord(Seq("ATGNNNNAAA"), id="extend_large_gap", description=""),   # 4 Ns
+        ]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(input_path),
+            outfile=str(output_path),
+            gap_len=5,
+            gap_just_min=3,
+            ingff=None,
+            outgff=None,
+        )
+
+        gapjust_main(args)
+
+        result = {r.id: str(r.seq) for r in Bio.SeqIO.parse(str(output_path), "fasta")}
+        assert result["skip_small_gap"].count("N") == 2
+        assert result["extend_large_gap"].count("N") == 5
+
+    def test_gapjust_max_threshold_for_shortening(self, temp_dir, mock_args):
+        """Gaps larger than --gap_just_max should not be shortened."""
+        input_path = temp_dir / "input.fasta"
+        output_path = temp_dir / "output.fasta"
+
+        records = [
+            SeqRecord(Seq("ATGNNNNNNNNAAA"), id="skip_large_gap", description=""),      # 8 Ns
+            SeqRecord(Seq("ATGNNNNNNAAA"), id="shorten_allowed_gap", description=""),    # 6 Ns
+        ]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(input_path),
+            outfile=str(output_path),
+            gap_len=3,
+            gap_just_max=6,
+            ingff=None,
+            outgff=None,
+        )
+
+        gapjust_main(args)
+
+        result = {r.id: str(r.seq) for r in Bio.SeqIO.parse(str(output_path), "fasta")}
+        assert result["skip_large_gap"].count("N") == 8
+        assert result["shorten_allowed_gap"].count("N") == 3
 
     def test_gapjust_gff_coordinate_shift(self, data_dir, temp_dir, mock_args):
         """Test gapjust properly shifts GFF coordinates."""

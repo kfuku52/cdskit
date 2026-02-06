@@ -3,6 +3,7 @@ name: Auto Tag from Version
 on:
   push:
     branches:
+      - master
       - main
   workflow_dispatch:
 
@@ -11,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -25,7 +26,7 @@ jobs:
       - name: Check if tag exists
         id: check_tag
         run: |
-          TAG="v${{ steps.get_version.outputs.version }}"
+          TAG="${{ steps.get_version.outputs.version }}"
           echo "Checking tag $TAG"
           if git rev-parse "$TAG" >/dev/null 2>&1; then
             echo "Tag already exists. Skipping."
@@ -38,10 +39,11 @@ jobs:
       - name: Create and push tag
         if: steps.check_tag.outputs.exists == 'false'
         run: |
-          git config user.name "kamome1201"
-          git config user.email "usuke.a62@gmail.com"
-          git tag "${{ steps.get_version.outputs.version }}"
-          git push origin "${{ steps.get_version.outputs.version }}"
+          TAG="${{ steps.get_version.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "$TAG"
+          git push origin "$TAG"
           
       - name: Fail if tag exists
         if: steps.check_tag.outputs.exists == 'true'

@@ -60,6 +60,28 @@ def vectorized_coordinate_update(
     return seq_gff_start_coordinates, seq_gff_end_coordinates
 
 
+def should_justify_gap(gap_length, target_gap_length, gap_just_min=None, gap_just_max=None):
+    """
+    Returns True when a gap should be justified to `target_gap_length`.
+
+    Rules:
+      - If `gap_length` already equals target, skip.
+      - Gap extension (gap_length < target) follows `gap_just_min` when set.
+      - Gap shortening (gap_length > target) follows `gap_just_max` when set.
+    """
+    if gap_length == target_gap_length:
+        return False
+
+    if gap_length < target_gap_length:
+        if gap_just_min is not None and gap_length < gap_just_min:
+            return False
+        return True
+
+    if gap_just_max is not None and gap_length > gap_just_max:
+        return False
+    return True
+
+
 def gapjust_main(args):
     """
     Main routine for:
@@ -71,6 +93,17 @@ def gapjust_main(args):
     """
 
     # -- 1) Read FASTA, replace 'n' with 'N' for consistency
+    gap_just_min = getattr(args, 'gap_just_min', None)
+    gap_just_max = getattr(args, 'gap_just_max', None)
+
+    for value, label in [
+        (args.gap_len, '--gap_len'),
+        (gap_just_min, '--gap_just_min'),
+        (gap_just_max, '--gap_just_max'),
+    ]:
+        if value is not None and value < 0:
+            raise ValueError(f'{label} must be >= 0. Got {value}.')
+
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
     justifications = []
 
@@ -90,8 +123,13 @@ def gapjust_main(args):
         # Iterate over each gap and insert/delete to make its length = args.gap_len
         for j in range(len(gap_lengths)):
             gap_length = gap_lengths[j]
-            if gap_length == args.gap_len:
-                continue  # Already correct length, skip
+            if not should_justify_gap(
+                gap_length=gap_length,
+                target_gap_length=args.gap_len,
+                gap_just_min=gap_just_min,
+                gap_just_max=gap_just_max,
+            ):
+                continue
 
             updated_gap_start = updated_gap_ranges[j][0]
             edit_len = args.gap_len - gap_length  # positive = insertion, negative = deletion
