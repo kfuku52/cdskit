@@ -1,9 +1,22 @@
-import numpy
+from collections import defaultdict
+from collections import deque
+
 from cdskit.util import *
 
 def check_same_seq_num(cdn_records, pep_records):
     err_txt = 'The numbers of seqs did not match: seqfile={} and trimmed_aa_aln={}'.format(len(cdn_records), len(pep_records))
     assert len(cdn_records)==len(pep_records), err_txt
+
+
+def build_column_index(seq_strings):
+    col_index = defaultdict(deque)
+    if len(seq_strings) == 0:
+        return col_index
+    for ci, col_chars in enumerate(zip(*seq_strings)):
+        key = ''.join(col_chars)
+        col_index[key].append(ci)
+    return col_index
+
 
 def backtrim_main(args):
     cdn_records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
@@ -13,49 +26,45 @@ def backtrim_main(args):
     stop_if_not_aligned(records=cdn_records)
     stop_if_not_aligned(records=pep_records)
     # check_same_order()
-    tcdn_records = translate_records(records=cdn_records, codontable=args.codontable)
-    tcdn_array = records2array(records=tcdn_records)
-    pep_array = records2array(records=pep_records)
-    cdn_array = records2array(records=cdn_records)
+    tcdn_strings = [str(record.seq.translate(table=args.codontable, to_stop=False, gap="-")) for record in cdn_records]
+    pep_strings = [str(record.seq) for record in pep_records]
+    cdn_strings = [str(record.seq) for record in cdn_records]
     kept_aa_sites = list()
-    remaining_tcdn_sites = numpy.arange(tcdn_array.shape[1])
     multiple_matches = set()
-    for pi in numpy.arange(pep_array.shape[1]):
-        same_sites = list()
-        if remaining_tcdn_sites.shape[0]==0:
+    remaining_site_count = len(tcdn_strings[0])
+    tcdn_col_index = build_column_index(tcdn_strings)
+    for pi, pep_col_chars in enumerate(zip(*pep_strings)):
+        if remaining_site_count == 0:
             break
-        for ci in remaining_tcdn_sites:
-            if numpy.array_equal(pep_array[:,pi], tcdn_array[:,ci]):
-                same_sites.append(ci)
-        if (len(same_sites)==1):
-            kept_aa_sites.append(same_sites[0])
-            remaining_tcdn_sites = remaining_tcdn_sites[remaining_tcdn_sites!=same_sites[0]]
-        elif (len(same_sites)>1):
-            multiple_matches = multiple_matches | set(same_sites)
-            txt = 'The trimmed protein site {} has multiple matches to codon sites({}). Reporting the first match. '
-            txt = txt.format(pi, ','.join([ str(ss) for ss in same_sites ]))
-            txt += 'Site pattern: {}\n'.format(''.join(pep_array[:,pi]))
-            sys.stderr.write(txt)
-            kept_aa_sites.append(same_sites[0])
-            remaining_tcdn_sites = remaining_tcdn_sites[remaining_tcdn_sites!=same_sites[0]]
-        elif (len(same_sites)==0):
+        key = ''.join(pep_col_chars)
+        same_sites = tcdn_col_index.get(key)
+        if (same_sites is None) or (len(same_sites)==0):
             txt = 'The codon site {} could not be matched to trimmed protein sites. '
             txt += 'The site may contain only missing, ambiguous, and/or stop codons. '
             txt += 'The site will be excluded from the output.\n'
-            sys.stderr.write(txt.format(ci))
+            sys.stderr.write(txt.format(pi))
+            continue
+        if (len(same_sites)==1):
+            kept_aa_sites.append(same_sites.popleft())
+            remaining_site_count -= 1
+            del tcdn_col_index[key]
+        elif (len(same_sites)>1):
+            all_same_sites = tuple(same_sites)
+            multiple_matches.update(all_same_sites)
+            txt = 'The trimmed protein site {} has multiple matches to codon sites({}). Reporting the first match. '
+            txt = txt.format(pi, ','.join([ str(ss) for ss in all_same_sites ]))
+            txt += 'Site pattern: {}\n'.format(key)
+            sys.stderr.write(txt)
+            kept_aa_sites.append(same_sites.popleft())
+            remaining_site_count -= 1
     num_trimmed_multiple_hit_sites = len(multiple_matches-set(kept_aa_sites))
     txt = '{} codon sites matched to {} protein sites. '
     txt = txt+'Trimmed {} codon sites that matched to multiple protein sites.\n'
-    txt = txt.format(len(kept_aa_sites), pep_array.shape[1], num_trimmed_multiple_hit_sites)
+    txt = txt.format(len(kept_aa_sites), len(pep_strings[0]), num_trimmed_multiple_hit_sites)
     sys.stderr.write(txt)
-    kept_aa_sites = numpy.array(kept_aa_sites)
-    codon_pos1 = kept_aa_sites * 3 + 0
-    codon_pos2 = kept_aa_sites * 3 + 1
-    codon_pos3 = kept_aa_sites * 3 + 2
-    kept_cdn_sites = numpy.sort(numpy.concatenate([codon_pos1, codon_pos2, codon_pos3]))
     trimmed_cdn_records = list()
-    for i in numpy.arange(len(cdn_records)):
-        trimmed_seq = ''.join(cdn_array[i,kept_cdn_sites])
+    for i in range(len(cdn_records)):
+        trimmed_seq = ''.join([cdn_strings[i][codon_site*3:codon_site*3+3] for codon_site in kept_aa_sites])
         trimmed_record = Bio.SeqRecord.SeqRecord(seq=Bio.Seq.Seq(trimmed_seq),
                                                  id=cdn_records[i].id, name='', description='')
         trimmed_cdn_records.append(trimmed_record)

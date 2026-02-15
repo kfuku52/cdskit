@@ -32,32 +32,77 @@ def vectorized_coordinate_update(
     is replayed in ascending order, just like the iterative
     edits to the FASTA.
     """
-    # Sort justifications by the leftmost gap coordinate
-    justifications_sorted = sorted(justifications, key=lambda x: x['original_edit_start'])
+    if len(justifications) == 0:
+        return seq_gff_start_coordinates, seq_gff_end_coordinates
 
-    # Keep track of how many bases have been inserted/deleted so far
-    cumulative_offset = 0
+    # Accept both legacy dict format and internal compact tuple format.
+    # dict: {'original_edit_start': int, 'edit_length': int}
+    # tuple: (original_edit_start, edit_length)
+    if isinstance(justifications[0], dict):
+        justifications_sorted = sorted(justifications, key=lambda x: x['original_edit_start'])
+        original_starts_1based = numpy.fromiter(
+            (j['original_edit_start'] + 1 for j in justifications_sorted),
+            dtype=numpy.int64,
+            count=len(justifications_sorted),
+        )
+        edit_lengths = numpy.fromiter(
+            (j['edit_length'] for j in justifications_sorted),
+            dtype=numpy.int64,
+            count=len(justifications_sorted),
+        )
+    else:
+        # Internal call path already preserves ascending original_edit_start.
+        original_starts_1based = numpy.fromiter(
+            (j[0] + 1 for j in justifications),
+            dtype=numpy.int64,
+            count=len(justifications),
+        )
+        edit_lengths = numpy.fromiter(
+            (j[1] for j in justifications),
+            dtype=numpy.int64,
+            count=len(justifications),
+        )
 
-    for justification in justifications_sorted:
-        original_edit_start = justification['original_edit_start']
-        edit_len = justification['edit_length']
+    if not numpy.any(edit_lengths):
+        return seq_gff_start_coordinates, seq_gff_end_coordinates
 
-        # Convert 0-based (FASTA) to 1-based (GFF), then add the offset
-        actual_edit_start_1based = (original_edit_start + 1) + cumulative_offset
+    cumulative_before = numpy.concatenate(([0], numpy.cumsum(edit_lengths[:-1], dtype=numpy.int64)))
+    actual_edit_starts_1based = original_starts_1based + cumulative_before
+    cumulative_edits = numpy.cumsum(edit_lengths, dtype=numpy.int64)
 
-        if edit_len != 0:
-            # Shift start coordinates greater than actual_edit_start_1based
-            mask_start = seq_gff_start_coordinates > actual_edit_start_1based
-            seq_gff_start_coordinates[mask_start] += edit_len
+    # Keep only non-zero edits; zero-length entries have no coordinate effect.
+    nonzero = (edit_lengths != 0)
+    actual_edit_starts_1based = actual_edit_starts_1based[nonzero]
+    cumulative_edits = cumulative_edits[nonzero]
 
-            # Shift end coordinates greater than actual_edit_start_1based
-            mask_end = seq_gff_end_coordinates > actual_edit_start_1based
-            seq_gff_end_coordinates[mask_end] += edit_len
+    # Fast vectorized path assumes monotonic edit starts after cumulative shifts.
+    # In pathological cases where this is violated, use a safe fallback loop.
+    if numpy.any(actual_edit_starts_1based[1:] < actual_edit_starts_1based[:-1]):
+        for coords in [seq_gff_start_coordinates, seq_gff_end_coordinates]:
+            for i in range(coords.shape[0]):
+                value = int(coords[i])
+                cumulative_offset = 0
+                for j in range(len(edit_lengths)):
+                    edit_len = int(edit_lengths[j])
+                    actual_edit_start_1based = int(original_starts_1based[j] + cumulative_offset)
+                    if (edit_len != 0) and (value > actual_edit_start_1based):
+                        value += edit_len
+                    cumulative_offset += edit_len
+                coords[i] = value
+        return seq_gff_start_coordinates, seq_gff_end_coordinates
 
-        # Accumulate offset for subsequent justifications
-        cumulative_offset += edit_len
+    def apply_coordinate_shift(coords):
+        position = numpy.searchsorted(actual_edit_starts_1based, coords, side='left')
+        has_shift = (position > 0)
+        if not numpy.any(has_shift):
+            return coords
+        updated = coords.copy()
+        updated[has_shift] = updated[has_shift] + cumulative_edits[position[has_shift] - 1]
+        return updated
 
-    return seq_gff_start_coordinates, seq_gff_end_coordinates
+    updated_starts = apply_coordinate_shift(seq_gff_start_coordinates)
+    updated_ends = apply_coordinate_shift(seq_gff_end_coordinates)
+    return updated_starts, updated_ends
 
 
 def should_justify_gap(gap_length, target_gap_length, gap_just_min=None, gap_just_max=None):
@@ -105,71 +150,58 @@ def gapjust_main(args):
             raise ValueError(f'{label} must be >= 0. Got {value}.')
 
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
-    justifications = []
+    num_justifications = 0
+    min_original_gap_length = None
+    max_original_gap_length = 0
+    justifications_by_seq = dict()
 
-    # -- 2) For each FASTA record, find all gap ranges, fix them to 'args.gap_len'
+    # -- 2) For each FASTA record, rebuild sequence once while normalizing gap lengths
     for i in range(len(records)):
-        # Normalize all gaps to uppercase N
-        records[i].seq = records[i].seq.replace('n', 'N')
+        seq_str = str(records[i].seq).replace('n', 'N')
+        seq_justifications = []
+        rebuilt = []
+        cursor = 0
 
-        # Collect zero-based positions of 'N'
-        gap_coordinates = [m.start() for m in re.finditer('N', str(records[i].seq))]
-        original_gap_ranges = coordinates2ranges(gap_coordinates)
-        updated_gap_ranges = original_gap_ranges.copy()
+        for match in re.finditer('N+', seq_str):
+            start = match.start()
+            end = match.end()
+            gap_length = end - start
+            rebuilt.append(seq_str[cursor:start])
 
-        # Gap lengths
-        gap_lengths = [end - start + 1 for (start, end) in original_gap_ranges]
+            justify_gap = True
+            if gap_length == args.gap_len:
+                justify_gap = False
+            elif gap_length < args.gap_len:
+                if (gap_just_min is not None) and (gap_length < gap_just_min):
+                    justify_gap = False
+            elif (gap_just_max is not None) and (gap_length > gap_just_max):
+                justify_gap = False
 
-        # Iterate over each gap and insert/delete to make its length = args.gap_len
-        for j in range(len(gap_lengths)):
-            gap_length = gap_lengths[j]
-            if not should_justify_gap(
-                gap_length=gap_length,
-                target_gap_length=args.gap_len,
-                gap_just_min=gap_just_min,
-                gap_just_max=gap_just_max,
-            ):
-                continue
-
-            updated_gap_start = updated_gap_ranges[j][0]
-            edit_len = args.gap_len - gap_length  # positive = insertion, negative = deletion
-
-            # Perform the edit on the FASTA sequence
-            if edit_len > 0:
-                # Insertion of extra Ns
-                records[i].seq = (
-                    records[i].seq[:updated_gap_start]
-                    + 'N' * edit_len
-                    + records[i].seq[updated_gap_start:]
-                )
+            if justify_gap:
+                rebuilt.append('N' * args.gap_len)
+                edit_len = args.gap_len - gap_length
+                seq_justifications.append((start, edit_len))
+                num_justifications += 1
+                if (min_original_gap_length is None) or (gap_length < min_original_gap_length):
+                    min_original_gap_length = gap_length
+                if gap_length > max_original_gap_length:
+                    max_original_gap_length = gap_length
             else:
-                # Deletion
-                records[i].seq = (
-                    records[i].seq[:updated_gap_start]
-                    + records[i].seq[updated_gap_start - edit_len:]
-                )
+                rebuilt.append(seq_str[start:end])
 
-            # Update future gap range positions
-            updated_gap_ranges = update_gap_ranges(
-                gap_ranges=updated_gap_ranges,
-                gap_start=updated_gap_start,
-                edit_len=edit_len
-            )
+            cursor = end
 
-            # Store the justification info
-            justifications.append({
-                'seq': records[i].id,
-                'original_gap_length': gap_length,
-                'original_edit_start': original_gap_ranges[j][0],
-                'edit_length': edit_len
-            })
+        rebuilt.append(seq_str[cursor:])
+        records[i].seq = Bio.Seq.Seq(''.join(rebuilt))
+
+        if seq_justifications:
+            justifications_by_seq[records[i].id] = seq_justifications
 
     # -- 3) Write the updated FASTA
-    sys.stderr.write(f'Number of gap justifications: {len(justifications)}\n')
-    all_lengths = [j["original_gap_length"] for j in justifications]
-    if all_lengths:
+    sys.stderr.write(f'Number of gap justifications: {num_justifications}\n')
+    if num_justifications > 0:
         sys.stderr.write(
-            f'Minimum and maximum original gap lengths: {min(all_lengths)} and {max(all_lengths)}\n'
+            f'Minimum and maximum original gap lengths: {min_original_gap_length} and {max_original_gap_length}\n'
         )
     else:
         sys.stderr.write('No gap edits were made.\n')
@@ -179,38 +211,33 @@ def gapjust_main(args):
     # -- 4) Read and update GFF coordinates
     if args.ingff is not None:
         gff = read_gff(args.ingff)
-
-        # Figure out which seqids had gap edits
-        justification_seqids = set(j['seq'] for j in justifications)
+        seqid_to_gff_indices = dict()
+        for ix, seqid in enumerate(gff['data']['seqid']):
+            if seqid not in seqid_to_gff_indices:
+                seqid_to_gff_indices[seqid] = []
+            seqid_to_gff_indices[seqid].append(ix)
 
         # For each relevant seqid, update the GFF features
         num_justified_start_coordinate = 0
         num_justified_end_coordinate = 0
         num_justified_gff_gene = 0
 
-        for record_idx in range(len(records)):
-            seqid = records[record_idx].id
-            if seqid not in justification_seqids:
+        for seqid, seqid_justs in justifications_by_seq.items():
+            if seqid not in seqid_to_gff_indices:
                 continue
 
             # Index of features belonging to this seqid
-            index_gff_seq = [
-                ix for ix in range(len(gff['data']))
-                if gff['data'][ix]['seqid'] == seqid
-            ]
+            index_gff_seq = numpy.array(seqid_to_gff_indices[seqid], dtype=int)
 
             # Extract start/end as arrays
-            seq_gff_start_original = numpy.array([gff['data'][ix]['start'] for ix in index_gff_seq])
-            seq_gff_end_original   = numpy.array([gff['data'][ix]['end']   for ix in index_gff_seq])
+            seq_gff_start_original = gff['data']['start'][index_gff_seq].copy()
+            seq_gff_end_original = gff['data']['end'][index_gff_seq].copy()
 
             # We do not touch 'phase' at all; keep it unchanged
 
             # Copy the arrays for updating
             seq_gff_start_updated = seq_gff_start_original.copy()
             seq_gff_end_updated   = seq_gff_end_original.copy()
-
-            # Gather all justifications for this seqid
-            seqid_justs = [j for j in justifications if j['seq'] == seqid]
 
             # Vectorized coordinate shift (no phase updates)
             seq_gff_start_updated, seq_gff_end_updated = vectorized_coordinate_update(
@@ -220,16 +247,12 @@ def gapjust_main(args):
             )
 
             # Update the GFF in memory
-            for k, ix in enumerate(index_gff_seq):
-                gff['data'][ix]['start'] = seq_gff_start_updated[k]
-                gff['data'][ix]['end']   = seq_gff_end_updated[k]
+            gff['data']['start'][index_gff_seq] = seq_gff_start_updated
+            gff['data']['end'][index_gff_seq] = seq_gff_end_updated
                 # phase remains as is
 
             # Count how many changed
-            is_gene = numpy.array([
-                (gff['data'][ix]['type'] == 'gene')
-                for ix in index_gff_seq
-            ], dtype=bool)
+            is_gene = (gff['data']['type'][index_gff_seq] == 'gene')
             changed_start = (seq_gff_start_original != seq_gff_start_updated)
             changed_end = (seq_gff_end_original != seq_gff_end_updated)
 

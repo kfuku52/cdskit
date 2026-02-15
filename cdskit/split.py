@@ -16,13 +16,20 @@ def resolve_output_prefix(args):
 def split_main(args):
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
     stop_if_not_multiple_of_three(records)
-    first_records = copy.deepcopy(records)
-    second_records = copy.deepcopy(records)
-    third_records = copy.deepcopy(records)
-    for i in range(len(records)):
-        first_records[i].seq = records[i].seq[0::3]
-        second_records[i].seq = records[i].seq[1::3]
-        third_records[i].seq = records[i].seq[2::3]
+    first_records = []
+    second_records = []
+    third_records = []
+    for record in records:
+        seq = record.seq
+        first_record = copy.copy(record)
+        second_record = copy.copy(record)
+        third_record = copy.copy(record)
+        first_record.seq = seq[0::3]
+        second_record.seq = seq[1::3]
+        third_record.seq = seq[2::3]
+        first_records.append(first_record)
+        second_records.append(second_record)
+        third_records.append(third_record)
     prefix_str = resolve_output_prefix(args)
     sys.stderr.write(f'Writing first codon positions.\n')
     write_seqs(records=first_records, outfile=f'{prefix_str}_1st_codon_positions.{args.outseqformat}', outseqformat=args.outseqformat)

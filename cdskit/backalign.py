@@ -13,7 +13,10 @@ CDS_GAP_CHARS = {'-', '.'}
 
 
 def remove_gap_chars(seq, gap_chars):
-    return ''.join([c for c in str(seq) if c not in gap_chars])
+    out = str(seq)
+    for gap_char in gap_chars:
+        out = out.replace(gap_char, '')
+    return out
 
 
 def stop_if_not_multiple_of_three_after_gap_removal(records):
@@ -70,6 +73,10 @@ def translate_codons(codons, codontable):
     return translated
 
 
+def translate_cds_seq(cdn_seq, codontable):
+    return str(Bio.Seq.Seq(cdn_seq).translate(table=codontable, to_stop=False, gap='-'))
+
+
 def amino_acid_matches(aa_aln_char, translated_char):
     aa = aa_aln_char.upper()
     tr = translated_char.upper()
@@ -80,30 +87,34 @@ def amino_acid_matches(aa_aln_char, translated_char):
 
 def backalign_record(cdn_record, pep_record, codontable):
     cdn_seq = remove_gap_chars(cdn_record.seq, CDS_GAP_CHARS)
-    codons = split_codons(cdn_seq)
-    translated = translate_codons(codons=codons, codontable=codontable)
+    num_codons = len(cdn_seq) // 3
+    translated = translate_cds_seq(cdn_seq=cdn_seq, codontable=codontable)
     pep_seq = str(pep_record.seq)
-    aligned_codons = list()
+    pep_seq_upper = pep_seq.upper()
+    aligned_codons = [''] * len(pep_seq)
     codon_index = 0
 
-    for i, pep_char in enumerate(pep_seq):
+    for i, pep_char_upper in enumerate(pep_seq_upper):
+        pep_char = pep_seq[i]
         if pep_char in AA_GAP_CHARS:
-            aligned_codons.append('---')
+            aligned_codons[i] = '---'
             continue
 
-        if codon_index >= len(codons):
+        if codon_index >= num_codons:
             txt = 'Protein alignment had too many non-gap sites for {} at amino acid position {}.'
             raise Exception(txt.format(pep_record.id, i + 1))
 
         translated_char = translated[codon_index]
-        if not amino_acid_matches(pep_char, translated_char):
+        codon_start = codon_index * 3
+        codon = cdn_seq[codon_start:codon_start+3]
+        if (pep_char_upper not in AA_WILDCARD_CHARS) and (pep_char_upper != translated_char):
             txt = 'Amino acid mismatch for {} at aligned position {}: aa_aln={}, translated={}, codon={}'
-            raise Exception(txt.format(pep_record.id, i + 1, pep_char, translated_char, codons[codon_index]))
+            raise Exception(txt.format(pep_record.id, i + 1, pep_char, translated_char, codon))
 
-        aligned_codons.append(codons[codon_index])
+        aligned_codons[i] = codon
         codon_index += 1
 
-    remaining_codons = len(codons) - codon_index
+    remaining_codons = num_codons - codon_index
     if remaining_codons == 1:
         is_terminal_stop = (len(translated) > 0) and (translated[-1] == '*')
         if is_terminal_stop:

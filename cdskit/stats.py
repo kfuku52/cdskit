@@ -1,9 +1,13 @@
 from cdskit.util import *
+import re
 
 import sys
 
+LOWERCASE_DELETE_TABLE = str.maketrans('', '', 'abcdefghijklmnopqrstuvwxyz')
+
 def num_masked_bp(seq):
-    return sum(1 for bp in seq if bp.islower())
+    seq_str = str(seq)
+    return len(seq_str) - len(seq_str.translate(LOWERCASE_DELETE_TABLE))
 
 def stats_main(args):
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
@@ -19,20 +23,19 @@ def stats_main(args):
     min_consecutive_N_length = 999999999
     max_consecutive_N_length = 0
     for record in records:
-        bp_masked += num_masked_bp(record.seq)
-        bp_all += len(record.seq)
-        bp_A += record.seq.count('A')
-        bp_T += record.seq.count('T')
-        bp_G += record.seq.count('G')
-        bp_C += record.seq.count('C')
-        bp_N += record.seq.count('N')
-        bp_gap += record.seq.count('-')
-        gap_coordinates = [ m.start() for m in re.finditer('N', str(record.seq)) ]
-        gap_ranges = coordinates2ranges(gff_coordinates=gap_coordinates)
-        gap_lengths = [ end-start+1 for start, end in gap_ranges ]
-        if gap_lengths:
-            min_consecutive_N_length = min(min_consecutive_N_length, min(gap_lengths))
-            max_consecutive_N_length = max(max_consecutive_N_length, max(gap_lengths))
+        seq_str = str(record.seq)
+        bp_masked += num_masked_bp(seq_str)
+        bp_all += len(seq_str)
+        bp_A += seq_str.count('A')
+        bp_T += seq_str.count('T')
+        bp_G += seq_str.count('G')
+        bp_C += seq_str.count('C')
+        bp_N += seq_str.count('N')
+        bp_gap += seq_str.count('-')
+        for match in re.finditer('N+', seq_str):
+            gap_len = match.end() - match.start()
+            min_consecutive_N_length = min(min_consecutive_N_length, gap_len)
+            max_consecutive_N_length = max(max_consecutive_N_length, gap_len)
     print('Number of sequences: {:,}'.format(num_seq))
     print('Total length: {:,}'.format(bp_all))
     print('Total softmasked length: {:,}'.format(bp_masked))

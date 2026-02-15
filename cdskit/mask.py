@@ -1,38 +1,52 @@
 #!/usr/bin/env python
 
-import re
 import Bio.Seq
 from cdskit.util import *
 
 def mask_main(args):
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
     stop_if_not_multiple_of_three(records)
+    mask_triplet = args.maskchar * 3
+    mask_ambiguous = (args.ambiguouscodon == 'yes')
+    mask_stop = (args.stopcodon == 'yes')
     for record in records:
         nucseq = str(record.seq)
-        nucseq_len = len(nucseq)
+        codons = [nucseq[i:i+3] for i in range(0, len(nucseq), 3)]
+
+        # Mask partial-gap codons (e.g. A-G) but keep full gaps (---).
         flag1 = False
-        for i in range(int(nucseq_len/3)):
-            start = i * 3
-            end = i * 3 + 3
-            num_gap = nucseq[start:end].count('-')
-            if num_gap!=0:
-                if num_gap!=3:
-                    flag1 = True
-                    nucseq = nucseq[0:start] + args.maskchar*3 + nucseq[end:nucseq_len]
+        for i, codon in enumerate(codons):
+            if ('-' in codon) and (codon != '---'):
+                codons[i] = mask_triplet
+                flag1 = True
+
+        if not mask_ambiguous and not mask_stop:
+            if flag1:
+                record.seq = Bio.Seq.Seq(''.join(codons))
+            continue
+
         if flag1:
-            record.seq = Bio.Seq.Seq(nucseq)
-        aaseq = record.seq.translate(table=args.codontable, to_stop=False, gap="-")
+            translated_source = ''.join(codons)
+            aaseq = str(Bio.Seq.Seq(translated_source).translate(table=args.codontable, to_stop=False, gap="-"))
+        else:
+            aaseq = str(record.seq.translate(table=args.codontable, to_stop=False, gap="-"))
         flag2 = False
-        if args.ambiguouscodon=='yes':
-            for match in re.finditer("X+", str(aaseq)):
-                flag2 = True
-                num_X = match.end() - match.start()
-                nucseq = nucseq[:match.start() * 3]+args.maskchar * num_X * 3+nucseq[match.end() * 3:]
-        if args.stopcodon=='yes':
-            for match in re.finditer("\*+", str(aaseq)):
-                flag2 = True
-                num_stop = match.end() - match.start()
-                nucseq = nucseq[:match.start() * 3]+args.maskchar * num_stop * 3+nucseq[match.end() * 3:]
-        if flag2:
-            record.seq = Bio.Seq.Seq(nucseq)
+        if mask_ambiguous and mask_stop:
+            for i, aa in enumerate(aaseq):
+                if aa in ['X', '*']:
+                    codons[i] = mask_triplet
+                    flag2 = True
+        elif mask_ambiguous:
+            for i, aa in enumerate(aaseq):
+                if aa == 'X':
+                    codons[i] = mask_triplet
+                    flag2 = True
+        else:
+            for i, aa in enumerate(aaseq):
+                if aa == '*':
+                    codons[i] = mask_triplet
+                    flag2 = True
+
+        if flag1 or flag2:
+            record.seq = Bio.Seq.Seq(''.join(codons))
     write_seqs(records=records, outfile=args.outfile, outseqformat=args.outseqformat)

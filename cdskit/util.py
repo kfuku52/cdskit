@@ -36,11 +36,13 @@ def stop_if_not_multiple_of_three(records):
         raise Exception(txt)
 
 def stop_if_not_aligned(records):
-    seqlens = [ len(seq.seq) for seq in records ]
-    is_all_same_len = all([ seqlen==seqlens[0] for seqlen in seqlens ])
-    if not is_all_same_len:
-        txt = 'Sequence lengths were not identical. Please make sure input sequences are correctly aligned. Exiting.\n'
-        raise Exception(txt)
+    if len(records) <= 1:
+        return
+    first_len = len(records[0].seq)
+    for record in records[1:]:
+        if len(record.seq) != first_len:
+            txt = 'Sequence lengths were not identical. Please make sure input sequences are correctly aligned. Exiting.\n'
+            raise Exception(txt)
 
 def translate_records(records, codontable):
     pep_records = list()
