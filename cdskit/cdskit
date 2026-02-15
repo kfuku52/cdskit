@@ -107,6 +107,20 @@ p_backtrim.add_argument('-a', '--trimmed_aa_aln', metavar='PATH', default='', ty
 p_backtrim.set_defaults(handler=command_backtrim)
 
 
+def command_backalign(args):
+    from cdskit.backalign import backalign_main
+    sys.stderr.write('cdskit backalign: started at {}\n'.format(datetime.now()))
+    backalign_main(args)
+    sys.stderr.write('cdskit backalign: ended at {}\n'.format(datetime.now()))
+
+help_backalign = 'Back-aligning CDS based on an amino acid alignment. See `cdskit backalign -h`'
+p_backalign = subparsers.add_parser('backalign', help=help_backalign, parents=[p_version,p_infile,p_outfile,p_codon])
+p_backalign.add_argument('-a', '--aa_aln', metavar='PATH', default='', type=str, required=True, action='store',
+                         help='default=%(default)s: PATH to aligned amino acid sequences. '
+                              'In addition to this, please specify unaligned CDS by --seqfile.')
+p_backalign.set_defaults(handler=command_backalign)
+
+
 def command_gapjust(args):
     from cdskit.gapjust import gapjust_main
     sys.stderr.write('cdskit gapjust: started at {}\n'.format(datetime.now()))

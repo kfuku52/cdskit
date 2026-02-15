@@ -36,6 +36,8 @@ See [Wiki](https://github.com/kfuku52/cdskit/wiki) for detailed descriptions.
 
 - [`aggregate`](https://github.com/kfuku52/cdskit/wiki/cdskit-aggregate): Extracting the longest sequences combined with a sequence name regex
 
+- [`backalign`](https://github.com/kfuku52/cdskit/wiki/cdskit-backalign): Back-aligning CDS from unaligned CDS + aligned proteins
+
 - [`backtrim`](https://github.com/kfuku52/cdskit/wiki/cdskit-backtrim): Back-translating a trimmed protein alignment
 
 - [`gapjust`](https://github.com/kfuku52/cdskit/wiki/cdskit-gapjust): Adjusting consecutive Ns to the fixed length
@@ -74,4 +76,3 @@ There is no published paper on CDSKIT itself, but we used and cited CDSKIT in se
 
 ## Licensing
 This program is BSD-licensed (3 clause). See [LICENSE](LICENSE) for details.
-

@@ -115,6 +115,7 @@ class TestCLIModuleImport:
         modules = [
             'cdskit.accession2fasta',
             'cdskit.aggregate',
+            'cdskit.backalign',
             'cdskit.backtrim',
             'cdskit.hammer',
             'cdskit.intersection',
