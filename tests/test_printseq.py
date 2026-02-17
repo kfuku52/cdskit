@@ -14,7 +14,7 @@ from Bio.SeqRecord import SeqRecord
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from cdskit.printseq import printseq_main
+from cdskit.printseq import format_printseq_lines, printseq_main, record_matches_seqname
 
 
 class TestPrintseqMain:
@@ -188,3 +188,22 @@ class TestPrintseqMain:
         captured = capsys.readouterr()
         assert ">seq1" in captured.out
         assert ">seq2" in captured.out
+
+
+class TestPrintseqHelpers:
+    """Tests for printseq helper functions."""
+
+    def test_record_matches_seqname(self):
+        record = SeqRecord(Seq("ATGAAA"), id="seq_A", name="seq_A", description="")
+        assert record_matches_seqname(record, r"seq_[AG]") is True
+        assert record_matches_seqname(record, r"seq_[TC]") is False
+
+    def test_format_printseq_lines_with_header(self):
+        record = SeqRecord(Seq("ATGAAA"), id="seq_A", name="seq_A", description="")
+        lines = format_printseq_lines(record, show_seqname=True)
+        assert lines == [">seq_A", "ATGAAA"]
+
+    def test_format_printseq_lines_without_header(self):
+        record = SeqRecord(Seq("ATGAAA"), id="seq_A", name="seq_A", description="")
+        lines = format_printseq_lines(record, show_seqname=False)
+        assert lines == ["ATGAAA"]

@@ -14,7 +14,7 @@ from Bio.SeqFeature import SeqFeature, FeatureLocation
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from cdskit.parsegb import parsegb_main
+from cdskit.parsegb import parsegb_main, parsegb_record
 
 
 def create_genbank_record(seq, record_id, organism="Test organism", accession="TEST001"):
@@ -248,3 +248,30 @@ class TestParsegbMain:
         result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
         # Spaces should be replaced with underscores
         assert " " not in result[0].id
+
+
+class TestParsegbHelpers:
+    """Tests for parsegb helper functions."""
+
+    def test_parsegb_record_updates_id_and_clears_name_description(self):
+        record = create_genbank_record("ATGAAA", "REC1", "Homo sapiens", "HS001")
+        parsed = parsegb_record(
+            record=record,
+            seqnamefmt="organism_accessions",
+            extract_cds=False,
+            list_seqname_keys=False,
+        )
+        assert parsed is not None
+        assert "Homo" in parsed.id or "HS001" in parsed.id
+        assert parsed.name == ""
+        assert parsed.description == ""
+
+    def test_parsegb_record_extract_cds_returns_none_without_cds(self):
+        record = create_genbank_record("ATGAAA", "REC1", "Homo sapiens", "HS001")
+        parsed = parsegb_record(
+            record=record,
+            seqnamefmt="organism_accessions",
+            extract_cds=True,
+            list_seqname_keys=False,
+        )
+        assert parsed is None
