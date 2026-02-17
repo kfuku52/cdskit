@@ -214,6 +214,24 @@ p_mask.add_argument('-t', '--stopcodon', metavar='yes|no', default='yes', type=s
 p_mask.set_defaults(handler=command_mask)
 
 
+def command_maxalign(args):
+    from cdskit.maxalign import maxalign_main
+    sys.stderr.write('cdskit maxalign: started at {}\n'.format(datetime.now()))
+    maxalign_main(args)
+    sys.stderr.write('cdskit maxalign: ended at {}\n'.format(datetime.now()))
+
+help_maxalign = 'Removing sequences to maximize codon-based alignment area. See `cdskit maxalign -h`'
+p_maxalign = subparsers.add_parser('maxalign', help=help_maxalign, parents=[p_version, p_infile, p_outfile])
+p_maxalign.add_argument('--mode', metavar='auto|exact|greedy', default='auto', type=str, required=False, action='store',
+                        choices=['auto', 'exact', 'greedy'],
+                        help='default=%(default)s: Solver mode for maximizing alignment area.')
+p_maxalign.add_argument('--max_exact_sequences', metavar='INT', default=16, type=int, required=False, action='store',
+                        help='default=%(default)s: Maximum number of input sequences for exact search.')
+p_maxalign.add_argument('--missing_char', metavar='STR', default='-?.', type=str, required=False, action='store',
+                        help='default=%(default)s: Characters treated as missing within a codon.')
+p_maxalign.set_defaults(handler=command_maxalign)
+
+
 def command_pad(args):
     from cdskit.pad import pad_main
     sys.stderr.write('cdskit pad: started at {}\n'.format(datetime.now()))
