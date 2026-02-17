@@ -1,7 +1,9 @@
 import numpy
 import sys
 import re
-from cdskit.util import *
+from Bio.Seq import Seq
+
+from cdskit.util import read_gff, read_seqs, write_gff, write_seqs
 
 def update_gap_ranges(gap_ranges, gap_start, edit_len):
     """
@@ -127,6 +129,135 @@ def should_justify_gap(gap_length, target_gap_length, gap_just_min=None, gap_jus
     return True
 
 
+def validate_gapjust_args(gap_len, gap_just_min, gap_just_max):
+    for value, label in [
+        (gap_len, '--gap_len'),
+        (gap_just_min, '--gap_just_min'),
+        (gap_just_max, '--gap_just_max'),
+    ]:
+        if value is not None and value < 0:
+            raise ValueError(f'{label} must be >= 0. Got {value}.')
+
+
+def normalize_record_gap_lengths(record, target_gap_length, gap_just_min=None, gap_just_max=None):
+    seq_str = str(record.seq).replace('n', 'N')
+    seq_justifications = []
+    rebuilt = []
+    cursor = 0
+    num_justifications = 0
+    min_original_gap_length = None
+    max_original_gap_length = 0
+
+    for match in re.finditer('N+', seq_str):
+        start = match.start()
+        end = match.end()
+        gap_length = end - start
+        rebuilt.append(seq_str[cursor:start])
+
+        justify_gap = should_justify_gap(
+            gap_length=gap_length,
+            target_gap_length=target_gap_length,
+            gap_just_min=gap_just_min,
+            gap_just_max=gap_just_max,
+        )
+
+        if justify_gap:
+            rebuilt.append('N' * target_gap_length)
+            edit_len = target_gap_length - gap_length
+            seq_justifications.append((start, edit_len))
+            num_justifications += 1
+            if (min_original_gap_length is None) or (gap_length < min_original_gap_length):
+                min_original_gap_length = gap_length
+            if gap_length > max_original_gap_length:
+                max_original_gap_length = gap_length
+        else:
+            rebuilt.append(seq_str[start:end])
+
+        cursor = end
+
+    rebuilt.append(seq_str[cursor:])
+    record.seq = Seq(''.join(rebuilt))
+
+    return (
+        seq_justifications,
+        num_justifications,
+        min_original_gap_length,
+        max_original_gap_length,
+    )
+
+
+def summarize_gap_justifications(num_justifications, min_original_gap_length, max_original_gap_length):
+    sys.stderr.write(f'Number of gap justifications: {num_justifications}\n')
+    if num_justifications > 0:
+        sys.stderr.write(
+            f'Minimum and maximum original gap lengths: {min_original_gap_length} and {max_original_gap_length}\n'
+        )
+    else:
+        sys.stderr.write('No gap edits were made.\n')
+
+
+def build_seqid_to_gff_indices(gff_data):
+    seqid_to_gff_indices = dict()
+    for ix, seqid in enumerate(gff_data['seqid']):
+        if seqid not in seqid_to_gff_indices:
+            seqid_to_gff_indices[seqid] = []
+        seqid_to_gff_indices[seqid].append(ix)
+    return seqid_to_gff_indices
+
+
+def apply_gap_justifications_to_gff(gff, justifications_by_seq):
+    seqid_to_gff_indices = build_seqid_to_gff_indices(gff['data'])
+    num_justified_start_coordinate = 0
+    num_justified_end_coordinate = 0
+    num_justified_gff_gene = 0
+
+    for seqid, seqid_justs in justifications_by_seq.items():
+        if seqid not in seqid_to_gff_indices:
+            continue
+
+        index_gff_seq = numpy.array(seqid_to_gff_indices[seqid], dtype=int)
+        seq_gff_start_original = gff['data']['start'][index_gff_seq].copy()
+        seq_gff_end_original = gff['data']['end'][index_gff_seq].copy()
+        seq_gff_start_updated = seq_gff_start_original.copy()
+        seq_gff_end_updated = seq_gff_end_original.copy()
+
+        seq_gff_start_updated, seq_gff_end_updated = vectorized_coordinate_update(
+            seq_gff_start_updated,
+            seq_gff_end_updated,
+            seqid_justs,
+        )
+
+        gff['data']['start'][index_gff_seq] = seq_gff_start_updated
+        gff['data']['end'][index_gff_seq] = seq_gff_end_updated
+
+        is_gene = (gff['data']['type'][index_gff_seq] == 'gene')
+        changed_start = (seq_gff_start_original != seq_gff_start_updated)
+        changed_end = (seq_gff_end_original != seq_gff_end_updated)
+
+        num_justified_start_coordinate += changed_start.sum()
+        num_justified_end_coordinate += changed_end.sum()
+        justified_changes = numpy.logical_and(is_gene, numpy.logical_or(changed_start, changed_end))
+        num_justified_gff_gene += justified_changes.sum()
+
+    return num_justified_start_coordinate, num_justified_end_coordinate, num_justified_gff_gene
+
+
+def summarize_gff_justifications(
+    num_justified_start_coordinate,
+    num_justified_end_coordinate,
+    num_justified_gff_gene,
+):
+    sys.stderr.write(
+        f'Number of justified GFF start coordinates: {num_justified_start_coordinate}\n'
+    )
+    sys.stderr.write(
+        f'Number of justified GFF end coordinates: {num_justified_end_coordinate}\n'
+    )
+    sys.stderr.write(
+        f'Number of justified GFF gene features: {num_justified_gff_gene}\n'
+    )
+
+
 def gapjust_main(args):
     """
     Main routine for:
@@ -137,17 +268,9 @@ def gapjust_main(args):
          then writing the updated GFF.
     """
 
-    # -- 1) Read FASTA, replace 'n' with 'N' for consistency
     gap_just_min = getattr(args, 'gap_just_min', None)
     gap_just_max = getattr(args, 'gap_just_max', None)
-
-    for value, label in [
-        (args.gap_len, '--gap_len'),
-        (gap_just_min, '--gap_just_min'),
-        (gap_just_max, '--gap_just_max'),
-    ]:
-        if value is not None and value < 0:
-            raise ValueError(f'{label} must be >= 0. Got {value}.')
+    validate_gapjust_args(args.gap_len, gap_just_min, gap_just_max)
 
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
     num_justifications = 0
@@ -155,122 +278,40 @@ def gapjust_main(args):
     max_original_gap_length = 0
     justifications_by_seq = dict()
 
-    # -- 2) For each FASTA record, rebuild sequence once while normalizing gap lengths
-    for i in range(len(records)):
-        seq_str = str(records[i].seq).replace('n', 'N')
-        seq_justifications = []
-        rebuilt = []
-        cursor = 0
-
-        for match in re.finditer('N+', seq_str):
-            start = match.start()
-            end = match.end()
-            gap_length = end - start
-            rebuilt.append(seq_str[cursor:start])
-
-            justify_gap = True
-            if gap_length == args.gap_len:
-                justify_gap = False
-            elif gap_length < args.gap_len:
-                if (gap_just_min is not None) and (gap_length < gap_just_min):
-                    justify_gap = False
-            elif (gap_just_max is not None) and (gap_length > gap_just_max):
-                justify_gap = False
-
-            if justify_gap:
-                rebuilt.append('N' * args.gap_len)
-                edit_len = args.gap_len - gap_length
-                seq_justifications.append((start, edit_len))
-                num_justifications += 1
-                if (min_original_gap_length is None) or (gap_length < min_original_gap_length):
-                    min_original_gap_length = gap_length
-                if gap_length > max_original_gap_length:
-                    max_original_gap_length = gap_length
-            else:
-                rebuilt.append(seq_str[start:end])
-
-            cursor = end
-
-        rebuilt.append(seq_str[cursor:])
-        records[i].seq = Bio.Seq.Seq(''.join(rebuilt))
-
-        if seq_justifications:
-            justifications_by_seq[records[i].id] = seq_justifications
-
-    # -- 3) Write the updated FASTA
-    sys.stderr.write(f'Number of gap justifications: {num_justifications}\n')
-    if num_justifications > 0:
-        sys.stderr.write(
-            f'Minimum and maximum original gap lengths: {min_original_gap_length} and {max_original_gap_length}\n'
+    for record in records:
+        (
+            seq_justifications,
+            record_num_justifications,
+            record_min_original_gap_length,
+            record_max_original_gap_length,
+        ) = normalize_record_gap_lengths(
+            record=record,
+            target_gap_length=args.gap_len,
+            gap_just_min=gap_just_min,
+            gap_just_max=gap_just_max,
         )
-    else:
-        sys.stderr.write('No gap edits were made.\n')
 
+        num_justifications += record_num_justifications
+        if record_min_original_gap_length is not None:
+            if (min_original_gap_length is None) or (record_min_original_gap_length < min_original_gap_length):
+                min_original_gap_length = record_min_original_gap_length
+            max_original_gap_length = max(max_original_gap_length, record_max_original_gap_length)
+        if seq_justifications:
+            justifications_by_seq[record.id] = seq_justifications
+
+    summarize_gap_justifications(num_justifications, min_original_gap_length, max_original_gap_length)
     write_seqs(records=records, outfile=args.outfile, outseqformat=args.outseqformat)
 
-    # -- 4) Read and update GFF coordinates
     if args.ingff is not None:
         gff = read_gff(args.ingff)
-        seqid_to_gff_indices = dict()
-        for ix, seqid in enumerate(gff['data']['seqid']):
-            if seqid not in seqid_to_gff_indices:
-                seqid_to_gff_indices[seqid] = []
-            seqid_to_gff_indices[seqid].append(ix)
-
-        # For each relevant seqid, update the GFF features
-        num_justified_start_coordinate = 0
-        num_justified_end_coordinate = 0
-        num_justified_gff_gene = 0
-
-        for seqid, seqid_justs in justifications_by_seq.items():
-            if seqid not in seqid_to_gff_indices:
-                continue
-
-            # Index of features belonging to this seqid
-            index_gff_seq = numpy.array(seqid_to_gff_indices[seqid], dtype=int)
-
-            # Extract start/end as arrays
-            seq_gff_start_original = gff['data']['start'][index_gff_seq].copy()
-            seq_gff_end_original = gff['data']['end'][index_gff_seq].copy()
-
-            # We do not touch 'phase' at all; keep it unchanged
-
-            # Copy the arrays for updating
-            seq_gff_start_updated = seq_gff_start_original.copy()
-            seq_gff_end_updated   = seq_gff_end_original.copy()
-
-            # Vectorized coordinate shift (no phase updates)
-            seq_gff_start_updated, seq_gff_end_updated = vectorized_coordinate_update(
-                seq_gff_start_updated,
-                seq_gff_end_updated,
-                seqid_justs
-            )
-
-            # Update the GFF in memory
-            gff['data']['start'][index_gff_seq] = seq_gff_start_updated
-            gff['data']['end'][index_gff_seq] = seq_gff_end_updated
-                # phase remains as is
-
-            # Count how many changed
-            is_gene = (gff['data']['type'][index_gff_seq] == 'gene')
-            changed_start = (seq_gff_start_original != seq_gff_start_updated)
-            changed_end = (seq_gff_end_original != seq_gff_end_updated)
-
-            num_justified_start_coordinate += changed_start.sum()
-            num_justified_end_coordinate   += changed_end.sum()
-            justified_changes = numpy.logical_and(is_gene, numpy.logical_or(changed_start, changed_end))
-            num_justified_gff_gene += justified_changes.sum()
-
-        # Summary
-        sys.stderr.write(
-            f'Number of justified GFF start coordinates: {num_justified_start_coordinate}\n'
+        (
+            num_justified_start_coordinate,
+            num_justified_end_coordinate,
+            num_justified_gff_gene,
+        ) = apply_gap_justifications_to_gff(gff, justifications_by_seq)
+        summarize_gff_justifications(
+            num_justified_start_coordinate,
+            num_justified_end_coordinate,
+            num_justified_gff_gene,
         )
-        sys.stderr.write(
-            f'Number of justified GFF end coordinates: {num_justified_end_coordinate}\n'
-        )
-        sys.stderr.write(
-            f'Number of justified GFF gene features: {num_justified_gff_gene}\n'
-        )
-
-        # -- Write the updated GFF
         write_gff(gff, args.outgff)

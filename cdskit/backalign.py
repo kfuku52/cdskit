@@ -90,12 +90,10 @@ def backalign_record(cdn_record, pep_record, codontable):
     num_codons = len(cdn_seq) // 3
     translated = translate_cds_seq(cdn_seq=cdn_seq, codontable=codontable)
     pep_seq = str(pep_record.seq)
-    pep_seq_upper = pep_seq.upper()
     aligned_codons = [''] * len(pep_seq)
     codon_index = 0
 
-    for i, pep_char_upper in enumerate(pep_seq_upper):
-        pep_char = pep_seq[i]
+    for i, pep_char in enumerate(pep_seq):
         if pep_char in AA_GAP_CHARS:
             aligned_codons[i] = '---'
             continue
@@ -107,7 +105,7 @@ def backalign_record(cdn_record, pep_record, codontable):
         translated_char = translated[codon_index]
         codon_start = codon_index * 3
         codon = cdn_seq[codon_start:codon_start+3]
-        if (pep_char_upper not in AA_WILDCARD_CHARS) and (pep_char_upper != translated_char):
+        if not amino_acid_matches(pep_char, translated_char):
             txt = 'Amino acid mismatch for {} at aligned position {}: aa_aln={}, translated={}, codon={}'
             raise Exception(txt.format(pep_record.id, i + 1, pep_char, translated_char, codon))
 

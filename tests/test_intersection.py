@@ -178,6 +178,53 @@ seq3\tsource\tgene\t1\t6\t.\t+\t.\tID=gene2
         # The end coordinate 100 should have been fixed (not 100 anymore)
         assert "\t100\t" not in gff_output
 
+    def test_intersection_fix_outrange_gff_adjusts_starts_and_removes_equal_coords(self, temp_dir, mock_args):
+        """Fix mode should clamp to [1, seqlen] and remove records where start==end."""
+        input_fasta = temp_dir / "input.fasta"
+        input_gff = temp_dir / "input.gff"
+        output_fasta = temp_dir / "output.fasta"
+        output_gff = temp_dir / "output.gff"
+
+        records = [
+            SeqRecord(Seq("ATGAAATTTG"), id="seq1", name="seq1", description=""),  # len=10
+        ]
+        Bio.SeqIO.write(records, str(input_fasta), "fasta")
+
+        gff_content = """##gff-version 3
+seq1\tsource\tgene\t0\t5\t.\t+\t.\tID=g_start0
+seq1\tsource\tgene\t11\t15\t.\t+\t.\tID=g_beyond
+seq1\tsource\tgene\t-3\t-1\t.\t+\t.\tID=g_negative
+seq1\tsource\tgene\t3\t20\t.\t+\t.\tID=g_end_beyond
+"""
+        input_gff.write_text(gff_content)
+
+        args = mock_args(
+            seqfile=str(input_fasta),
+            seqfile2=None,
+            ingff=str(input_gff),
+            outfile=str(output_fasta),
+            outgff=str(output_gff),
+            fix_outrange_gff_records=True,
+        )
+
+        intersection_main(args)
+
+        lines = [l.strip() for l in output_gff.read_text().splitlines() if l.strip() and not l.startswith("#")]
+        assert len(lines) == 2
+
+        fields = [line.split("\t") for line in lines]
+        starts = [int(f[3]) for f in fields]
+        ends = [int(f[4]) for f in fields]
+        ids = [f[8] for f in fields]
+
+        assert "ID=g_start0" in ids
+        assert "ID=g_end_beyond" in ids
+        assert "ID=g_beyond" not in ids
+        assert "ID=g_negative" not in ids
+        assert all(1 <= s <= 10 for s in starts)
+        assert all(1 <= e <= 10 for e in ends)
+        assert all(s != e for s, e in zip(starts, ends))
+
     def test_intersection_requires_second_input(self, temp_dir, mock_args):
         """Test that intersection requires either seqfile2 or ingff."""
         input_path = temp_dir / "input.fasta"

@@ -115,6 +115,12 @@ class TestBackalignRecord:
         result = backalign_record(cdn_record, pep_record, codontable=1)
         assert str(result.seq) == "ATGAAACCC"
 
+    def test_backalign_record_accepts_lowercase_amino_acids(self):
+        cdn_record = SeqRecord(Seq("ATGAAACCC"), id="seq1")  # MKP
+        pep_record = SeqRecord(Seq("mk-p"), id="seq1")
+        result = backalign_record(cdn_record, pep_record, codontable=1)
+        assert str(result.seq) == "ATGAAA---CCC"
+
     def test_backalign_record_rejects_too_many_non_gap_sites(self):
         cdn_record = SeqRecord(Seq("ATGAAA"), id="seq1")  # MK
         pep_record = SeqRecord(Seq("MKA"), id="seq1")

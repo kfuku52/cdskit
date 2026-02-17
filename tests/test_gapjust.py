@@ -106,6 +106,44 @@ class TestVectorizedCoordinateUpdate:
         assert list(new_starts) == [20, 65]
         assert list(new_ends) == [30, 75]
 
+    def test_tuple_justifications_match_dict_behavior(self):
+        """Tuple-format edits should match legacy dict-format behavior."""
+        starts = np.array([10, 50])
+        ends = np.array([20, 60])
+        dict_justifications = [
+            {'original_edit_start': 30, 'edit_length': 5},
+            {'original_edit_start': 5, 'edit_length': 10},
+        ]
+        tuple_justifications = [
+            (5, 10),
+            (30, 5),
+        ]
+
+        dict_starts, dict_ends = vectorized_coordinate_update(starts.copy(), ends.copy(), dict_justifications)
+        tuple_starts, tuple_ends = vectorized_coordinate_update(starts.copy(), ends.copy(), tuple_justifications)
+
+        assert list(tuple_starts) == list(dict_starts)
+        assert list(tuple_ends) == list(dict_ends)
+
+    def test_non_monotonic_actual_edit_starts_use_safe_fallback(self):
+        """Fallback loop should handle edits whose shifted starts are not monotonic."""
+        starts = np.array([8, 30])
+        ends = np.array([9, 35])
+        justifications = [
+            (10, -15),
+            (20, 5),
+        ]
+
+        new_starts, new_ends = vectorized_coordinate_update(starts, ends, justifications)
+
+        # Manual replay of edits:
+        # start 8: 8>11 no shift, then 8>6 shift +5 -> 13
+        # start 30: 30>11 shift -15 -> 15, then 15>6 shift +5 -> 20
+        assert list(new_starts) == [13, 20]
+        # end 9: 9>11 no shift, then 9>6 shift +5 -> 14
+        # end 35: 35>11 shift -15 -> 20, then 20>6 shift +5 -> 25
+        assert list(new_ends) == [14, 25]
+
 
 class TestShouldJustifyGap:
     """Tests for should_justify_gap helper."""
@@ -207,6 +245,56 @@ class TestGapjustMain:
         result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
         # Sequence should be unchanged
         assert str(result[0].seq) == "ATGAAATGA"
+
+    def test_gapjust_reports_no_edits_when_all_gaps_already_target(self, temp_dir, mock_args, capsys):
+        """Summary should report no edits when target already matches all gaps."""
+        input_path = temp_dir / "input.fasta"
+        output_path = temp_dir / "output.fasta"
+
+        records = [
+            SeqRecord(Seq("ATGNNNAAA"), id="seq1", description=""),
+            SeqRecord(Seq("CCCNNNTTT"), id="seq2", description=""),
+        ]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(input_path),
+            outfile=str(output_path),
+            gap_len=3,
+            ingff=None,
+            outgff=None,
+        )
+
+        gapjust_main(args)
+
+        captured = capsys.readouterr()
+        assert "Number of gap justifications: 0" in captured.err
+        assert "No gap edits were made." in captured.err
+
+    def test_gapjust_reports_min_max_original_gap_lengths(self, temp_dir, mock_args, capsys):
+        """Summary should report min/max original gap lengths for edited gaps."""
+        input_path = temp_dir / "input.fasta"
+        output_path = temp_dir / "output.fasta"
+
+        records = [
+            SeqRecord(Seq("ATGNNAAA"), id="seq1", description=""),        # 2 Ns
+            SeqRecord(Seq("CCCNNNNNNTTT"), id="seq2", description=""),    # 6 Ns
+        ]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(input_path),
+            outfile=str(output_path),
+            gap_len=4,
+            ingff=None,
+            outgff=None,
+        )
+
+        gapjust_main(args)
+
+        captured = capsys.readouterr()
+        assert "Number of gap justifications: 2" in captured.err
+        assert "Minimum and maximum original gap lengths: 2 and 6" in captured.err
 
     def test_gapjust_with_gff(self, temp_dir, mock_args):
         """Test gapjust updates GFF coordinates."""

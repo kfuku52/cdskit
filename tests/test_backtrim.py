@@ -12,7 +12,7 @@ from Bio.SeqRecord import SeqRecord
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from cdskit.backtrim import backtrim_main, check_same_seq_num
+from cdskit.backtrim import backtrim_main, build_column_index, check_same_seq_num
 
 
 class TestCheckSameSeqNum:
@@ -34,6 +34,20 @@ class TestCheckSameSeqNum:
         pep_records = [SeqRecord(Seq("MK"), id="seq1")]
         with pytest.raises(AssertionError):
             check_same_seq_num(cdn_records, pep_records)
+
+
+class TestBuildColumnIndex:
+    """Tests for build_column_index helper."""
+
+    def test_empty_input(self):
+        """Empty input should produce an empty index."""
+        col_index = build_column_index([])
+        assert len(col_index) == 0
+
+    def test_duplicate_column_patterns_preserve_order(self):
+        """Duplicate column keys should retain all matching positions."""
+        col_index = build_column_index(["AA", "AA"])
+        assert list(col_index["AA"]) == [0, 1]
 
 
 class TestBacktrimMain:
@@ -106,6 +120,38 @@ class TestBacktrimMain:
         result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
         # Should have kept only M and K codons
         assert len(result[0].seq) == 6
+
+    def test_backtrim_multiple_matches_uses_first_site(self, temp_dir, mock_args, capsys):
+        """When multiple codon sites match one protein column, first site is used."""
+        cdn_path = temp_dir / "codon.fasta"
+        pep_path = temp_dir / "protein.fasta"
+        output_path = temp_dir / "output.fasta"
+
+        cdn_records = [
+            SeqRecord(Seq("ATGATG"), id="seq1", description=""),  # M M
+            SeqRecord(Seq("ATGATG"), id="seq2", description=""),  # M M
+        ]
+        Bio.SeqIO.write(cdn_records, str(cdn_path), "fasta")
+
+        pep_records = [
+            SeqRecord(Seq("M"), id="seq1", description=""),
+            SeqRecord(Seq("M"), id="seq2", description=""),
+        ]
+        Bio.SeqIO.write(pep_records, str(pep_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(cdn_path),
+            outfile=str(output_path),
+            trimmed_aa_aln=str(pep_path),
+            codontable=1,
+        )
+
+        backtrim_main(args)
+
+        captured = capsys.readouterr()
+        assert "multiple matches" in captured.err
+        result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
+        assert [str(r.seq) for r in result] == ["ATG", "ATG"]
 
     def test_backtrim_rejects_non_multiple_of_three(self, temp_dir, mock_args):
         """Test backtrim rejects codon sequences not multiple of 3."""
