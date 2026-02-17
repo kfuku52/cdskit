@@ -1,7 +1,4 @@
-from cdskit.util import *
-import re
-
-import sys
+from cdskit.util import read_seqs
 
 LOWERCASE_DELETE_TABLE = str.maketrans('', '', 'abcdefghijklmnopqrstuvwxyz')
 
@@ -14,28 +11,18 @@ def stats_main(args):
     num_seq = len(records)
     bp_masked = 0
     bp_all = 0
-    bp_A = 0
-    bp_T = 0
     bp_G = 0
     bp_C = 0
     bp_N = 0
     bp_gap = 0
-    min_consecutive_N_length = 999999999
-    max_consecutive_N_length = 0
     for record in records:
         seq_str = str(record.seq)
         bp_masked += num_masked_bp(seq_str)
         bp_all += len(seq_str)
-        bp_A += seq_str.count('A')
-        bp_T += seq_str.count('T')
         bp_G += seq_str.count('G')
         bp_C += seq_str.count('C')
         bp_N += seq_str.count('N')
         bp_gap += seq_str.count('-')
-        for match in re.finditer('N+', seq_str):
-            gap_len = match.end() - match.start()
-            min_consecutive_N_length = min(min_consecutive_N_length, gap_len)
-            max_consecutive_N_length = max(max_consecutive_N_length, gap_len)
     print('Number of sequences: {:,}'.format(num_seq))
     print('Total length: {:,}'.format(bp_all))
     print('Total softmasked length: {:,}'.format(bp_masked))

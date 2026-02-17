@@ -76,7 +76,7 @@ class TestStatsMain:
 
         captured = capsys.readouterr()
         # 2 G/C out of 6 = 33.3%
-        assert "GC content:" in captured.out
+        assert "GC content: 33.3%" in captured.out
 
     def test_stats_with_gaps(self, temp_dir, mock_args, capsys):
         """Test stats with gap characters."""

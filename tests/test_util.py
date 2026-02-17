@@ -11,6 +11,7 @@ from io import StringIO
 import Bio.SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
+from Bio.SeqFeature import FeatureLocation, SeqFeature
 
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -42,6 +43,15 @@ class TestReadSeqs:
 
         result = util.read_seqs(str(fasta_path), "fasta")
         assert len(result) == 0
+
+
+class TestReadItemPerLineFile:
+    """Tests for read_item_per_line_file function."""
+
+    def test_reads_non_empty_lines_only(self, temp_dir):
+        path = temp_dir / "items.txt"
+        path.write_text("alpha\n\nbeta\n\ngamma\n")
+        assert util.read_item_per_line_file(str(path)) == ["alpha", "beta", "gamma"]
 
 
 class TestWriteSeqs:
@@ -168,6 +178,43 @@ class TestRecords2Array:
         assert list(result[1]) == ['G', 'C', 'T', 'A']
 
 
+class TestGetSeqname:
+    """Tests for get_seqname function."""
+
+    def test_builds_name_from_multiple_annotation_fields(self):
+        record = SeqRecord(Seq("ATG"), id="r1")
+        record.annotations["organism"] = "Homo sapiens"
+        record.annotations["accessions"] = ["ABC123", "DEF456"]
+        result = util.get_seqname(record, "organism_accessions")
+        assert result == "Homo_sapiens_ABC123"
+
+    def test_raises_for_unknown_annotation_key(self):
+        record = SeqRecord(Seq("ATG"), id="r2")
+        record.annotations["organism"] = "Homo sapiens"
+        with pytest.raises(Exception) as exc_info:
+            util.get_seqname(record, "organism_unknown")
+        assert "Invalid --seqnamefmt element (unknown)" in str(exc_info.value)
+
+
+class TestReplaceSeq2Cds:
+    """Tests for replace_seq2cds function."""
+
+    def test_replaces_sequence_with_cds_feature(self):
+        record = SeqRecord(Seq("AAATGCCCCTTT"), id="cds_record")
+        record.features = [
+            SeqFeature(FeatureLocation(3, 9), type="CDS"),
+        ]
+        result = util.replace_seq2cds(record)
+        assert result is not None
+        assert str(result.seq) == "TGCCCC"
+
+    def test_returns_none_when_no_cds_feature(self):
+        record = SeqRecord(Seq("AAATGCCCCTTT"), id="no_cds_record")
+        record.features = []
+        result = util.replace_seq2cds(record)
+        assert result is None
+
+
 class TestReadGff:
     """Tests for read_gff function."""
 
@@ -188,6 +235,46 @@ class TestReadGff:
         assert data[0]['type'] == 'gene'
         assert data[0]['start'] == 1
         assert data[0]['end'] == 100
+
+    def test_single_record_gff_is_returned_as_1d_array(self, temp_dir):
+        """Single non-header line should still produce length-1 structured array."""
+        path = temp_dir / "single.gff"
+        path.write_text("##gff-version 3\nseq1\tsource\tgene\t1\t10\t.\t+\t.\tID=g1\n")
+        result = util.read_gff(str(path))
+        assert len(result["data"]) == 1
+        assert result["data"][0]["seqid"] == "seq1"
+
+
+class TestWriteGff:
+    """Tests for write_gff function."""
+
+    def test_write_and_read_roundtrip(self, temp_dir):
+        out_path = temp_dir / "roundtrip.gff"
+        dtype = [
+            ('seqid', 'U100'),
+            ('source', 'U100'),
+            ('type', 'U100'),
+            ('start', 'i4'),
+            ('end', 'i4'),
+            ('score', 'U100'),
+            ('strand', 'U10'),
+            ('phase', 'U10'),
+            ('attributes', 'U500')
+        ]
+        data = np.array(
+            [
+                ("seq1", "src", "gene", 1, 100, ".", "+", ".", "ID=g1"),
+                ("seq1", "src", "CDS", 10, 90, ".", "+", "0", "ID=c1"),
+            ],
+            dtype=dtype,
+        )
+        gff = {"header": ["##gff-version 3"], "data": data}
+
+        util.write_gff(gff, str(out_path))
+        reread = util.read_gff(str(out_path))
+        assert reread["header"] == ["##gff-version 3"]
+        assert len(reread["data"]) == 2
+        assert reread["data"][1]["type"] == "CDS"
 
 
 class TestCoordinates2Ranges:
