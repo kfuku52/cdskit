@@ -229,6 +229,12 @@ p_maxalign.add_argument('--max_exact_sequences', metavar='INT', default=16, type
                         help='default=%(default)s: Maximum number of input sequences for exact search.')
 p_maxalign.add_argument('--missing_char', metavar='STR', default='-?.', type=str, required=False, action='store',
                         help='default=%(default)s: Characters treated as missing within a codon.')
+p_maxalign.add_argument('--keep', metavar='REGEX1,REGEX2,...', default='', type=str, required=False, action='store',
+                        help='default=%(default)s: Comma-separated regex patterns for sequence names that should not be dropped.')
+p_maxalign.add_argument('--max_removed', metavar='INT', default=None, type=int, required=False, action='store',
+                        help='default=%(default)s: Maximum number of input sequences that can be removed in total.')
+p_maxalign.add_argument('--report', metavar='PATH', default='', type=str, required=False, action='store',
+                        help='default=%(default)s: Optional report output path. If PATH ends with ".json", JSON is written; otherwise tab-separated TSV is written.')
 p_maxalign.set_defaults(handler=command_maxalign)
 
 
@@ -319,6 +325,32 @@ def command_stats(args):
 help_stats = 'Printing sequence statistics. See `cdskit stats -h`'
 p_stats = subparsers.add_parser('stats', help=help_stats, parents=[p_version,p_infile])
 p_stats.set_defaults(handler=command_stats)
+
+
+def command_translate(args):
+    from cdskit.translate import translate_main
+    sys.stderr.write('cdskit translate: started at {}\n'.format(datetime.now()))
+    translate_main(args)
+    sys.stderr.write('cdskit translate: ended at {}\n'.format(datetime.now()))
+
+help_translate = 'Translating CDS nucleotide sequences to amino acids. See `cdskit translate -h`'
+p_translate = subparsers.add_parser('translate', help=help_translate, parents=[p_version,p_infile,p_outfile,p_codon])
+p_translate.add_argument('--to_stop', metavar='yes|no', default='no', type=strtobool, required=False, action='store',
+                         help='default=%(default)s: Whether to stop translation at the first in-frame stop codon.')
+p_translate.set_defaults(handler=command_translate)
+
+
+def command_validate(args):
+    from cdskit.validate import validate_main
+    sys.stderr.write('cdskit validate: started at {}\n'.format(datetime.now()))
+    validate_main(args)
+    sys.stderr.write('cdskit validate: ended at {}\n'.format(datetime.now()))
+
+help_validate = 'Validating aligned CDS quality and reporting issues. See `cdskit validate -h`'
+p_validate = subparsers.add_parser('validate', help=help_validate, parents=[p_version,p_infile,p_codon])
+p_validate.add_argument('--report', metavar='PATH', default='', type=str, required=False, action='store',
+                        help='default=%(default)s: Optional report output path. If PATH ends with ".json", JSON is written; otherwise tab-separated TSV is written.')
+p_validate.set_defaults(handler=command_validate)
 
 
 # Handler

@@ -41,6 +41,9 @@ In this example, CDSKIT removes one gap-heavy sequence and keeps codon sites tha
 - `--mode auto|exact|greedy`: Solver mode. `auto` uses exact search for small inputs and greedy search for larger inputs.
 - `--max_exact_sequences INT`: Maximum number of sequences allowed in exact mode (default: `16`).
 - `--missing_char STR`: Characters treated as missing within a codon (default: `-?.`).
+- `--keep REGEX1,REGEX2,...`: Comma-separated regex patterns of sequence names that should not be dropped.
+- `--max_removed INT`: Maximum total number of sequences that can be removed.
+- `--report PATH`: Optional report path. If `PATH` ends with `.json`, JSON is written; otherwise TSV is written. No report is produced unless this is specified.
 
 ### Notes
 

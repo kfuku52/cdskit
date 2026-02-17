@@ -128,8 +128,10 @@ class TestCLIModuleImport:
             'cdskit.rmseq',
             'cdskit.split',
             'cdskit.stats',
+            'cdskit.translate',
             'cdskit.gapjust',
             'cdskit.util',
+            'cdskit.validate',
         ]
 
         for module_name in modules:

@@ -2,6 +2,7 @@
 Tests for cdskit maxalign command.
 """
 
+import json
 import pytest
 from pathlib import Path
 
@@ -329,6 +330,117 @@ class TestMaxalignMain:
         assert [r.id for r in result] == ["seq1"]
         assert str(result[0].seq) == "ATGCCC"
 
+    def test_maxalign_keep_regex_protects_sequence_from_dropping(self, temp_dir, mock_args):
+        """--keep should protect matching sequences even if area decreases."""
+        input_path = temp_dir / "input.fasta"
+        output_path = temp_dir / "output.fasta"
+
+        records = [
+            SeqRecord(Seq("ATGAAACCC"), id="seq1", description=""),
+            SeqRecord(Seq("ATGAAACCC"), id="seq2", description=""),
+            SeqRecord(Seq("---AAA---"), id="seq3", description=""),
+        ]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(input_path),
+            outfile=str(output_path),
+            mode='exact',
+            max_exact_sequences=16,
+            keep='seq3',
+            missing_char='-?.',
+        )
+
+        maxalign_main(args)
+
+        result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
+        assert [r.id for r in result] == ["seq1", "seq2", "seq3"]
+        assert all(str(r.seq) == "AAA" for r in result)
+
+    def test_maxalign_max_removed_limits_drops(self, temp_dir, mock_args):
+        """--max_removed should cap optimization-driven removals."""
+        input_path = temp_dir / "input.fasta"
+        output_path = temp_dir / "output.fasta"
+
+        records = [
+            SeqRecord(Seq("ATGAAACCC"), id="seq1", description=""),
+            SeqRecord(Seq("ATGAAACCC"), id="seq2", description=""),
+            SeqRecord(Seq("---AAA---"), id="seq3", description=""),
+        ]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(input_path),
+            outfile=str(output_path),
+            mode='exact',
+            max_exact_sequences=16,
+            max_removed=0,
+            missing_char='-?.',
+        )
+
+        maxalign_main(args)
+
+        result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
+        assert [r.id for r in result] == ["seq1", "seq2", "seq3"]
+        assert all(str(r.seq) == "AAA" for r in result)
+
+    def test_maxalign_writes_optional_json_report(self, temp_dir, mock_args):
+        """--report should write JSON report when path ends with .json."""
+        input_path = temp_dir / "input.fasta"
+        output_path = temp_dir / "output.fasta"
+        report_path = temp_dir / "report.json"
+
+        records = [
+            SeqRecord(Seq("ATGAAACCC"), id="seq1", description=""),
+            SeqRecord(Seq("ATGAAACCC"), id="seq2", description=""),
+            SeqRecord(Seq("---AAA---"), id="seq3", description=""),
+        ]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(input_path),
+            outfile=str(output_path),
+            report=str(report_path),
+            mode='greedy',
+            max_exact_sequences=2,
+            missing_char='-?.',
+        )
+
+        maxalign_main(args)
+
+        report = json.loads(report_path.read_text())
+        assert report["mode"] == "greedy"
+        assert report["num_input_sequences"] == 3
+        assert "steps" in report
+        assert report["final_area"] >= report["initial_area"]
+
+    def test_maxalign_writes_optional_tsv_report(self, temp_dir, mock_args):
+        """--report should write TSV-style output for non-.json paths."""
+        input_path = temp_dir / "input.fasta"
+        output_path = temp_dir / "output.fasta"
+        report_path = temp_dir / "report.tsv"
+
+        records = [
+            SeqRecord(Seq("ATGAAACCC"), id="seq1", description=""),
+            SeqRecord(Seq("ATGAAACCC"), id="seq2", description=""),
+        ]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(input_path),
+            outfile=str(output_path),
+            report=str(report_path),
+            mode='exact',
+            max_exact_sequences=16,
+            missing_char='-?.',
+        )
+
+        maxalign_main(args)
+
+        txt = report_path.read_text()
+        assert txt.startswith("metric\tvalue")
+        assert "steps" in txt
+
 
 class TestMaxalignHelpers:
     """Tests for helper functions used by maxalign."""
@@ -356,6 +468,36 @@ class TestMaxalignHelpers:
         assert exact['area'] == 4
         assert greedy['kept_indices'] == [0, 1]
         assert greedy['area'] == 4
+
+    def test_solve_exact_with_required_indices(self):
+        matrix = [
+            [True, True, False],
+            [True, True, False],
+            [False, True, True],
+        ]
+        exact = solve_exact(
+            matrix,
+            candidate_indices=[0, 1, 2],
+            required_indices=[2],
+            max_removed=None,
+            total_sequences=3,
+        )
+        assert exact['kept_indices'] == [0, 1, 2]
+
+    def test_solve_greedy_with_protected_and_max_removed(self):
+        matrix = [
+            [True, True, True],
+            [True, True, True],
+            [False, True, False],
+        ]
+        greedy = solve_greedy(
+            matrix,
+            active_indices=[0, 1, 2],
+            protected_indices=[2],
+            max_removed=0,
+            total_sequences=3,
+        )
+        assert greedy['kept_indices'] == [0, 1, 2]
 
     def test_alignment_area_and_complete_indices(self):
         matrix = [

@@ -64,6 +64,10 @@ See [Wiki](https://github.com/kfuku52/cdskit/wiki) for detailed descriptions.
 
 - [`stats`](https://github.com/kfuku52/cdskit/wiki/cdskit-stats): Printing sequence statistics
 
+- [`translate`](https://github.com/kfuku52/cdskit/wiki/cdskit-translate): Translating CDS nucleotide sequences to amino acids
+
+- [`validate`](https://github.com/kfuku52/cdskit/wiki/cdskit-validate): Validating aligned CDS quality and reporting issues
+
 ## Streamlined analysis
 CDSKIT is designed for data flow through [standard input and output](https://en.wikipedia.org/wiki/Standard_streams). Streamlined processing may be combined with other sequence processing tools, such as [SeqKit](https://bioinf.shenwei.me/seqkit/), with pipes (`|`).
 
