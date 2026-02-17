@@ -12,7 +12,33 @@ from Bio.SeqRecord import SeqRecord
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from cdskit.pad import pad_main, padseqs
+from cdskit.pad import count_internal_stop_codons, get_stop_codons, pad_main, padseqs
+
+
+class TestStopCodonHelpers:
+    """Tests for low-level stop-codon helper functions."""
+
+    def test_get_stop_codons_id_and_name_are_consistent(self):
+        """Codon table id and name should provide identical stop codons."""
+        stop_by_id = get_stop_codons(1)
+        stop_by_name = get_stop_codons("Standard")
+        assert stop_by_id == stop_by_name
+        assert "TAA" in stop_by_id
+        assert "TAG" in stop_by_id
+        assert "TGA" in stop_by_id
+
+    def test_count_internal_stop_codons_ignores_terminal_stop(self):
+        """Terminal stop codon should not be counted as internal."""
+        assert count_internal_stop_codons("ATGAAATGA", 1) == 0
+
+    def test_count_internal_stop_codons_counts_internal_stops(self):
+        """Internal stop codons should be counted."""
+        assert count_internal_stop_codons("ATGTGACCC", 1) == 1
+
+    def test_count_internal_stop_codons_short_sequence(self):
+        """Sequences shorter than a full internal codon window return zero."""
+        assert count_internal_stop_codons("AT", 1) == 0
+        assert count_internal_stop_codons("ATG", 1) == 0
 
 
 class TestPadSeqs:

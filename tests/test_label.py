@@ -12,7 +12,55 @@ from Bio.SeqRecord import SeqRecord
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from cdskit.label import label_main
+from cdskit.label import (
+    apply_char_replacement,
+    clip_label_ids,
+    label_main,
+    parse_replace_chars,
+    uniquify_label_ids,
+)
+
+
+class TestLabelHelpers:
+    """Tests for label helper functions."""
+
+    def test_parse_replace_chars(self):
+        from_chars, to_char = parse_replace_chars(":|--_")
+        assert from_chars == [":", "|"]
+        assert to_char == "_"
+
+    def test_apply_char_replacement_counts_records_once(self):
+        records = [
+            SeqRecord(Seq("ATG"), id="a:b:c", description=""),
+            SeqRecord(Seq("ATG"), id="plain", description=""),
+        ]
+        replaced = apply_char_replacement(records, [":"], "_")
+        assert replaced == 1
+        assert records[0].id == "a_b_c"
+        assert records[1].id == "plain"
+
+    def test_clip_label_ids(self):
+        records = [
+            SeqRecord(Seq("ATG"), id="long_name_here", description=""),
+            SeqRecord(Seq("ATG"), id="short", description=""),
+        ]
+        clipped = clip_label_ids(records, 5)
+        assert clipped == 1
+        assert records[0].id == "long_"
+        assert records[1].id == "short"
+
+    def test_uniquify_label_ids(self):
+        records = [
+            SeqRecord(Seq("ATG"), id="dup", description="d1"),
+            SeqRecord(Seq("ATG"), id="dup", description="d2"),
+            SeqRecord(Seq("ATG"), id="uniq", description="d3"),
+        ]
+        resolved_count, nonunique_names = uniquify_label_ids(records)
+        assert resolved_count == 2
+        assert nonunique_names == ["dup"]
+        assert [r.id for r in records] == ["dup_1", "dup_2", "uniq"]
+        assert records[0].description == ""
+        assert records[1].description == ""
 
 
 class TestLabelMain:

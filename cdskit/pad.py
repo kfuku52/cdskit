@@ -4,10 +4,9 @@ import Bio.Data.CodonTable
 import Bio.Seq
 import Bio.SeqIO
 import numpy
-
-from cdskit.util import *
-
 import sys
+
+from cdskit.util import read_seqs, write_seqs
 
 _STOP_CODON_CACHE = {}
 
@@ -62,52 +61,77 @@ class padseqs:
         }
         return out
 
+
+def get_adjusted_length_and_tailpadded_sequence(clean_seq, padchar):
+    seqlen = len(clean_seq)
+    if seqlen % 3 == 0:
+        return seqlen, clean_seq
+    adjlen = ((seqlen // 3) + 1) * 3
+    return adjlen, clean_seq.ljust(adjlen, padchar)
+
+
+def get_padding_candidates(num_stop_input, num_missing, seqlen):
+    candidates = []
+    if num_stop_input:
+        if (num_missing == 0) or (num_missing == 3):
+            candidates.extend([(0, 0), (1, 2), (2, 1)])
+        elif num_missing == 1:
+            candidates.extend([(0, 1), (1, 0), (2, 2)])
+        elif num_missing == 2:
+            candidates.extend([(0, 2), (2, 0), (1, 1)])
+    if (not num_stop_input) and (seqlen % 3):
+        candidates.append((0, num_missing))
+    return candidates
+
+
+def choose_best_padding(clean_seq, codon_table, padchar, num_stop_input, num_missing, seqlen):
+    seqs = padseqs(original_seq=clean_seq, codon_table=codon_table, padchar=padchar)
+    for headn, tailn in get_padding_candidates(num_stop_input, num_missing, seqlen):
+        seqs.add(headn=headn, tailn=tailn)
+    return seqs.get_minimum_num_stop()
+
+
+def process_record_padding(record, codon_table, padchar):
+    clean_seq = str(record.seq).replace('X', 'N')
+    seqlen = len(clean_seq)
+    adjlen, tailpad_seq = get_adjusted_length_and_tailpadded_sequence(clean_seq, padchar)
+    num_stop_input = count_internal_stop_codons(tailpad_seq, codon_table)
+
+    if not (num_stop_input or (seqlen % 3)):
+        return True, False
+
+    num_missing = adjlen - seqlen
+    best_padseq = choose_best_padding(
+        clean_seq=clean_seq,
+        codon_table=codon_table,
+        padchar=padchar,
+        num_stop_input=num_stop_input,
+        num_missing=num_missing,
+        seqlen=seqlen,
+    )
+    record.seq = best_padseq['new_seq']
+    is_no_stop = (best_padseq['num_stop'] == 0)
+    txt = f'{record.name}, original_seqlen={seqlen}, head_padding={best_padseq["headn"]}, tail_padding={best_padseq["tailn"]}, '
+    txt += f'original_num_stop={num_stop_input}, new_num_stop={best_padseq["num_stop"]}\n'
+    sys.stderr.write(txt)
+    was_padded = not ((best_padseq['headn'] == 0) and (best_padseq['tailn'] == 0))
+    return is_no_stop, was_padded
+
+
 def pad_main(args):
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
-    is_no_stop = list()
+    is_no_stop = []
     seqnum_padded = 0
-    for i in range(len(records)):
-        clean_seq = str(records[i].seq).replace('X', 'N')
-        seqlen = len(clean_seq)
-        if seqlen % 3 == 0:
-            adjlen = seqlen
-            tailpad_seq = clean_seq
-        else:
-            adjlen = ((seqlen//3)+1)*3
-            tailpad_seq = clean_seq.ljust(adjlen, args.padchar)
-        num_stop_input = count_internal_stop_codons(tailpad_seq, args.codontable)
-        if ((num_stop_input)|(seqlen % 3)):
-            num_missing = adjlen - seqlen
-            seqs = padseqs(original_seq=clean_seq, codon_table=args.codontable, padchar=args.padchar)
-            if num_stop_input:
-                if (num_missing==0)|(num_missing==3):
-                    seqs.add(headn=0, tailn=0)
-                    seqs.add(headn=1, tailn=2)
-                    seqs.add(headn=2, tailn=1)
-                elif num_missing==1:
-                    seqs.add(headn=0, tailn=1)
-                    seqs.add(headn=1, tailn=0)
-                    seqs.add(headn=2, tailn=2)
-                elif num_missing==2:
-                    seqs.add(headn=0, tailn=2)
-                    seqs.add(headn=2, tailn=0)
-                    seqs.add(headn=1, tailn=1)
-            if ((not num_stop_input) and (seqlen % 3)):
-                seqs.add(headn=0, tailn=num_missing)
-            best_padseq = seqs.get_minimum_num_stop()
-            records[i].seq = best_padseq['new_seq']
-            if best_padseq['num_stop']==0:
-                is_no_stop.append(True)
-            else:
-                is_no_stop.append(False)
-            txt = f'{records[i].name}, original_seqlen={seqlen}, head_padding={best_padseq["headn"]}, tail_padding={best_padseq["tailn"]}, '
-            txt += f'original_num_stop={num_stop_input}, new_num_stop={best_padseq["num_stop"]}\n'
-            sys.stderr.write(txt)
-            if not ((best_padseq['headn']==0)&(best_padseq['tailn']==0)):
-                seqnum_padded += 1
-        else:
-            is_no_stop.append(True)
+    for record in records:
+        record_is_no_stop, record_was_padded = process_record_padding(
+            record=record,
+            codon_table=args.codontable,
+            padchar=args.padchar,
+        )
+        is_no_stop.append(record_is_no_stop)
+        if record_was_padded:
+            seqnum_padded += 1
     if args.nopseudo:
-        records = [ records[i] for i in range(len(records)) if is_no_stop[i] ]
+        records = [records[i] for i in range(len(records)) if is_no_stop[i]]
     sys.stderr.write('Number of padded sequences: {:,} / {:,}\n'.format(seqnum_padded, len(records)))
     write_seqs(records=records, outfile=args.outfile, outseqformat=args.outseqformat)

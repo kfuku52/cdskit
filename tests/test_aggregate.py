@@ -12,7 +12,22 @@ from Bio.SeqRecord import SeqRecord
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from cdskit.aggregate import aggregate_main
+from cdskit.aggregate import aggregate_main, aggregate_name, select_aggregate_record
+
+
+class TestAggregateHelpers:
+    """Tests for aggregate helper functions."""
+
+    def test_aggregate_name_applies_expressions_in_order(self):
+        name = "prefix_gene_suffix.1"
+        expressions = [r'^prefix_', r'_suffix', r'\.[0-9]+$']
+        assert aggregate_name(name, expressions) == "gene"
+
+    def test_select_aggregate_record_longest_mode(self):
+        rec_short = SeqRecord(Seq("ATG"), id="short", name="short", description="")
+        rec_long = SeqRecord(Seq("ATGAAA"), id="long", name="long", description="")
+        selected = select_aggregate_record(rec_short, rec_long, mode="longest")
+        assert selected is rec_long
 
 
 class TestAggregateMain:

@@ -1,7 +1,25 @@
 #!/usr/bin/env python
 
 import re
-from cdskit.util import *
+import sys
+
+from cdskit.util import read_seqs, write_seqs
+
+
+def aggregate_name(name, expressions):
+    aggregated = name
+    for expr in expressions:
+        aggregated = re.sub(expr, '', aggregated)
+    return aggregated
+
+
+def select_aggregate_record(existing_record, candidate_record, mode):
+    if mode == 'longest':
+        if len(existing_record.seq) < len(candidate_record.seq):
+            return candidate_record
+        return existing_record
+    sys.stderr.write('different modes to be supported in future.')
+    return existing_record
 
 
 def aggregate_main(args):
@@ -10,15 +28,13 @@ def aggregate_main(args):
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
     uniq = {}
     for record in records:
-        newname = record.name
-        for expr in args.expression:
-            newname = re.sub(expr, '', newname)
+        newname = aggregate_name(record.name, args.expression)
         if newname in uniq.keys():
-            if args.mode=='longest':
-                if len(uniq[newname].seq) < len(record.seq):
-                    uniq[newname] = record
-            else:
-                sys.stderr.write('different modes to be supported in future.')
+            uniq[newname] = select_aggregate_record(
+                existing_record=uniq[newname],
+                candidate_record=record,
+                mode=args.mode,
+            )
         else:
             uniq[newname] = record
     out_records = list(uniq.values())

@@ -12,11 +12,30 @@ from Bio.SeqRecord import SeqRecord
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from cdskit.split import resolve_output_prefix, split_main
+from cdskit.split import (
+    build_split_output_paths,
+    resolve_output_prefix,
+    split_main,
+    split_record_by_codon_position,
+)
 
 
 class TestSplitMain:
     """Tests for split_main function."""
+
+    def test_split_record_by_codon_position(self):
+        record = SeqRecord(Seq("ATGCCCGGG"), id="seq1", description="")
+        first, second, third = split_record_by_codon_position(record)
+        assert str(first.seq) == "ACG"
+        assert str(second.seq) == "TCG"
+        assert str(third.seq) == "GCG"
+        assert first.id == "seq1"
+
+    def test_build_split_output_paths(self):
+        first, second, third = build_split_output_paths("outprefix", "fasta")
+        assert first == "outprefix_1st_codon_positions.fasta"
+        assert second == "outprefix_2nd_codon_positions.fasta"
+        assert third == "outprefix_3rd_codon_positions.fasta"
 
     def test_resolve_output_prefix_prefers_explicit_prefix(self, mock_args):
         args = mock_args(seqfile='input.fasta', prefix='custom_prefix', outfile='ignored')

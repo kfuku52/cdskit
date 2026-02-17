@@ -12,7 +12,36 @@ from Bio.SeqRecord import SeqRecord
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from cdskit.rmseq import rmseq_main
+from cdskit.rmseq import problematic_rate, rmseq_main, should_remove_record
+
+
+class TestRmseqHelpers:
+    """Tests for rmseq helper functions."""
+
+    def test_problematic_rate_multiple_char_sets(self):
+        seq = "ATN-X?"
+        rate = problematic_rate(seq, ['N', '-', 'X', '?'])
+        assert rate == pytest.approx(4 / 6)
+
+    def test_should_remove_record_by_name_pattern(self):
+        record = SeqRecord(Seq("ATGAAA"), id="remove_me", name="remove_me", description="")
+        remove = should_remove_record(
+            record=record,
+            seqname_pattern="remove.*",
+            problematic_percent=0,
+            problematic_chars=['N'],
+        )
+        assert remove is True
+
+    def test_should_remove_record_by_problematic_threshold(self):
+        record = SeqRecord(Seq("ATGNNN"), id="seq1", name="seq1", description="")
+        remove = should_remove_record(
+            record=record,
+            seqname_pattern="$^",
+            problematic_percent=50,
+            problematic_chars=['N'],
+        )
+        assert remove is True
 
 
 class TestRmseqMain:

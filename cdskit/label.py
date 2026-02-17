@@ -1,40 +1,62 @@
-import numpy
 import sys
 from collections import Counter
-from cdskit.util import *
+
+from cdskit.util import read_seqs, write_seqs
+
+
+def parse_replace_chars(replace_chars):
+    from_chars = list(replace_chars.split('--')[0])
+    to_char = replace_chars.split('--')[1]
+    return from_chars, to_char
+
+
+def apply_char_replacement(records, from_chars, to_char):
+    replace_count = 0
+    translation_table = str.maketrans(''.join(from_chars), to_char * len(from_chars))
+    for record in records:
+        if any(c in record.id for c in from_chars):
+            replace_count += 1
+            record.id = record.id.translate(translation_table)
+    return replace_count
+
+
+def clip_label_ids(records, clip_len):
+    clip_count = 0
+    for record in records:
+        if len(record.id) > clip_len:
+            clip_count += 1
+            record.id = record.id[:clip_len]
+    return clip_count
+
+
+def uniquify_label_ids(records):
+    nonunique_count = 0
+    name_counts = Counter([record.id for record in records])
+    suffix_counts = {}
+    for record in records:
+        if name_counts[record.id] > 1:
+            nonunique_count += 1
+            if record.id not in suffix_counts:
+                suffix_counts[record.id] = 1
+            else:
+                suffix_counts[record.id] += 1
+            record.id += '_{}'.format(suffix_counts[record.id])
+            record.description = ''
+    nonunique_names = [name for name in name_counts if name_counts[name] > 1]
+    return nonunique_count, nonunique_names
+
 
 def label_main(args):
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
     if args.replace_chars != '':
-        from_chars = list(args.replace_chars.split('--')[0])
-        to_char = args.replace_chars.split('--')[1]
-        to_chars = [to_char] * len(from_chars)
-        replace_count = 0
-        for i in range(len(records)):
-            if any(c in records[i].id for c in from_chars):
-                replace_count += 1
-                records[i].id = records[i].id.translate(str.maketrans(''.join(from_chars), ''.join(to_chars)))
+        from_chars, to_char = parse_replace_chars(args.replace_chars)
+        replace_count = apply_char_replacement(records, from_chars, to_char)
         sys.stderr.write('Number of character-replaced sequence labels: {:,}\n'.format(replace_count))
     if args.clip_len != 0:
-        clip_count = 0
-        for i in range(len(records)):
-            if len(records[i].id) > args.clip_len:
-                clip_count += 1
-                records[i].id = records[i].id[:args.clip_len]
+        clip_count = clip_label_ids(records, args.clip_len)
         sys.stderr.write('Number of clipped sequence labels: {:,}\n'.format(clip_count))
     if args.unique:
-        nonunique_count = 0
-        name_counts = Counter([record.id for record in records])
-        suffix_counts = dict()
-        for i in range(len(records)):
-            if name_counts[records[i].id] > 1:
-                nonunique_count += 1
-                if not records[i].id in suffix_counts:
-                    suffix_counts[records[i].id] = 1
-                else:
-                    suffix_counts[records[i].id] += 1
-                records[i].id += '_{}'.format(suffix_counts[records[i].id])
-                records[i].description = ''
+        nonunique_count, nonunique_names = uniquify_label_ids(records)
         sys.stderr.write('Number of resolved non-unique sequence labels: {:,}\n'.format(nonunique_count))
-        sys.stderr.write('Non-unique sequence labels:\n{}\n'.format('\n'.join([name for name in name_counts if name_counts[name] > 1])))
+        sys.stderr.write('Non-unique sequence labels:\n{}\n'.format('\n'.join(nonunique_names)))
     write_seqs(records=records, outfile=args.outfile, outseqformat=args.outseqformat)

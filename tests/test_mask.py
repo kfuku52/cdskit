@@ -12,7 +12,27 @@ from Bio.SeqRecord import SeqRecord
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from cdskit.mask import mask_main
+from cdskit.mask import (
+    mask_main,
+    mask_partial_gap_codons,
+    should_mask_amino_acid,
+)
+
+
+class TestMaskHelpers:
+    """Tests for mask helper functions."""
+
+    def test_mask_partial_gap_codons(self):
+        codons = ["ATG", "A-G", "---", "T-A"]
+        changed = mask_partial_gap_codons(codons, "NNN")
+        assert changed is True
+        assert codons == ["ATG", "NNN", "---", "NNN"]
+
+    def test_should_mask_amino_acid(self):
+        assert should_mask_amino_acid("X", mask_ambiguous=True, mask_stop=False) is True
+        assert should_mask_amino_acid("*", mask_ambiguous=False, mask_stop=True) is True
+        assert should_mask_amino_acid("X", mask_ambiguous=False, mask_stop=True) is False
+        assert should_mask_amino_acid("M", mask_ambiguous=True, mask_stop=True) is False
 
 
 class TestMaskMain:
