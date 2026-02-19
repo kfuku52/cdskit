@@ -1,10 +1,11 @@
 import json
 import sys
 from collections import Counter
+from functools import partial
 
 import Bio.Seq
 
-from cdskit.util import read_seqs
+from cdskit.util import parallel_map_ordered, read_seqs, resolve_threads
 
 
 MISSING_CHARS = frozenset('-?.')
@@ -55,21 +56,37 @@ def get_duplicate_ids(records):
     return sorted([seq_id for seq_id, count in counts.items() if count > 1])
 
 
-def summarize_records(records, codontable):
+def summarize_single_record(record, codontable):
+    seq = str(record.seq)
+    ambiguous, evaluable = sequence_ambiguous_codon_counts(seq)
+    return {
+        'id': record.id,
+        'is_non_triplet': (len(record.seq) % 3 != 0),
+        'is_gap_only': is_gap_only_sequence(seq),
+        'has_internal_stop': has_internal_stop(seq, codontable=codontable),
+        'ambiguous_codons': ambiguous,
+        'evaluable_codons': evaluable,
+    }
+
+
+def summarize_records(records, codontable, threads=1):
     lengths = [len(record.seq) for record in records]
     aligned = len(set(lengths)) <= 1
-    non_triplet_ids = [record.id for record in records if len(record.seq) % 3 != 0]
     duplicate_ids = get_duplicate_ids(records)
-    gap_only_ids = [record.id for record in records if is_gap_only_sequence(str(record.seq))]
-    internal_stop_ids = [record.id for record in records if has_internal_stop(str(record.seq), codontable=codontable)]
+    worker = partial(summarize_single_record, codontable=codontable)
+    worker_threads = resolve_threads(threads=threads)
+    per_record = parallel_map_ordered(items=records, worker=worker, threads=worker_threads)
+
+    non_triplet_ids = [entry['id'] for entry in per_record if entry['is_non_triplet']]
+    gap_only_ids = [entry['id'] for entry in per_record if entry['is_gap_only']]
+    internal_stop_ids = [entry['id'] for entry in per_record if entry['has_internal_stop']]
     ambiguous_by_seq = dict()
     total_ambiguous = 0
     total_evaluable = 0
-    for record in records:
-        ambiguous, evaluable = sequence_ambiguous_codon_counts(str(record.seq))
-        ambiguous_by_seq[record.id] = ambiguous
-        total_ambiguous += ambiguous
-        total_evaluable += evaluable
+    for entry in per_record:
+        ambiguous_by_seq[entry['id']] = entry['ambiguous_codons']
+        total_ambiguous += entry['ambiguous_codons']
+        total_evaluable += entry['evaluable_codons']
     ambiguous_rate = 0.0
     if total_evaluable > 0:
         ambiguous_rate = total_ambiguous / total_evaluable
@@ -162,7 +179,11 @@ def print_validate_summary(summary):
 
 def validate_main(args):
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
-    summary = summarize_records(records=records, codontable=args.codontable)
+    summary = summarize_records(
+        records=records,
+        codontable=args.codontable,
+        threads=getattr(args, 'threads', 1),
+    )
     print_validate_summary(summary=summary)
     report_path = getattr(args, 'report', '')
     write_validate_report(report_path=report_path, summary=summary)

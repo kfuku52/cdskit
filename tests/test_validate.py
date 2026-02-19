@@ -116,3 +116,35 @@ class TestValidateMain:
         validate_main(args)
         captured = capsys.readouterr()
         assert "num_sequences\t0" in captured.out
+
+    def test_validate_threads_matches_single_thread(self, temp_dir, mock_args):
+        input_path = temp_dir / "input.fasta"
+        report_single = temp_dir / "single.json"
+        report_threaded = temp_dir / "threaded.json"
+        records = [
+            SeqRecord(Seq("ATGAAATGA"), id="seq1", description=""),
+            SeqRecord(Seq("ATGTGACCC"), id="seq2", description=""),
+            SeqRecord(Seq("ATGNNNCCC"), id="seq3", description=""),
+            SeqRecord(Seq("---------"), id="seq4", description=""),
+        ]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args_single = mock_args(
+            seqfile=str(input_path),
+            codontable=1,
+            report=str(report_single),
+            threads=1,
+        )
+        args_threaded = mock_args(
+            seqfile=str(input_path),
+            codontable=1,
+            report=str(report_threaded),
+            threads=3,
+        )
+
+        validate_main(args_single)
+        validate_main(args_threaded)
+
+        single = json.loads(report_single.read_text())
+        threaded = json.loads(report_threaded.read_text())
+        assert single == threaded

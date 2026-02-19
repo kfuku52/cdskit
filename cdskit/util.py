@@ -3,8 +3,10 @@ import Bio.SeqIO
 import numpy
 
 import io
+import os
 import re
 import sys
+from concurrent.futures import ThreadPoolExecutor
 
 GFF_DTYPE = [
     ('seqid', 'U100'),
@@ -17,6 +19,29 @@ GFF_DTYPE = [
     ('phase', 'U10'),
     ('attributes', 'U500')
 ]
+
+
+def resolve_threads(threads):
+    if threads is None:
+        return 1
+    threads = int(threads)
+    if threads < 0:
+        txt = '--threads should be >= 0. 0 means auto-detect CPU count. Exiting.\n'
+        raise Exception(txt)
+    if threads == 0:
+        detected = os.cpu_count()
+        if (detected is None) or (detected < 1):
+            return 1
+        return detected
+    return threads
+
+
+def parallel_map_ordered(items, worker, threads):
+    if (threads <= 1) or (len(items) <= 1):
+        return [worker(item) for item in items]
+    max_workers = min(threads, len(items))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        return list(executor.map(worker, items))
 
 
 def read_seqs(seqfile, seqformat):

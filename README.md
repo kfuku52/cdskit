@@ -78,6 +78,14 @@ CDSKIT is designed for data flow through [standard input and output](https://en.
 seqkit seq input.fasta.gz | cdskit pad | cdskit mask | seqkit translate | cdskit aggregate -x ":.*"  > output.fasta
 ```
 
+## Parallel execution
+The following subcommands support `--threads INT` for multi-threaded per-sequence processing:
+`translate`, `longestcds`, `mask`, `pad`, and `validate`.
+
+- `--threads 1`: single-threaded (default)
+- `--threads 2` or larger: multi-threaded
+- `--threads 0`: auto-detect available CPU count
+
 ## Citation
 There is no published paper on CDSKIT itself, but we used and cited CDSKIT in several papers including [Fukushima & Pollock (2023, Nat Ecol Evol 7: 155-170)](https://www.nature.com/articles/s41559-022-01932-7).
 

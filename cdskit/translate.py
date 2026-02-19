@@ -1,6 +1,14 @@
+from functools import partial
+
 from Bio.SeqRecord import SeqRecord
 
-from cdskit.util import read_seqs, stop_if_not_multiple_of_three, write_seqs
+from cdskit.util import (
+    parallel_map_ordered,
+    read_seqs,
+    resolve_threads,
+    stop_if_not_multiple_of_three,
+    write_seqs,
+)
 
 
 def translate_record(record, codontable, to_stop):
@@ -19,8 +27,11 @@ def translate_main(args):
         write_seqs(records=records, outfile=args.outfile, outseqformat=args.outseqformat)
         return
     stop_if_not_multiple_of_three(records=records)
-    translated_records = [
-        translate_record(record=record, codontable=args.codontable, to_stop=args.to_stop)
-        for record in records
-    ]
+    threads = resolve_threads(getattr(args, 'threads', 1))
+    worker = partial(
+        translate_record,
+        codontable=args.codontable,
+        to_stop=args.to_stop,
+    )
+    translated_records = parallel_map_ordered(items=records, worker=worker, threads=threads)
     write_seqs(records=translated_records, outfile=args.outfile, outseqformat=args.outseqformat)

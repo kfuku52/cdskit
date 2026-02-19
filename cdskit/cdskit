@@ -39,6 +39,10 @@ p_gffio.add_argument('--ingff', metavar='PATH', default=None, type=str, required
 p_gffio.add_argument('--outgff', metavar='PATH', default='out.gff', type=str, required=False, action='store',
                      help='default=%(default)s: Output gff file.')
 
+p_threads = argparse.ArgumentParser(add_help=False)
+p_threads.add_argument('--threads', metavar='INT', default=1, type=int, required=False, action='store',
+                       help='default=%(default)s: Number of worker threads for supported commands. 0 uses all detected CPUs.')
+
 
 
 def strtobool(val):
@@ -200,7 +204,7 @@ def command_longestcds(args):
     sys.stderr.write('cdskit longestcds: ended at {}\n'.format(datetime.now()))
 
 help_longestcds = 'Finding the longest CDS from six-frame translation. See `cdskit longestcds -h`'
-p_longestcds = subparsers.add_parser('longestcds', help=help_longestcds, parents=[p_version,p_infile,p_outfile,p_codon])
+p_longestcds = subparsers.add_parser('longestcds', help=help_longestcds, parents=[p_version,p_infile,p_outfile,p_codon,p_threads])
 p_longestcds.add_argument('--annotate_seqname', metavar='yes|no', default='no', type=strtobool, required=False, action='store',
                           help='default=%(default)s: Whether to append strand/frame/coordinate metadata to FASTA headers.')
 p_longestcds.set_defaults(handler=command_longestcds)
@@ -213,7 +217,7 @@ def command_mask(args):
     sys.stderr.write('cdskit mask: ended at {}\n'.format(datetime.now()))
 
 help_mask = 'Masking ambiguous and/or stop codons. See `cdskit mask -h`'
-p_mask = subparsers.add_parser('mask', help=help_mask, parents=[p_version,p_infile,p_outfile,p_codon])
+p_mask = subparsers.add_parser('mask', help=help_mask, parents=[p_version,p_infile,p_outfile,p_codon,p_threads])
 p_mask.add_argument('-c', '--maskchar', metavar='CHAR', default='N', type=str, required=False, action='store',
                     choices=['N', '-'],
                     help='default=%(default)s: A character to be used to mask codons.')
@@ -258,7 +262,7 @@ def command_pad(args):
     sys.stderr.write('cdskit pad: ended at {}\n'.format(datetime.now()))
 
 help_pad = 'Making nucleotide sequences in-frame by head and tail paddings. See `cdskit pad -h`'
-p_pad = subparsers.add_parser('pad', help=help_pad, parents=[p_version,p_infile,p_outfile,p_codon])
+p_pad = subparsers.add_parser('pad', help=help_pad, parents=[p_version,p_infile,p_outfile,p_codon,p_threads])
 p_pad.add_argument('-c', '--padchar', metavar='CHAR', default='N', type=str, required=False, action='store',
                    choices=['N', '-'],
                    help='default=%(default)s: A character to be used to pad when the sequence length is not multiple of three.')
@@ -347,7 +351,7 @@ def command_translate(args):
     sys.stderr.write('cdskit translate: ended at {}\n'.format(datetime.now()))
 
 help_translate = 'Translating CDS nucleotide sequences to amino acids. See `cdskit translate -h`'
-p_translate = subparsers.add_parser('translate', help=help_translate, parents=[p_version,p_infile,p_outfile,p_codon])
+p_translate = subparsers.add_parser('translate', help=help_translate, parents=[p_version,p_infile,p_outfile,p_codon,p_threads])
 p_translate.add_argument('--to_stop', metavar='yes|no', default='no', type=strtobool, required=False, action='store',
                          help='default=%(default)s: Whether to stop translation at the first in-frame stop codon.')
 p_translate.set_defaults(handler=command_translate)
@@ -360,7 +364,7 @@ def command_validate(args):
     sys.stderr.write('cdskit validate: ended at {}\n'.format(datetime.now()))
 
 help_validate = 'Validating aligned CDS quality and reporting issues. See `cdskit validate -h`'
-p_validate = subparsers.add_parser('validate', help=help_validate, parents=[p_version,p_infile,p_codon])
+p_validate = subparsers.add_parser('validate', help=help_validate, parents=[p_version,p_infile,p_codon,p_threads])
 p_validate.add_argument('--report', metavar='PATH', default='', type=str, required=False, action='store',
                         help='default=%(default)s: Optional report output path. If PATH ends with ".json", JSON is written; otherwise tab-separated TSV is written.')
 p_validate.set_defaults(handler=command_validate)

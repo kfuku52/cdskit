@@ -1,12 +1,14 @@
 #!/usr/bin/env python
 
+from functools import partial
+
 import Bio.Data.CodonTable
 import Bio.Seq
 import Bio.SeqIO
 import numpy
 import sys
 
-from cdskit.util import read_seqs, write_seqs
+from cdskit.util import parallel_map_ordered, read_seqs, resolve_threads, write_seqs
 
 _STOP_CODON_CACHE = {}
 
@@ -91,14 +93,19 @@ def choose_best_padding(clean_seq, codon_table, padchar, num_stop_input, num_mis
     return seqs.get_minimum_num_stop()
 
 
-def process_record_padding(record, codon_table, padchar):
-    clean_seq = str(record.seq).replace('X', 'N')
+def process_record_padding(record_name, record_seq, codon_table, padchar):
+    clean_seq = record_seq.replace('X', 'N')
     seqlen = len(clean_seq)
     adjlen, tailpad_seq = get_adjusted_length_and_tailpadded_sequence(clean_seq, padchar)
     num_stop_input = count_internal_stop_codons(tailpad_seq, codon_table)
 
     if not (num_stop_input or (seqlen % 3)):
-        return True, False
+        return {
+            'new_seq': record_seq,
+            'is_no_stop': True,
+            'was_padded': False,
+            'log': '',
+        }
 
     num_missing = adjlen - seqlen
     best_padseq = choose_best_padding(
@@ -109,27 +116,44 @@ def process_record_padding(record, codon_table, padchar):
         num_missing=num_missing,
         seqlen=seqlen,
     )
-    record.seq = best_padseq['new_seq']
     is_no_stop = (best_padseq['num_stop'] == 0)
-    txt = f'{record.name}, original_seqlen={seqlen}, head_padding={best_padseq["headn"]}, tail_padding={best_padseq["tailn"]}, '
+    txt = f'{record_name}, original_seqlen={seqlen}, head_padding={best_padseq["headn"]}, tail_padding={best_padseq["tailn"]}, '
     txt += f'original_num_stop={num_stop_input}, new_num_stop={best_padseq["num_stop"]}\n'
-    sys.stderr.write(txt)
     was_padded = not ((best_padseq['headn'] == 0) and (best_padseq['tailn'] == 0))
-    return is_no_stop, was_padded
+    return {
+        'new_seq': str(best_padseq['new_seq']),
+        'is_no_stop': is_no_stop,
+        'was_padded': was_padded,
+        'log': txt,
+    }
+
+
+def process_record_padding_entry(record, codon_table, padchar):
+    return process_record_padding(
+        record_name=record.name,
+        record_seq=str(record.seq),
+        codon_table=codon_table,
+        padchar=padchar,
+    )
 
 
 def pad_main(args):
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
+    threads = resolve_threads(getattr(args, 'threads', 1))
+    worker = partial(
+        process_record_padding_entry,
+        codon_table=args.codontable,
+        padchar=args.padchar,
+    )
+    results = parallel_map_ordered(items=records, worker=worker, threads=threads)
     is_no_stop = []
     seqnum_padded = 0
-    for record in records:
-        record_is_no_stop, record_was_padded = process_record_padding(
-            record=record,
-            codon_table=args.codontable,
-            padchar=args.padchar,
-        )
-        is_no_stop.append(record_is_no_stop)
-        if record_was_padded:
+    for i, result in enumerate(results):
+        records[i].seq = Bio.Seq.Seq(result['new_seq'])
+        if result['log'] != '':
+            sys.stderr.write(result['log'])
+        is_no_stop.append(result['is_no_stop'])
+        if result['was_padded']:
             seqnum_padded += 1
     if args.nopseudo:
         records = [records[i] for i in range(len(records)) if is_no_stop[i]]

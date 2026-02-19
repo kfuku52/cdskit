@@ -420,3 +420,41 @@ class TestPadMain:
         # X is NOT replaced when no padding logic is needed
         # This is documenting current behavior, not necessarily ideal behavior
         assert str(result[0].seq) == "ATGXXXAAACCC"
+
+    def test_pad_threads_matches_single_thread(self, temp_dir, mock_args):
+        input_path = temp_dir / "input.fasta"
+        out_single = temp_dir / "single.fasta"
+        out_threaded = temp_dir / "threaded.fasta"
+
+        records = [
+            SeqRecord(Seq("ATGAA"), id="seq1", description=""),
+            SeqRecord(Seq("ATGTGACCC"), id="seq2", description=""),
+            SeqRecord(Seq("ATGXXXAAATG"), id="seq3", description=""),
+            SeqRecord(Seq("ATGAAACCC"), id="seq4", description=""),
+        ]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args_single = mock_args(
+            seqfile=str(input_path),
+            outfile=str(out_single),
+            codontable=1,
+            padchar='N',
+            nopseudo=False,
+            threads=1,
+        )
+        args_threaded = mock_args(
+            seqfile=str(input_path),
+            outfile=str(out_threaded),
+            codontable=1,
+            padchar='N',
+            nopseudo=False,
+            threads=4,
+        )
+
+        pad_main(args_single)
+        pad_main(args_threaded)
+
+        result_single = list(Bio.SeqIO.parse(str(out_single), "fasta"))
+        result_threaded = list(Bio.SeqIO.parse(str(out_threaded), "fasta"))
+        assert [r.id for r in result_single] == [r.id for r in result_threaded]
+        assert [str(r.seq) for r in result_single] == [str(r.seq) for r in result_threaded]

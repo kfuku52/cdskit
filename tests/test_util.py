@@ -45,6 +45,25 @@ class TestReadSeqs:
         assert len(result) == 0
 
 
+class TestThreadHelpers:
+    """Tests for thread-related utility helpers."""
+
+    def test_resolve_threads_default_and_auto(self, monkeypatch):
+        assert util.resolve_threads(None) == 1
+        monkeypatch.setattr(util.os, "cpu_count", lambda: 7)
+        assert util.resolve_threads(0) == 7
+
+    def test_resolve_threads_rejects_negative(self):
+        with pytest.raises(Exception) as exc_info:
+            util.resolve_threads(-1)
+        assert "--threads should be >= 0" in str(exc_info.value)
+
+    def test_parallel_map_ordered_keeps_input_order(self):
+        items = [5, 3, 1, 4, 2]
+        result = util.parallel_map_ordered(items=items, worker=lambda x: x * 2, threads=3)
+        assert result == [10, 6, 2, 8, 4]
+
+
 class TestReadItemPerLineFile:
     """Tests for read_item_per_line_file function."""
 

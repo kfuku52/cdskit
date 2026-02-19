@@ -1,10 +1,11 @@
 import sys
+from functools import partial
 
 import Bio.Data.CodonTable
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
-from cdskit.util import read_seqs, write_seqs
+from cdskit.util import parallel_map_ordered, read_seqs, resolve_threads, write_seqs
 
 
 class CdsCandidate:
@@ -195,6 +196,10 @@ def choose_best_candidate(seq_str, codontable):
     return max(all_candidates, key=candidate_sort_key)
 
 
+def choose_best_candidate_from_record(record, codontable):
+    return choose_best_candidate(seq_str=str(record.seq), codontable=codontable)
+
+
 def build_output_record(record, candidate, annotate_seqname):
     if candidate is None:
         txt = 'No CDS candidate found for {}. Output sequence is empty.\n'
@@ -230,14 +235,17 @@ def build_output_record(record, candidate, annotate_seqname):
 
 def longestcds_main(args):
     annotate_seqname = bool(getattr(args, 'annotate_seqname', False))
+    threads = resolve_threads(getattr(args, 'threads', 1))
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
     if len(records) == 0:
         write_seqs(records=records, outfile=args.outfile, outseqformat=args.outseqformat)
         return
 
+    worker = partial(choose_best_candidate_from_record, codontable=args.codontable)
+    candidates = parallel_map_ordered(items=records, worker=worker, threads=threads)
+
     output_records = list()
-    for record in records:
-        candidate = choose_best_candidate(seq_str=str(record.seq), codontable=args.codontable)
+    for record, candidate in zip(records, candidates):
         output_records.append(build_output_record(
             record=record,
             candidate=candidate,

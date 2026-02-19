@@ -112,3 +112,40 @@ class TestTranslateMain:
 
         result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
         assert len(result) == 0
+
+    def test_translate_threads_matches_single_thread(self, temp_dir, mock_args):
+        input_path = temp_dir / "input.fasta"
+        out_single = temp_dir / "single.fasta"
+        out_threaded = temp_dir / "threaded.fasta"
+
+        records = [
+            SeqRecord(Seq("ATGAAATGA"), id="seq1", description=""),
+            SeqRecord(Seq("ATGCCCTGA"), id="seq2", description=""),
+            SeqRecord(Seq("ATGTTTTAA"), id="seq3", description=""),
+            SeqRecord(Seq("ATG---TGA"), id="seq4", description=""),
+        ]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args_single = mock_args(
+            seqfile=str(input_path),
+            outfile=str(out_single),
+            codontable=1,
+            to_stop=False,
+            threads=1,
+        )
+        args_threaded = mock_args(
+            seqfile=str(input_path),
+            outfile=str(out_threaded),
+            codontable=1,
+            to_stop=False,
+            threads=4,
+        )
+
+        translate_main(args_single)
+        translate_main(args_threaded)
+
+        result_single = list(Bio.SeqIO.parse(str(out_single), "fasta"))
+        result_threaded = list(Bio.SeqIO.parse(str(out_threaded), "fasta"))
+
+        assert [r.id for r in result_single] == [r.id for r in result_threaded]
+        assert [str(r.seq) for r in result_single] == [str(r.seq) for r in result_threaded]
