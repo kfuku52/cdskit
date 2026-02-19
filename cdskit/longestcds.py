@@ -7,6 +7,8 @@ from Bio.SeqRecord import SeqRecord
 
 from cdskit.util import parallel_map_ordered, read_seqs, resolve_threads, write_seqs
 
+_CODON_TABLE_CACHE = dict()
+
 
 class CdsCandidate:
     def __init__(self, nt_seq, strand, frame, start_1based, end_1based, has_start, has_stop, category):
@@ -23,8 +25,13 @@ class CdsCandidate:
 
 
 def get_start_stop_codons(codontable):
+    cached = _CODON_TABLE_CACHE.get(codontable)
+    if cached is not None:
+        return cached
     table = Bio.Data.CodonTable.unambiguous_dna_by_id[codontable]
-    return set(table.start_codons), set(table.stop_codons)
+    codons = (set(table.start_codons), set(table.stop_codons))
+    _CODON_TABLE_CACHE[codontable] = codons
+    return codons
 
 
 def frame_end_index(seq_len, frame_offset):

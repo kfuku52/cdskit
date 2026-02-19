@@ -80,6 +80,10 @@ def indices_to_bitmask(indices):
     return mask
 
 
+def support_counts_from_matrix(codon_presence_matrix):
+    return Counter(subset_support_bitmasks(codon_presence_matrix))
+
+
 def is_better_solution(candidate, best):
     if best is None:
         return True
@@ -120,7 +124,7 @@ def solve_exact(
         raise Exception('required_indices must be a subset of candidate_indices.')
 
     variable_indices = [idx for idx in candidate_indices if idx not in required_set]
-    support_counts = Counter(subset_support_bitmasks(codon_presence_matrix))
+    support_counts = support_counts_from_matrix(codon_presence_matrix)
     best = None
     max_mask = 1 << len(variable_indices)
     for subset_mask in range(max_mask):
@@ -170,10 +174,38 @@ def solve_greedy(
     protected_set = set(protected_indices)
     if not protected_set.issubset(set(active_indices)):
         raise Exception('protected_indices must be a subset of active_indices.')
-    current_area, current_complete_codon_columns = alignment_area(
-        codon_presence_matrix=codon_presence_matrix,
-        kept_indices=active_indices,
-    )
+    support_counts = support_counts_from_matrix(codon_presence_matrix)
+    active_mask = indices_to_bitmask(active_indices)
+    area_cache = dict()
+    index_cache = dict()
+
+    def evaluate_mask(mask):
+        cached = area_cache.get(mask)
+        if cached is not None:
+            return cached
+        num_kept = mask.bit_count()
+        if num_kept == 0:
+            result = (0, 0, 0)
+            area_cache[mask] = result
+            return result
+        complete_codon_columns = count_complete_columns_with_support(
+            support_counts=support_counts,
+            kept_mask=mask,
+        )
+        area = num_kept * complete_codon_columns
+        result = (area, complete_codon_columns, num_kept)
+        area_cache[mask] = result
+        return result
+
+    def indices_from_mask(mask):
+        cached = index_cache.get(mask)
+        if cached is not None:
+            return cached
+        indices = get_subset_indices(mask=mask, num_seqs=num_sequences)
+        index_cache[mask] = indices
+        return indices
+
+    current_area, current_complete_codon_columns, _ = evaluate_mask(active_mask)
     steps = list()
     while len(active_indices) > 1:
         removable = [idx for idx in active_indices if idx not in protected_set]
@@ -181,18 +213,18 @@ def solve_greedy(
             break
         best_next = None
         for remove_idx in removable:
-            kept_indices = [idx for idx in active_indices if idx != remove_idx]
-            if len(kept_indices) == 0:
+            kept_mask = active_mask & ~(1 << remove_idx)
+            _, _, num_kept = evaluate_mask(kept_mask)
+            if num_kept == 0:
                 continue
-            num_removed = total_sequences - len(kept_indices)
+            num_removed = total_sequences - num_kept
             if (max_removed is not None) and (num_removed > max_removed):
                 continue
-            area, complete_codon_columns = alignment_area(
-                codon_presence_matrix=codon_presence_matrix,
-                kept_indices=kept_indices,
-            )
+            area, complete_codon_columns, _ = evaluate_mask(kept_mask)
+            kept_indices = indices_from_mask(kept_mask)
             candidate = {
                 'remove_idx': remove_idx,
+                'kept_mask': kept_mask,
                 'kept_indices': kept_indices,
                 'area': area,
                 'complete_codon_columns': complete_codon_columns,
@@ -210,6 +242,7 @@ def solve_greedy(
             break
         if best_next['area'] <= current_area:
             break
+        active_mask = best_next['kept_mask']
         active_indices = best_next['kept_indices']
         current_area = best_next['area']
         current_complete_codon_columns = best_next['complete_codon_columns']
@@ -278,17 +311,13 @@ def parse_max_removed(max_removed, num_records):
 def extract_complete_codon_indices(codon_presence_matrix, kept_indices):
     if not kept_indices:
         return list()
-    num_sites = len(codon_presence_matrix[0]) if codon_presence_matrix else 0
-    complete_indices = list()
-    for codon_site in range(num_sites):
-        complete = True
-        for seq_idx in kept_indices:
-            if not codon_presence_matrix[seq_idx][codon_site]:
-                complete = False
-                break
-        if complete:
-            complete_indices.append(codon_site)
-    return complete_indices
+    kept_mask = indices_to_bitmask(kept_indices)
+    support_masks = subset_support_bitmasks(codon_presence_matrix)
+    return [
+        codon_site
+        for codon_site, support_mask in enumerate(support_masks)
+        if (support_mask & kept_mask) == kept_mask
+    ]
 
 
 def slice_record_to_codon_sites(record, codon_site_indices):
