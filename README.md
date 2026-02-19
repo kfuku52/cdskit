@@ -48,6 +48,8 @@ See [Wiki](https://github.com/kfuku52/cdskit/wiki) for detailed descriptions.
 
 - [`label`](https://github.com/kfuku52/cdskit/wiki/cdskit-label): Modifying sequence labels
 
+- [`longestcds`](https://github.com/kfuku52/cdskit/wiki/cdskit-longestcds): Finding the longest CDS by six-frame translation (+/- strands, 3 frames each)
+
 - [`mask`](https://github.com/kfuku52/cdskit/wiki/cdskit-mask): Masking ambiguous and/or stop codons
 
 - [`maxalign`](https://github.com/kfuku52/cdskit/wiki/cdskit-maxalign): Removing sequences to maximize codon-based alignment area ([MaxAlign](https://link.springer.com/article/10.1186/1471-2105-8-312))

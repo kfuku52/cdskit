@@ -193,6 +193,19 @@ p_label.add_argument('--unique', metavar='yes|no', default='no', type=strtobool,
 p_label.set_defaults(handler=command_label)
 
 
+def command_longestcds(args):
+    from cdskit.longestcds import longestcds_main
+    sys.stderr.write('cdskit longestcds: started at {}\n'.format(datetime.now()))
+    longestcds_main(args)
+    sys.stderr.write('cdskit longestcds: ended at {}\n'.format(datetime.now()))
+
+help_longestcds = 'Finding the longest CDS from six-frame translation. See `cdskit longestcds -h`'
+p_longestcds = subparsers.add_parser('longestcds', help=help_longestcds, parents=[p_version,p_infile,p_outfile,p_codon])
+p_longestcds.add_argument('--annotate_seqname', metavar='yes|no', default='no', type=strtobool, required=False, action='store',
+                          help='default=%(default)s: Whether to append strand/frame/coordinate metadata to FASTA headers.')
+p_longestcds.set_defaults(handler=command_longestcds)
+
+
 def command_mask(args):
     from cdskit.mask import mask_main
     sys.stderr.write('cdskit mask: started at {}\n'.format(datetime.now()))

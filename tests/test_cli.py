@@ -120,6 +120,7 @@ class TestCLIModuleImport:
             'cdskit.hammer',
             'cdskit.intersection',
             'cdskit.label',
+            'cdskit.longestcds',
             'cdskit.maxalign',
             'cdskit.mask',
             'cdskit.pad',
