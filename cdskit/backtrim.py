@@ -1,12 +1,15 @@
 from collections import defaultdict
 from collections import deque
 import sys
+from functools import partial
 
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
 from cdskit.util import (
+    parallel_map_ordered,
     read_seqs,
+    resolve_threads,
     stop_if_not_aligned,
     stop_if_not_multiple_of_three,
     write_seqs,
@@ -78,22 +81,69 @@ def trim_codon_records(cdn_records, kept_aa_sites):
     return trimmed_cdn_records
 
 
+def translate_record_to_aa_string(record, codontable):
+    return str(record.seq.translate(table=codontable, to_stop=False, gap="-"))
+
+
+def trim_codon_record(record, kept_aa_sites):
+    seq_str = str(record.seq)
+    trimmed_seq = ''.join([seq_str[codon_site * 3:codon_site * 3 + 3] for codon_site in kept_aa_sites])
+    return SeqRecord(
+        seq=Seq(trimmed_seq),
+        id=record.id,
+        name='',
+        description='',
+    )
+
+
+def codon_sites_to_nucleotide_ranges(codon_sites):
+    if len(codon_sites) == 0:
+        return list()
+    ranges = list()
+    run_start = codon_sites[0]
+    run_end = codon_sites[0]
+    for site in codon_sites[1:]:
+        if site == run_end + 1:
+            run_end = site
+            continue
+        ranges.append((run_start * 3, (run_end + 1) * 3))
+        run_start = site
+        run_end = site
+    ranges.append((run_start * 3, (run_end + 1) * 3))
+    return ranges
+
+
+def trim_codon_record_with_ranges(record, nucleotide_ranges):
+    seq_str = str(record.seq)
+    trimmed_seq = ''.join([seq_str[start:end] for start, end in nucleotide_ranges])
+    return SeqRecord(
+        seq=Seq(trimmed_seq),
+        id=record.id,
+        name='',
+        description='',
+    )
+
+
 def backtrim_main(args):
     cdn_records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
     pep_records = read_seqs(seqfile=args.trimmed_aa_aln, seqformat=args.inseqformat)
+    threads = resolve_threads(getattr(args, 'threads', 1))
     stop_if_not_multiple_of_three(cdn_records)
     check_same_seq_num(cdn_records, pep_records)
     stop_if_not_aligned(records=cdn_records)
     stop_if_not_aligned(records=pep_records)
     # check_same_order()
-    tcdn_strings = [str(record.seq.translate(table=args.codontable, to_stop=False, gap="-")) for record in cdn_records]
+    translate_worker = partial(translate_record_to_aa_string, codontable=args.codontable)
+    tcdn_strings = parallel_map_ordered(items=cdn_records, worker=translate_worker, threads=threads)
     pep_strings = [str(record.seq) for record in pep_records]
     kept_aa_sites, num_trimmed_multiple_hit_sites = find_kept_aa_sites(tcdn_strings, pep_strings)
     txt = '{} codon sites matched to {} protein sites. '
     txt += 'Trimmed {} codon sites that matched to multiple protein sites.\n'
     txt = txt.format(len(kept_aa_sites), len(pep_strings[0]), num_trimmed_multiple_hit_sites)
     sys.stderr.write(txt)
-    trimmed_cdn_records = trim_codon_records(cdn_records, kept_aa_sites)
+    nucleotide_ranges = codon_sites_to_nucleotide_ranges(codon_sites=kept_aa_sites)
+    trim_worker = partial(trim_codon_record_with_ranges, nucleotide_ranges=nucleotide_ranges)
+    trimmed_cdn_records = parallel_map_ordered(items=cdn_records, worker=trim_worker, threads=threads)
     txt = 'Number of aligned nucleotide sites in untrimmed codon sequences: {}\n'
     sys.stderr.write(txt.format(len(cdn_records[0].seq)))
     txt = 'Number of aligned nucleotide sites in trimmed codon sequences: {}\n'

@@ -421,6 +421,43 @@ class TestGapjustMain:
             for run in n_runs:
                 assert len(run) == gap_len, f"Gap length {len(run)} != expected {gap_len}"
 
+    def test_gapjust_threads_matches_single_thread(self, temp_dir, mock_args):
+        input_path = temp_dir / "input.fasta"
+        out_single = temp_dir / "single.fasta"
+        out_threaded = temp_dir / "threaded.fasta"
+
+        records = [
+            SeqRecord(Seq("ATGNNNAAACCCNNNNNTTT"), id="seq1", description=""),
+            SeqRecord(Seq("ATGNNAAACCCNNNNTTT"), id="seq2", description=""),
+            SeqRecord(Seq("ATGAAACCC"), id="seq3", description=""),
+        ]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args_single = mock_args(
+            seqfile=str(input_path),
+            outfile=str(out_single),
+            gap_len=5,
+            ingff=None,
+            outgff=None,
+            threads=1,
+        )
+        args_threaded = mock_args(
+            seqfile=str(input_path),
+            outfile=str(out_threaded),
+            gap_len=5,
+            ingff=None,
+            outgff=None,
+            threads=4,
+        )
+
+        gapjust_main(args_single)
+        gapjust_main(args_threaded)
+
+        result_single = list(Bio.SeqIO.parse(str(out_single), "fasta"))
+        result_threaded = list(Bio.SeqIO.parse(str(out_threaded), "fasta"))
+        assert [r.id for r in result_single] == [r.id for r in result_threaded]
+        assert [str(r.seq) for r in result_single] == [str(r.seq) for r in result_threaded]
+
     def test_gapjust_shrink_gaps(self, temp_dir, mock_args):
         """Test gapjust can shrink gaps."""
         input_path = temp_dir / "input.fasta"

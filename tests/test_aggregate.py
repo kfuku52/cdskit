@@ -255,3 +255,39 @@ class TestAggregateMain:
         # Mus_musculus should be 6nt (longest isoform)
         mouse = [r for r in result if 'Mus' in r.id][0]
         assert len(mouse.seq) == 6
+
+    def test_aggregate_threads_matches_single_thread(self, temp_dir, mock_args):
+        input_path = temp_dir / "input.fasta"
+        out_single = temp_dir / "single.fasta"
+        out_threaded = temp_dir / "threaded.fasta"
+
+        records = [
+            SeqRecord(Seq("ATGAAA"), id="gene_A.1", name="gene_A.1", description=""),
+            SeqRecord(Seq("ATGAAACCC"), id="gene_A.2", name="gene_A.2", description=""),
+            SeqRecord(Seq("ATGCCC"), id="gene_B.1", name="gene_B.1", description=""),
+            SeqRecord(Seq("ATGGGGTTT"), id="gene_B.2", name="gene_B.2", description=""),
+        ]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args_single = mock_args(
+            seqfile=str(input_path),
+            outfile=str(out_single),
+            expression=[r'\.[0-9]+$'],
+            mode='longest',
+            threads=1,
+        )
+        args_threaded = mock_args(
+            seqfile=str(input_path),
+            outfile=str(out_threaded),
+            expression=[r'\.[0-9]+$'],
+            mode='longest',
+            threads=4,
+        )
+
+        aggregate_main(args_single)
+        aggregate_main(args_threaded)
+
+        result_single = list(Bio.SeqIO.parse(str(out_single), "fasta"))
+        result_threaded = list(Bio.SeqIO.parse(str(out_threaded), "fasta"))
+        assert [r.id for r in result_single] == [r.id for r in result_threaded]
+        assert [str(r.seq) for r in result_single] == [str(r.seq) for r in result_threaded]

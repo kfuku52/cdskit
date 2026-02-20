@@ -1,7 +1,7 @@
 import sys
 from collections import Counter
 
-from cdskit.util import read_seqs, write_seqs
+from cdskit.util import read_seqs, resolve_threads, write_seqs
 
 
 def parse_replace_chars(replace_chars):
@@ -14,9 +14,10 @@ def apply_char_replacement(records, from_chars, to_char):
     replace_count = 0
     translation_table = str.maketrans(''.join(from_chars), to_char * len(from_chars))
     for record in records:
-        if any(c in record.id for c in from_chars):
+        replaced_id = record.id.translate(translation_table)
+        if replaced_id != record.id:
             replace_count += 1
-            record.id = record.id.translate(translation_table)
+            record.id = replaced_id
     return replace_count
 
 
@@ -46,14 +47,27 @@ def uniquify_label_ids(records):
     return nonunique_count, nonunique_names
 
 
+def replace_record_id(record_id, from_chars, to_char):
+    translation_table = str.maketrans(''.join(from_chars), to_char * len(from_chars))
+    replaced_id = record_id.translate(translation_table)
+    return replaced_id, (replaced_id != record_id)
+
+
+def clip_record_id(record_id, clip_len):
+    if len(record_id) > clip_len:
+        return record_id[:clip_len], True
+    return record_id, False
+
+
 def label_main(args):
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
+    _ = resolve_threads(getattr(args, 'threads', 1))
     if args.replace_chars != '':
         from_chars, to_char = parse_replace_chars(args.replace_chars)
-        replace_count = apply_char_replacement(records, from_chars, to_char)
+        replace_count = apply_char_replacement(records=records, from_chars=from_chars, to_char=to_char)
         sys.stderr.write('Number of character-replaced sequence labels: {:,}\n'.format(replace_count))
     if args.clip_len != 0:
-        clip_count = clip_label_ids(records, args.clip_len)
+        clip_count = clip_label_ids(records=records, clip_len=args.clip_len)
         sys.stderr.write('Number of clipped sequence labels: {:,}\n'.format(clip_count))
     if args.unique:
         nonunique_count, nonunique_names = uniquify_label_ids(records)

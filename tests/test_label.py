@@ -219,3 +219,40 @@ class TestLabelMain:
 
         result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
         assert result[0].id == "a_b_c_d"
+
+    def test_label_threads_matches_single_thread(self, temp_dir, mock_args):
+        input_path = temp_dir / "input.fasta"
+        out_single = temp_dir / "single.fasta"
+        out_threaded = temp_dir / "threaded.fasta"
+
+        records = [
+            SeqRecord(Seq("ATGAAA"), id="dup:seq|name", description=""),
+            SeqRecord(Seq("ATGCCC"), id="dup:seq|name", description=""),
+            SeqRecord(Seq("ATGGGG"), id="unique:seq|name", description=""),
+        ]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args_single = mock_args(
+            seqfile=str(input_path),
+            outfile=str(out_single),
+            replace_chars=':|--_',
+            clip_len=12,
+            unique=True,
+            threads=1,
+        )
+        args_threaded = mock_args(
+            seqfile=str(input_path),
+            outfile=str(out_threaded),
+            replace_chars=':|--_',
+            clip_len=12,
+            unique=True,
+            threads=4,
+        )
+
+        label_main(args_single)
+        label_main(args_threaded)
+
+        result_single = list(Bio.SeqIO.parse(str(out_single), "fasta"))
+        result_threaded = list(Bio.SeqIO.parse(str(out_threaded), "fasta"))
+        assert [r.id for r in result_single] == [r.id for r in result_threaded]
+        assert [str(r.seq) for r in result_single] == [str(r.seq) for r in result_threaded]

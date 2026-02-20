@@ -3,8 +3,16 @@ from Bio import SeqIO
 
 import sys
 import time
+from functools import partial
 
-from cdskit.util import get_seqname, read_item_per_line_file, replace_seq2cds, write_seqs
+from cdskit.util import (
+    get_seqname,
+    parallel_map_ordered,
+    read_item_per_line_file,
+    replace_seq2cds,
+    resolve_threads,
+    write_seqs,
+)
 
 
 def accession_batch_ranges(num_accession, batch_size):
@@ -57,16 +65,18 @@ def accession2seq_record(accessions, database, batch_size=1000):
 def accession2fasta_main(args):
     if args.email!='':
         Entrez.email = args.email
+    threads = resolve_threads(getattr(args, 'threads', 1))
+    if args.list_seqname_keys:
+        # Keep deterministic key listing order in stderr.
+        threads = 1
     accessions = read_item_per_line_file(file=args.accession_file)
     records = accession2seq_record(accessions, args.ncbi_database)
-    records = [
-        prepare_accession_record(
-            record=record,
-            seqnamefmt=args.seqnamefmt,
-            extract_cds=args.extract_cds,
-            list_seqname_keys=args.list_seqname_keys,
-        )
-        for record in records
-    ]
+    worker = partial(
+        prepare_accession_record,
+        seqnamefmt=args.seqnamefmt,
+        extract_cds=args.extract_cds,
+        list_seqname_keys=args.list_seqname_keys,
+    )
+    records = parallel_map_ordered(items=records, worker=worker, threads=threads)
     records = [record for record in records if record is not None]
     write_seqs(records=records, outfile=args.outfile, outseqformat=args.outseqformat)

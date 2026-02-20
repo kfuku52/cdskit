@@ -1,9 +1,10 @@
 import json
 import sys
 from collections import Counter
+from concurrent.futures import ProcessPoolExecutor
 from functools import partial
 
-import Bio.Seq
+import Bio.Data.CodonTable
 
 from cdskit.util import parallel_map_ordered, read_seqs, resolve_threads
 
@@ -11,24 +12,49 @@ from cdskit.util import parallel_map_ordered, read_seqs, resolve_threads
 MISSING_CHARS = frozenset('-?.')
 GAP_ONLY_CHARS = frozenset('-?.NXnx')
 UNAMBIGUOUS_NT = frozenset('ACGTacgt')
+_DROP_MISSING_CHARS_TABLE = str.maketrans('', '', ''.join(sorted(MISSING_CHARS)))
+_STOP_CODON_CACHE = dict()
+_AMBIGUOUS_CODON_CLASS_CACHE = dict()
+_PROCESS_PARALLEL_MIN_RECORDS = 2000
 
 
 def chunk_codons(seq):
     return [seq[i:i + 3] for i in range(0, len(seq), 3)]
 
 
+def get_stop_codons(codontable):
+    stop_codons = _STOP_CODON_CACHE.get(codontable)
+    if stop_codons is None:
+        table = Bio.Data.CodonTable.unambiguous_dna_by_id[codontable]
+        stop_codons = frozenset([codon.upper() for codon in table.stop_codons])
+        _STOP_CODON_CACHE[codontable] = stop_codons
+    return stop_codons
+
+
 def is_gap_only_sequence(seq):
     return len(seq) > 0 and all(ch in GAP_ONLY_CHARS for ch in seq)
 
 
+def has_internal_stop_with_stop_codons(seq, stop_codons):
+    clean_seq = seq.translate(_DROP_MISSING_CHARS_TABLE).upper()
+    clean_len = len(clean_seq)
+    if (clean_len < 3) or (clean_len % 3 != 0):
+        return False
+    # Ignore terminal codon: terminal stop is not an internal stop.
+    internal_stop_limit = clean_len - 3
+    seq_find = clean_seq.find
+    for stop_codon in stop_codons:
+        pos = seq_find(stop_codon)
+        while pos != -1:
+            if (pos % 3 == 0) and (pos < internal_stop_limit):
+                return True
+            pos = seq_find(stop_codon, pos + 1)
+    return False
+
+
 def has_internal_stop(seq, codontable):
-    clean_seq = ''.join(ch for ch in seq if ch not in MISSING_CHARS)
-    if (len(clean_seq) < 3) or (len(clean_seq) % 3 != 0):
-        return False
-    aa = str(Bio.Seq.Seq(clean_seq).translate(table=codontable, to_stop=False))
-    if len(aa) <= 1:
-        return False
-    return '*' in aa[:-1]
+    stop_codons = get_stop_codons(codontable=codontable)
+    return has_internal_stop_with_stop_codons(seq=seq, stop_codons=stop_codons)
 
 
 def is_ambiguous_codon(codon):
@@ -40,14 +66,25 @@ def is_ambiguous_codon(codon):
 def sequence_ambiguous_codon_counts(seq):
     ambiguous = 0
     evaluable = 0
-    for codon in chunk_codons(seq):
-        if len(codon) != 3:
-            continue
-        if any(ch in MISSING_CHARS for ch in codon):
-            continue
-        evaluable += 1
-        if is_ambiguous_codon(codon):
-            ambiguous += 1
+    seq_len = len(seq)
+    codon_class_cache = _AMBIGUOUS_CODON_CLASS_CACHE
+    for i in range(0, seq_len - 2, 3):
+        codon = seq[i:i + 3]
+        codon_class = codon_class_cache.get(codon)
+        if codon_class is None:
+            ch0 = codon[0]
+            ch1 = codon[1]
+            ch2 = codon[2]
+            if (ch0 in MISSING_CHARS) or (ch1 in MISSING_CHARS) or (ch2 in MISSING_CHARS):
+                codon_class = (0, 0)
+            else:
+                codon_class = (
+                    1,
+                    int((ch0 not in UNAMBIGUOUS_NT) or (ch1 not in UNAMBIGUOUS_NT) or (ch2 not in UNAMBIGUOUS_NT)),
+                )
+            codon_class_cache[codon] = codon_class
+        evaluable += codon_class[0]
+        ambiguous += codon_class[1]
     return ambiguous, evaluable
 
 
@@ -56,37 +93,73 @@ def get_duplicate_ids(records):
     return sorted([seq_id for seq_id, count in counts.items() if count > 1])
 
 
-def summarize_single_record(record, codontable):
-    seq = str(record.seq)
+def summarize_single_sequence(seq_id, seq, stop_codons):
     ambiguous, evaluable = sequence_ambiguous_codon_counts(seq)
-    return {
-        'id': record.id,
-        'is_non_triplet': (len(record.seq) % 3 != 0),
-        'is_gap_only': is_gap_only_sequence(seq),
-        'has_internal_stop': has_internal_stop(seq, codontable=codontable),
-        'ambiguous_codons': ambiguous,
-        'evaluable_codons': evaluable,
-    }
+    return (
+        seq_id,
+        (len(seq) % 3 != 0),
+        is_gap_only_sequence(seq),
+        has_internal_stop_with_stop_codons(seq=seq, stop_codons=stop_codons),
+        ambiguous,
+        evaluable,
+    )
+
+
+def summarize_single_record(record, stop_codons):
+    return summarize_single_sequence(
+        seq_id=record.id,
+        seq=str(record.seq),
+        stop_codons=stop_codons,
+    )
+
+
+def summarize_single_payload(payload, stop_codons):
+    seq_id, seq = payload
+    return summarize_single_sequence(seq_id=seq_id, seq=seq, stop_codons=stop_codons)
+
+
+def summarize_records_process_parallel(payloads, stop_codons, threads):
+    worker = partial(summarize_single_payload, stop_codons=stop_codons)
+    max_workers = min(threads, len(payloads))
+    chunk_size = max(1, len(payloads) // (max_workers * 16))
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        return list(executor.map(worker, payloads, chunksize=chunk_size))
 
 
 def summarize_records(records, codontable, threads=1):
-    lengths = [len(record.seq) for record in records]
-    aligned = len(set(lengths)) <= 1
+    if len(records) <= 1:
+        aligned = True
+    else:
+        first_len = len(records[0].seq)
+        aligned = all(len(record.seq) == first_len for record in records[1:])
     duplicate_ids = get_duplicate_ids(records)
-    worker = partial(summarize_single_record, codontable=codontable)
     worker_threads = resolve_threads(threads=threads)
-    per_record = parallel_map_ordered(items=records, worker=worker, threads=worker_threads)
+    stop_codons = get_stop_codons(codontable=codontable)
+    per_record = None
+    if (worker_threads > 1) and (len(records) >= _PROCESS_PARALLEL_MIN_RECORDS):
+        try:
+            payloads = [(record.id, str(record.seq)) for record in records]
+            per_record = summarize_records_process_parallel(
+                payloads=payloads,
+                stop_codons=stop_codons,
+                threads=worker_threads,
+            )
+        except (OSError, PermissionError):
+            sys.stderr.write('Process-based parallelism unavailable; falling back to threads.\n')
+    if per_record is None:
+        worker = partial(summarize_single_record, stop_codons=stop_codons)
+        per_record = parallel_map_ordered(items=records, worker=worker, threads=worker_threads)
 
-    non_triplet_ids = [entry['id'] for entry in per_record if entry['is_non_triplet']]
-    gap_only_ids = [entry['id'] for entry in per_record if entry['is_gap_only']]
-    internal_stop_ids = [entry['id'] for entry in per_record if entry['has_internal_stop']]
+    non_triplet_ids = [entry[0] for entry in per_record if entry[1]]
+    gap_only_ids = [entry[0] for entry in per_record if entry[2]]
+    internal_stop_ids = [entry[0] for entry in per_record if entry[3]]
     ambiguous_by_seq = dict()
     total_ambiguous = 0
     total_evaluable = 0
     for entry in per_record:
-        ambiguous_by_seq[entry['id']] = entry['ambiguous_codons']
-        total_ambiguous += entry['ambiguous_codons']
-        total_evaluable += entry['evaluable_codons']
+        ambiguous_by_seq[entry[0]] = entry[4]
+        total_ambiguous += entry[4]
+        total_evaluable += entry[5]
     ambiguous_rate = 0.0
     if total_evaluable > 0:
         ambiguous_rate = total_ambiguous / total_evaluable

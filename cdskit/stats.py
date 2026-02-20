@@ -1,4 +1,4 @@
-from cdskit.util import read_seqs
+from cdskit.util import parallel_map_ordered, read_seqs, resolve_threads
 
 LOWERCASE_DELETE_TABLE = str.maketrans('', '', 'abcdefghijklmnopqrstuvwxyz')
 
@@ -6,23 +6,30 @@ def num_masked_bp(seq):
     seq_str = str(seq)
     return len(seq_str) - len(seq_str.translate(LOWERCASE_DELETE_TABLE))
 
+
+def record_stats(record):
+    seq_str = str(record.seq)
+    return {
+        'bp_masked': num_masked_bp(seq_str),
+        'bp_all': len(seq_str),
+        'bp_G': seq_str.count('G'),
+        'bp_C': seq_str.count('C'),
+        'bp_N': seq_str.count('N'),
+        'bp_gap': seq_str.count('-'),
+    }
+
+
 def stats_main(args):
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
+    threads = resolve_threads(getattr(args, 'threads', 1))
     num_seq = len(records)
-    bp_masked = 0
-    bp_all = 0
-    bp_G = 0
-    bp_C = 0
-    bp_N = 0
-    bp_gap = 0
-    for record in records:
-        seq_str = str(record.seq)
-        bp_masked += num_masked_bp(seq_str)
-        bp_all += len(seq_str)
-        bp_G += seq_str.count('G')
-        bp_C += seq_str.count('C')
-        bp_N += seq_str.count('N')
-        bp_gap += seq_str.count('-')
+    record_count_stats = parallel_map_ordered(items=records, worker=record_stats, threads=threads)
+    bp_masked = sum(x['bp_masked'] for x in record_count_stats)
+    bp_all = sum(x['bp_all'] for x in record_count_stats)
+    bp_G = sum(x['bp_G'] for x in record_count_stats)
+    bp_C = sum(x['bp_C'] for x in record_count_stats)
+    bp_N = sum(x['bp_N'] for x in record_count_stats)
+    bp_gap = sum(x['bp_gap'] for x in record_count_stats)
     print('Number of sequences: {:,}'.format(num_seq))
     print('Total length: {:,}'.format(bp_all))
     print('Total softmasked length: {:,}'.format(bp_masked))

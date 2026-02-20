@@ -1,16 +1,18 @@
 #!/usr/bin/env python
 
+from concurrent.futures import ProcessPoolExecutor
 from functools import partial
 
 import Bio.Data.CodonTable
 import Bio.Seq
 import Bio.SeqIO
-import numpy
 import sys
 
 from cdskit.util import parallel_map_ordered, read_seqs, resolve_threads, write_seqs
 
 _STOP_CODON_CACHE = {}
+_STOP_CODON_SCAN_CACHE = {}
+_PROCESS_PARALLEL_MIN_RECORDS = 2000
 
 
 def get_stop_codons(codon_table):
@@ -25,16 +27,28 @@ def get_stop_codons(codon_table):
     return stop_codons
 
 
+def get_stop_codon_scan_list(codon_table):
+    cached = _STOP_CODON_SCAN_CACHE.get(codon_table)
+    if cached is not None:
+        return cached
+    scan_codons = tuple(sorted(get_stop_codons(codon_table)))
+    _STOP_CODON_SCAN_CACHE[codon_table] = scan_codons
+    return scan_codons
+
+
 def count_internal_stop_codons(seq, codon_table):
-    seq_str = str(seq)
-    stop_codons = get_stop_codons(codon_table)
-    end = len(seq_str) - 3
-    if end <= 0:
+    seq_str = seq if isinstance(seq, str) else str(seq)
+    internal_stop_limit = len(seq_str) - 3
+    if internal_stop_limit <= 0:
         return 0
     num_stop = 0
-    for i in range(0, end, 3):
-        if seq_str[i:i+3] in stop_codons:
-            num_stop += 1
+    seq_find = seq_str.find
+    for codon in get_stop_codon_scan_list(codon_table):
+        pos = seq_find(codon)
+        while pos != -1:
+            if (pos % 3 == 0) and (pos < internal_stop_limit):
+                num_stop += 1
+            pos = seq_find(codon, pos + 1)
     return num_stop
 
 
@@ -54,7 +68,7 @@ class padseqs:
         self.headn.append(headn)
         self.tailn.append(tailn)
     def get_minimum_num_stop(self):
-        min_index = numpy.argmin(self.num_stops)
+        min_index = min(range(len(self.num_stops)), key=lambda i: self.num_stops[i])
         out = {
             'new_seq':self.new_seqs[min_index],
             'num_stop':self.num_stops[min_index],
@@ -86,11 +100,24 @@ def get_padding_candidates(num_stop_input, num_missing, seqlen):
     return candidates
 
 
-def choose_best_padding(clean_seq, codon_table, padchar, num_stop_input, num_missing, seqlen):
-    seqs = padseqs(original_seq=clean_seq, codon_table=codon_table, padchar=padchar)
+def choose_best_padding(clean_seq, codon_table, padchar, num_stop_input, num_missing, seqlen, tailpad_seq):
+    best = None
     for headn, tailn in get_padding_candidates(num_stop_input, num_missing, seqlen):
-        seqs.add(headn=headn, tailn=tailn)
-    return seqs.get_minimum_num_stop()
+        if (headn == 0) and (tailn == num_missing):
+            # Reuse already evaluated tail-padded sequence.
+            new_seq = tailpad_seq
+            num_stop = num_stop_input
+        else:
+            new_seq = (padchar * headn) + clean_seq + (padchar * tailn)
+            num_stop = count_internal_stop_codons(new_seq, codon_table)
+        if (best is None) or (num_stop < best['num_stop']):
+            best = {
+                'new_seq': new_seq,
+                'num_stop': num_stop,
+                'headn': headn,
+                'tailn': tailn,
+            }
+    return best
 
 
 def process_record_padding(record_name, record_seq, codon_table, padchar):
@@ -115,6 +142,7 @@ def process_record_padding(record_name, record_seq, codon_table, padchar):
         num_stop_input=num_stop_input,
         num_missing=num_missing,
         seqlen=seqlen,
+        tailpad_seq=tailpad_seq,
     )
     is_no_stop = (best_padseq['num_stop'] == 0)
     txt = f'{record_name}, original_seqlen={seqlen}, head_padding={best_padseq["headn"]}, tail_padding={best_padseq["tailn"]}, '
@@ -137,24 +165,62 @@ def process_record_padding_entry(record, codon_table, padchar):
     )
 
 
+def process_record_padding_payload(payload, codon_table, padchar):
+    record_name, record_seq = payload
+    return process_record_padding(
+        record_name=record_name,
+        record_seq=record_seq,
+        codon_table=codon_table,
+        padchar=padchar,
+    )
+
+
+def process_padding_payloads_process_parallel(payloads, codon_table, padchar, threads):
+    worker = partial(
+        process_record_padding_payload,
+        codon_table=codon_table,
+        padchar=padchar,
+    )
+    max_workers = min(threads, len(payloads))
+    chunk_size = max(1, len(payloads) // (max_workers * 16))
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        return list(executor.map(worker, payloads, chunksize=chunk_size))
+
+
 def pad_main(args):
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
     threads = resolve_threads(getattr(args, 'threads', 1))
-    worker = partial(
-        process_record_padding_entry,
-        codon_table=args.codontable,
-        padchar=args.padchar,
-    )
-    results = parallel_map_ordered(items=records, worker=worker, threads=threads)
+    results = None
+    if (threads > 1) and (len(records) >= _PROCESS_PARALLEL_MIN_RECORDS):
+        try:
+            payloads = [(record.name, str(record.seq)) for record in records]
+            results = process_padding_payloads_process_parallel(
+                payloads=payloads,
+                codon_table=args.codontable,
+                padchar=args.padchar,
+                threads=threads,
+            )
+        except (OSError, PermissionError):
+            pass
+    if results is None:
+        worker = partial(
+            process_record_padding_entry,
+            codon_table=args.codontable,
+            padchar=args.padchar,
+        )
+        results = parallel_map_ordered(items=records, worker=worker, threads=threads)
     is_no_stop = []
     seqnum_padded = 0
+    log_lines = list()
     for i, result in enumerate(results):
         records[i].seq = Bio.Seq.Seq(result['new_seq'])
         if result['log'] != '':
-            sys.stderr.write(result['log'])
+            log_lines.append(result['log'])
         is_no_stop.append(result['is_no_stop'])
         if result['was_padded']:
             seqnum_padded += 1
+    if len(log_lines) > 0:
+        sys.stderr.write(''.join(log_lines))
     if args.nopseudo:
         records = [records[i] for i in range(len(records)) if is_no_stop[i]]
     sys.stderr.write('Number of padded sequences: {:,} / {:,}\n'.format(seqnum_padded, len(records)))

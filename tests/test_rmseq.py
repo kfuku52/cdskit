@@ -319,6 +319,44 @@ class TestRmseqMain:
         assert "some_gaps" in result_ids  # 33% < 50%
         assert "many_gaps" not in result_ids  # 67% >= 50%
 
+    def test_rmseq_threads_matches_single_thread(self, temp_dir, mock_args):
+        input_path = temp_dir / "input.fasta"
+        out_single = temp_dir / "single.fasta"
+        out_threaded = temp_dir / "threaded.fasta"
+
+        records = [
+            SeqRecord(Seq("ATGAAA"), id="keep_this", description=""),
+            SeqRecord(Seq("ATGCCC"), id="remove_me", description=""),
+            SeqRecord(Seq("NNNNNN"), id="all_n", description=""),
+            SeqRecord(Seq("ATGNNN"), id="half_n", description=""),
+        ]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args_single = mock_args(
+            seqfile=str(input_path),
+            outfile=str(out_single),
+            seqname='remove.*',
+            problematic_percent=50,
+            problematic_char=['N'],
+            threads=1,
+        )
+        args_threaded = mock_args(
+            seqfile=str(input_path),
+            outfile=str(out_threaded),
+            seqname='remove.*',
+            problematic_percent=50,
+            problematic_char=['N'],
+            threads=4,
+        )
+
+        rmseq_main(args_single)
+        rmseq_main(args_threaded)
+
+        result_single = list(Bio.SeqIO.parse(str(out_single), "fasta"))
+        result_threaded = list(Bio.SeqIO.parse(str(out_threaded), "fasta"))
+        assert [r.id for r in result_single] == [r.id for r in result_threaded]
+        assert [str(r.seq) for r in result_single] == [str(r.seq) for r in result_threaded]
+
     def test_rmseq_boundary_percent(self, temp_dir, mock_args):
         """Test behavior at exactly the boundary percent."""
         input_path = temp_dir / "input.fasta"

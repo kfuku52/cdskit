@@ -254,3 +254,46 @@ class TestBacktrimMain:
         if expected_path.exists():
             expected = list(Bio.SeqIO.parse(str(expected_path), "fasta"))
             assert len(result) == len(expected)
+
+    def test_backtrim_threads_matches_single_thread(self, temp_dir, mock_args):
+        cdn_path = temp_dir / "codon.fasta"
+        pep_path = temp_dir / "protein.fasta"
+        out_single = temp_dir / "single.fasta"
+        out_threaded = temp_dir / "threaded.fasta"
+
+        cdn_records = [
+            SeqRecord(Seq("ATGAAA---CCC"), id="seq1", description=""),
+            SeqRecord(Seq("ATGAAAGGGCCC"), id="seq2", description=""),
+            SeqRecord(Seq("ATGTTT---CCC"), id="seq3", description=""),
+        ]
+        Bio.SeqIO.write(cdn_records, str(cdn_path), "fasta")
+
+        pep_records = [
+            SeqRecord(Seq("MK"), id="seq1", description=""),
+            SeqRecord(Seq("MK"), id="seq2", description=""),
+            SeqRecord(Seq("MF"), id="seq3", description=""),
+        ]
+        Bio.SeqIO.write(pep_records, str(pep_path), "fasta")
+
+        args_single = mock_args(
+            seqfile=str(cdn_path),
+            outfile=str(out_single),
+            trimmed_aa_aln=str(pep_path),
+            codontable=1,
+            threads=1,
+        )
+        args_threaded = mock_args(
+            seqfile=str(cdn_path),
+            outfile=str(out_threaded),
+            trimmed_aa_aln=str(pep_path),
+            codontable=1,
+            threads=4,
+        )
+
+        backtrim_main(args_single)
+        backtrim_main(args_threaded)
+
+        result_single = list(Bio.SeqIO.parse(str(out_single), "fasta"))
+        result_threaded = list(Bio.SeqIO.parse(str(out_threaded), "fasta"))
+        assert [r.id for r in result_single] == [r.id for r in result_threaded]
+        assert [str(r.seq) for r in result_single] == [str(r.seq) for r in result_threaded]

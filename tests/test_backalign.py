@@ -319,6 +319,49 @@ class TestBackalignMain:
             backalign_main(args)
         assert "not identical" in str(exc_info.value)
 
+    def test_backalign_threads_matches_single_thread(self, temp_dir, mock_args):
+        cdn_path = temp_dir / "cds.fasta"
+        pep_path = temp_dir / "aa_aln.fasta"
+        out_single = temp_dir / "single.fasta"
+        out_threaded = temp_dir / "threaded.fasta"
+
+        cdn_records = [
+            SeqRecord(Seq("ATGAAAGGG"), id="seq2", description=""),
+            SeqRecord(Seq("ATGAAACCC"), id="seq1", description=""),
+            SeqRecord(Seq("ATGAAATAA"), id="seq3", description=""),
+        ]
+        Bio.SeqIO.write(cdn_records, str(cdn_path), "fasta")
+
+        pep_records = [
+            SeqRecord(Seq("MK-P"), id="seq1", description=""),
+            SeqRecord(Seq("MKG-"), id="seq2", description=""),
+            SeqRecord(Seq("MK--"), id="seq3", description=""),
+        ]
+        Bio.SeqIO.write(pep_records, str(pep_path), "fasta")
+
+        args_single = mock_args(
+            seqfile=str(cdn_path),
+            outfile=str(out_single),
+            aa_aln=str(pep_path),
+            codontable=1,
+            threads=1,
+        )
+        args_threaded = mock_args(
+            seqfile=str(cdn_path),
+            outfile=str(out_threaded),
+            aa_aln=str(pep_path),
+            codontable=1,
+            threads=4,
+        )
+
+        backalign_main(args_single)
+        backalign_main(args_threaded)
+
+        result_single = list(Bio.SeqIO.parse(str(out_single), "fasta"))
+        result_threaded = list(Bio.SeqIO.parse(str(out_threaded), "fasta"))
+        assert [r.id for r in result_single] == [r.id for r in result_threaded]
+        assert [str(r.seq) for r in result_single] == [str(r.seq) for r in result_threaded]
+
     def test_backalign_rejects_duplicate_ids_in_cds(self, temp_dir, mock_args):
         """Reject duplicate IDs in CDS input."""
         cdn_path = temp_dir / "cds.fasta"

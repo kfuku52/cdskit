@@ -37,11 +37,32 @@ def resolve_threads(threads):
 
 
 def parallel_map_ordered(items, worker, threads):
+    items = list(items)
     if (threads <= 1) or (len(items) <= 1):
         return [worker(item) for item in items]
+
     max_workers = min(threads, len(items))
+    if len(items) <= (max_workers * 2):
+        return [worker(item) for item in items]
+
+    # Run multiple items per submitted task to reduce scheduler overhead
+    # when per-item work is small.
+    if len(items) <= (max_workers * 256):
+        chunk_size = max(1, (len(items) + max_workers - 1) // max_workers)
+    else:
+        chunk_size = max(1, len(items) // (max_workers * 8))
+    chunks = [items[i:i + chunk_size] for i in range(0, len(items), chunk_size)]
+
+    def process_chunk(chunk):
+        return [worker(item) for item in chunk]
+
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        return list(executor.map(worker, items))
+        chunk_results = list(executor.map(process_chunk, chunks))
+
+    out = list()
+    for chunk_result in chunk_results:
+        out.extend(chunk_result)
+    return out
 
 
 def read_seqs(seqfile, seqformat):

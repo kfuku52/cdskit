@@ -265,3 +265,27 @@ class TestStatsMain:
 
         captured = capsys.readouterr()
         assert "Number of sequences: 1" in captured.out
+
+    def test_stats_threads_matches_single_thread(self, temp_dir, mock_args, capsys):
+        input_path = temp_dir / "input.fasta"
+        records = [
+            SeqRecord(Seq("ATG---NNNcccGGG"), id="seq1", description=""),
+            SeqRecord(Seq("ATGCCCATGCCC"), id="seq2", description=""),
+            SeqRecord(Seq("GGGGGGTTTTTT"), id="seq3", description=""),
+        ]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args_single = mock_args(
+            seqfile=str(input_path),
+            threads=1,
+        )
+        args_threaded = mock_args(
+            seqfile=str(input_path),
+            threads=4,
+        )
+
+        stats_main(args_single)
+        captured_single = capsys.readouterr()
+        stats_main(args_threaded)
+        captured_threaded = capsys.readouterr()
+        assert captured_single.out == captured_threaded.out

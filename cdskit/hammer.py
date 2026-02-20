@@ -1,18 +1,22 @@
 import numpy
 import sys
+from functools import partial
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
+from cdskit.translate import translate_sequence_string
 
 from cdskit.util import (
+    parallel_map_ordered,
     read_seqs,
-    records2array,
+    resolve_threads,
     stop_if_not_aligned,
     stop_if_not_multiple_of_three,
-    translate_records,
     write_seqs,
 )
 
 GAP_ONLY_CHARS = frozenset('-NXnx')
+GAP_ONLY_CHARS_BYTES = numpy.array([ch.encode('ascii') for ch in sorted(GAP_ONLY_CHARS)], dtype='S1')
+AA_MISSING_CHARS = numpy.array([b'-', b'?', b'X', b'*'], dtype='S1')
 
 
 def codon_is_gap_like(codon):
@@ -37,19 +41,36 @@ def resolve_nail_value(nail, num_records):
     return nail_value
 
 
-def build_codon_lists(records):
-    seq_strings = [str(record.seq) for record in records]
-    return [[seq[j:j + 3] for j in range(0, len(seq), 3)] for seq in seq_strings]
+def build_codon_gap_like_matrix(records):
+    num_records = len(records)
+    if num_records == 0:
+        return numpy.zeros((0, 0), dtype=bool)
+    seq_len = len(records[0].seq)
+    if seq_len == 0:
+        return numpy.zeros((num_records, 0), dtype=bool)
+
+    seq_bytes = ''.join([str(record.seq) for record in records]).encode('ascii')
+    nt_matrix = numpy.frombuffer(seq_bytes, dtype='S1').reshape(num_records, seq_len)
+    codon_matrix = nt_matrix.reshape(num_records, seq_len // 3, 3)
+    return numpy.isin(codon_matrix, GAP_ONLY_CHARS_BYTES).all(axis=2)
 
 
-def build_codon_gap_like_matrix(seq_codon_lists):
-    return numpy.array(
-        [
-            [codon_is_gap_like(codon) for codon in seq_codons]
-            for seq_codons in seq_codon_lists
-        ],
-        dtype=bool,
+def translate_record_to_aa_string(record, codontable):
+    return translate_sequence_string(
+        seq_str=str(record.seq),
+        codontable=codontable,
+        to_stop=False,
     )
+
+
+def build_non_missing_site(records, codontable, threads):
+    worker = partial(translate_record_to_aa_string, codontable=codontable)
+    aa_strings = parallel_map_ordered(items=records, worker=worker, threads=threads)
+    aa_len = len(aa_strings[0])
+    aa_bytes = b''.join([aa_seq.encode('ascii') for aa_seq in aa_strings])
+    aa_matrix = numpy.frombuffer(aa_bytes, dtype='S1').reshape(len(aa_strings), aa_len)
+    missing_site = numpy.isin(aa_matrix, AA_MISSING_CHARS).sum(axis=0)
+    return len(records) - missing_site
 
 
 def select_codon_site_indices(non_missing_site, nail_value, max_len, prevent_gap_only, codon_gap_like_matrix, original_records):
@@ -76,23 +97,52 @@ def select_codon_site_indices(non_missing_site, nail_value, max_len, prevent_gap
     return selected_non_missing_idx
 
 
+def codon_sites_to_nucleotide_ranges(codon_sites):
+    if len(codon_sites) == 0:
+        return list()
+    ranges = list()
+    run_start = codon_sites[0]
+    run_end = codon_sites[0]
+    for codon_site in codon_sites[1:]:
+        if codon_site == run_end + 1:
+            run_end = codon_site
+            continue
+        ranges.append((run_start * 3, (run_end + 1) * 3))
+        run_start = codon_site
+        run_end = codon_site
+    ranges.append((run_start * 3, (run_end + 1) * 3))
+    return ranges
+
+
+def build_hammer_output_record(record, selected_nucleotide_ranges):
+    seq_str = str(record.seq)
+    new_seq = ''.join([seq_str[start:end] for start, end in selected_nucleotide_ranges])
+    return SeqRecord(
+        seq=Seq(new_seq),
+        id=record.id,
+        name=record.name,
+        description=record.description,
+    )
+
+
 def hammer_main(args):
     original_records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
     if len(original_records) == 0:
         write_seqs(records=original_records, outfile=args.outfile, outseqformat=args.outseqformat)
         return
+    threads = resolve_threads(getattr(args, 'threads', 1))
     stop_if_not_multiple_of_three(original_records)
     stop_if_not_aligned(original_records)
     nail_value = resolve_nail_value(args.nail, len(original_records))
-    aa_records = translate_records(records=original_records, codontable=args.codontable)
-    aa_array = records2array(aa_records)
-    max_len = aa_array.shape[1]
-    missing_site = numpy.isin(aa_array, ['-', '?', 'X', '*']).sum(axis=0)
-    non_missing_site = len(original_records) - missing_site
-    seq_codon_lists = build_codon_lists(original_records)
+    non_missing_site = build_non_missing_site(
+        records=original_records,
+        codontable=args.codontable,
+        threads=threads,
+    )
+    max_len = non_missing_site.shape[0]
     codon_gap_like_matrix = None
     if args.prevent_gap_only:
-        codon_gap_like_matrix = build_codon_gap_like_matrix(seq_codon_lists)
+        codon_gap_like_matrix = build_codon_gap_like_matrix(original_records)
     selected_non_missing_idx = select_codon_site_indices(
         non_missing_site=non_missing_site,
         nail_value=nail_value,
@@ -101,15 +151,14 @@ def hammer_main(args):
         codon_gap_like_matrix=codon_gap_like_matrix,
         original_records=original_records,
     )
-    selected_non_missing_idx_list = selected_non_missing_idx.tolist()
-    records = list()
-    for i in range(len(original_records)):
-        new_seq = ''.join([seq_codon_lists[i][codon_site] for codon_site in selected_non_missing_idx_list])
-        new_record = SeqRecord(
-            seq=Seq(new_seq),
-            id=original_records[i].id,
-            name=original_records[i].name,
-            description=original_records[i].description,
-        )
-        records.append(new_record)
+    selected_nucleotide_ranges = codon_sites_to_nucleotide_ranges(selected_non_missing_idx.tolist())
+    worker = partial(
+        build_hammer_output_record,
+        selected_nucleotide_ranges=selected_nucleotide_ranges,
+    )
+    records = parallel_map_ordered(
+        items=original_records,
+        worker=worker,
+        threads=threads,
+    )
     write_seqs(records=records, outfile=args.outfile, outseqformat=args.outseqformat)

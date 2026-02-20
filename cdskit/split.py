@@ -1,7 +1,12 @@
 import copy
 import sys
 
-from cdskit.util import read_seqs, stop_if_not_multiple_of_three, write_seqs
+from cdskit.util import (
+    read_seqs,
+    resolve_threads,
+    stop_if_not_multiple_of_three,
+    write_seqs,
+)
 
 
 def resolve_output_prefix(args):
@@ -36,10 +41,11 @@ def build_split_output_paths(prefix, outseqformat):
 
 def split_main(args):
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
+    _ = resolve_threads(getattr(args, 'threads', 1))
     stop_if_not_multiple_of_three(records)
-    first_records = []
-    second_records = []
-    third_records = []
+    first_records = list()
+    second_records = list()
+    third_records = list()
     for record in records:
         first_record, second_record, third_record = split_record_by_codon_position(record)
         first_records.append(first_record)

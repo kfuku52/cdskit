@@ -79,8 +79,7 @@ seqkit seq input.fasta.gz | cdskit pad | cdskit mask | seqkit translate | cdskit
 ```
 
 ## Parallel execution
-The following subcommands support `--threads INT` for multi-threaded per-sequence processing:
-`translate`, `longestcds`, `mask`, `pad`, and `validate`.
+All subcommands support `--threads INT` for multi-threaded processing.
 
 - `--threads 1`: single-threaded (default)
 - `--threads 2` or larger: multi-threaded

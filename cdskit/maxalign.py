@@ -2,12 +2,16 @@ import json
 import re
 import sys
 from collections import Counter
+from concurrent.futures import ProcessPoolExecutor
+from functools import partial
 
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
 from cdskit.util import (
+    parallel_map_ordered,
     read_seqs,
+    resolve_threads,
     stop_if_not_aligned,
     stop_if_not_multiple_of_three,
     write_seqs,
@@ -15,6 +19,14 @@ from cdskit.util import (
 
 
 DEFAULT_MISSING_CHARS = '-?.'
+
+
+def popcount(mask):
+    count = 0
+    while mask:
+        mask &= mask - 1
+        count += 1
+    return count
 
 
 def codon_is_present(codon, missing_chars):
@@ -30,6 +42,27 @@ def build_codon_presence_matrix(records, missing_chars):
         [codon_is_present(seq[i:i + 3], missing_chars) for i in range(0, len(seq), 3)]
         for seq in seq_strings
     ]
+
+
+def build_support_masks(records, missing_chars):
+    if len(records) == 0:
+        return list()
+    num_sites = len(records[0].seq) // 3
+    masks = [0] * num_sites
+    missing_chars = set(missing_chars)
+    for seq_idx, record in enumerate(records):
+        seq = str(record.seq)
+        seq_bit = 1 << seq_idx
+        site_idx = 0
+        for pos in range(0, len(seq), 3):
+            if (
+                (seq[pos] not in missing_chars)
+                and (seq[pos + 1] not in missing_chars)
+                and (seq[pos + 2] not in missing_chars)
+            ):
+                masks[site_idx] |= seq_bit
+            site_idx += 1
+    return masks
 
 
 def count_complete_codon_columns(codon_presence_matrix, kept_indices):
@@ -84,6 +117,10 @@ def support_counts_from_matrix(codon_presence_matrix):
     return Counter(subset_support_bitmasks(codon_presence_matrix))
 
 
+def support_counts_from_masks(support_masks):
+    return Counter(support_masks)
+
+
 def is_better_solution(candidate, best):
     if best is None:
         return True
@@ -102,14 +139,128 @@ def count_complete_columns_with_support(support_counts, kept_mask):
     return complete_codon_columns
 
 
+def mask_to_indices(mask, num_sequences):
+    return get_subset_indices(mask=mask, num_seqs=num_sequences)
+
+
+def build_variable_subset_masks(variable_indices):
+    max_mask = 1 << len(variable_indices)
+    subset_masks = [0] * max_mask
+    for subset_mask in range(1, max_mask):
+        lsb = subset_mask & -subset_mask
+        bit_idx = lsb.bit_length() - 1
+        subset_masks[subset_mask] = subset_masks[subset_mask ^ lsb] | (1 << variable_indices[bit_idx])
+    return subset_masks
+
+
+def evaluate_exact_subset_range(
+    subset_start,
+    subset_end,
+    subset_variable_masks,
+    required_mask,
+    required_count,
+    support_counts,
+    max_removed,
+    total_sequences,
+    num_sequences,
+):
+    best = None
+    for subset_mask in range(subset_start, subset_end):
+        num_kept = required_count + popcount(subset_mask)
+        if num_kept == 0:
+            continue
+        num_removed = total_sequences - num_kept
+        if (max_removed is not None) and (num_removed > max_removed):
+            continue
+        kept_mask = required_mask | subset_variable_masks[subset_mask]
+        complete_codon_columns = count_complete_columns_with_support(
+            support_counts=support_counts,
+            kept_mask=kept_mask,
+        )
+        area = num_kept * complete_codon_columns
+        if best is None:
+            kept_indices = mask_to_indices(mask=kept_mask, num_sequences=num_sequences)
+            best = {
+                'area': area,
+                'num_kept': num_kept,
+                'complete_codon_columns': complete_codon_columns,
+                'kept_indices': kept_indices,
+                'steps': list(),
+            }
+            continue
+        if area > best['area']:
+            kept_indices = mask_to_indices(mask=kept_mask, num_sequences=num_sequences)
+            best = {
+                'area': area,
+                'num_kept': num_kept,
+                'complete_codon_columns': complete_codon_columns,
+                'kept_indices': kept_indices,
+                'steps': list(),
+            }
+            continue
+        if area < best['area']:
+            continue
+        if num_kept > best['num_kept']:
+            kept_indices = mask_to_indices(mask=kept_mask, num_sequences=num_sequences)
+            best = {
+                'area': area,
+                'num_kept': num_kept,
+                'complete_codon_columns': complete_codon_columns,
+                'kept_indices': kept_indices,
+                'steps': list(),
+            }
+            continue
+        if num_kept < best['num_kept']:
+            continue
+        kept_indices = mask_to_indices(mask=kept_mask, num_sequences=num_sequences)
+        if kept_indices < best['kept_indices']:
+            best = {
+                'area': area,
+                'num_kept': num_kept,
+                'complete_codon_columns': complete_codon_columns,
+                'kept_indices': kept_indices,
+                'steps': list(),
+            }
+    return best
+
+
+def evaluate_exact_subset_chunk(
+    subset_range,
+    subset_variable_masks,
+    required_mask,
+    required_count,
+    support_counts,
+    max_removed,
+    total_sequences,
+    num_sequences,
+):
+    return evaluate_exact_subset_range(
+        subset_start=subset_range[0],
+        subset_end=subset_range[1],
+        subset_variable_masks=subset_variable_masks,
+        required_mask=required_mask,
+        required_count=required_count,
+        support_counts=support_counts,
+        max_removed=max_removed,
+        total_sequences=total_sequences,
+        num_sequences=num_sequences,
+    )
+
+
 def solve_exact(
     codon_presence_matrix,
     candidate_indices=None,
     required_indices=None,
     max_removed=None,
     total_sequences=None,
+    threads=1,
+    support_counts=None,
+    num_sequences=None,
 ):
-    num_sequences = len(codon_presence_matrix)
+    if num_sequences is None:
+        if codon_presence_matrix is None:
+            raise Exception('num_sequences is required when codon_presence_matrix is None.')
+        num_sequences = len(codon_presence_matrix)
     if total_sequences is None:
         total_sequences = num_sequences
     if candidate_indices is None:
@@ -124,36 +275,97 @@ def solve_exact(
         raise Exception('required_indices must be a subset of candidate_indices.')
 
     variable_indices = [idx for idx in candidate_indices if idx not in required_set]
-    support_counts = support_counts_from_matrix(codon_presence_matrix)
-    best = None
+    if support_counts is None:
+        if codon_presence_matrix is None:
+            raise Exception('support_counts or codon_presence_matrix is required.')
+        support_counts = support_counts_from_matrix(codon_presence_matrix)
     max_mask = 1 << len(variable_indices)
-    for subset_mask in range(max_mask):
-        kept_indices = list(required_indices)
-        for i in range(len(variable_indices)):
-            if ((subset_mask >> i) & 1) == 1:
-                kept_indices.append(variable_indices[i])
-        kept_indices.sort()
-        if len(kept_indices) == 0:
-            continue
-        num_removed = total_sequences - len(kept_indices)
-        if (max_removed is not None) and (num_removed > max_removed):
-            continue
-        kept_mask = indices_to_bitmask(kept_indices)
-        complete_codon_columns = count_complete_columns_with_support(
+    subset_variable_masks = build_variable_subset_masks(variable_indices=variable_indices)
+    required_mask = indices_to_bitmask(required_indices)
+    required_count = len(required_indices)
+    threads = resolve_threads(threads=threads)
+    if (threads <= 1) or (max_mask <= 1):
+        return evaluate_exact_subset_range(
+            subset_start=0,
+            subset_end=max_mask,
+            subset_variable_masks=subset_variable_masks,
+            required_mask=required_mask,
+            required_count=required_count,
             support_counts=support_counts,
-            kept_mask=kept_mask,
+            max_removed=max_removed,
+            total_sequences=total_sequences,
+            num_sequences=num_sequences,
         )
-        area = len(kept_indices) * complete_codon_columns
-        candidate = {
-            'area': area,
-            'num_kept': len(kept_indices),
-            'complete_codon_columns': complete_codon_columns,
-            'kept_indices': kept_indices,
-            'steps': list(),
-        }
+
+    chunk_size = max(1, max_mask // (threads * 8))
+    ranges = list()
+    start = 0
+    while start < max_mask:
+        end = min(start + chunk_size, max_mask)
+        ranges.append((start, end))
+        start = end
+
+    # For larger exact searches, use process-based parallelism to avoid the GIL.
+    # For small searches, threads are typically faster due to lower startup overhead.
+    use_process = max_mask >= 8192
+    chunk_best = None
+    if use_process:
+        try:
+            max_workers = min(threads, len(ranges))
+            with ProcessPoolExecutor(max_workers=max_workers) as executor:
+                futures = [
+                    executor.submit(
+                        evaluate_exact_subset_chunk,
+                        subset_range=subset_range,
+                        subset_variable_masks=subset_variable_masks,
+                        required_mask=required_mask,
+                        required_count=required_count,
+                        support_counts=support_counts,
+                        max_removed=max_removed,
+                        total_sequences=total_sequences,
+                        num_sequences=num_sequences,
+                    )
+                    for subset_range in ranges
+                ]
+                chunk_best = [future.result() for future in futures]
+        except (OSError, PermissionError):
+            sys.stderr.write('Process-based parallelism unavailable; falling back to threads.\n')
+
+    if chunk_best is None:
+        worker = partial(
+            evaluate_exact_subset_chunk,
+            subset_variable_masks=subset_variable_masks,
+            required_mask=required_mask,
+            required_count=required_count,
+            support_counts=support_counts,
+            max_removed=max_removed,
+            total_sequences=total_sequences,
+            num_sequences=num_sequences,
+        )
+        chunk_best = parallel_map_ordered(items=ranges, worker=worker, threads=threads)
+
+    best = None
+    for candidate in chunk_best:
+        if candidate is None:
+            continue
         if is_better_solution(candidate=candidate, best=best):
             best = candidate
     return best
+
+
+def greedy_complete_and_single_missing_counts(support_counts, active_mask):
+    complete_codon_columns = 0
+    single_missing_counts = dict()
+    for support_mask, site_count in support_counts.items():
+        absent_mask = active_mask & ~support_mask
+        if absent_mask == 0:
+            complete_codon_columns += site_count
+            continue
+        # Only one active sequence missing at this codon site.
+        if (absent_mask & (absent_mask - 1)) == 0:
+            missing_idx = absent_mask.bit_length() - 1
+            single_missing_counts[missing_idx] = single_missing_counts.get(missing_idx, 0) + site_count
+    return complete_codon_columns, single_missing_counts
 
 
 def solve_greedy(
@@ -162,93 +374,79 @@ def solve_greedy(
     protected_indices=None,
     max_removed=None,
     total_sequences=None,
+    threads=1,
+    support_counts=None,
 ):
-    num_sequences = len(codon_presence_matrix)
     if total_sequences is None:
-        total_sequences = num_sequences
+        if codon_presence_matrix is None:
+            raise Exception('total_sequences is required when codon_presence_matrix is None.')
+        total_sequences = len(codon_presence_matrix)
     if active_indices is None:
-        active_indices = list(range(num_sequences))
+        active_indices = list(range(total_sequences))
     active_indices = sorted(active_indices)
     if protected_indices is None:
         protected_indices = list()
     protected_set = set(protected_indices)
     if not protected_set.issubset(set(active_indices)):
         raise Exception('protected_indices must be a subset of active_indices.')
-    support_counts = support_counts_from_matrix(codon_presence_matrix)
+    if support_counts is None:
+        if codon_presence_matrix is None:
+            raise Exception('support_counts or codon_presence_matrix is required.')
+        support_counts = support_counts_from_matrix(codon_presence_matrix)
+    _ = resolve_threads(threads=threads)
     active_mask = indices_to_bitmask(active_indices)
-    area_cache = dict()
-    index_cache = dict()
-
-    def evaluate_mask(mask):
-        cached = area_cache.get(mask)
-        if cached is not None:
-            return cached
-        num_kept = mask.bit_count()
-        if num_kept == 0:
-            result = (0, 0, 0)
-            area_cache[mask] = result
-            return result
-        complete_codon_columns = count_complete_columns_with_support(
-            support_counts=support_counts,
-            kept_mask=mask,
-        )
-        area = num_kept * complete_codon_columns
-        result = (area, complete_codon_columns, num_kept)
-        area_cache[mask] = result
-        return result
-
-    def indices_from_mask(mask):
-        cached = index_cache.get(mask)
-        if cached is not None:
-            return cached
-        indices = get_subset_indices(mask=mask, num_seqs=num_sequences)
-        index_cache[mask] = indices
-        return indices
-
-    current_area, current_complete_codon_columns, _ = evaluate_mask(active_mask)
+    current_complete_codon_columns = count_complete_columns_with_support(
+        support_counts=support_counts,
+        kept_mask=active_mask,
+    )
+    current_area = len(active_indices) * current_complete_codon_columns
     steps = list()
     while len(active_indices) > 1:
+        num_removed_now = total_sequences - len(active_indices)
+        if (max_removed is not None) and (num_removed_now >= max_removed):
+            break
         removable = [idx for idx in active_indices if idx not in protected_set]
         if len(removable) == 0:
             break
-        best_next = None
+        active_count = len(active_indices)
+        current_complete_codon_columns, single_missing_counts = greedy_complete_and_single_missing_counts(
+            support_counts=support_counts,
+            active_mask=active_mask,
+        )
+        best_remove_idx = None
+        best_area = None
+        best_complete_codon_columns = None
+        num_kept_next = active_count - 1
         for remove_idx in removable:
-            kept_mask = active_mask & ~(1 << remove_idx)
-            _, _, num_kept = evaluate_mask(kept_mask)
-            if num_kept == 0:
+            complete_codon_columns = current_complete_codon_columns + single_missing_counts.get(remove_idx, 0)
+            candidate_area = num_kept_next * complete_codon_columns
+            if best_area is None:
+                best_remove_idx = remove_idx
+                best_area = candidate_area
+                best_complete_codon_columns = complete_codon_columns
                 continue
-            num_removed = total_sequences - num_kept
-            if (max_removed is not None) and (num_removed > max_removed):
+            if candidate_area > best_area:
+                best_remove_idx = remove_idx
+                best_area = candidate_area
+                best_complete_codon_columns = complete_codon_columns
                 continue
-            area, complete_codon_columns, _ = evaluate_mask(kept_mask)
-            kept_indices = indices_from_mask(kept_mask)
-            candidate = {
-                'remove_idx': remove_idx,
-                'kept_mask': kept_mask,
-                'kept_indices': kept_indices,
-                'area': area,
-                'complete_codon_columns': complete_codon_columns,
-            }
-            if best_next is None:
-                best_next = candidate
-                continue
-            if candidate['area'] != best_next['area']:
-                if candidate['area'] > best_next['area']:
-                    best_next = candidate
-                continue
-            if candidate['kept_indices'] < best_next['kept_indices']:
-                best_next = candidate
-        if best_next is None:
+            # For active_indices sorted ascending, when area ties, removing a larger index
+            # yields lexicographically smaller kept_indices.
+            if (candidate_area == best_area) and (remove_idx > best_remove_idx):
+                best_remove_idx = remove_idx
+                best_area = candidate_area
+                best_complete_codon_columns = complete_codon_columns
+        if best_remove_idx is None:
             break
-        if best_next['area'] <= current_area:
+        if best_area <= current_area:
             break
-        active_mask = best_next['kept_mask']
-        active_indices = best_next['kept_indices']
-        current_area = best_next['area']
-        current_complete_codon_columns = best_next['complete_codon_columns']
+        active_mask &= ~(1 << best_remove_idx)
+        active_indices = [idx for idx in active_indices if idx != best_remove_idx]
+        current_area = best_area
+        current_complete_codon_columns = best_complete_codon_columns
         steps.append({
             'action': 'remove',
-            'removed_index': best_next['remove_idx'],
+            'removed_index': best_remove_idx,
             'kept_indices': list(active_indices),
             'num_kept': len(active_indices),
             'complete_codon_columns': current_complete_codon_columns,
@@ -308,11 +506,12 @@ def parse_max_removed(max_removed, num_records):
     return max_removed
 
 
-def extract_complete_codon_indices(codon_presence_matrix, kept_indices):
+def extract_complete_codon_indices(codon_presence_matrix=None, kept_indices=None, support_masks=None):
     if not kept_indices:
         return list()
     kept_mask = indices_to_bitmask(kept_indices)
-    support_masks = subset_support_bitmasks(codon_presence_matrix)
+    if support_masks is None:
+        support_masks = subset_support_bitmasks(codon_presence_matrix)
     return [
         codon_site
         for codon_site, support_mask in enumerate(support_masks)
@@ -331,6 +530,34 @@ def slice_record_to_codon_sites(record, codon_site_indices):
     )
 
 
+def codon_sites_to_nucleotide_ranges(codon_site_indices):
+    if len(codon_site_indices) == 0:
+        return list()
+    ranges = list()
+    run_start = codon_site_indices[0]
+    run_end = codon_site_indices[0]
+    for site in codon_site_indices[1:]:
+        if site == run_end + 1:
+            run_end = site
+            continue
+        ranges.append((run_start * 3, (run_end + 1) * 3))
+        run_start = site
+        run_end = site
+    ranges.append((run_start * 3, (run_end + 1) * 3))
+    return ranges
+
+
+def slice_record_to_nucleotide_ranges(record, nucleotide_ranges):
+    seq = str(record.seq)
+    new_seq = ''.join(seq[start:end] for start, end in nucleotide_ranges)
+    return SeqRecord(
+        seq=Seq(new_seq),
+        id=record.id,
+        name=record.name,
+        description=record.description,
+    )
+
+
 def pick_solver_mode(num_records, mode, max_exact_sequences):
     if mode == 'auto':
         if num_records <= max_exact_sequences:
@@ -339,11 +566,15 @@ def pick_solver_mode(num_records, mode, max_exact_sequences):
     return mode
 
 
-def build_step_snapshot(label, codon_presence_matrix, kept_indices, records, removed_id=''):
-    area, complete_codon_columns = alignment_area(
-        codon_presence_matrix=codon_presence_matrix,
-        kept_indices=kept_indices,
-    )
+def build_step_snapshot(label, kept_indices, records, removed_id='', support_masks=None, codon_presence_matrix=None):
+    if support_masks is None:
+        support_masks = subset_support_bitmasks(codon_presence_matrix)
+    kept_mask = indices_to_bitmask(kept_indices)
+    complete_codon_columns = 0
+    for support_mask in support_masks:
+        if (support_mask & kept_mask) == kept_mask:
+            complete_codon_columns += 1
+    area = len(kept_indices) * complete_codon_columns
     removed_ids = [records[i].id for i in range(len(records)) if i not in set(kept_indices)]
     return {
         'label': label,
@@ -402,6 +633,7 @@ def maxalign_main(args):
     keep_arg = getattr(args, 'keep', '')
     max_removed_arg = getattr(args, 'max_removed', None)
     report_path = getattr(args, 'report', '')
+    threads = resolve_threads(getattr(args, 'threads', 1))
 
     original_records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
     if len(original_records) == 0:
@@ -422,15 +654,18 @@ def maxalign_main(args):
     max_removed = parse_max_removed(max_removed_arg, len(original_records))
 
     missing_chars = parse_missing_chars(missing_char_arg)
-    codon_presence_matrix = build_codon_presence_matrix(
+    support_masks = build_support_masks(
         records=original_records,
         missing_chars=missing_chars,
     )
+    support_counts = support_counts_from_masks(support_masks=support_masks)
     initial_indices = list(range(len(original_records)))
-    initial_area, initial_complete_codon_columns = alignment_area(
-        codon_presence_matrix=codon_presence_matrix,
-        kept_indices=initial_indices,
+    initial_kept_mask = indices_to_bitmask(initial_indices)
+    initial_complete_codon_columns = count_complete_columns_with_support(
+        support_counts=support_counts,
+        kept_mask=initial_kept_mask,
     )
+    initial_area = len(initial_indices) * initial_complete_codon_columns
 
     if len(candidate_indices) == 0:
         solution = {
@@ -452,19 +687,24 @@ def maxalign_main(args):
                 txt = '--mode exact requires <= --max_exact_sequences candidate records. Got {:,} > {:,}. Exiting.\n'
                 raise Exception(txt.format(len(candidate_indices), max_exact_sequences))
             solution = solve_exact(
-                codon_presence_matrix=codon_presence_matrix,
+                codon_presence_matrix=None,
                 candidate_indices=candidate_indices,
                 required_indices=sorted(keep_set),
                 max_removed=max_removed,
                 total_sequences=len(original_records),
+                threads=threads,
+                support_counts=support_counts,
+                num_sequences=len(original_records),
             )
         elif solver_mode == 'greedy':
             solution = solve_greedy(
-                codon_presence_matrix=codon_presence_matrix,
+                codon_presence_matrix=None,
                 active_indices=candidate_indices,
                 protected_indices=sorted(keep_set),
                 max_removed=max_removed,
                 total_sequences=len(original_records),
+                threads=threads,
+                support_counts=support_counts,
             )
         else:
             raise Exception('Unknown mode: {}'.format(solver_mode))
@@ -475,9 +715,10 @@ def maxalign_main(args):
 
     kept_indices = sorted(solution['kept_indices'])
     complete_codon_indices = extract_complete_codon_indices(
-        codon_presence_matrix=codon_presence_matrix,
         kept_indices=kept_indices,
+        support_masks=support_masks,
     )
+    nucleotide_ranges = codon_sites_to_nucleotide_ranges(codon_site_indices=complete_codon_indices)
     kept_set = set(kept_indices)
     removed_ids = [
         original_records[i].id
@@ -501,9 +742,9 @@ def maxalign_main(args):
         sys.stderr.write('Removed: {}\n'.format(seq_id))
 
     output_records = [
-        slice_record_to_codon_sites(
+        slice_record_to_nucleotide_ranges(
             record=original_records[i],
-            codon_site_indices=complete_codon_indices,
+            nucleotide_ranges=nucleotide_ranges,
         )
         for i in kept_indices
     ]
@@ -512,25 +753,25 @@ def maxalign_main(args):
     if report_path != '':
         steps = [build_step_snapshot(
             label='initial',
-            codon_presence_matrix=codon_presence_matrix,
             kept_indices=initial_indices,
             records=original_records,
+            support_masks=support_masks,
         )]
         for greedy_step in solution.get('steps', list()):
             removed_id = original_records[greedy_step['removed_index']].id
             steps.append(build_step_snapshot(
                 label='greedy_remove',
-                codon_presence_matrix=codon_presence_matrix,
                 kept_indices=greedy_step['kept_indices'],
                 records=original_records,
                 removed_id=removed_id,
+                support_masks=support_masks,
             ))
         if (len(steps) == 0) or (steps[-1]['removed_ids'] != removed_ids):
             steps.append(build_step_snapshot(
                 label='final',
-                codon_presence_matrix=codon_presence_matrix,
                 kept_indices=kept_indices,
                 records=original_records,
+                support_masks=support_masks,
             ))
 
         report_data = {

@@ -356,3 +356,38 @@ class TestSplitMain:
         assert (temp_dir / "output_1st_codon_positions.fasta").exists()
         assert (temp_dir / "output_2nd_codon_positions.fasta").exists()
         assert (temp_dir / "output_3rd_codon_positions.fasta").exists()
+
+    def test_split_threads_matches_single_thread(self, temp_dir, mock_args):
+        input_path = temp_dir / "input.fasta"
+        records = [
+            SeqRecord(Seq("ATGCCCGGG"), id="seq1", description=""),
+            SeqRecord(Seq("ATG---CCC"), id="seq2", description=""),
+            SeqRecord(Seq("ATGAAATTT"), id="seq3", description=""),
+        ]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        single_prefix = str(temp_dir / "single")
+        threaded_prefix = str(temp_dir / "threaded")
+        args_single = mock_args(
+            seqfile=str(input_path),
+            prefix=single_prefix,
+            threads=1,
+        )
+        args_threaded = mock_args(
+            seqfile=str(input_path),
+            prefix=threaded_prefix,
+            threads=4,
+        )
+
+        split_main(args_single)
+        split_main(args_threaded)
+
+        for suffix in [
+            "_1st_codon_positions.fasta",
+            "_2nd_codon_positions.fasta",
+            "_3rd_codon_positions.fasta",
+        ]:
+            single_records = list(Bio.SeqIO.parse(single_prefix + suffix, "fasta"))
+            threaded_records = list(Bio.SeqIO.parse(threaded_prefix + suffix, "fasta"))
+            assert [r.id for r in single_records] == [r.id for r in threaded_records]
+            assert [str(r.seq) for r in single_records] == [str(r.seq) for r in threaded_records]

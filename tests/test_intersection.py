@@ -426,3 +426,62 @@ chr3\tsource\tgene\t1\t12\t.\t+\t.\tID=gene2
 
         assert str(result1.seq) == "AAAAAAAAAA"  # From file 1
         assert str(result2.seq) == "GGGGGGGGGG"  # From file 2
+
+    def test_intersection_threads_matches_single_thread(self, temp_dir, mock_args):
+        input1_path = temp_dir / "input1.fasta"
+        input2_path = temp_dir / "input2.fasta"
+        out1_single = temp_dir / "out1_single.fasta"
+        out2_single = temp_dir / "out2_single.fasta"
+        out1_threaded = temp_dir / "out1_threaded.fasta"
+        out2_threaded = temp_dir / "out2_threaded.fasta"
+
+        records1 = [
+            SeqRecord(Seq("ATGAAA"), id="seq1", name="seq1", description=""),
+            SeqRecord(Seq("ATGCCC"), id="seq2", name="seq2", description=""),
+            SeqRecord(Seq("ATGGGG"), id="seq3", name="seq3", description=""),
+            SeqRecord(Seq("ATGTTT"), id="seq4", name="seq4", description=""),
+        ]
+        Bio.SeqIO.write(records1, str(input1_path), "fasta")
+        records2 = [
+            SeqRecord(Seq("CCCAAA"), id="seq2", name="seq2", description=""),
+            SeqRecord(Seq("GGGAAA"), id="seq3", name="seq3", description=""),
+            SeqRecord(Seq("TTTAAA"), id="seq5", name="seq5", description=""),
+        ]
+        Bio.SeqIO.write(records2, str(input2_path), "fasta")
+
+        args_single = mock_args(
+            seqfile=str(input1_path),
+            seqfile2=str(input2_path),
+            inseqformat2='fasta',
+            outfile=str(out1_single),
+            outfile2=str(out2_single),
+            outseqformat2='fasta',
+            ingff=None,
+            outgff=None,
+            fix_outrange_gff_records=False,
+            threads=1,
+        )
+        args_threaded = mock_args(
+            seqfile=str(input1_path),
+            seqfile2=str(input2_path),
+            inseqformat2='fasta',
+            outfile=str(out1_threaded),
+            outfile2=str(out2_threaded),
+            outseqformat2='fasta',
+            ingff=None,
+            outgff=None,
+            fix_outrange_gff_records=False,
+            threads=4,
+        )
+
+        intersection_main(args_single)
+        intersection_main(args_threaded)
+
+        single1 = list(Bio.SeqIO.parse(str(out1_single), "fasta"))
+        single2 = list(Bio.SeqIO.parse(str(out2_single), "fasta"))
+        threaded1 = list(Bio.SeqIO.parse(str(out1_threaded), "fasta"))
+        threaded2 = list(Bio.SeqIO.parse(str(out2_threaded), "fasta"))
+        assert [r.id for r in single1] == [r.id for r in threaded1]
+        assert [str(r.seq) for r in single1] == [str(r.seq) for r in threaded1]
+        assert [r.id for r in single2] == [r.id for r in threaded2]
+        assert [str(r.seq) for r in single2] == [str(r.seq) for r in threaded2]

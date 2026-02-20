@@ -249,6 +249,45 @@ class TestParsegbMain:
         # Spaces should be replaced with underscores
         assert " " not in result[0].id
 
+    def test_parsegb_threads_matches_single_thread(self, temp_dir, mock_args):
+        input_path = temp_dir / "input.gb"
+        out_single = temp_dir / "single.fasta"
+        out_threaded = temp_dir / "threaded.fasta"
+
+        records = [
+            create_genbank_record("ATGAAA", "REC1", "Homo sapiens", "HS001"),
+            create_genbank_record("ATGCCC", "REC2", "Mus musculus", "MM001"),
+            create_genbank_record("ATGGGG", "REC3", "Rattus norvegicus", "RN001"),
+        ]
+        Bio.SeqIO.write(records, str(input_path), "genbank")
+
+        args_single = mock_args(
+            seqfile=str(input_path),
+            outfile=str(out_single),
+            inseqformat='genbank',
+            seqnamefmt='organism_accessions',
+            extract_cds=False,
+            list_seqname_keys=False,
+            threads=1,
+        )
+        args_threaded = mock_args(
+            seqfile=str(input_path),
+            outfile=str(out_threaded),
+            inseqformat='genbank',
+            seqnamefmt='organism_accessions',
+            extract_cds=False,
+            list_seqname_keys=False,
+            threads=4,
+        )
+
+        parsegb_main(args_single)
+        parsegb_main(args_threaded)
+
+        result_single = list(Bio.SeqIO.parse(str(out_single), "fasta"))
+        result_threaded = list(Bio.SeqIO.parse(str(out_threaded), "fasta"))
+        assert [r.id for r in result_single] == [r.id for r in result_threaded]
+        assert [str(r.seq) for r in result_single] == [str(r.seq) for r in result_threaded]
+
 
 class TestParsegbHelpers:
     """Tests for parsegb helper functions."""

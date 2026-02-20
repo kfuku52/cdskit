@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import cdskit.accession2fasta as accession_module
 from cdskit.accession2fasta import (
+    accession2fasta_main,
     accession2seq_record,
     accession_batch_ranges,
     prepare_accession_record,
@@ -83,3 +84,55 @@ class TestAccession2SeqRecord:
 
         assert calls == [["ACC1", "ACC2"], ["ACC3"]]
         assert [r.id for r in records] == accessions
+
+
+class TestAccession2FastaMain:
+    """Tests for accession2fasta_main function."""
+
+    def test_accession2fasta_threads_matches_single_thread(self, temp_dir, mock_args, monkeypatch):
+        accession_file = temp_dir / "acc.txt"
+        accession_file.write_text("ACC1\nACC2\nACC3\n")
+        out_single = temp_dir / "single.fasta"
+        out_threaded = temp_dir / "threaded.fasta"
+
+        def make_records():
+            records = []
+            for acc in ["ACC1", "ACC2", "ACC3"]:
+                rec = SeqRecord(Seq("ATGAAA"), id=acc, name=acc, description="")
+                rec.annotations["organism"] = "Homo sapiens"
+                rec.annotations["accessions"] = [acc]
+                records.append(rec)
+            return records
+
+        monkeypatch.setattr(accession_module, "accession2seq_record", lambda accessions, database: make_records())
+
+        args_single = mock_args(
+            accession_file=str(accession_file),
+            outfile=str(out_single),
+            outseqformat="fasta",
+            email="",
+            extract_cds=False,
+            ncbi_database="nucleotide",
+            seqnamefmt="organism_accessions",
+            list_seqname_keys=False,
+            threads=1,
+        )
+        args_threaded = mock_args(
+            accession_file=str(accession_file),
+            outfile=str(out_threaded),
+            outseqformat="fasta",
+            email="",
+            extract_cds=False,
+            ncbi_database="nucleotide",
+            seqnamefmt="organism_accessions",
+            list_seqname_keys=False,
+            threads=4,
+        )
+
+        accession2fasta_main(args_single)
+        accession2fasta_main(args_threaded)
+
+        result_single = list(accession_module.SeqIO.parse(str(out_single), "fasta"))
+        result_threaded = list(accession_module.SeqIO.parse(str(out_threaded), "fasta"))
+        assert [r.id for r in result_single] == [r.id for r in result_threaded]
+        assert [str(r.seq) for r in result_single] == [str(r.seq) for r in result_threaded]

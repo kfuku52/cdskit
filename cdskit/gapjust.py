@@ -1,9 +1,17 @@
 import numpy
 import sys
 import re
+from functools import partial
 from Bio.Seq import Seq
 
-from cdskit.util import read_gff, read_seqs, write_gff, write_seqs
+from cdskit.util import (
+    parallel_map_ordered,
+    read_gff,
+    read_seqs,
+    resolve_threads,
+    write_gff,
+    write_seqs,
+)
 
 def update_gap_ranges(gap_ranges, gap_start, edit_len):
     """
@@ -186,6 +194,15 @@ def normalize_record_gap_lengths(record, target_gap_length, gap_just_min=None, g
     )
 
 
+def normalize_record_gap_lengths_entry(record, target_gap_length, gap_just_min=None, gap_just_max=None):
+    return normalize_record_gap_lengths(
+        record=record,
+        target_gap_length=target_gap_length,
+        gap_just_min=gap_just_min,
+        gap_just_max=gap_just_max,
+    )
+
+
 def summarize_gap_justifications(num_justifications, min_original_gap_length, max_original_gap_length):
     sys.stderr.write(f'Number of gap justifications: {num_justifications}\n')
     if num_justifications > 0:
@@ -273,23 +290,27 @@ def gapjust_main(args):
     validate_gapjust_args(args.gap_len, gap_just_min, gap_just_max)
 
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
+    threads = resolve_threads(getattr(args, 'threads', 1))
     num_justifications = 0
     min_original_gap_length = None
     max_original_gap_length = 0
     justifications_by_seq = dict()
 
-    for record in records:
+    worker = partial(
+        normalize_record_gap_lengths_entry,
+        target_gap_length=args.gap_len,
+        gap_just_min=gap_just_min,
+        gap_just_max=gap_just_max,
+    )
+    normalized_results = parallel_map_ordered(items=records, worker=worker, threads=threads)
+
+    for record, normalized_result in zip(records, normalized_results):
         (
             seq_justifications,
             record_num_justifications,
             record_min_original_gap_length,
             record_max_original_gap_length,
-        ) = normalize_record_gap_lengths(
-            record=record,
-            target_gap_length=args.gap_len,
-            gap_just_min=gap_just_min,
-            gap_just_max=gap_just_max,
-        )
+        ) = normalized_result
 
         num_justifications += record_num_justifications
         if record_min_original_gap_length is not None:

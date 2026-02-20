@@ -441,6 +441,79 @@ class TestMaxalignMain:
         assert txt.startswith("metric\tvalue")
         assert "steps" in txt
 
+    def test_maxalign_threads_matches_single_thread_exact(self, temp_dir, mock_args):
+        input_path = temp_dir / "input.fasta"
+        out_single = temp_dir / "single.fasta"
+        out_threaded = temp_dir / "threaded.fasta"
+        records = [
+            SeqRecord(Seq("ATGAAACCC"), id="seq1", description=""),
+            SeqRecord(Seq("ATGAAACCC"), id="seq2", description=""),
+            SeqRecord(Seq("ATGA-ACCC"), id="seq3", description=""),
+            SeqRecord(Seq("---AAA---"), id="seq4", description=""),
+        ]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args_single = mock_args(
+            seqfile=str(input_path),
+            outfile=str(out_single),
+            mode='exact',
+            max_exact_sequences=16,
+            missing_char='-?.',
+            threads=1,
+        )
+        args_threaded = mock_args(
+            seqfile=str(input_path),
+            outfile=str(out_threaded),
+            mode='exact',
+            max_exact_sequences=16,
+            missing_char='-?.',
+            threads=4,
+        )
+
+        maxalign_main(args_single)
+        maxalign_main(args_threaded)
+        result_single = list(Bio.SeqIO.parse(str(out_single), "fasta"))
+        result_threaded = list(Bio.SeqIO.parse(str(out_threaded), "fasta"))
+        assert [r.id for r in result_single] == [r.id for r in result_threaded]
+        assert [str(r.seq) for r in result_single] == [str(r.seq) for r in result_threaded]
+
+    def test_maxalign_threads_matches_single_thread_greedy(self, temp_dir, mock_args):
+        input_path = temp_dir / "input.fasta"
+        out_single = temp_dir / "single.fasta"
+        out_threaded = temp_dir / "threaded.fasta"
+        records = [
+            SeqRecord(Seq("ATGAAACCC"), id="good1", description=""),
+            SeqRecord(Seq("ATGAAACCC"), id="good2", description=""),
+            SeqRecord(Seq("ATGAAACCC"), id="good3", description=""),
+            SeqRecord(Seq("---AAA---"), id="sparse", description=""),
+            SeqRecord(Seq("---------"), id="allgap", description=""),
+        ]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args_single = mock_args(
+            seqfile=str(input_path),
+            outfile=str(out_single),
+            mode='greedy',
+            max_exact_sequences=2,
+            missing_char='-?.',
+            threads=1,
+        )
+        args_threaded = mock_args(
+            seqfile=str(input_path),
+            outfile=str(out_threaded),
+            mode='greedy',
+            max_exact_sequences=2,
+            missing_char='-?.',
+            threads=4,
+        )
+
+        maxalign_main(args_single)
+        maxalign_main(args_threaded)
+        result_single = list(Bio.SeqIO.parse(str(out_single), "fasta"))
+        result_threaded = list(Bio.SeqIO.parse(str(out_threaded), "fasta"))
+        assert [r.id for r in result_single] == [r.id for r in result_threaded]
+        assert [str(r.seq) for r in result_single] == [str(r.seq) for r in result_threaded]
+
 
 class TestMaxalignHelpers:
     """Tests for helper functions used by maxalign."""
@@ -498,6 +571,52 @@ class TestMaxalignHelpers:
             total_sequences=3,
         )
         assert greedy['kept_indices'] == [0, 1, 2]
+
+    def test_solve_exact_threads_matches_single_thread(self):
+        matrix = [
+            [True, True, False, True],
+            [True, True, False, True],
+            [False, True, True, True],
+            [True, False, True, True],
+        ]
+        single = solve_exact(matrix, threads=1)
+        threaded = solve_exact(matrix, threads=4)
+        assert single['kept_indices'] == threaded['kept_indices']
+        assert single['area'] == threaded['area']
+
+    def test_solve_greedy_threads_matches_single_thread(self):
+        matrix = [
+            [True, True, True, True],
+            [True, True, True, True],
+            [False, True, False, True],
+            [True, False, True, False],
+        ]
+        single = solve_greedy(matrix, threads=1)
+        threaded = solve_greedy(matrix, threads=4)
+        assert single['kept_indices'] == threaded['kept_indices']
+        assert single['area'] == threaded['area']
+
+    def test_solve_greedy_tie_break_prefers_lexicographically_smaller_kept_indices(self):
+        matrix = [
+            [True, False],
+            [False, True],
+            [True, True],
+        ]
+        greedy = solve_greedy(matrix, threads=1)
+        assert greedy['kept_indices'] == [0, 2]
+        assert greedy['area'] == 2
+
+    def test_solve_exact_process_fallback_to_threads(self, monkeypatch):
+        matrix = [[True, True] * 50 for _ in range(13)]  # 13 variable seqs => 8192 subsets
+
+        class FailingProcessPool:
+            def __init__(self, *args, **kwargs):
+                raise PermissionError("no process pool")
+
+        monkeypatch.setattr("cdskit.maxalign.ProcessPoolExecutor", FailingProcessPool)
+        result = solve_exact(matrix, threads=4)
+        assert result is not None
+        assert result["num_kept"] >= 1
 
     def test_alignment_area_and_complete_indices(self):
         matrix = [

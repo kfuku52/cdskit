@@ -189,6 +189,35 @@ class TestPrintseqMain:
         assert ">seq1" in captured.out
         assert ">seq2" in captured.out
 
+    def test_printseq_threads_matches_single_thread(self, temp_dir, mock_args, capsys):
+        input_path = temp_dir / "input.fasta"
+        records = [
+            SeqRecord(Seq("AAAAAAAA"), id="seq_A", name="seq_A", description=""),
+            SeqRecord(Seq("TTTTTTTT"), id="seq_T", name="seq_T", description=""),
+            SeqRecord(Seq("GGGGGGGG"), id="seq_G", name="seq_G", description=""),
+            SeqRecord(Seq("CCCCCCCC"), id="seq_C", name="seq_C", description=""),
+        ]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args_single = mock_args(
+            seqfile=str(input_path),
+            seqname='seq_[AG]',
+            show_seqname=True,
+            threads=1,
+        )
+        args_threaded = mock_args(
+            seqfile=str(input_path),
+            seqname='seq_[AG]',
+            show_seqname=True,
+            threads=4,
+        )
+
+        printseq_main(args_single)
+        captured_single = capsys.readouterr()
+        printseq_main(args_threaded)
+        captured_threaded = capsys.readouterr()
+        assert captured_single.out == captured_threaded.out
+
 
 class TestPrintseqHelpers:
     """Tests for printseq helper functions."""
