@@ -18,7 +18,7 @@ _REVCOMP_TABLE = str.maketrans(
 _PROCESS_PARALLEL_MIN_RECORDS = 2000
 
 
-@dataclass(slots=True)
+@dataclass
 class CdsCandidate:
     strand: str
     frame: int
