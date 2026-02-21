@@ -9,6 +9,8 @@ from cdskit.util import (
     parallel_map_ordered,
     read_seqs,
     resolve_threads,
+    stop_if_invalid_codontable,
+    stop_if_not_dna,
     stop_if_not_multiple_of_three,
     write_seqs,
 )
@@ -42,13 +44,20 @@ def translate_sequence_string(seq_str, codontable, to_stop):
             message = codon_error.get(codon)
             if message is not None:
                 raise Bio.Data.CodonTable.TranslationError(message)
-            try:
-                aa = str(Seq(codon).translate(table=codontable, to_stop=False, gap='-'))
-            except Exception as exc:
-                message = str(exc)
-                codon_error[codon] = message
-                raise Bio.Data.CodonTable.TranslationError(message)
-            codon_to_aa[codon] = aa
+            if all(ch in '-.' for ch in codon):
+                aa = '-'
+                codon_to_aa[codon] = aa
+            elif any(ch in '-?.' for ch in codon):
+                aa = 'X'
+                codon_to_aa[codon] = aa
+            else:
+                try:
+                    aa = str(Seq(codon).translate(table=codontable, to_stop=False, gap='-'))
+                except Exception as exc:
+                    message = str(exc)
+                    codon_error[codon] = message
+                    raise Bio.Data.CodonTable.TranslationError(message)
+                codon_to_aa[codon] = aa
         if to_stop and (aa == '*'):
             break
         aa_chars.append(aa)
@@ -89,6 +98,8 @@ def translate_payloads_process_parallel(payloads, codontable, to_stop, threads):
 
 def translate_main(args):
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
+    stop_if_not_dna(records=records, label='--seqfile')
+    stop_if_invalid_codontable(args.codontable)
     if len(records) == 0:
         write_seqs(records=records, outfile=args.outfile, outseqformat=args.outseqformat)
         return

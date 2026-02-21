@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 import Bio.SeqIO
+import pytest
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
@@ -39,6 +40,22 @@ class TestValidateHelpers:
         assert summary["evaluable_codons"] > 0
         assert summary["ambiguous_codon_rate"] > 0
         assert summary["num_sequences_with_issues"] >= 4
+
+    def test_summarize_records_detects_internal_stop_with_trailing_missing_codon(self):
+        records = [
+            SeqRecord(Seq("ATGTAACCCA--"), id="seq1", description=""),
+        ]
+        summary = summarize_records(records=records, codontable=1)
+        assert summary["internal_stop_ids"] == ["seq1"]
+
+    def test_summarize_records_aggregates_ambiguous_counts_for_duplicate_ids(self):
+        records = [
+            SeqRecord(Seq("ATGRRRCCC"), id="dup", description=""),  # 1 ambiguous codon
+            SeqRecord(Seq("ATGAAACCC"), id="dup", description=""),  # 0 ambiguous codons
+        ]
+        summary = summarize_records(records=records, codontable=1)
+        assert summary["ambiguous_codons"] == 1
+        assert summary["ambiguous_codons_by_sequence"]["dup"] == 1
 
 
 class TestValidateMain:
@@ -148,3 +165,18 @@ class TestValidateMain:
         single = json.loads(report_single.read_text())
         threaded = json.loads(report_threaded.read_text())
         assert single == threaded
+
+    def test_validate_invalid_codontable(self, temp_dir, mock_args):
+        input_path = temp_dir / "input.fasta"
+        records = [SeqRecord(Seq("ATGAAATGA"), id="seq1", description="")]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(input_path),
+            codontable=999,
+            report='',
+        )
+
+        with pytest.raises(Exception) as exc_info:
+            validate_main(args)
+        assert "Invalid --codontable" in str(exc_info.value)

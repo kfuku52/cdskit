@@ -218,6 +218,28 @@ class TestMaskMain:
             mask_main(args)
         assert "multiple of three" in str(exc_info.value)
 
+    def test_mask_rejects_invalid_codontable(self, temp_dir, mock_args):
+        input_path = temp_dir / "input.fasta"
+        output_path = temp_dir / "output.fasta"
+
+        records = [
+            SeqRecord(Seq("ATGAAA"), id="seq1", description=""),
+        ]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(input_path),
+            outfile=str(output_path),
+            codontable=999,
+            maskchar='N',
+            ambiguouscodon='yes',
+            stopcodon='yes',
+        )
+
+        with pytest.raises(Exception) as exc_info:
+            mask_main(args)
+        assert "Invalid --codontable" in str(exc_info.value)
+
     def test_mask_consecutive_stop_codons(self, temp_dir, mock_args):
         """Test masking consecutive stop codons."""
         input_path = temp_dir / "input.fasta"

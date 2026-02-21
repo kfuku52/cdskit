@@ -1,12 +1,26 @@
 import sys
 from collections import Counter
 
-from cdskit.util import read_seqs, resolve_threads, write_seqs
+from cdskit.util import read_seqs, resolve_threads, stop_if_not_dna, write_seqs
 
 
 def parse_replace_chars(replace_chars):
-    from_chars = list(replace_chars.split('--')[0])
-    to_char = replace_chars.split('--')[1]
+    parts = replace_chars.split('--')
+    if len(parts) != 2:
+        txt = '--replace_chars must include exactly one "--": FROM1FROM2...--TO. Exiting.\n'
+        raise Exception(txt)
+    from_part, to_part = parts
+    if from_part == '':
+        txt = '--replace_chars FROM part should not be empty. Exiting.\n'
+        raise Exception(txt)
+    if to_part == '':
+        txt = '--replace_chars TO part should not be empty. Exiting.\n'
+        raise Exception(txt)
+    if len(to_part) != 1:
+        txt = '--replace_chars TO part should be exactly one character, but got "{}". Exiting.\n'
+        raise Exception(txt.format(to_part))
+    from_chars = list(from_part)
+    to_char = to_part
     return from_chars, to_char
 
 
@@ -18,6 +32,7 @@ def apply_char_replacement(records, from_chars, to_char):
         if replaced_id != record.id:
             replace_count += 1
             record.id = replaced_id
+            record.description = ''
     return replace_count
 
 
@@ -27,6 +42,7 @@ def clip_label_ids(records, clip_len):
         if len(record.id) > clip_len:
             clip_count += 1
             record.id = record.id[:clip_len]
+            record.description = ''
     return clip_count
 
 
@@ -59,8 +75,16 @@ def clip_record_id(record_id, clip_len):
     return record_id, False
 
 
+def validate_clip_len(clip_len):
+    if clip_len < 0:
+        txt = '--clip_len should be >= 0, but got {}. Exiting.\n'
+        raise Exception(txt.format(clip_len))
+
+
 def label_main(args):
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
+    stop_if_not_dna(records=records, label='--seqfile')
+    validate_clip_len(args.clip_len)
     _ = resolve_threads(getattr(args, 'threads', 1))
     if args.replace_chars != '':
         from_chars, to_char = parse_replace_chars(args.replace_chars)

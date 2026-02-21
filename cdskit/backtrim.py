@@ -5,19 +5,50 @@ from functools import partial
 
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
+from cdskit.translate import translate_sequence_string
 
 from cdskit.util import (
     parallel_map_ordered,
     read_seqs,
     resolve_threads,
     stop_if_not_aligned,
+    stop_if_invalid_codontable,
+    stop_if_not_dna,
     stop_if_not_multiple_of_three,
     write_seqs,
 )
 
 def check_same_seq_num(cdn_records, pep_records):
     err_txt = 'The numbers of seqs did not match: seqfile={} and trimmed_aa_aln={}'.format(len(cdn_records), len(pep_records))
-    assert len(cdn_records)==len(pep_records), err_txt
+    if len(cdn_records) != len(pep_records):
+        raise Exception(err_txt)
+
+
+def get_record_map(records, label):
+    record_map = dict()
+    for record in records:
+        if record.id in record_map:
+            txt = 'Sequence IDs must be unique in {}. Duplicated ID: {}'
+            raise Exception(txt.format(label, record.id))
+        record_map[record.id] = record
+    return record_map
+
+
+def reorder_aa_records_by_cds_ids(cdn_records, pep_records):
+    cdn_record_map = get_record_map(cdn_records, '--seqfile')
+    pep_record_map = get_record_map(pep_records, '--trimmed_aa_aln')
+    cdn_ids = set(cdn_record_map.keys())
+    pep_ids = set(pep_record_map.keys())
+    if cdn_ids != pep_ids:
+        missing_in_cds = sorted(list(pep_ids - cdn_ids))
+        missing_in_aa = sorted(list(cdn_ids - pep_ids))
+        txt = 'Sequence IDs did not match between CDS (--seqfile) and trimmed amino acid alignment (--trimmed_aa_aln).'
+        if len(missing_in_cds) > 0:
+            txt += ' Missing in CDS: {}.'.format(','.join(missing_in_cds))
+        if len(missing_in_aa) > 0:
+            txt += ' Missing in trimmed amino acid alignment: {}.'.format(','.join(missing_in_aa))
+        raise Exception(txt)
+    return [pep_record_map[record.id] for record in cdn_records]
 
 
 def build_column_index(seq_strings):
@@ -82,7 +113,11 @@ def trim_codon_records(cdn_records, kept_aa_sites):
 
 
 def translate_record_to_aa_string(record, codontable):
-    return str(record.seq.translate(table=codontable, to_stop=False, gap="-"))
+    return translate_sequence_string(
+        seq_str=str(record.seq),
+        codontable=codontable,
+        to_stop=False,
+    )
 
 
 def trim_codon_record(record, kept_aa_sites):
@@ -126,13 +161,21 @@ def trim_codon_record_with_ranges(record, nucleotide_ranges):
 
 def backtrim_main(args):
     cdn_records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
+    stop_if_not_dna(records=cdn_records, label='--seqfile')
+    stop_if_invalid_codontable(args.codontable)
     pep_records = read_seqs(seqfile=args.trimmed_aa_aln, seqformat=args.inseqformat)
+    if len(cdn_records) == 0:
+        if len(pep_records) != 0:
+            txt = 'The numbers of seqs did not match: seqfile={} and trimmed_aa_aln={}'
+            raise Exception(txt.format(len(cdn_records), len(pep_records)))
+        write_seqs(records=list(), outfile=args.outfile, outseqformat=args.outseqformat)
+        return
     threads = resolve_threads(getattr(args, 'threads', 1))
     stop_if_not_multiple_of_three(cdn_records)
     check_same_seq_num(cdn_records, pep_records)
     stop_if_not_aligned(records=cdn_records)
     stop_if_not_aligned(records=pep_records)
-    # check_same_order()
+    pep_records = reorder_aa_records_by_cds_ids(cdn_records=cdn_records, pep_records=pep_records)
     translate_worker = partial(translate_record_to_aa_string, codontable=args.codontable)
     tcdn_strings = parallel_map_ordered(items=cdn_records, worker=translate_worker, threads=threads)
     pep_strings = [str(record.seq) for record in pep_records]

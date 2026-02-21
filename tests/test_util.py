@@ -72,6 +72,11 @@ class TestReadItemPerLineFile:
         path.write_text("alpha\n\nbeta\n\ngamma\n")
         assert util.read_item_per_line_file(str(path)) == ["alpha", "beta", "gamma"]
 
+    def test_strips_whitespace_around_each_item(self, temp_dir):
+        path = temp_dir / "items_whitespace.txt"
+        path.write_text(" alpha \n\tbeta\t\n\n gamma\n")
+        assert util.read_item_per_line_file(str(path)) == ["alpha", "beta", "gamma"]
+
 
 class TestWriteSeqs:
     """Tests for write_seqs function."""
@@ -148,6 +153,48 @@ class TestStopIfNotAligned:
         """Test with single sequence (always aligned)."""
         records = [SeqRecord(Seq("ATGAAA"), id="seq1")]
         util.stop_if_not_aligned(records)
+
+
+class TestStopIfNotDna:
+    """Tests for stop_if_not_dna function."""
+
+    def test_accepts_dna_sequences(self):
+        records = [
+            SeqRecord(Seq("ATGAAATGA"), id="seq1"),
+            SeqRecord(Seq("ATGN--TGA"), id="seq2"),
+        ]
+        util.stop_if_not_dna(records)
+
+    def test_rejects_rna_sequences(self):
+        records = [
+            SeqRecord(Seq("AUGAAATGA"), id="seq1"),
+            SeqRecord(Seq("ATGaaauaa"), id="seq2"),
+        ]
+        with pytest.raises(Exception) as exc_info:
+            util.stop_if_not_dna(records, label="--seqfile")
+        assert "DNA-only input is required" in str(exc_info.value)
+        assert "seq1,seq2" in str(exc_info.value)
+
+    def test_rejects_non_dna_letters(self):
+        records = [
+            SeqRecord(Seq("ATGPPP"), id="seq_bad"),
+            SeqRecord(Seq("ATGAAA"), id="seq_ok"),
+        ]
+        with pytest.raises(Exception) as exc_info:
+            util.stop_if_not_dna(records, label="--seqfile")
+        assert "DNA-only input is required" in str(exc_info.value)
+        assert "seq_bad" in str(exc_info.value)
+        assert "P" in str(exc_info.value)
+
+
+class TestStopIfInvalidCodontable:
+    def test_accepts_valid_codontable(self):
+        util.stop_if_invalid_codontable(1)
+
+    def test_rejects_invalid_codontable(self):
+        with pytest.raises(Exception) as exc_info:
+            util.stop_if_invalid_codontable(999)
+        assert "Invalid --codontable" in str(exc_info.value)
 
 
 class TestTranslateRecords:
@@ -262,6 +309,14 @@ class TestReadGff:
         result = util.read_gff(str(path))
         assert len(result["data"]) == 1
         assert result["data"][0]["seqid"] == "seq1"
+
+    def test_read_gff_preserves_long_attributes(self, temp_dir):
+        path = temp_dir / "long_attr.gff"
+        long_attr = "ID=" + ("A" * 700)
+        path.write_text(f"##gff-version 3\nseq1\tsource\tgene\t1\t10\t.\t+\t.\t{long_attr}\n")
+        result = util.read_gff(str(path))
+        assert len(result["data"]) == 1
+        assert result["data"][0]["attributes"] == long_attr
 
 
 class TestWriteGff:

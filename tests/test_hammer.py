@@ -48,6 +48,29 @@ class TestHammerMain:
         # Some columns may be removed
         assert len(result[0].seq) <= 9
 
+    def test_hammer_handles_question_codon_as_missing_not_error(self, temp_dir, mock_args):
+        input_path = temp_dir / "input.fasta"
+        output_path = temp_dir / "output.fasta"
+
+        records = [
+            SeqRecord(Seq("ATG???CCC"), id="seq1", description=""),
+            SeqRecord(Seq("ATGAAACCC"), id="seq2", description=""),
+            SeqRecord(Seq("ATGAAACCC"), id="seq3", description=""),
+        ]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(input_path),
+            outfile=str(output_path),
+            codontable=1,
+            nail='3',
+            prevent_gap_only=True,
+        )
+        hammer_main(args)
+
+        result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
+        assert [str(r.seq) for r in result] == ["ATGCCC", "ATGCCC", "ATGCCC"]
+
     def test_hammer_nail_all(self, temp_dir, mock_args):
         """Test hammer with --nail all."""
         input_path = temp_dir / "input.fasta"
@@ -201,6 +224,28 @@ class TestHammerMain:
         with pytest.raises(Exception) as exc_info:
             hammer_main(args)
         assert "multiple of three" in str(exc_info.value)
+
+    def test_hammer_rejects_invalid_codontable(self, temp_dir, mock_args):
+        input_path = temp_dir / "input.fasta"
+        output_path = temp_dir / "output.fasta"
+
+        records = [
+            SeqRecord(Seq("ATGAAA"), id="seq1", description=""),
+            SeqRecord(Seq("ATGCCC"), id="seq2", description=""),
+        ]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(input_path),
+            outfile=str(output_path),
+            codontable=999,
+            nail='all',
+            prevent_gap_only=True,
+        )
+
+        with pytest.raises(Exception) as exc_info:
+            hammer_main(args)
+        assert "Invalid --codontable" in str(exc_info.value)
 
     def test_hammer_wiki_example_nail_4(self, temp_dir, mock_args):
         """Test hammer with wiki example: --nail 4 on 6 sequences.
@@ -474,3 +519,26 @@ class TestHammerMain:
         result_threaded = list(Bio.SeqIO.parse(str(out_threaded), "fasta"))
         assert [r.id for r in result_single] == [r.id for r in result_threaded]
         assert [str(r.seq) for r in result_single] == [str(r.seq) for r in result_threaded]
+
+    @pytest.mark.parametrize("nail", ["0", "-1"])
+    def test_hammer_rejects_non_positive_nail(self, temp_dir, mock_args, nail):
+        input_path = temp_dir / "input.fasta"
+        output_path = temp_dir / "output.fasta"
+
+        records = [
+            SeqRecord(Seq("ATGAAATGA"), id="seq1", description=""),
+            SeqRecord(Seq("ATGCCCTGA"), id="seq2", description=""),
+        ]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(input_path),
+            outfile=str(output_path),
+            codontable=1,
+            nail=nail,
+            prevent_gap_only=True,
+        )
+
+        with pytest.raises(Exception) as exc_info:
+            hammer_main(args)
+        assert '--nail should be a positive integer' in str(exc_info.value)

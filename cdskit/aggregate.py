@@ -4,7 +4,7 @@ import re
 import sys
 from functools import partial
 
-from cdskit.util import parallel_map_ordered, read_seqs, resolve_threads, write_seqs
+from cdskit.util import parallel_map_ordered, read_seqs, resolve_threads, stop_if_not_dna, write_seqs
 
 
 def aggregate_name(name, expressions):
@@ -23,14 +23,32 @@ def select_aggregate_record(existing_record, candidate_record, mode):
     return existing_record
 
 
+def validate_aggregate_expressions(expressions):
+    for expr in expressions:
+        try:
+            re.compile(expr)
+        except re.error as e:
+            txt = 'Invalid regex in --expression: {} ({})'
+            raise Exception(txt.format(expr, e))
+
+
 def aggregate_main(args):
-    sys.stderr.write('Regular expressions for aggregating sequences: '+' '.join(args.expression)+'\n')
+    expressions = list(getattr(args, 'expression', []) or [])
+    if len(expressions) == 0:
+        sys.stderr.write('Regular expressions for aggregating sequences: (none)\n')
+    else:
+        sys.stderr.write('Regular expressions for aggregating sequences: ' + ' '.join(expressions) + '\n')
     sys.stderr.write('Criterion for aggregated sequences to retain: '+args.mode+'\n')
+    validate_aggregate_expressions(expressions)
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
+    stop_if_not_dna(records=records, label='--seqfile')
+    if len(expressions) == 0:
+        write_seqs(records=records, outfile=args.outfile, outseqformat=args.outseqformat)
+        return
     threads = resolve_threads(getattr(args, 'threads', 1))
-    worker = partial(aggregate_name, expressions=args.expression)
+    worker = partial(aggregate_name, expressions=expressions)
     aggregated_names = parallel_map_ordered(
-        items=[record.name for record in records],
+        items=[record.id for record in records],
         worker=worker,
         threads=threads,
     )

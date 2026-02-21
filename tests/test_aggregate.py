@@ -111,6 +111,54 @@ class TestAggregateMain:
         # All sequences should remain as no aggregation happened
         assert len(result) == 2
 
+    def test_aggregate_without_expression_does_not_aggregate(self, temp_dir, mock_args):
+        """No --expression should keep all records unchanged."""
+        input_path = temp_dir / "input.fasta"
+        output_path = temp_dir / "output.fasta"
+
+        records = [
+            SeqRecord(Seq("ATGAAA"), id="A-1", name="A-1", description=""),
+            SeqRecord(Seq("ATGCCC"), id="A1", name="A1", description=""),
+        ]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(input_path),
+            outfile=str(output_path),
+            expression=[],
+            mode='longest',
+        )
+
+        aggregate_main(args)
+
+        result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
+        assert [r.id for r in result] == ["A-1", "A1"]
+        assert [str(r.seq) for r in result] == ["ATGAAA", "ATGCCC"]
+
+    def test_aggregate_without_expression_keeps_duplicate_ids(self, temp_dir, mock_args):
+        """No --expression should not collapse duplicate IDs."""
+        input_path = temp_dir / "input.fasta"
+        output_path = temp_dir / "output.fasta"
+
+        records = [
+            SeqRecord(Seq("ATG"), id="dup", name="dup", description=""),
+            SeqRecord(Seq("CCC"), id="dup", name="dup", description=""),
+        ]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(input_path),
+            outfile=str(output_path),
+            expression=[],
+            mode='longest',
+        )
+
+        aggregate_main(args)
+
+        result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
+        assert len(result) == 2
+        assert [str(r.seq) for r in result] == ["ATG", "CCC"]
+
     def test_aggregate_multiple_expressions(self, temp_dir, mock_args):
         """Test aggregating with multiple regex expressions."""
         input_path = temp_dir / "input.fasta"
@@ -291,3 +339,35 @@ class TestAggregateMain:
         result_threaded = list(Bio.SeqIO.parse(str(out_threaded), "fasta"))
         assert [r.id for r in result_single] == [r.id for r in result_threaded]
         assert [str(r.seq) for r in result_single] == [str(r.seq) for r in result_threaded]
+
+    def test_aggregate_rejects_invalid_regex(self, temp_dir, mock_args):
+        input_path = temp_dir / "input.fasta"
+        output_path = temp_dir / "output.fasta"
+        records = [SeqRecord(Seq("ATGAAA"), id="seq1", name="seq1", description="")]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(input_path),
+            outfile=str(output_path),
+            expression=['['],
+            mode='longest',
+        )
+        with pytest.raises(Exception) as exc_info:
+            aggregate_main(args)
+        assert 'Invalid regex in --expression' in str(exc_info.value)
+
+    def test_aggregate_rejects_non_dna_input(self, temp_dir, mock_args):
+        input_path = temp_dir / "input.fasta"
+        output_path = temp_dir / "output.fasta"
+        records = [SeqRecord(Seq("PPP"), id="prot1", name="prot1", description="")]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(input_path),
+            outfile=str(output_path),
+            expression=[r'prot'],
+            mode='longest',
+        )
+        with pytest.raises(Exception) as exc_info:
+            aggregate_main(args)
+        assert 'DNA-only input is required' in str(exc_info.value)

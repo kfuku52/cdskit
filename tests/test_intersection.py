@@ -13,10 +13,17 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from cdskit.intersection import intersection_main
+from cdskit.util import DNA_ALLOWED_CHARS
 
 
 class TestIntersectionMain:
     """Tests for intersection_main function."""
+
+    @staticmethod
+    def _write_genbank_records(path, records):
+        for record in records:
+            record.annotations["molecule_type"] = "DNA"
+        Bio.SeqIO.write(records, str(path), "genbank")
 
     def test_intersection_two_fasta_files(self, temp_dir, mock_args):
         """Test intersection of two FASTA files."""
@@ -68,6 +75,44 @@ class TestIntersectionMain:
         assert len(result2) == 2
         assert "seq2" in result2_ids
         assert "seq3" in result2_ids
+
+    def test_intersection_two_genbank_files_matches_by_id_not_name(self, temp_dir, mock_args):
+        input1_path = temp_dir / "input1.gb"
+        input2_path = temp_dir / "input2.gb"
+        output1_path = temp_dir / "output1.fasta"
+        output2_path = temp_dir / "output2.fasta"
+
+        records1 = [
+            SeqRecord(Seq("ATGAAA"), id="shared_id", name="name_one", description=""),
+            SeqRecord(Seq("ATGCCC"), id="only_1", name="same_name", description=""),
+        ]
+        records2 = [
+            SeqRecord(Seq("CCCAAA"), id="shared_id", name="name_two", description=""),
+            SeqRecord(Seq("GGGAAA"), id="only_2", name="same_name", description=""),
+        ]
+        self._write_genbank_records(input1_path, records1)
+        self._write_genbank_records(input2_path, records2)
+
+        args = mock_args(
+            seqfile=str(input1_path),
+            inseqformat='genbank',
+            seqfile2=str(input2_path),
+            inseqformat2='genbank',
+            outfile=str(output1_path),
+            outfile2=str(output2_path),
+            outseqformat='fasta',
+            outseqformat2='fasta',
+            ingff=None,
+            outgff=None,
+            fix_outrange_gff_records=False,
+        )
+
+        intersection_main(args)
+
+        result1 = list(Bio.SeqIO.parse(str(output1_path), "fasta"))
+        result2 = list(Bio.SeqIO.parse(str(output2_path), "fasta"))
+        assert [r.id for r in result1] == ["shared_id"]
+        assert [r.id for r in result2] == ["shared_id"]
 
     def test_intersection_no_overlap(self, temp_dir, mock_args):
         """Test intersection when no sequences overlap."""
@@ -142,6 +187,42 @@ seq3\tsource\tgene\t1\t6\t.\t+\t.\tID=gene2
         assert "seq2" in gff_output
         assert "seq3" not in gff_output or "gene2" not in gff_output
 
+    def test_intersection_genbank_gff_matches_by_id_not_name(self, temp_dir, mock_args):
+        input_gb = temp_dir / "input.gb"
+        input_gff = temp_dir / "input.gff"
+        output_fasta = temp_dir / "output.fasta"
+        output_gff = temp_dir / "output.gff"
+
+        records = [
+            SeqRecord(Seq("ATGAAACCC"), id="seq_id_1", name="locusA", description=""),
+            SeqRecord(Seq("ATGCCCGGG"), id="seq_id_2", name="locusB", description=""),
+        ]
+        self._write_genbank_records(input_gb, records)
+
+        input_gff.write_text(
+            "##gff-version 3\n"
+            "seq_id_2\tsource\tgene\t1\t6\t.\t+\t.\tID=gene1\n"
+            "locusA\tsource\tgene\t1\t6\t.\t+\t.\tID=gene2\n"
+        )
+
+        args = mock_args(
+            seqfile=str(input_gb),
+            inseqformat='genbank',
+            seqfile2=None,
+            ingff=str(input_gff),
+            outfile=str(output_fasta),
+            outgff=str(output_gff),
+            fix_outrange_gff_records=False,
+        )
+
+        intersection_main(args)
+
+        result_fasta = list(Bio.SeqIO.parse(str(output_fasta), "fasta"))
+        assert [r.id for r in result_fasta] == ["seq_id_2"]
+        gff_lines = [l for l in output_gff.read_text().splitlines() if l and not l.startswith("#")]
+        assert len(gff_lines) == 1
+        assert gff_lines[0].startswith("seq_id_2\t")
+
     def test_intersection_fix_outrange_gff(self, temp_dir, mock_args):
         """Test fixing out-of-range GFF coordinates."""
         input_fasta = temp_dir / "input.fasta"
@@ -178,8 +259,8 @@ seq3\tsource\tgene\t1\t6\t.\t+\t.\tID=gene2
         # The end coordinate 100 should have been fixed (not 100 anymore)
         assert "\t100\t" not in gff_output
 
-    def test_intersection_fix_outrange_gff_adjusts_starts_and_removes_equal_coords(self, temp_dir, mock_args):
-        """Fix mode should clamp to [1, seqlen] and remove records where start==end."""
+    def test_intersection_fix_outrange_gff_adjusts_starts_and_keeps_single_base_features(self, temp_dir, mock_args):
+        """Fix mode should clamp to [1, seqlen] while keeping valid 1-bp features."""
         input_fasta = temp_dir / "input.fasta"
         input_gff = temp_dir / "input.gff"
         output_fasta = temp_dir / "output.fasta"
@@ -210,7 +291,7 @@ seq1\tsource\tgene\t3\t20\t.\t+\t.\tID=g_end_beyond
         intersection_main(args)
 
         lines = [l.strip() for l in output_gff.read_text().splitlines() if l.strip() and not l.startswith("#")]
-        assert len(lines) == 2
+        assert len(lines) == 4
 
         fields = [line.split("\t") for line in lines]
         starts = [int(f[3]) for f in fields]
@@ -219,11 +300,38 @@ seq1\tsource\tgene\t3\t20\t.\t+\t.\tID=g_end_beyond
 
         assert "ID=g_start0" in ids
         assert "ID=g_end_beyond" in ids
-        assert "ID=g_beyond" not in ids
-        assert "ID=g_negative" not in ids
+        assert "ID=g_beyond" in ids
+        assert "ID=g_negative" in ids
         assert all(1 <= s <= 10 for s in starts)
         assert all(1 <= e <= 10 for e in ends)
-        assert all(s != e for s, e in zip(starts, ends))
+
+    def test_intersection_fix_outrange_gff_preserves_single_base_snp(self, temp_dir, mock_args):
+        input_fasta = temp_dir / "input.fasta"
+        input_gff = temp_dir / "input.gff"
+        output_fasta = temp_dir / "output.fasta"
+        output_gff = temp_dir / "output.gff"
+
+        records = [SeqRecord(Seq("ATGAAATTTG"), id="seq1", name="seq1", description="")]
+        Bio.SeqIO.write(records, str(input_fasta), "fasta")
+        input_gff.write_text(
+            "##gff-version 3\n"
+            "seq1\tsource\tSNP\t5\t5\t.\t+\t.\tID=snp1\n"
+        )
+
+        args = mock_args(
+            seqfile=str(input_fasta),
+            seqfile2=None,
+            ingff=str(input_gff),
+            outfile=str(output_fasta),
+            outgff=str(output_gff),
+            fix_outrange_gff_records=True,
+        )
+        intersection_main(args)
+
+        lines = [l.strip() for l in output_gff.read_text().splitlines() if l.strip() and not l.startswith("#")]
+        assert len(lines) == 1
+        assert "\t5\t5\t" in lines[0]
+        assert "ID=snp1" in lines[0]
 
     def test_intersection_requires_second_input(self, temp_dir, mock_args):
         """Test that intersection requires either seqfile2 or ingff."""
@@ -245,6 +353,36 @@ seq1\tsource\tgene\t3\t20\t.\t+\t.\tID=g_end_beyond
         with pytest.raises(Exception) as exc_info:
             intersection_main(args)
         assert "seqfile2 or ingff" in str(exc_info.value)
+
+    def test_intersection_rejects_both_seqfile2_and_ingff(self, temp_dir, mock_args):
+        input_path = temp_dir / "input.fasta"
+        input2_path = temp_dir / "input2.fasta"
+        input_gff = temp_dir / "input.gff"
+        output_path = temp_dir / "output.fasta"
+        output2_path = temp_dir / "output2.fasta"
+        output_gff = temp_dir / "output.gff"
+
+        records1 = [SeqRecord(Seq("ATGAAA"), id="seq1", name="seq1", description="")]
+        records2 = [SeqRecord(Seq("ATGAAA"), id="seq1", name="seq1", description="")]
+        Bio.SeqIO.write(records1, str(input_path), "fasta")
+        Bio.SeqIO.write(records2, str(input2_path), "fasta")
+        input_gff.write_text("##gff-version 3\nseq1\tsource\tgene\t1\t6\t.\t+\t.\tID=gene1\n")
+
+        args = mock_args(
+            seqfile=str(input_path),
+            seqfile2=str(input2_path),
+            inseqformat2='fasta',
+            ingff=str(input_gff),
+            outfile=str(output_path),
+            outfile2=str(output2_path),
+            outseqformat2='fasta',
+            outgff=str(output_gff),
+            fix_outrange_gff_records=False,
+        )
+
+        with pytest.raises(Exception) as exc_info:
+            intersection_main(args)
+        assert "either --seqfile2 or --ingff" in str(exc_info.value)
 
     def test_intersection_with_test_data(self, data_dir, temp_dir, mock_args):
         """Test intersection with intersection_01 test data."""
@@ -268,8 +406,19 @@ seq1\tsource\tgene\t3\t20\t.\t+\t.\tID=g_end_beyond
             fix_outrange_gff_records=False,
         )
 
-        intersection_main(args)
+        input1_records = list(Bio.SeqIO.parse(str(input1_path), "fasta"))
+        input2_records = list(Bio.SeqIO.parse(str(input2_path), "fasta"))
+        has_non_dna = any(
+            any(ch not in DNA_ALLOWED_CHARS for ch in str(record.seq))
+            for record in (input1_records + input2_records)
+        )
+        if has_non_dna:
+            with pytest.raises(Exception) as exc_info:
+                intersection_main(args)
+            assert "DNA-only input is required" in str(exc_info.value)
+            return
 
+        intersection_main(args)
         result1 = list(Bio.SeqIO.parse(str(output1_path), "fasta"))
         result2 = list(Bio.SeqIO.parse(str(output2_path), "fasta"))
         assert len(result1) == len(result2)
@@ -485,3 +634,53 @@ chr3\tsource\tgene\t1\t12\t.\t+\t.\tID=gene2
         assert [str(r.seq) for r in single1] == [str(r.seq) for r in threaded1]
         assert [r.id for r in single2] == [r.id for r in threaded2]
         assert [str(r.seq) for r in single2] == [str(r.seq) for r in threaded2]
+
+    def test_intersection_rejects_non_dna_primary_input(self, temp_dir, mock_args):
+        input1_path = temp_dir / "input1.fasta"
+        input2_path = temp_dir / "input2.fasta"
+        output1_path = temp_dir / "output1.fasta"
+        output2_path = temp_dir / "output2.fasta"
+
+        Bio.SeqIO.write([SeqRecord(Seq("PPP"), id="prot1", name="prot1", description="")], str(input1_path), "fasta")
+        Bio.SeqIO.write([SeqRecord(Seq("ATG"), id="prot1", name="prot1", description="")], str(input2_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(input1_path),
+            seqfile2=str(input2_path),
+            inseqformat2='fasta',
+            outfile=str(output1_path),
+            outfile2=str(output2_path),
+            outseqformat2='fasta',
+            ingff=None,
+            outgff=None,
+            fix_outrange_gff_records=False,
+        )
+
+        with pytest.raises(Exception) as exc_info:
+            intersection_main(args)
+        assert 'DNA-only input is required' in str(exc_info.value)
+
+    def test_intersection_rejects_non_dna_secondary_input(self, temp_dir, mock_args):
+        input1_path = temp_dir / "input1.fasta"
+        input2_path = temp_dir / "input2.fasta"
+        output1_path = temp_dir / "output1.fasta"
+        output2_path = temp_dir / "output2.fasta"
+
+        Bio.SeqIO.write([SeqRecord(Seq("ATG"), id="seq1", name="seq1", description="")], str(input1_path), "fasta")
+        Bio.SeqIO.write([SeqRecord(Seq("QQQ"), id="seq1", name="seq1", description="")], str(input2_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(input1_path),
+            seqfile2=str(input2_path),
+            inseqformat2='fasta',
+            outfile=str(output1_path),
+            outfile2=str(output2_path),
+            outseqformat2='fasta',
+            ingff=None,
+            outgff=None,
+            fix_outrange_gff_records=False,
+        )
+
+        with pytest.raises(Exception) as exc_info:
+            intersection_main(args)
+        assert '--seqfile2' in str(exc_info.value)

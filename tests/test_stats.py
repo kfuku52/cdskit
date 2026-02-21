@@ -114,6 +114,24 @@ class TestStatsMain:
         captured = capsys.readouterr()
         assert "Total N length: 3" in captured.out
 
+    def test_stats_counts_gc_and_n_case_insensitively(self, temp_dir, mock_args, capsys):
+        input_path = temp_dir / "input.fasta"
+
+        records = [
+            SeqRecord(Seq("gcgcaa"), id="lower_gc", description=""),
+            SeqRecord(Seq("nnnn"), id="lower_n", description=""),
+        ]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(input_path),
+        )
+
+        stats_main(args)
+        captured = capsys.readouterr()
+        assert "Total N length: 4" in captured.out
+        assert "GC content: 40.0%" in captured.out
+
     def test_stats_with_softmasked(self, temp_dir, mock_args, capsys):
         """Test stats with soft-masked bases."""
         input_path = temp_dir / "input.fasta"
@@ -141,15 +159,11 @@ class TestStatsMain:
             seqfile=str(input_path),
         )
 
-        # This may raise a division by zero error for GC content
-        # or may handle it gracefully
-        try:
-            stats_main(args)
-            captured = capsys.readouterr()
-            assert "Number of sequences: 0" in captured.out
-        except ZeroDivisionError:
-            # Expected if empty file not handled
-            pass
+        stats_main(args)
+        captured = capsys.readouterr()
+        assert "Number of sequences: 0" in captured.out
+        assert "Total length: 0" in captured.out
+        assert "GC content: 0.0%" in captured.out
 
     def test_stats_with_test_data(self, data_dir, mock_args, capsys):
         """Test stats with stats_01 test data."""

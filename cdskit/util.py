@@ -1,3 +1,4 @@
+import Bio.Data.CodonTable
 import Bio.Seq
 import Bio.SeqIO
 import numpy
@@ -19,6 +20,8 @@ GFF_DTYPE = [
     ('phase', 'U10'),
     ('attributes', 'U500')
 ]
+GFF_COLUMNS = ('seqid', 'source', 'type', 'start', 'end', 'score', 'strand', 'phase', 'attributes')
+DNA_ALLOWED_CHARS = frozenset('ACGTRYSWKMBDHVNXacgtryswkmbdhvnx-?.')
 
 
 def resolve_threads(threads):
@@ -103,6 +106,46 @@ def stop_if_not_aligned(records):
             raise Exception(txt)
 
 
+def stop_if_not_dna(records, label='--seqfile'):
+    invalid_ids = list()
+    invalid_chars = set()
+    for record in records:
+        seq_str = str(record.seq)
+        is_invalid = False
+        for ch in seq_str:
+            if ch not in DNA_ALLOWED_CHARS:
+                invalid_chars.add(ch)
+                is_invalid = True
+        if is_invalid:
+            invalid_ids.append(record.id)
+    if len(invalid_ids) == 0:
+        return
+    max_show = 10
+    shown = ','.join(invalid_ids[:max_show])
+    if len(invalid_ids) > max_show:
+        shown += ',...'
+    chars = ''.join(sorted(invalid_chars))
+    txt = (
+        'Invalid non-DNA character(s) were detected in {} ({}) [chars: {}]. '
+        'DNA-only input is required (use T instead of U). Exiting.\n'
+    )
+    raise Exception(txt.format(label, shown, chars))
+
+
+def stop_if_invalid_codontable(codontable, label='--codontable'):
+    try:
+        Bio.Data.CodonTable.unambiguous_dna_by_id[int(codontable)]
+        return
+    except (KeyError, TypeError, ValueError):
+        pass
+    try:
+        Bio.Data.CodonTable.unambiguous_dna_by_name[str(codontable)]
+        return
+    except KeyError:
+        txt = 'Invalid {}: {}. Exiting.\n'
+        raise Exception(txt.format(label, codontable))
+
+
 def translate_records(records, codontable):
     return [
         Bio.SeqRecord.SeqRecord(
@@ -119,7 +162,7 @@ def records2array(records):
 
 def read_item_per_line_file(file):
     with open(file, 'r') as f:
-        return [line for line in f.read().split('\n') if line != '']
+        return [line.strip() for line in f if line.strip() != '']
 
 
 def get_seqname(record, seqnamefmt):
@@ -167,10 +210,21 @@ def read_gff(gff_file):
                 header_lines.append(line)
             else:
                 data_lines.append(line)
-    data = numpy.genfromtxt(io.StringIO('\n'.join(data_lines)), dtype=GFF_DTYPE, delimiter='\t', autostrip=True)
-    # Handle single record case: numpy.genfromtxt returns 0-d array for single line
-    if data.ndim == 0:
-        data = numpy.array([data])
+    if len(data_lines) == 0:
+        data = numpy.array([], dtype=GFF_DTYPE)
+    else:
+        data = numpy.genfromtxt(
+            io.StringIO('\n'.join(data_lines)),
+            delimiter='\t',
+            dtype=None,
+            names=GFF_COLUMNS,
+            encoding='utf-8',
+            autostrip=True,
+            comments=None,
+        )
+        # Handle single record case: numpy.genfromtxt returns 0-d array for single line
+        if data.ndim == 0:
+            data = numpy.array([data], dtype=data.dtype)
     sys.stderr.write('Number of input GFF header lines: {:,}\n'.format(len(header_lines)))
     sys.stderr.write('Number of input GFF records: {:,}\n'.format(len(data)))
     sys.stderr.write('Number of input GFF unique seqids: {:,}\n'.format(len(numpy.unique(data['seqid']))))

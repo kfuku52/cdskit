@@ -23,8 +23,30 @@ class TestRmseqHelpers:
         rate = problematic_rate(seq, ['N', '-', 'X', '?'])
         assert rate == pytest.approx(4 / 6)
 
+    def test_problematic_rate_empty_sequence(self):
+        rate = problematic_rate("", ['N', '-', 'X', '?'])
+        assert rate == 0.0
+
+    def test_problematic_rate_deduplicates_problematic_chars(self):
+        rate = problematic_rate("NNAA", "NN")
+        assert rate == pytest.approx(2 / 4)
+
+    def test_problematic_rate_is_case_insensitive(self):
+        rate = problematic_rate("ATGnnn", ['N'])
+        assert rate == pytest.approx(3 / 6)
+
     def test_should_remove_record_by_name_pattern(self):
         record = SeqRecord(Seq("ATGAAA"), id="remove_me", name="remove_me", description="")
+        remove = should_remove_record(
+            record=record,
+            seqname_pattern="remove.*",
+            problematic_percent=0,
+            problematic_chars=['N'],
+        )
+        assert remove is True
+
+    def test_should_remove_record_matches_id_not_name(self):
+        record = SeqRecord(Seq("ATGAAA"), id="remove_me", name="other_name", description="")
         remove = should_remove_record(
             record=record,
             seqname_pattern="remove.*",
@@ -101,6 +123,29 @@ class TestRmseqMain:
         result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
         assert len(result) == 1
         assert result[0].id == "clean"
+
+    def test_rmseq_handles_empty_sequence_without_crash(self, temp_dir, mock_args):
+        input_path = temp_dir / "input.fasta"
+        output_path = temp_dir / "output.fasta"
+
+        records = [
+            SeqRecord(Seq(""), id="empty", description=""),
+            SeqRecord(Seq("ATGAAA"), id="clean", description=""),
+        ]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(input_path),
+            outfile=str(output_path),
+            seqname='$^',
+            problematic_percent=10,
+            problematic_char=['N'],
+        )
+
+        rmseq_main(args)
+
+        result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
+        assert [r.id for r in result] == ["empty", "clean"]
 
     def test_rmseq_multiple_problematic_chars(self, temp_dir, mock_args):
         """Test counting multiple problematic character types."""
@@ -383,3 +428,94 @@ class TestRmseqMain:
         # just_under_50 should be kept
         assert len(result) == 1
         assert result[0].id == "just_under_50"
+
+    def test_rmseq_counts_lowercase_problematic_chars(self, temp_dir, mock_args):
+        input_path = temp_dir / "input.fasta"
+        output_path = temp_dir / "output.fasta"
+
+        records = [
+            SeqRecord(Seq("ATGnnn"), id="lower_n", description=""),
+            SeqRecord(Seq("ATGAAA"), id="clean", description=""),
+        ]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(input_path),
+            outfile=str(output_path),
+            seqname='$^',
+            problematic_percent=50,
+            problematic_char='N',
+        )
+
+        rmseq_main(args)
+        result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
+        assert [r.id for r in result] == ["clean"]
+
+    def test_rmseq_rejects_invalid_regex(self, temp_dir, mock_args):
+        input_path = temp_dir / "input.fasta"
+        output_path = temp_dir / "output.fasta"
+        records = [SeqRecord(Seq("ATGAAA"), id="seq1", description="")]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(input_path),
+            outfile=str(output_path),
+            seqname='[',
+            problematic_percent=0,
+            problematic_char=['N'],
+        )
+        with pytest.raises(Exception) as exc_info:
+            rmseq_main(args)
+        assert 'Invalid regex in --seqname' in str(exc_info.value)
+
+    @pytest.mark.parametrize('problematic_percent', [-1, 101, float('nan'), float('inf')])
+    def test_rmseq_rejects_invalid_problematic_percent(self, temp_dir, mock_args, problematic_percent):
+        input_path = temp_dir / "input.fasta"
+        output_path = temp_dir / "output.fasta"
+        records = [SeqRecord(Seq("ATGAAA"), id="seq1", description="")]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(input_path),
+            outfile=str(output_path),
+            seqname='$^',
+            problematic_percent=problematic_percent,
+            problematic_char=['N'],
+        )
+        with pytest.raises(Exception) as exc_info:
+            rmseq_main(args)
+        assert '--problematic_percent should be' in str(exc_info.value)
+
+    def test_rmseq_rejects_empty_problematic_char_when_percent_positive(self, temp_dir, mock_args):
+        input_path = temp_dir / "input.fasta"
+        output_path = temp_dir / "output.fasta"
+        records = [SeqRecord(Seq("ATGAAA"), id="seq1", description="")]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(input_path),
+            outfile=str(output_path),
+            seqname='$^',
+            problematic_percent=1,
+            problematic_char='',
+        )
+        with pytest.raises(Exception) as exc_info:
+            rmseq_main(args)
+        assert '--problematic_char must contain at least one character' in str(exc_info.value)
+
+    def test_rmseq_rejects_non_dna_input(self, temp_dir, mock_args):
+        input_path = temp_dir / "input.fasta"
+        output_path = temp_dir / "output.fasta"
+        records = [SeqRecord(Seq("PPP"), id="prot1", description="")]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(input_path),
+            outfile=str(output_path),
+            seqname='$^',
+            problematic_percent=0,
+            problematic_char=['N'],
+        )
+        with pytest.raises(Exception) as exc_info:
+            rmseq_main(args)
+        assert 'DNA-only input is required' in str(exc_info.value)

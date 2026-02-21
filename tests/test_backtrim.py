@@ -32,7 +32,7 @@ class TestCheckSameSeqNum:
             SeqRecord(Seq("ATGCCC"), id="seq2"),
         ]
         pep_records = [SeqRecord(Seq("MK"), id="seq1")]
-        with pytest.raises(AssertionError):
+        with pytest.raises(Exception):
             check_same_seq_num(cdn_records, pep_records)
 
 
@@ -121,6 +121,92 @@ class TestBacktrimMain:
         # Should have kept only M and K codons
         assert len(result[0].seq) == 6
 
+    def test_backtrim_handles_question_codon_as_missing_not_error(self, temp_dir, mock_args):
+        cdn_path = temp_dir / "codon.fasta"
+        pep_path = temp_dir / "protein.fasta"
+        output_path = temp_dir / "output.fasta"
+
+        cdn_records = [
+            SeqRecord(Seq("ATG???CCC"), id="seq1", description=""),
+            SeqRecord(Seq("ATGAAACCC"), id="seq2", description=""),
+        ]
+        Bio.SeqIO.write(cdn_records, str(cdn_path), "fasta")
+        pep_records = [
+            SeqRecord(Seq("MXP"), id="seq1", description=""),
+            SeqRecord(Seq("MKP"), id="seq2", description=""),
+        ]
+        Bio.SeqIO.write(pep_records, str(pep_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(cdn_path),
+            outfile=str(output_path),
+            trimmed_aa_aln=str(pep_path),
+            codontable=1,
+        )
+        backtrim_main(args)
+
+        result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
+        assert [r.id for r in result] == ["seq1", "seq2"]
+        assert [str(r.seq) for r in result] == ["ATG???CCC", "ATGAAACCC"]
+
+    def test_backtrim_reorders_trimmed_alignment_by_id(self, temp_dir, mock_args):
+        """Trimmed amino-acid records in different order should still map by ID."""
+        cdn_path = temp_dir / "codon.fasta"
+        pep_path = temp_dir / "protein.fasta"
+        output_path = temp_dir / "output.fasta"
+
+        cdn_records = [
+            SeqRecord(Seq("ATGAAA"), id="seq1", description=""),  # MK
+            SeqRecord(Seq("ATGCCC"), id="seq2", description=""),  # MP
+        ]
+        Bio.SeqIO.write(cdn_records, str(cdn_path), "fasta")
+
+        # Same IDs, different order.
+        pep_records = [
+            SeqRecord(Seq("MP"), id="seq2", description=""),
+            SeqRecord(Seq("MK"), id="seq1", description=""),
+        ]
+        Bio.SeqIO.write(pep_records, str(pep_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(cdn_path),
+            outfile=str(output_path),
+            trimmed_aa_aln=str(pep_path),
+            codontable=1,
+        )
+
+        backtrim_main(args)
+        result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
+        assert [r.id for r in result] == ["seq1", "seq2"]
+        assert [str(r.seq) for r in result] == ["ATGAAA", "ATGCCC"]
+
+    def test_backtrim_rejects_mismatched_ids(self, temp_dir, mock_args):
+        cdn_path = temp_dir / "codon.fasta"
+        pep_path = temp_dir / "protein.fasta"
+        output_path = temp_dir / "output.fasta"
+
+        cdn_records = [
+            SeqRecord(Seq("ATGAAA"), id="seq1", description=""),
+            SeqRecord(Seq("ATGCCC"), id="seq2", description=""),
+        ]
+        pep_records = [
+            SeqRecord(Seq("MK"), id="seq1", description=""),
+            SeqRecord(Seq("MP"), id="seqX", description=""),
+        ]
+        Bio.SeqIO.write(cdn_records, str(cdn_path), "fasta")
+        Bio.SeqIO.write(pep_records, str(pep_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(cdn_path),
+            outfile=str(output_path),
+            trimmed_aa_aln=str(pep_path),
+            codontable=1,
+        )
+
+        with pytest.raises(Exception) as exc_info:
+            backtrim_main(args)
+        assert "Sequence IDs did not match between CDS" in str(exc_info.value)
+
     def test_backtrim_multiple_matches_uses_first_site(self, temp_dir, mock_args, capsys):
         """When multiple codon sites match one protein column, first site is used."""
         cdn_path = temp_dir / "codon.fasta"
@@ -175,6 +261,45 @@ class TestBacktrimMain:
         with pytest.raises(Exception) as exc_info:
             backtrim_main(args)
         assert "multiple of three" in str(exc_info.value)
+
+    def test_backtrim_rejects_invalid_codontable(self, temp_dir, mock_args):
+        cdn_path = temp_dir / "codon.fasta"
+        pep_path = temp_dir / "protein.fasta"
+        output_path = temp_dir / "output.fasta"
+
+        cdn_records = [SeqRecord(Seq("ATGAAA"), id="seq1", description="")]
+        pep_records = [SeqRecord(Seq("MK"), id="seq1", description="")]
+        Bio.SeqIO.write(cdn_records, str(cdn_path), "fasta")
+        Bio.SeqIO.write(pep_records, str(pep_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(cdn_path),
+            outfile=str(output_path),
+            trimmed_aa_aln=str(pep_path),
+            codontable=999,
+        )
+
+        with pytest.raises(Exception) as exc_info:
+            backtrim_main(args)
+        assert "Invalid --codontable" in str(exc_info.value)
+
+    def test_backtrim_empty_inputs_produce_empty_output(self, temp_dir, mock_args):
+        cdn_path = temp_dir / "codon.fasta"
+        pep_path = temp_dir / "protein.fasta"
+        output_path = temp_dir / "output.fasta"
+
+        cdn_path.write_text("")
+        pep_path.write_text("")
+
+        args = mock_args(
+            seqfile=str(cdn_path),
+            outfile=str(output_path),
+            trimmed_aa_aln=str(pep_path),
+            codontable=1,
+        )
+        backtrim_main(args)
+        result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
+        assert len(result) == 0
 
     def test_backtrim_rejects_unaligned_codons(self, temp_dir, mock_args):
         """Test backtrim rejects unaligned codon sequences."""

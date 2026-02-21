@@ -77,6 +77,31 @@ class TestTranslateMain:
         result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
         assert str(result[0].seq) == "MW"
 
+    @pytest.mark.parametrize(
+        "seq,expected",
+        [
+            ("ATG???TGA", "MX*"),
+            ("ATG...TGA", "M-*"),
+        ],
+    )
+    def test_translate_handles_missing_question_and_dot_codons(self, temp_dir, mock_args, seq, expected):
+        input_path = temp_dir / "input.fasta"
+        output_path = temp_dir / "output.fasta"
+
+        records = [SeqRecord(Seq(seq), id="seq1", description="")]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(input_path),
+            outfile=str(output_path),
+            codontable=1,
+            to_stop=False,
+        )
+        translate_main(args)
+
+        result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
+        assert str(result[0].seq) == expected
+
     def test_translate_rejects_non_triplet(self, temp_dir, mock_args):
         input_path = temp_dir / "input.fasta"
         output_path = temp_dir / "output.fasta"
@@ -96,6 +121,40 @@ class TestTranslateMain:
         with pytest.raises(Exception) as exc_info:
             translate_main(args)
         assert "multiple of three" in str(exc_info.value)
+
+    def test_translate_rejects_rna_input(self, temp_dir, mock_args):
+        input_path = temp_dir / "input.fasta"
+        output_path = temp_dir / "output.fasta"
+
+        records = [SeqRecord(Seq("AUGAAATGA"), id="seq1", description="")]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(input_path),
+            outfile=str(output_path),
+            codontable=1,
+            to_stop=False,
+        )
+        with pytest.raises(Exception) as exc_info:
+            translate_main(args)
+        assert "DNA-only input is required" in str(exc_info.value)
+
+    def test_translate_rejects_invalid_codontable(self, temp_dir, mock_args):
+        input_path = temp_dir / "input.fasta"
+        output_path = temp_dir / "output.fasta"
+
+        records = [SeqRecord(Seq("ATGAAATGA"), id="seq1", description="")]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(input_path),
+            outfile=str(output_path),
+            codontable=999,
+            to_stop=False,
+        )
+        with pytest.raises(Exception) as exc_info:
+            translate_main(args)
+        assert "Invalid --codontable" in str(exc_info.value)
 
     def test_translate_empty_input(self, temp_dir, mock_args):
         input_path = temp_dir / "empty.fasta"

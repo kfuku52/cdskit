@@ -7,6 +7,7 @@ from cdskit.util import (
     read_seqs,
     replace_seq2cds,
     resolve_threads,
+    stop_if_not_dna,
     write_seqs,
 )
 
@@ -24,8 +25,15 @@ def parsegb_record(record, seqnamefmt, extract_cds=False, list_seqname_keys=Fals
 
 
 def parsegb_main(args):
-    records = read_seqs(seqfile=args.seqfile, seqformat='genbank')
+    if str(args.inseqformat).lower() not in ('genbank', 'gb'):
+        txt = 'parsegb requires --inseqformat genbank (or gb), but got "{}". Exiting.\n'
+        raise Exception(txt.format(args.inseqformat))
+    records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
+    stop_if_not_dna(records=records, label='--seqfile')
     threads = resolve_threads(getattr(args, 'threads', 1))
+    if args.list_seqname_keys:
+        # Keep deterministic key listing order in stderr output.
+        threads = 1
     worker = partial(
         parsegb_record,
         seqnamefmt=args.seqnamefmt,

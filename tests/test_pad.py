@@ -35,6 +35,10 @@ class TestStopCodonHelpers:
         """Internal stop codons should be counted."""
         assert count_internal_stop_codons("ATGTGACCC", 1) == 1
 
+    def test_count_internal_stop_codons_counts_lowercase_internal_stops(self):
+        """Lowercase stop codons should also be counted."""
+        assert count_internal_stop_codons("taaatgtaa", 1) == 1
+
     def test_count_internal_stop_codons_short_sequence(self):
         """Sequences shorter than a full internal codon window return zero."""
         assert count_internal_stop_codons("AT", 1) == 0
@@ -91,6 +95,24 @@ class TestPadSeqs:
 
 class TestPadMain:
     """Tests for pad_main function using test data."""
+
+    def test_pad_rejects_invalid_codontable(self, temp_dir, mock_args):
+        input_path = temp_dir / "input.fasta"
+        output_path = temp_dir / "output.fasta"
+        records = [SeqRecord(Seq("ATGAA"), id="seq1", description="")]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(input_path),
+            outfile=str(output_path),
+            codontable=999,
+            padchar='N',
+            nopseudo=False,
+        )
+
+        with pytest.raises(Exception) as exc_info:
+            pad_main(args)
+        assert "Invalid --codontable" in str(exc_info.value)
 
     def test_pad_01_data(self, data_dir, temp_dir, mock_args):
         """Test pad command with pad_01 test data."""

@@ -8,7 +8,14 @@ import Bio.Seq
 import Bio.SeqIO
 import sys
 
-from cdskit.util import parallel_map_ordered, read_seqs, resolve_threads, write_seqs
+from cdskit.util import (
+    parallel_map_ordered,
+    read_seqs,
+    resolve_threads,
+    stop_if_invalid_codontable,
+    stop_if_not_dna,
+    write_seqs,
+)
 
 _STOP_CODON_CACHE = {}
 _STOP_CODON_SCAN_CACHE = {}
@@ -38,11 +45,12 @@ def get_stop_codon_scan_list(codon_table):
 
 def count_internal_stop_codons(seq, codon_table):
     seq_str = seq if isinstance(seq, str) else str(seq)
-    internal_stop_limit = len(seq_str) - 3
+    seq_upper = seq_str.upper()
+    internal_stop_limit = len(seq_upper) - 3
     if internal_stop_limit <= 0:
         return 0
     num_stop = 0
-    seq_find = seq_str.find
+    seq_find = seq_upper.find
     for codon in get_stop_codon_scan_list(codon_table):
         pos = seq_find(codon)
         while pos != -1:
@@ -189,6 +197,8 @@ def process_padding_payloads_process_parallel(payloads, codon_table, padchar, th
 
 def pad_main(args):
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
+    stop_if_not_dna(records=records, label='--seqfile')
+    stop_if_invalid_codontable(args.codontable)
     threads = resolve_threads(getattr(args, 'threads', 1))
     results = None
     if (threads > 1) and (len(records) >= _PROCESS_PARALLEL_MIN_RECORDS):

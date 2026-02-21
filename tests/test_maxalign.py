@@ -19,6 +19,7 @@ from cdskit.maxalign import (
     maxalign_main,
     parse_missing_chars,
     pick_solver_mode,
+    select_indices_by_patterns,
     solve_exact,
     solve_greedy,
 )
@@ -104,6 +105,35 @@ class TestMaxalignMain:
         with pytest.raises(Exception) as exc_info:
             maxalign_main(args)
         assert "max_exact_sequences" in str(exc_info.value)
+
+    @pytest.mark.parametrize("mode,max_exact_sequences", [("auto", 0), ("exact", -1)])
+    def test_maxalign_rejects_non_positive_max_exact_sequences(
+        self,
+        temp_dir,
+        mock_args,
+        mode,
+        max_exact_sequences,
+    ):
+        input_path = temp_dir / "input.fasta"
+        output_path = temp_dir / "output.fasta"
+
+        records = [
+            SeqRecord(Seq("ATGAAACCC"), id="seq1", description=""),
+            SeqRecord(Seq("ATGAAACCC"), id="seq2", description=""),
+        ]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(input_path),
+            outfile=str(output_path),
+            mode=mode,
+            max_exact_sequences=max_exact_sequences,
+            missing_char='-?.',
+        )
+
+        with pytest.raises(Exception) as exc_info:
+            maxalign_main(args)
+        assert "--max_exact_sequences should be >= 1" in str(exc_info.value)
 
     def test_maxalign_empty_input(self, temp_dir, mock_args):
         """Empty input should produce empty output without crashing."""
@@ -305,6 +335,28 @@ class TestMaxalignMain:
         with pytest.raises(Exception) as exc_info:
             maxalign_main(args)
         assert "multiple of three" in str(exc_info.value)
+
+    def test_maxalign_rejects_non_dna_input(self, temp_dir, mock_args):
+        input_path = temp_dir / "input.fasta"
+        output_path = temp_dir / "output.fasta"
+
+        records = [
+            SeqRecord(Seq("PPP"), id="seq1", description=""),
+            SeqRecord(Seq("PPP"), id="seq2", description=""),
+        ]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(input_path),
+            outfile=str(output_path),
+            mode='auto',
+            max_exact_sequences=16,
+            missing_char='-?.',
+        )
+
+        with pytest.raises(Exception) as exc_info:
+            maxalign_main(args)
+        assert "DNA-only input is required" in str(exc_info.value)
 
     def test_maxalign_single_sequence_still_drops_missing_codons(self, temp_dir, mock_args):
         """Single sequence should keep only codons without missing characters."""
@@ -628,3 +680,11 @@ class TestMaxalignHelpers:
         assert complete == 2
         assert area == 4
         assert complete_indices == [0, 2]
+
+    def test_select_indices_by_patterns_matches_record_id(self):
+        records = [
+            SeqRecord(Seq("ATG"), id="keep_me", name="other_name", description=""),
+            SeqRecord(Seq("ATG"), id="drop_me", name="keep_me", description=""),
+        ]
+        selected = select_indices_by_patterns(records, patterns=[r"keep_me"])
+        assert selected == [0]

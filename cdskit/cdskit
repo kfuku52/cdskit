@@ -62,7 +62,7 @@ def command_accession2fasta(args):
 
 help_accession2fasta = 'Retrieving fasta sequences from a list of GenBank accessions. See `cdskit accession2fasta -h`'
 p_accession2fasta = subparsers.add_parser('accession2fasta', help=help_accession2fasta, parents=[p_version,p_outfile,p_threads])
-p_accession2fasta.add_argument('--accession_file', metavar='PATH', default='', type=str, required=False, action='store',
+p_accession2fasta.add_argument('--accession_file', metavar='PATH', default='', type=str, required=True, action='store',
                                help='default=%(default)s: PATH to the accession-per-line text file.')
 p_accession2fasta.add_argument('--email', metavar='aaa@bbb.com', default='', type=str, required=False, action='store',
                                help='default=%(default)s: Your email address. This is passed to the NCBI\'s E-utilities. '
@@ -91,9 +91,9 @@ p_aggregate = subparsers.add_parser('aggregate', help=help_aggregate, parents=[p
 p_aggregate.add_argument('-m', '--mode', metavar='STR', default='longest', type=str, required=False, action='store',
                          choices=['longest', ],
                          help='default=%(default)s: Criterion to keep a sequence during aggregation.')
-p_aggregate.add_argument('-x', '--expression', metavar='REGEX', default='-', type=str, required=False, action='store',
+p_aggregate.add_argument('-x', '--expression', metavar='REGEX', default=[], type=str, required=False, action='store',
                          nargs='+',
-                         help='default=%(default)s: A regular expression to aggregate the sequences. Multiple values can be specified.')
+                         help='default=%(default)s: Regular expression(s) to aggregate sequences. If omitted, no aggregation by regex is applied.')
 p_aggregate.set_defaults(handler=command_aggregate)
 
 
@@ -278,7 +278,11 @@ def command_parsegb(args):
     sys.stderr.write('cdskit parsegb: ended at {}\n'.format(datetime.now()))
 
 help_parsegb = 'Converting the GenBank format. See `cdskit parsegb -h`'
-p_parsegb = subparsers.add_parser('parsegb', help=help_parsegb, parents=[p_version,p_infile,p_outfile,p_threads])
+p_parsegb = subparsers.add_parser('parsegb', help=help_parsegb, parents=[p_version,p_outfile,p_threads])
+p_parsegb.add_argument('-s', '--seqfile', metavar='PATH', default='-', type=str, required=False, action='store',
+                       help='default=%(default)s: Input sequence file. Use "-" for STDIN.')
+p_parsegb.add_argument('-if', '--inseqformat', metavar='STR', default='genbank', type=str, required=False, action='store',
+                       help='default=%(default)s: Input sequence format for parsegb. Use "genbank" (or "gb").')
 p_parsegb.add_argument('--seqnamefmt', metavar='STR', default='organism_accessions', type=str, required=False, action='store',
                        help='default=%(default)s: Underline-separated list of sequence name elements. '
                             'Use --list_seqname_keys to browse available values.')
@@ -373,6 +377,13 @@ p_validate.set_defaults(handler=command_validate)
 # Handler
 args = psr.parse_args()
 if hasattr(args, 'handler'):
-    args.handler(args)
+    try:
+        args.handler(args)
+    except Exception as e:
+        txt = str(e)
+        if (txt == '') or (txt is None):
+            txt = e.__class__.__name__
+        sys.stderr.write(txt.rstrip('\n') + '\n')
+        sys.exit(1)
 else:
     psr.print_help()

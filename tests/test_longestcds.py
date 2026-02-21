@@ -5,6 +5,7 @@ Tests for cdskit longestcds command.
 from pathlib import Path
 
 import Bio.SeqIO
+import pytest
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
@@ -16,6 +17,30 @@ from cdskit.longestcds import longestcds_main
 
 class TestLongestCdsMain:
     """Tests for longestcds_main function."""
+
+    def test_longestcds_rejects_invalid_codontable(self, temp_dir, mock_args):
+        input_path = temp_dir / "input.fasta"
+        output_path = temp_dir / "output.fasta"
+        records = [SeqRecord(Seq("ATGAAATGA"), id="seq1", description="")]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args = mock_args(seqfile=str(input_path), outfile=str(output_path), codontable=999)
+        with pytest.raises(Exception) as exc_info:
+            longestcds_main(args)
+        assert "Invalid --codontable" in str(exc_info.value)
+
+    def test_longestcds_accepts_codontable_name_when_called_programmatically(self, temp_dir, mock_args):
+        input_path = temp_dir / "input.fasta"
+        output_path = temp_dir / "output.fasta"
+        records = [SeqRecord(Seq("ATGAAATAG"), id="seq1", description="")]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args = mock_args(seqfile=str(input_path), outfile=str(output_path), codontable="Standard")
+        longestcds_main(args)
+
+        result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
+        assert len(result) == 1
+        assert str(result[0].seq) == "ATGAAATAG"
 
     def test_longestcds_plus_strand_frame1_complete_orf(self, temp_dir, mock_args):
         input_path = temp_dir / "input.fasta"

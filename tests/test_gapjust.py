@@ -144,6 +144,27 @@ class TestVectorizedCoordinateUpdate:
         # end 35: 35>11 shift -15 -> 20, then 20>6 shift +5 -> 25
         assert list(new_ends) == [14, 25]
 
+    def test_mixed_edits_can_shift_coordinate_across_later_edit_start(self):
+        """Later edits must be applied based on progressively updated coordinates."""
+        starts = np.array([180])
+        ends = np.array([198])
+        justifications = [
+            (16, -4),
+            (42, 8),
+            (114, 13),
+            (124, 15),
+            (179, -10),
+            (197, -18),
+        ]
+
+        new_starts, new_ends = vectorized_coordinate_update(starts, ends, justifications)
+
+        # Manual replay:
+        # start 180 -> 176 -> 184 -> 197 -> 212 -> 212 -> 212
+        # end   198 -> 194 -> 202 -> 215 -> 230 -> 220 -> 220
+        assert list(new_starts) == [212]
+        assert list(new_ends) == [220]
+
 
 class TestShouldJustifyGap:
     """Tests for should_justify_gap helper."""

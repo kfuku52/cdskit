@@ -9,6 +9,7 @@ from cdskit.util import (
     read_gff,
     read_seqs,
     resolve_threads,
+    stop_if_not_dna,
     write_gff,
     write_seqs,
 )
@@ -48,66 +49,28 @@ def vectorized_coordinate_update(
     # Accept both legacy dict format and internal compact tuple format.
     # dict: {'original_edit_start': int, 'edit_length': int}
     # tuple: (original_edit_start, edit_length)
+    edits = []
     if isinstance(justifications[0], dict):
-        justifications_sorted = sorted(justifications, key=lambda x: x['original_edit_start'])
-        original_starts_1based = numpy.fromiter(
-            (j['original_edit_start'] + 1 for j in justifications_sorted),
-            dtype=numpy.int64,
-            count=len(justifications_sorted),
-        )
-        edit_lengths = numpy.fromiter(
-            (j['edit_length'] for j in justifications_sorted),
-            dtype=numpy.int64,
-            count=len(justifications_sorted),
-        )
+        for just in justifications:
+            edits.append((int(just['original_edit_start']) + 1, int(just['edit_length'])))
     else:
-        # Internal call path already preserves ascending original_edit_start.
-        original_starts_1based = numpy.fromiter(
-            (j[0] + 1 for j in justifications),
-            dtype=numpy.int64,
-            count=len(justifications),
-        )
-        edit_lengths = numpy.fromiter(
-            (j[1] for j in justifications),
-            dtype=numpy.int64,
-            count=len(justifications),
-        )
-
-    if not numpy.any(edit_lengths):
-        return seq_gff_start_coordinates, seq_gff_end_coordinates
-
-    cumulative_before = numpy.concatenate(([0], numpy.cumsum(edit_lengths[:-1], dtype=numpy.int64)))
-    actual_edit_starts_1based = original_starts_1based + cumulative_before
-    cumulative_edits = numpy.cumsum(edit_lengths, dtype=numpy.int64)
-
-    # Keep only non-zero edits; zero-length entries have no coordinate effect.
-    nonzero = (edit_lengths != 0)
-    actual_edit_starts_1based = actual_edit_starts_1based[nonzero]
-    cumulative_edits = cumulative_edits[nonzero]
-
-    # Fast vectorized path assumes monotonic edit starts after cumulative shifts.
-    # In pathological cases where this is violated, use a safe fallback loop.
-    if numpy.any(actual_edit_starts_1based[1:] < actual_edit_starts_1based[:-1]):
-        for coords in [seq_gff_start_coordinates, seq_gff_end_coordinates]:
-            for i in range(coords.shape[0]):
-                value = int(coords[i])
-                cumulative_offset = 0
-                for j in range(len(edit_lengths)):
-                    edit_len = int(edit_lengths[j])
-                    actual_edit_start_1based = int(original_starts_1based[j] + cumulative_offset)
-                    if (edit_len != 0) and (value > actual_edit_start_1based):
-                        value += edit_len
-                    cumulative_offset += edit_len
-                coords[i] = value
-        return seq_gff_start_coordinates, seq_gff_end_coordinates
+        for just in justifications:
+            edits.append((int(just[0]) + 1, int(just[1])))
+    edits.sort(key=lambda x: x[0])
 
     def apply_coordinate_shift(coords):
-        position = numpy.searchsorted(actual_edit_starts_1based, coords, side='left')
-        has_shift = (position > 0)
-        if not numpy.any(has_shift):
+        if len(edits) == 0:
             return coords
         updated = coords.copy()
-        updated[has_shift] = updated[has_shift] + cumulative_edits[position[has_shift] - 1]
+        cumulative_offset = 0
+        for original_start_1based, edit_len in edits:
+            if edit_len == 0:
+                continue
+            actual_edit_start_1based = original_start_1based + cumulative_offset
+            mask = (updated > actual_edit_start_1based)
+            if numpy.any(mask):
+                updated[mask] = updated[mask] + edit_len
+            cumulative_offset += edit_len
         return updated
 
     updated_starts = apply_coordinate_shift(seq_gff_start_coordinates)
@@ -290,6 +253,7 @@ def gapjust_main(args):
     validate_gapjust_args(args.gap_len, gap_just_min, gap_just_max)
 
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
+    stop_if_not_dna(records=records, label='--seqfile')
     threads = resolve_threads(getattr(args, 'threads', 1))
     num_justifications = 0
     min_original_gap_length = None

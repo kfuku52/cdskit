@@ -45,6 +45,10 @@ class TestSplitMain:
         args = mock_args(seqfile='input.fasta', prefix='INFILE', outfile='from_outfile')
         assert resolve_output_prefix(args) == 'from_outfile'
 
+    def test_resolve_output_prefix_uses_stdin_label_for_stream_input(self, mock_args):
+        args = mock_args(seqfile='-', prefix='INFILE', outfile='-')
+        assert resolve_output_prefix(args) == 'stdin'
+
     def test_split_basic(self, temp_dir, mock_args):
         """Test basic split functionality - extract codon positions."""
         input_path = temp_dir / "input.fasta"
@@ -202,6 +206,23 @@ class TestSplitMain:
         with pytest.raises(Exception) as exc_info:
             split_main(args)
         assert "multiple of three" in str(exc_info.value)
+
+    def test_split_rejects_non_dna_input(self, temp_dir, mock_args):
+        input_path = temp_dir / "input.fasta"
+
+        records = [
+            SeqRecord(Seq("PPPPPP"), id="seq1", description=""),
+        ]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(input_path),
+            prefix=str(temp_dir / "output"),
+        )
+
+        with pytest.raises(Exception) as exc_info:
+            split_main(args)
+        assert "DNA-only input is required" in str(exc_info.value)
 
     def test_split_with_test_data(self, data_dir, temp_dir, mock_args):
         """Test split with split_01 test data."""

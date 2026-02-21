@@ -10,6 +10,8 @@ from cdskit.util import (
     read_seqs,
     resolve_threads,
     stop_if_not_aligned,
+    stop_if_invalid_codontable,
+    stop_if_not_dna,
     stop_if_not_multiple_of_three,
     write_seqs,
 )
@@ -34,6 +36,9 @@ def resolve_nail_value(nail, num_records):
         return nail_value
 
     nail_value = int(nail)
+    if nail_value <= 0:
+        txt = '--nail should be a positive integer or "all", but got {}. Exiting.\n'
+        raise Exception(txt.format(nail))
     if nail_value > num_records:
         txt = '--nail ({:,}) is greater than the number of input sequences ({:,}). Decreased to {:,}\n'
         sys.stderr.write(txt.format(nail_value, num_records, num_records))
@@ -127,6 +132,8 @@ def build_hammer_output_record(record, selected_nucleotide_ranges):
 
 def hammer_main(args):
     original_records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
+    stop_if_not_dna(records=original_records, label='--seqfile')
+    stop_if_invalid_codontable(args.codontable)
     if len(original_records) == 0:
         write_seqs(records=original_records, outfile=args.outfile, outseqformat=args.outseqformat)
         return

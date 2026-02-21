@@ -11,6 +11,7 @@ from cdskit.util import (
     read_item_per_line_file,
     replace_seq2cds,
     resolve_threads,
+    stop_if_not_dna,
     write_seqs,
 )
 
@@ -26,12 +27,26 @@ def find_missing_accessions(accessions, seq_records):
     for accession in accessions:
         found = False
         for seq_record in seq_records:
-            if accession in seq_record.id:
+            if accession_matches_record_id(accession=accession, record_id=seq_record.id):
                 found = True
                 break
         if not found:
             missing_ids.append(accession)
     return missing_ids
+
+
+def accession_matches_record_id(accession, record_id):
+    record_head = str(record_id).strip().split()[0]
+    if record_head == accession:
+        return True
+    if record_head.startswith(accession + '.'):
+        return True
+    for token in record_head.split('|'):
+        if token == accession:
+            return True
+        if token.startswith(accession + '.'):
+            return True
+    return False
 
 
 def prepare_accession_record(record, seqnamefmt, extract_cds=False, list_seqname_keys=False):
@@ -52,7 +67,12 @@ def accession2seq_record(accessions, database, batch_size=1000):
     for start, end in accession_batch_ranges(num_accession, batch_size):
         sys.stderr.write('Retrieving accessions: {:,}-{:,}, {:,} [sec]\n'.format(start, end, int(time.time()-start_time)))
         handle = Entrez.efetch(db=database, id=accessions[start:end], rettype="gb", retmode="text", retmax=batch_size)
-        seq_records += list(SeqIO.parse(handle, 'gb'))
+        try:
+            seq_records += list(SeqIO.parse(handle, 'gb'))
+        finally:
+            close_fn = getattr(handle, 'close', None)
+            if callable(close_fn):
+                close_fn()
     sys.stderr.write('Number of input accessions: {:,}\n'.format(num_accession))
     sys.stderr.write('Number of retrieved records: {:,}\n'.format(len(seq_records)))
     if (num_accession!=len(seq_records)):
@@ -63,14 +83,20 @@ def accession2seq_record(accessions, database, batch_size=1000):
     return seq_records
 
 def accession2fasta_main(args):
+    accession_file = getattr(args, 'accession_file', '')
+    if accession_file in ('', None):
+        txt = '--accession_file is required. Exiting.\n'
+        raise Exception(txt)
+
     if args.email!='':
         Entrez.email = args.email
     threads = resolve_threads(getattr(args, 'threads', 1))
     if args.list_seqname_keys:
         # Keep deterministic key listing order in stderr.
         threads = 1
-    accessions = read_item_per_line_file(file=args.accession_file)
+    accessions = read_item_per_line_file(file=accession_file)
     records = accession2seq_record(accessions, args.ncbi_database)
+    stop_if_not_dna(records=records, label='retrieved records')
     worker = partial(
         prepare_accession_record,
         seqnamefmt=args.seqnamefmt,

@@ -5,7 +5,15 @@ from concurrent.futures import ProcessPoolExecutor
 from functools import partial
 import Bio.Data.CodonTable
 
-from cdskit.util import parallel_map_ordered, read_seqs, resolve_threads, stop_if_not_aligned, write_seqs
+from cdskit.util import (
+    parallel_map_ordered,
+    read_seqs,
+    resolve_threads,
+    stop_if_not_aligned,
+    stop_if_invalid_codontable,
+    stop_if_not_dna,
+    write_seqs,
+)
 
 
 AA_GAP_CHARS = {'-', '.'}
@@ -173,8 +181,11 @@ def backalign_sequence_strings(cdn_seq_raw, pep_seq_raw, codontable, seq_id, emi
             else:
                 try:
                     translated_char = forward_table[codon_key]
-                except Exception:
+                except Bio.Data.CodonTable.TranslationError:
                     translated_char = 'X'
+                except KeyError:
+                    txt = 'Invalid codon for {} at aligned position {}: {}'
+                    raise Exception(txt.format(seq_id, i + 1, codon))
             cache[codon_key] = translated_char
         if (pep_char not in AA_WILDCARD_CHARS) and (pep_char != translated_char):
             txt = 'Amino acid mismatch for {} at aligned position {}: aa_aln={}, translated={}, codon={}'
@@ -194,8 +205,11 @@ def backalign_sequence_strings(cdn_seq_raw, pep_seq_raw, codontable, seq_id, emi
             else:
                 try:
                     terminal_aa = forward_table[terminal_codon]
-                except Exception:
+                except Bio.Data.CodonTable.TranslationError:
                     terminal_aa = 'X'
+                except KeyError:
+                    txt = 'Invalid terminal codon for {}: {}'
+                    raise Exception(txt.format(seq_id, terminal_codon))
             cache[terminal_codon] = terminal_aa
         is_terminal_stop = terminal_aa == '*'
         if is_terminal_stop:
@@ -243,7 +257,15 @@ def backalign_payloads_process_parallel(payloads, codontable, threads):
 
 def backalign_main(args):
     cdn_records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
+    stop_if_not_dna(records=cdn_records, label='--seqfile')
+    stop_if_invalid_codontable(args.codontable)
     pep_records = read_seqs(seqfile=args.aa_aln, seqformat=args.inseqformat)
+    if len(cdn_records) == 0:
+        if len(pep_records) != 0:
+            txt = 'The numbers of seqs did not match: seqfile={} and aa_aln={}'
+            raise Exception(txt.format(len(cdn_records), len(pep_records)))
+        write_seqs(records=list(), outfile=args.outfile, outseqformat=args.outseqformat)
+        return
     stop_if_not_multiple_of_three_after_gap_removal(cdn_records)
     stop_if_not_aligned(records=pep_records)
     stop_if_sequence_ids_do_not_match(cdn_records=cdn_records, pep_records=pep_records)

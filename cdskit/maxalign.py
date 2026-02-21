@@ -13,6 +13,7 @@ from cdskit.util import (
     read_seqs,
     resolve_threads,
     stop_if_not_aligned,
+    stop_if_not_dna,
     stop_if_not_multiple_of_three,
     write_seqs,
 )
@@ -487,7 +488,7 @@ def select_indices_by_patterns(records, patterns):
         return list()
     selected = list()
     for i, record in enumerate(records):
-        if any(re.fullmatch(pattern, record.name) for pattern in patterns):
+        if any(re.fullmatch(pattern, record.id) for pattern in patterns):
             selected.append(i)
     return selected
 
@@ -504,6 +505,12 @@ def parse_max_removed(max_removed, num_records):
         sys.stderr.write(txt.format(max_removed, num_records, num_records))
         return num_records
     return max_removed
+
+
+def validate_max_exact_sequences(max_exact_sequences):
+    if max_exact_sequences < 1:
+        txt = '--max_exact_sequences should be >= 1, but got {}. Exiting.\n'
+        raise Exception(txt.format(max_exact_sequences))
 
 
 def extract_complete_codon_indices(codon_presence_matrix=None, kept_indices=None, support_masks=None):
@@ -629,6 +636,7 @@ def write_report(report_path, report_data):
 def maxalign_main(args):
     mode = getattr(args, 'mode', 'auto')
     max_exact_sequences = int(getattr(args, 'max_exact_sequences', 16))
+    validate_max_exact_sequences(max_exact_sequences)
     missing_char_arg = getattr(args, 'missing_char', DEFAULT_MISSING_CHARS)
     keep_arg = getattr(args, 'keep', '')
     max_removed_arg = getattr(args, 'max_removed', None)
@@ -636,6 +644,7 @@ def maxalign_main(args):
     threads = resolve_threads(getattr(args, 'threads', 1))
 
     original_records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
+    stop_if_not_dna(records=original_records, label='--seqfile')
     if len(original_records) == 0:
         write_seqs(records=original_records, outfile=args.outfile, outseqformat=args.outseqformat)
         return

@@ -135,6 +135,13 @@ class TestBackalignRecord:
             backalign_record(cdn_record, pep_record, codontable=1)
         assert "mismatch" in str(exc_info.value)
 
+    def test_backalign_record_rejects_invalid_codon(self):
+        cdn_record = SeqRecord(Seq("ATG@@@"), id="seq1")
+        pep_record = SeqRecord(Seq("MX"), id="seq1")
+        with pytest.raises(Exception) as exc_info:
+            backalign_record(cdn_record, pep_record, codontable=1)
+        assert "Invalid codon" in str(exc_info.value)
+
     def test_backalign_record_rejects_unmatched_single_nonstop_codon(self):
         cdn_record = SeqRecord(Seq("ATGAAA"), id="seq1")  # MK
         pep_record = SeqRecord(Seq("M"), id="seq1")
@@ -247,6 +254,24 @@ class TestBackalignMain:
             backalign_main(args)
         assert "did not match" in str(exc_info.value)
 
+    def test_backalign_empty_inputs_produce_empty_output(self, temp_dir, mock_args):
+        cdn_path = temp_dir / "cds.fasta"
+        pep_path = temp_dir / "aa_aln.fasta"
+        out_path = temp_dir / "out.fasta"
+
+        cdn_path.write_text("")
+        pep_path.write_text("")
+
+        args = mock_args(
+            seqfile=str(cdn_path),
+            outfile=str(out_path),
+            aa_aln=str(pep_path),
+            codontable=1,
+        )
+        backalign_main(args)
+        result = list(Bio.SeqIO.parse(str(out_path), "fasta"))
+        assert len(result) == 0
+
     def test_backalign_rejects_non_multiple_of_three(self, temp_dir, mock_args):
         """Reject CDS where ungapped length is not multiple of 3."""
         cdn_path = temp_dir / "cds.fasta"
@@ -268,6 +293,46 @@ class TestBackalignMain:
         with pytest.raises(Exception) as exc_info:
             backalign_main(args)
         assert "multiple of three" in str(exc_info.value)
+
+    def test_backalign_rejects_invalid_codontable(self, temp_dir, mock_args):
+        cdn_path = temp_dir / "cds.fasta"
+        pep_path = temp_dir / "aa_aln.fasta"
+        out_path = temp_dir / "out.fasta"
+
+        cdn_records = [SeqRecord(Seq("ATGAAA"), id="seq1", description="")]
+        pep_records = [SeqRecord(Seq("MK"), id="seq1", description="")]
+        Bio.SeqIO.write(cdn_records, str(cdn_path), "fasta")
+        Bio.SeqIO.write(pep_records, str(pep_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(cdn_path),
+            outfile=str(out_path),
+            aa_aln=str(pep_path),
+            codontable=999,
+        )
+        with pytest.raises(Exception) as exc_info:
+            backalign_main(args)
+        assert "Invalid --codontable" in str(exc_info.value)
+
+    def test_backalign_rejects_rna_cds_input(self, temp_dir, mock_args):
+        cdn_path = temp_dir / "cds.fasta"
+        pep_path = temp_dir / "aa_aln.fasta"
+        out_path = temp_dir / "out.fasta"
+
+        cdn_records = [SeqRecord(Seq("AUGAAA"), id="seq1", description="")]
+        Bio.SeqIO.write(cdn_records, str(cdn_path), "fasta")
+        pep_records = [SeqRecord(Seq("MK"), id="seq1", description="")]
+        Bio.SeqIO.write(pep_records, str(pep_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(cdn_path),
+            outfile=str(out_path),
+            aa_aln=str(pep_path),
+            codontable=1,
+        )
+        with pytest.raises(Exception) as exc_info:
+            backalign_main(args)
+        assert "DNA-only input is required" in str(exc_info.value)
 
     def test_backalign_rejects_translation_mismatch(self, temp_dir, mock_args):
         """Reject when amino acid alignment and CDS translation disagree."""

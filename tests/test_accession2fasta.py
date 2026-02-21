@@ -15,8 +15,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import cdskit.accession2fasta as accession_module
 from cdskit.accession2fasta import (
     accession2fasta_main,
+    accession_matches_record_id,
     accession2seq_record,
     accession_batch_ranges,
+    find_missing_accessions,
     prepare_accession_record,
 )
 
@@ -62,6 +64,16 @@ class TestAccession2FastaHelpers:
         assert prepared is not None
         assert str(prepared.seq) == "TGCCCC"
 
+    def test_accession_matches_record_id_handles_version_and_pipe(self):
+        assert accession_matches_record_id("AB1", "AB1.2")
+        assert accession_matches_record_id("AB1", "gi|1|ref|AB1.3|")
+        assert not accession_matches_record_id("AB1", "AB12.1")
+
+    def test_find_missing_accessions_does_not_use_substring_match(self):
+        seq_records = [SeqRecord(Seq("ATG"), id="AB12.1")]
+        missing = find_missing_accessions(accessions=["AB1", "AB12"], seq_records=seq_records)
+        assert missing == ["AB1"]
+
 
 class TestAccession2SeqRecord:
     """Tests for accession retrieval batching logic."""
@@ -84,6 +96,31 @@ class TestAccession2SeqRecord:
 
         assert calls == [["ACC1", "ACC2"], ["ACC3"]]
         assert [r.id for r in records] == accessions
+
+    def test_accession2seq_record_closes_efetch_handles(self, monkeypatch):
+        close_calls = []
+
+        class FakeHandle:
+            def __init__(self, ids):
+                self.ids = ids
+
+            def close(self):
+                close_calls.append(tuple(self.ids))
+
+        def fake_efetch(db, id, rettype, retmode, retmax):
+            return FakeHandle(list(id))
+
+        def fake_parse(handle, fmt):
+            return [SeqRecord(Seq("ATG"), id=acc) for acc in handle.ids]
+
+        monkeypatch.setattr(accession_module.Entrez, "efetch", fake_efetch)
+        monkeypatch.setattr(accession_module.SeqIO, "parse", fake_parse)
+
+        accessions = ["ACC1", "ACC2", "ACC3"]
+        records = accession2seq_record(accessions, database="nuccore", batch_size=2)
+
+        assert [r.id for r in records] == accessions
+        assert close_calls == [("ACC1", "ACC2"), ("ACC3",)]
 
 
 class TestAccession2FastaMain:
@@ -136,3 +173,20 @@ class TestAccession2FastaMain:
         result_threaded = list(accession_module.SeqIO.parse(str(out_threaded), "fasta"))
         assert [r.id for r in result_single] == [r.id for r in result_threaded]
         assert [str(r.seq) for r in result_single] == [str(r.seq) for r in result_threaded]
+
+    def test_accession2fasta_requires_accession_file(self, mock_args):
+        args = mock_args(
+            accession_file='',
+            outfile='-',
+            outseqformat='fasta',
+            email='',
+            extract_cds=False,
+            ncbi_database='nucleotide',
+            seqnamefmt='organism_accessions',
+            list_seqname_keys=False,
+            threads=1,
+        )
+
+        with pytest.raises(Exception) as exc_info:
+            accession2fasta_main(args)
+        assert '--accession_file is required' in str(exc_info.value)

@@ -29,6 +29,15 @@ class TestLabelHelpers:
         assert from_chars == [":", "|"]
         assert to_char == "_"
 
+    @pytest.mark.parametrize(
+        "replace_chars",
+        ["abc", "a--b--c", "--_", "abc--", "abc--xy"],
+    )
+    def test_parse_replace_chars_rejects_invalid_format(self, replace_chars):
+        with pytest.raises(Exception) as exc_info:
+            parse_replace_chars(replace_chars)
+        assert "--replace_chars" in str(exc_info.value)
+
     def test_apply_char_replacement_counts_records_once(self):
         records = [
             SeqRecord(Seq("ATG"), id="a:b:c", description=""),
@@ -39,6 +48,15 @@ class TestLabelHelpers:
         assert records[0].id == "a_b_c"
         assert records[1].id == "plain"
 
+    def test_apply_char_replacement_clears_stale_description_on_change(self):
+        records = [
+            SeqRecord(Seq("ATG"), id="seq1", description="seq1 old"),
+        ]
+        replaced = apply_char_replacement(records, ["1"], "2")
+        assert replaced == 1
+        assert records[0].id == "seq2"
+        assert records[0].description == ""
+
     def test_clip_label_ids(self):
         records = [
             SeqRecord(Seq("ATG"), id="long_name_here", description=""),
@@ -48,6 +66,15 @@ class TestLabelHelpers:
         assert clipped == 1
         assert records[0].id == "long_"
         assert records[1].id == "short"
+
+    def test_clip_label_ids_clears_stale_description_on_change(self):
+        records = [
+            SeqRecord(Seq("ATG"), id="long_name_here", description="long_name_here old"),
+        ]
+        clipped = clip_label_ids(records, 5)
+        assert clipped == 1
+        assert records[0].id == "long_"
+        assert records[0].description == ""
 
     def test_uniquify_label_ids(self):
         records = [
@@ -88,6 +115,27 @@ class TestLabelMain:
 
         result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
         assert result[0].id == "seq_1_name"
+
+    def test_label_replace_chars_output_header_not_mixed_with_old_id(self, temp_dir, mock_args):
+        input_path = temp_dir / "input.fasta"
+        output_path = temp_dir / "output.fasta"
+
+        records = [
+            SeqRecord(Seq("ATGAAA"), id="seq1", description="seq1 sample"),
+        ]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(input_path),
+            outfile=str(output_path),
+            replace_chars='1--2',
+            clip_len=0,
+            unique=False,
+        )
+        label_main(args)
+
+        out_text = output_path.read_text()
+        assert out_text.startswith(">seq2\n")
 
     def test_label_clip_length(self, temp_dir, mock_args):
         """Test clipping sequence labels to max length."""
@@ -256,3 +304,37 @@ class TestLabelMain:
         result_threaded = list(Bio.SeqIO.parse(str(out_threaded), "fasta"))
         assert [r.id for r in result_single] == [r.id for r in result_threaded]
         assert [str(r.seq) for r in result_single] == [str(r.seq) for r in result_threaded]
+
+    def test_label_rejects_negative_clip_len(self, temp_dir, mock_args):
+        input_path = temp_dir / "input.fasta"
+        output_path = temp_dir / "output.fasta"
+        records = [SeqRecord(Seq("ATGAAA"), id="seq1", description="")]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(input_path),
+            outfile=str(output_path),
+            replace_chars='',
+            clip_len=-1,
+            unique=False,
+        )
+        with pytest.raises(Exception) as exc_info:
+            label_main(args)
+        assert '--clip_len should be >= 0' in str(exc_info.value)
+
+    def test_label_rejects_non_dna_input(self, temp_dir, mock_args):
+        input_path = temp_dir / "input.fasta"
+        output_path = temp_dir / "output.fasta"
+        records = [SeqRecord(Seq("PPP"), id="prot1", description="")]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(input_path),
+            outfile=str(output_path),
+            replace_chars='',
+            clip_len=0,
+            unique=False,
+        )
+        with pytest.raises(Exception) as exc_info:
+            label_main(args)
+        assert 'DNA-only input is required' in str(exc_info.value)

@@ -10,6 +10,8 @@ from cdskit.util import (
     parallel_map_ordered,
     read_seqs,
     resolve_threads,
+    stop_if_invalid_codontable,
+    stop_if_not_dna,
     stop_if_not_multiple_of_three,
     write_seqs,
 )
@@ -165,6 +167,8 @@ def mask_payloads_process_parallel(payloads, codontable, mask_triplet, mask_ambi
 
 def mask_main(args):
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
+    stop_if_not_dna(records=records, label='--seqfile')
+    stop_if_invalid_codontable(args.codontable)
     stop_if_not_multiple_of_three(records)
     mask_triplet = args.maskchar * 3
     mask_ambiguous = (args.ambiguouscodon == 'yes')

@@ -6,7 +6,13 @@ from functools import partial
 
 import Bio.Data.CodonTable
 
-from cdskit.util import parallel_map_ordered, read_seqs, resolve_threads
+from cdskit.util import (
+    parallel_map_ordered,
+    read_seqs,
+    resolve_threads,
+    stop_if_invalid_codontable,
+    stop_if_not_dna,
+)
 
 
 MISSING_CHARS = frozenset('-?.')
@@ -25,7 +31,11 @@ def chunk_codons(seq):
 def get_stop_codons(codontable):
     stop_codons = _STOP_CODON_CACHE.get(codontable)
     if stop_codons is None:
-        table = Bio.Data.CodonTable.unambiguous_dna_by_id[codontable]
+        try:
+            table = Bio.Data.CodonTable.unambiguous_dna_by_id[int(codontable)]
+        except (KeyError, TypeError, ValueError):
+            txt = 'Invalid --codontable: {}. Exiting.\n'
+            raise Exception(txt.format(codontable))
         stop_codons = frozenset([codon.upper() for codon in table.stop_codons])
         _STOP_CODON_CACHE[codontable] = stop_codons
     return stop_codons
@@ -36,19 +46,20 @@ def is_gap_only_sequence(seq):
 
 
 def has_internal_stop_with_stop_codons(seq, stop_codons):
-    clean_seq = seq.translate(_DROP_MISSING_CHARS_TABLE).upper()
-    clean_len = len(clean_seq)
-    if (clean_len < 3) or (clean_len % 3 != 0):
+    seq_upper = seq.upper()
+    codons = [seq_upper[i:i + 3] for i in range(0, len(seq_upper) - 2, 3)]
+    evaluable_indices = [
+        i for i, codon in enumerate(codons)
+        if not any(ch in MISSING_CHARS for ch in codon)
+    ]
+    if len(evaluable_indices) <= 1:
         return False
-    # Ignore terminal codon: terminal stop is not an internal stop.
-    internal_stop_limit = clean_len - 3
-    seq_find = clean_seq.find
-    for stop_codon in stop_codons:
-        pos = seq_find(stop_codon)
-        while pos != -1:
-            if (pos % 3 == 0) and (pos < internal_stop_limit):
-                return True
-            pos = seq_find(stop_codon, pos + 1)
+    terminal_index = evaluable_indices[-1]
+    for i in evaluable_indices:
+        if i == terminal_index:
+            continue
+        if codons[i] in stop_codons:
+            return True
     return False
 
 
@@ -157,7 +168,8 @@ def summarize_records(records, codontable, threads=1):
     total_ambiguous = 0
     total_evaluable = 0
     for entry in per_record:
-        ambiguous_by_seq[entry[0]] = entry[4]
+        seq_id = entry[0]
+        ambiguous_by_seq[seq_id] = ambiguous_by_seq.get(seq_id, 0) + entry[4]
         total_ambiguous += entry[4]
         total_evaluable += entry[5]
     ambiguous_rate = 0.0
@@ -252,6 +264,8 @@ def print_validate_summary(summary):
 
 def validate_main(args):
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
+    stop_if_not_dna(records=records, label='--seqfile')
+    stop_if_invalid_codontable(args.codontable)
     summary = summarize_records(
         records=records,
         codontable=args.codontable,

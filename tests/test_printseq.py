@@ -218,6 +218,34 @@ class TestPrintseqMain:
         captured_threaded = capsys.readouterr()
         assert captured_single.out == captured_threaded.out
 
+    def test_printseq_rejects_invalid_regex(self, temp_dir, mock_args):
+        input_path = temp_dir / "input.fasta"
+        records = [SeqRecord(Seq("ATGAAA"), id="seq1", name="seq1", description="")]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(input_path),
+            seqname='[',
+            show_seqname=True,
+        )
+        with pytest.raises(Exception) as exc_info:
+            printseq_main(args)
+        assert 'Invalid regex in --seqname' in str(exc_info.value)
+
+    def test_printseq_rejects_non_dna_input(self, temp_dir, mock_args):
+        input_path = temp_dir / "input.fasta"
+        records = [SeqRecord(Seq("PPP"), id="prot1", name="prot1", description="")]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(input_path),
+            seqname='prot1',
+            show_seqname=True,
+        )
+        with pytest.raises(Exception) as exc_info:
+            printseq_main(args)
+        assert "DNA-only input is required" in str(exc_info.value)
+
 
 class TestPrintseqHelpers:
     """Tests for printseq helper functions."""
@@ -226,6 +254,11 @@ class TestPrintseqHelpers:
         record = SeqRecord(Seq("ATGAAA"), id="seq_A", name="seq_A", description="")
         assert record_matches_seqname(record, r"seq_[AG]") is True
         assert record_matches_seqname(record, r"seq_[TC]") is False
+
+    def test_record_matches_seqname_uses_id_not_name(self):
+        record = SeqRecord(Seq("ATGAAA"), id="wanted_id", name="other_name", description="")
+        assert record_matches_seqname(record, r"wanted_id") is True
+        assert record_matches_seqname(record, r"other_name") is False
 
     def test_format_printseq_lines_with_header(self):
         record = SeqRecord(Seq("ATGAAA"), id="seq_A", name="seq_A", description="")

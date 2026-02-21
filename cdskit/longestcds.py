@@ -7,7 +7,14 @@ import Bio.Data.CodonTable
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
-from cdskit.util import parallel_map_ordered, read_seqs, resolve_threads, write_seqs
+from cdskit.util import (
+    parallel_map_ordered,
+    read_seqs,
+    resolve_threads,
+    stop_if_invalid_codontable,
+    stop_if_not_dna,
+    write_seqs,
+)
 
 _CODON_TABLE_CACHE = dict()
 _CODON_SCAN_CACHE = dict()
@@ -39,7 +46,10 @@ def get_start_stop_codons(codontable):
     cached = _CODON_TABLE_CACHE.get(codontable)
     if cached is not None:
         return cached
-    table = Bio.Data.CodonTable.unambiguous_dna_by_id[codontable]
+    try:
+        table = Bio.Data.CodonTable.unambiguous_dna_by_id[int(codontable)]
+    except (KeyError, TypeError, ValueError):
+        table = Bio.Data.CodonTable.unambiguous_dna_by_name[str(codontable)]
     codons = (set(table.start_codons), set(table.stop_codons))
     _CODON_TABLE_CACHE[codontable] = codons
     return codons
@@ -447,6 +457,8 @@ def longestcds_main(args):
     annotate_seqname = bool(getattr(args, 'annotate_seqname', False))
     threads = resolve_threads(getattr(args, 'threads', 1))
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
+    stop_if_not_dna(records=records, label='--seqfile')
+    stop_if_invalid_codontable(args.codontable)
     if len(records) == 0:
         write_seqs(records=records, outfile=args.outfile, outseqformat=args.outseqformat)
         return

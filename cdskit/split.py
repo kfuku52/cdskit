@@ -4,6 +4,7 @@ import sys
 from cdskit.util import (
     read_seqs,
     resolve_threads,
+    stop_if_not_dna,
     stop_if_not_multiple_of_three,
     write_seqs,
 )
@@ -17,6 +18,8 @@ def resolve_output_prefix(args):
     if outfile_prefix not in ('-', '', None):
         return outfile_prefix
 
+    if args.seqfile == '-':
+        return 'stdin'
     return args.seqfile
 
 
@@ -42,6 +45,7 @@ def build_split_output_paths(prefix, outseqformat):
 def split_main(args):
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
     _ = resolve_threads(getattr(args, 'threads', 1))
+    stop_if_not_dna(records=records, label='--seqfile')
     stop_if_not_multiple_of_three(records)
     first_records = list()
     second_records = list()

@@ -288,6 +288,25 @@ class TestParsegbMain:
         assert [r.id for r in result_single] == [r.id for r in result_threaded]
         assert [str(r.seq) for r in result_single] == [str(r.seq) for r in result_threaded]
 
+    def test_parsegb_rejects_non_genbank_inseqformat(self, temp_dir, mock_args):
+        input_path = temp_dir / "input.fasta"
+        output_path = temp_dir / "output.fasta"
+        records = [SeqRecord(Seq("ATGAAA"), id="REC1", description="")]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(input_path),
+            outfile=str(output_path),
+            inseqformat='fasta',
+            seqnamefmt='organism_accessions',
+            extract_cds=False,
+            list_seqname_keys=False,
+        )
+
+        with pytest.raises(Exception) as exc_info:
+            parsegb_main(args)
+        assert 'parsegb requires --inseqformat genbank' in str(exc_info.value)
+
 
 class TestParsegbHelpers:
     """Tests for parsegb helper functions."""
