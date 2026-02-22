@@ -1,6 +1,7 @@
-import numpy
+import numpy as np
 import sys
 import re
+from collections import Counter
 from functools import partial
 from Bio.Seq import Seq
 
@@ -68,7 +69,7 @@ def vectorized_coordinate_update(
                 continue
             actual_edit_start_1based = original_start_1based + cumulative_offset
             mask = (updated > actual_edit_start_1based)
-            if numpy.any(mask):
+            if np.any(mask):
                 updated[mask] = updated[mask] + edit_len
             cumulative_offset += edit_len
         return updated
@@ -195,7 +196,7 @@ def apply_gap_justifications_to_gff(gff, justifications_by_seq):
         if seqid not in seqid_to_gff_indices:
             continue
 
-        index_gff_seq = numpy.array(seqid_to_gff_indices[seqid], dtype=int)
+        index_gff_seq = np.array(seqid_to_gff_indices[seqid], dtype=int)
         seq_gff_start_original = gff['data']['start'][index_gff_seq].copy()
         seq_gff_end_original = gff['data']['end'][index_gff_seq].copy()
         seq_gff_start_updated = seq_gff_start_original.copy()
@@ -216,7 +217,7 @@ def apply_gap_justifications_to_gff(gff, justifications_by_seq):
 
         num_justified_start_coordinate += changed_start.sum()
         num_justified_end_coordinate += changed_end.sum()
-        justified_changes = numpy.logical_and(is_gene, numpy.logical_or(changed_start, changed_end))
+        justified_changes = np.logical_and(is_gene, np.logical_or(changed_start, changed_end))
         num_justified_gff_gene += justified_changes.sum()
 
     return num_justified_start_coordinate, num_justified_end_coordinate, num_justified_gff_gene
@@ -236,6 +237,21 @@ def summarize_gff_justifications(
     sys.stderr.write(
         f'Number of justified GFF gene features: {num_justified_gff_gene}\n'
     )
+
+
+def stop_if_duplicate_sequence_ids(records):
+    counts = Counter(record.id for record in records)
+    duplicated = [seq_id for seq_id, count in counts.items() if count > 1]
+    if len(duplicated) == 0:
+        return
+    shown = ','.join(sorted(duplicated)[:10])
+    if len(duplicated) > 10:
+        shown += ',...'
+    txt = (
+        'Duplicate sequence IDs are not supported with --ingff because '
+        'GFF seqid mapping becomes ambiguous. Duplicate IDs: {}. Exiting.\n'
+    )
+    raise Exception(txt.format(shown))
 
 
 def gapjust_main(args):
@@ -283,6 +299,9 @@ def gapjust_main(args):
             max_original_gap_length = max(max_original_gap_length, record_max_original_gap_length)
         if seq_justifications:
             justifications_by_seq[record.id] = seq_justifications
+
+    if args.ingff is not None:
+        stop_if_duplicate_sequence_ids(records=records)
 
     summarize_gap_justifications(num_justifications, min_original_gap_length, max_original_gap_length)
     write_seqs(records=records, outfile=args.outfile, outseqformat=args.outseqformat)

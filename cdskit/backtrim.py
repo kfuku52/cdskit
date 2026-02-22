@@ -64,6 +64,7 @@ def build_column_index(seq_strings):
 def find_kept_aa_sites(tcdn_strings, pep_strings):
     kept_aa_sites = []
     multiple_matches = set()
+    last_kept_site = -1
     remaining_site_count = len(tcdn_strings[0])
     tcdn_col_index = build_column_index(tcdn_strings)
 
@@ -79,18 +80,43 @@ def find_kept_aa_sites(tcdn_strings, pep_strings):
             sys.stderr.write(txt.format(pi))
             continue
         if len(same_sites) == 1:
-            kept_aa_sites.append(same_sites.popleft())
+            kept_site = same_sites.popleft()
+            if kept_site <= last_kept_site:
+                txt = 'The codon site {} would violate codon order at trimmed protein site {}. '
+                txt += 'The site will be excluded from the output.\n'
+                sys.stderr.write(txt.format(kept_site, pi))
+                del tcdn_col_index[key]
+                continue
+            kept_aa_sites.append(kept_site)
+            last_kept_site = kept_site
             remaining_site_count -= 1
             del tcdn_col_index[key]
             continue
 
         all_same_sites = tuple(same_sites)
         multiple_matches.update(all_same_sites)
-        txt = 'The trimmed protein site {} has multiple matches to codon sites({}). Reporting the first match. '
-        txt = txt.format(pi, ','.join([str(ss) for ss in all_same_sites]))
+        # Prefer the first candidate after the previously selected codon site
+        # so codon order follows the trimmed amino acid alignment.
+        kept_site = None
+        for candidate_site in same_sites:
+            if candidate_site > last_kept_site:
+                kept_site = candidate_site
+                break
+        if kept_site is None:
+            txt = 'The trimmed protein site {} has multiple matches to codon sites({}), '
+            txt += 'but none preserve codon order. The site will be excluded from the output. '
+            txt = txt.format(pi, ','.join([str(ss) for ss in all_same_sites]))
+            txt += 'Site pattern: {}\n'.format(key)
+            sys.stderr.write(txt)
+            continue
+
+        txt = 'The trimmed protein site {} has multiple matches to codon sites({}). Reporting codon site {}. '
+        txt = txt.format(pi, ','.join([str(ss) for ss in all_same_sites]), kept_site)
         txt += 'Site pattern: {}\n'.format(key)
         sys.stderr.write(txt)
-        kept_aa_sites.append(same_sites.popleft())
+        same_sites.remove(kept_site)
+        kept_aa_sites.append(kept_site)
+        last_kept_site = kept_site
         remaining_site_count -= 1
 
     num_trimmed_multiple_hit_sites = len(multiple_matches - set(kept_aa_sites))

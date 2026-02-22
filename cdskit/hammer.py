@@ -1,4 +1,4 @@
-import numpy
+import numpy as np
 import sys
 from functools import partial
 from Bio.Seq import Seq
@@ -16,9 +16,9 @@ from cdskit.util import (
     write_seqs,
 )
 
-GAP_ONLY_CHARS = frozenset('-NXnx')
-GAP_ONLY_CHARS_BYTES = numpy.array([ch.encode('ascii') for ch in sorted(GAP_ONLY_CHARS)], dtype='S1')
-AA_MISSING_CHARS = numpy.array([b'-', b'?', b'X', b'*'], dtype='S1')
+GAP_ONLY_CHARS = frozenset('-NXnxn?.')
+GAP_ONLY_CHARS_BYTES = np.array([ch.encode('ascii') for ch in sorted(GAP_ONLY_CHARS)], dtype='S1')
+AA_MISSING_CHARS = np.array([b'-', b'?', b'X', b'*'], dtype='S1')
 
 
 def codon_is_gap_like(codon):
@@ -49,15 +49,15 @@ def resolve_nail_value(nail, num_records):
 def build_codon_gap_like_matrix(records):
     num_records = len(records)
     if num_records == 0:
-        return numpy.zeros((0, 0), dtype=bool)
+        return np.zeros((0, 0), dtype=bool)
     seq_len = len(records[0].seq)
     if seq_len == 0:
-        return numpy.zeros((num_records, 0), dtype=bool)
+        return np.zeros((num_records, 0), dtype=bool)
 
     seq_bytes = ''.join([str(record.seq) for record in records]).encode('ascii')
-    nt_matrix = numpy.frombuffer(seq_bytes, dtype='S1').reshape(num_records, seq_len)
+    nt_matrix = np.frombuffer(seq_bytes, dtype='S1').reshape(num_records, seq_len)
     codon_matrix = nt_matrix.reshape(num_records, seq_len // 3, 3)
-    return numpy.isin(codon_matrix, GAP_ONLY_CHARS_BYTES).all(axis=2)
+    return np.isin(codon_matrix, GAP_ONLY_CHARS_BYTES).all(axis=2)
 
 
 def translate_record_to_aa_string(record, codontable):
@@ -73,24 +73,24 @@ def build_non_missing_site(records, codontable, threads):
     aa_strings = parallel_map_ordered(items=records, worker=worker, threads=threads)
     aa_len = len(aa_strings[0])
     aa_bytes = b''.join([aa_seq.encode('ascii') for aa_seq in aa_strings])
-    aa_matrix = numpy.frombuffer(aa_bytes, dtype='S1').reshape(len(aa_strings), aa_len)
-    missing_site = numpy.isin(aa_matrix, AA_MISSING_CHARS).sum(axis=0)
+    aa_matrix = np.frombuffer(aa_bytes, dtype='S1').reshape(len(aa_strings), aa_len)
+    missing_site = np.isin(aa_matrix, AA_MISSING_CHARS).sum(axis=0)
     return len(records) - missing_site
 
 
 def select_codon_site_indices(non_missing_site, nail_value, max_len, prevent_gap_only, codon_gap_like_matrix, original_records):
     selected_non_missing_idx = None
-    last_non_missing_idx = numpy.array([], dtype=int)
+    last_non_missing_idx = np.array([], dtype=int)
 
     for current_nail in range(nail_value, 0, -1):
-        non_missing_idx = numpy.flatnonzero(non_missing_site >= current_nail)
+        non_missing_idx = np.flatnonzero(non_missing_site >= current_nail)
         last_non_missing_idx = non_missing_idx
         num_removed_site = max_len - non_missing_idx.shape[0]
         sys.stderr.write('{:,} out of {:,} codon sites will be removed.\n'.format(num_removed_site, max_len))
         if prevent_gap_only:
-            gap_only_mask = numpy.all(codon_gap_like_matrix[:, non_missing_idx], axis=1)
-            if numpy.any(gap_only_mask):
-                for i in numpy.flatnonzero(gap_only_mask):
+            gap_only_mask = np.all(codon_gap_like_matrix[:, non_missing_idx], axis=1)
+            if np.any(gap_only_mask):
+                for i in np.flatnonzero(gap_only_mask):
                     txt = 'A gap-only sequence was generated with --nail {}. Will try --nail {}: {}\n'
                     sys.stderr.write(txt.format(current_nail, current_nail - 1, original_records[i].name))
                 continue

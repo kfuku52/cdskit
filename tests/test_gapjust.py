@@ -350,6 +350,36 @@ class TestGapjustMain:
             gff_output = f.read()
         assert "seq1" in gff_output
 
+    def test_gapjust_rejects_duplicate_ids_with_gff(self, temp_dir, mock_args):
+        input_fasta = temp_dir / "input.fasta"
+        input_gff = temp_dir / "input.gff"
+        output_fasta = temp_dir / "output.fasta"
+        output_gff = temp_dir / "output.gff"
+
+        records = [
+            SeqRecord(Seq("ATGNNNAAA"), id="dup", description=""),
+            SeqRecord(Seq("ATGNNNNAAA"), id="dup", description=""),
+        ]
+        Bio.SeqIO.write(records, str(input_fasta), "fasta")
+        input_gff.write_text(
+            "##gff-version 3\n"
+            "dup\tsource\tgene\t1\t9\t.\t+\t.\tID=gene1\n"
+        )
+
+        args = mock_args(
+            seqfile=str(input_fasta),
+            outfile=str(output_fasta),
+            gap_len=5,
+            ingff=str(input_gff),
+            outgff=str(output_gff),
+        )
+
+        with pytest.raises(Exception) as exc_info:
+            gapjust_main(args)
+        assert "Duplicate sequence IDs are not supported with --ingff" in str(exc_info.value)
+        assert not output_fasta.exists()
+        assert not output_gff.exists()
+
     def test_gapjust_multiple_gaps(self, temp_dir, mock_args):
         """Test gapjust with multiple gaps in one sequence."""
         input_path = temp_dir / "input.fasta"

@@ -1,7 +1,7 @@
 import Bio.Data.CodonTable
 import Bio.Seq
 import Bio.SeqIO
-import numpy
+import numpy as np
 
 import io
 import os
@@ -147,9 +147,16 @@ def stop_if_invalid_codontable(codontable, label='--codontable'):
 
 
 def translate_records(records, codontable):
+    from cdskit.translate import translate_sequence_string
     return [
         Bio.SeqRecord.SeqRecord(
-            seq=record.seq.translate(table=codontable, to_stop=False, gap="-"),
+            seq=Bio.Seq.Seq(
+                translate_sequence_string(
+                    seq_str=str(record.seq),
+                    codontable=codontable,
+                    to_stop=False,
+                )
+            ),
             id=record.id,
         )
         for record in records
@@ -157,7 +164,7 @@ def translate_records(records, codontable):
 
 
 def records2array(records):
-    return numpy.array([list(record.seq) for record in records])
+    return np.array([list(record.seq) for record in records])
 
 
 def read_item_per_line_file(file):
@@ -211,9 +218,9 @@ def read_gff(gff_file):
             else:
                 data_lines.append(line)
     if len(data_lines) == 0:
-        data = numpy.array([], dtype=GFF_DTYPE)
+        data = np.array([], dtype=GFF_DTYPE)
     else:
-        data = numpy.genfromtxt(
+        data = np.genfromtxt(
             io.StringIO('\n'.join(data_lines)),
             delimiter='\t',
             dtype=None,
@@ -222,19 +229,19 @@ def read_gff(gff_file):
             autostrip=True,
             comments=None,
         )
-        # Handle single record case: numpy.genfromtxt returns 0-d array for single line
+        # Handle single record case: np.genfromtxt returns 0-d array for single line
         if data.ndim == 0:
-            data = numpy.array([data], dtype=data.dtype)
+            data = np.array([data], dtype=data.dtype)
     sys.stderr.write('Number of input GFF header lines: {:,}\n'.format(len(header_lines)))
     sys.stderr.write('Number of input GFF records: {:,}\n'.format(len(data)))
-    sys.stderr.write('Number of input GFF unique seqids: {:,}\n'.format(len(numpy.unique(data['seqid']))))
+    sys.stderr.write('Number of input GFF unique seqids: {:,}\n'.format(len(np.unique(data['seqid']))))
     return {'header': header_lines, 'data': data}
 
 
 def write_gff(gff, outfile):
     sys.stderr.write('Number of output GFF header lines: {:,}\n'.format(len(gff['header'])))
     sys.stderr.write('Number of output GFF records: {:,}\n'.format(len(gff['data'])))
-    sys.stderr.write('Number of output GFF unique seqids: {:,}\n'.format(len(numpy.unique(gff['data']['seqid']))))
+    sys.stderr.write('Number of output GFF unique seqids: {:,}\n'.format(len(np.unique(gff['data']['seqid']))))
     with open(outfile, 'w') as f:
         if gff['header']:
             f.write('\n'.join(gff['header']) + '\n')

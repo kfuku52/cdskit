@@ -239,6 +239,71 @@ class TestBacktrimMain:
         result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
         assert [str(r.seq) for r in result] == ["ATG", "ATG"]
 
+    def test_backtrim_multiple_matches_preserves_column_order(self, temp_dir, mock_args):
+        """When duplicate AA patterns exist, selected codon sites should stay in forward order."""
+        cdn_path = temp_dir / "codon.fasta"
+        pep_path = temp_dir / "protein.fasta"
+        output_path = temp_dir / "output.fasta"
+
+        # Translated AA columns:
+        # col0: A/A
+        # col1: P/C
+        # col2: A/A
+        # Trimmed AA keeps col1 then col2, so codon output should be [1, 2], not [1, 0].
+        cdn_records = [
+            SeqRecord(Seq("GCTCCTGCC"), id="seq1", description=""),  # A P A
+            SeqRecord(Seq("GCTTGTGCA"), id="seq2", description=""),  # A C A
+        ]
+        pep_records = [
+            SeqRecord(Seq("PA"), id="seq1", description=""),
+            SeqRecord(Seq("CA"), id="seq2", description=""),
+        ]
+        Bio.SeqIO.write(cdn_records, str(cdn_path), "fasta")
+        Bio.SeqIO.write(pep_records, str(pep_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(cdn_path),
+            outfile=str(output_path),
+            trimmed_aa_aln=str(pep_path),
+            codontable=1,
+        )
+
+        backtrim_main(args)
+
+        result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
+        assert [str(r.seq) for r in result] == ["CCTGCC", "TGTGCA"]
+
+    def test_backtrim_excludes_sites_that_would_reverse_codon_order(self, temp_dir, mock_args):
+        """Trimmed AA columns not preserving original order should be excluded, not reordered."""
+        cdn_path = temp_dir / "codon.fasta"
+        pep_path = temp_dir / "protein.fasta"
+        output_path = temp_dir / "output.fasta"
+
+        cdn_records = [
+            SeqRecord(Seq("GCTCCT"), id="seq1", description=""),  # A P
+            SeqRecord(Seq("GCTTGT"), id="seq2", description=""),  # A C
+        ]
+        # Requests column pattern "PC" then "AA", which would require indices [1, 0].
+        pep_records = [
+            SeqRecord(Seq("PA"), id="seq1", description=""),
+            SeqRecord(Seq("CA"), id="seq2", description=""),
+        ]
+        Bio.SeqIO.write(cdn_records, str(cdn_path), "fasta")
+        Bio.SeqIO.write(pep_records, str(pep_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(cdn_path),
+            outfile=str(output_path),
+            trimmed_aa_aln=str(pep_path),
+            codontable=1,
+        )
+
+        backtrim_main(args)
+
+        result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
+        # Only the first monotonic site should be kept.
+        assert [str(r.seq) for r in result] == ["CCT", "TGT"]
+
     def test_backtrim_rejects_non_multiple_of_three(self, temp_dir, mock_args):
         """Test backtrim rejects codon sequences not multiple of 3."""
         cdn_path = temp_dir / "codon.fasta"

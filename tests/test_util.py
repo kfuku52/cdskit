@@ -228,6 +228,15 @@ class TestTranslateRecords:
         assert str(result1[0].seq) == "ML*"
         assert str(result2[0].seq) == "MLW"
 
+    def test_translation_handles_question_and_dot_as_missing(self):
+        records = [
+            SeqRecord(Seq("ATG???CCC"), id="q1"),
+            SeqRecord(Seq("ATG...CCC"), id="d1"),
+        ]
+        result = util.translate_records(records, 1)
+        assert str(result[0].seq) == "MXP"
+        assert str(result[1].seq) == "M-P"
+
 
 class TestRecords2Array:
     """Tests for records2array function."""

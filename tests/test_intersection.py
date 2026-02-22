@@ -223,6 +223,35 @@ seq3\tsource\tgene\t1\t6\t.\t+\t.\tID=gene2
         assert len(gff_lines) == 1
         assert gff_lines[0].startswith("seq_id_2\t")
 
+    def test_intersection_rejects_duplicate_ids_with_gff(self, temp_dir, mock_args):
+        input_fasta = temp_dir / "input.fasta"
+        input_gff = temp_dir / "input.gff"
+        output_fasta = temp_dir / "output.fasta"
+        output_gff = temp_dir / "output.gff"
+
+        records = [
+            SeqRecord(Seq("ATGAAA"), id="dup", name="dup1", description=""),
+            SeqRecord(Seq("ATGAAATTT"), id="dup", name="dup2", description=""),
+        ]
+        Bio.SeqIO.write(records, str(input_fasta), "fasta")
+        input_gff.write_text(
+            "##gff-version 3\n"
+            "dup\tsource\tgene\t1\t6\t.\t+\t.\tID=gene1\n"
+        )
+
+        args = mock_args(
+            seqfile=str(input_fasta),
+            seqfile2=None,
+            ingff=str(input_gff),
+            outfile=str(output_fasta),
+            outgff=str(output_gff),
+            fix_outrange_gff_records=True,
+        )
+
+        with pytest.raises(Exception) as exc_info:
+            intersection_main(args)
+        assert "Duplicate sequence IDs are not supported when intersecting with GFF" in str(exc_info.value)
+
     def test_intersection_fix_outrange_gff(self, temp_dir, mock_args):
         """Test fixing out-of-range GFF coordinates."""
         input_fasta = temp_dir / "input.fasta"

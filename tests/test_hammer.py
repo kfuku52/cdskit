@@ -71,6 +71,39 @@ class TestHammerMain:
         result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
         assert [str(r.seq) for r in result] == ["ATGCCC", "ATGCCC", "ATGCCC"]
 
+    def test_hammer_prevent_gap_only_relaxes_for_question_missing_codons(self, temp_dir, mock_args):
+        """prevent_gap_only should treat ?/. as missing in codon-level gap-only checks."""
+        input_path = temp_dir / "input.fasta"
+        output_path = temp_dir / "output.fasta"
+
+        records = [
+            SeqRecord(Seq("ATGAAACCC"), id="seq1", description=""),
+            SeqRecord(Seq("??????ATG"), id="seq2", description=""),
+            SeqRecord(Seq("ATGAAA---"), id="seq3", description=""),
+            SeqRecord(Seq("ATGAAA---"), id="seq4", description=""),
+        ]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(input_path),
+            outfile=str(output_path),
+            codontable=1,
+            nail='3',
+            prevent_gap_only=True,
+        )
+
+        hammer_main(args)
+
+        result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
+        # With correct missing handling, --nail should relax from 3 to 2
+        # so seq2 is not all-missing in output.
+        assert [str(r.seq) for r in result] == [
+            "ATGAAACCC",
+            "??????ATG",
+            "ATGAAA---",
+            "ATGAAA---",
+        ]
+
     def test_hammer_nail_all(self, temp_dir, mock_args):
         """Test hammer with --nail all."""
         input_path = temp_dir / "input.fasta"
