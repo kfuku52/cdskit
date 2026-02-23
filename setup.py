@@ -32,7 +32,10 @@ setup(
     keywords='codon sequences',
     packages=find_packages(),
     install_requires=['numpy', 'biopython'],
-    extras_require={'test': ['pytest', 'pytest-cov']},
+    extras_require={
+        'test': ['pytest', 'pytest-cov'],
+        'ml': ['torch'],
+    },
     python_requires='>=3.9',
     classifiers=[
         'License :: OSI Approved :: BSD License',
