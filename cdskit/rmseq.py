@@ -2,7 +2,7 @@ import re
 import math
 from functools import partial
 
-from cdskit.util import parallel_map_ordered, read_seqs, resolve_threads, stop_if_not_dna, write_seqs
+from cdskit.util import parallel_map_ordered, read_seqs, resolve_threads, stop_if_not_seqtype, write_seqs
 
 
 def normalize_problematic_chars(problematic_chars):
@@ -86,7 +86,11 @@ def validate_problematic_chars(problematic_chars, problematic_percent):
 
 def rmseq_main(args):
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
-    stop_if_not_dna(records=records, label='--seqfile')
+    stop_if_not_seqtype(
+        records=records,
+        seqtype=getattr(args, 'seqtype', 'auto'),
+        label='--seqfile',
+    )
     validate_problematic_percent(args.problematic_percent)
     normalized_problematic_chars = validate_problematic_chars(
         problematic_chars=args.problematic_char,

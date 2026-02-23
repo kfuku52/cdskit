@@ -22,6 +22,9 @@ GFF_DTYPE = [
 ]
 GFF_COLUMNS = ('seqid', 'source', 'type', 'start', 'end', 'score', 'strand', 'phase', 'attributes')
 DNA_ALLOWED_CHARS = frozenset('ACGTRYSWKMBDHVNXacgtryswkmbdhvnx-?.')
+PROTEIN_ALLOWED_CHARS = frozenset(
+    'ABCDEFGHIKLMNPQRSTVWXYZJUO*abcdefghiklmnpqrstvwxyzjuo-?.'
+)
 
 
 def resolve_threads(threads):
@@ -130,6 +133,70 @@ def stop_if_not_dna(records, label='--seqfile'):
         'DNA-only input is required (use T instead of U). Exiting.\n'
     )
     raise Exception(txt.format(label, shown, chars))
+
+
+def stop_if_not_protein(records, label='--seqfile'):
+    invalid_ids = list()
+    invalid_chars = set()
+    for record in records:
+        seq_str = str(record.seq)
+        is_invalid = False
+        for ch in seq_str:
+            if ch not in PROTEIN_ALLOWED_CHARS:
+                invalid_chars.add(ch)
+                is_invalid = True
+        if is_invalid:
+            invalid_ids.append(record.id)
+    if len(invalid_ids) == 0:
+        return
+    max_show = 10
+    shown = ','.join(invalid_ids[:max_show])
+    if len(invalid_ids) > max_show:
+        shown += ',...'
+    chars = ''.join(sorted(invalid_chars))
+    txt = (
+        'Invalid non-protein character(s) were detected in {} ({}) [chars: {}]. '
+        'Protein-only input is required. Exiting.\n'
+    )
+    raise Exception(txt.format(label, shown, chars))
+
+
+def stop_if_not_seqtype(records, seqtype='auto', label='--seqfile'):
+    seqtype_value = str(seqtype).lower()
+    if seqtype_value == 'dna':
+        stop_if_not_dna(records=records, label=label)
+        return
+    if seqtype_value == 'protein':
+        stop_if_not_protein(records=records, label=label)
+        return
+    if seqtype_value == 'auto':
+        allowed_chars = DNA_ALLOWED_CHARS | PROTEIN_ALLOWED_CHARS
+        invalid_ids = list()
+        invalid_chars = set()
+        for record in records:
+            seq_str = str(record.seq)
+            is_invalid = False
+            for ch in seq_str:
+                if ch not in allowed_chars:
+                    invalid_chars.add(ch)
+                    is_invalid = True
+            if is_invalid:
+                invalid_ids.append(record.id)
+        if len(invalid_ids) == 0:
+            return
+        max_show = 10
+        shown = ','.join(invalid_ids[:max_show])
+        if len(invalid_ids) > max_show:
+            shown += ',...'
+        chars = ''.join(sorted(invalid_chars))
+        txt = (
+            'Invalid sequence character(s) were detected in {} ({}) [chars: {}]. '
+            'DNA or protein input is required when --seqtype=auto. Exiting.\n'
+        )
+        raise Exception(txt.format(label, shown, chars))
+
+    txt = 'Invalid --seqtype: {}. Choose from dna, protein, auto. Exiting.\n'
+    raise Exception(txt.format(seqtype))
 
 
 def stop_if_invalid_codontable(codontable, label='--codontable'):

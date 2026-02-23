@@ -8,7 +8,7 @@ from cdskit.util import (
     read_gff,
     read_seqs,
     resolve_threads,
-    stop_if_not_dna,
+    stop_if_not_seqtype,
     write_gff,
     write_seqs,
 )
@@ -94,7 +94,11 @@ def fix_out_of_range_gff_records(filtered_data, seqid_to_seq_len):
 
 def intersect_two_fasta_inputs(original_records1, args, threads=1):
     original_records2 = read_seqs(seqfile=args.seqfile2, seqformat=args.inseqformat2)
-    stop_if_not_dna(records=original_records2, label='--seqfile2')
+    stop_if_not_seqtype(
+        records=original_records2,
+        seqtype=getattr(args, 'seqtype', 'auto'),
+        label='--seqfile2',
+    )
     original_records1_names = [rec.id for rec in original_records1]
     original_records2_names = [rec.id for rec in original_records2]
     intersection_names = set(original_records1_names) & set(original_records2_names)
@@ -125,7 +129,11 @@ def intersect_fasta_with_gff(original_records1, args, threads=1):
 
 def intersection_main(args):
     original_records1 = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
-    stop_if_not_dna(records=original_records1, label='--seqfile')
+    stop_if_not_seqtype(
+        records=original_records1,
+        seqtype=getattr(args, 'seqtype', 'auto'),
+        label='--seqfile',
+    )
     threads = resolve_threads(getattr(args, 'threads', 1))
     if (args.seqfile2 is not None) and (args.ingff is not None):
         raise Exception('Specify either --seqfile2 or --ingff, but not both.')

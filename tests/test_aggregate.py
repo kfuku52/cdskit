@@ -367,7 +367,31 @@ class TestAggregateMain:
             outfile=str(output_path),
             expression=[r'prot'],
             mode='longest',
+            seqtype='dna',
         )
         with pytest.raises(Exception) as exc_info:
             aggregate_main(args)
         assert 'DNA-only input is required' in str(exc_info.value)
+
+    def test_aggregate_accepts_protein_input_when_seqtype_protein(self, temp_dir, mock_args):
+        input_path = temp_dir / "input.fasta"
+        output_path = temp_dir / "output.fasta"
+        records = [
+            SeqRecord(Seq("MKT"), id="geneA.1", name="geneA.1", description=""),
+            SeqRecord(Seq("MKTA"), id="geneA.2", name="geneA.2", description=""),
+            SeqRecord(Seq("QQQ"), id="geneB.1", name="geneB.1", description=""),
+        ]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(input_path),
+            outfile=str(output_path),
+            expression=[r'\.[0-9]+$'],
+            mode='longest',
+            seqtype='protein',
+        )
+        aggregate_main(args)
+
+        result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
+        assert len(result) == 2
+        assert any(record.id == "geneA.2" for record in result)

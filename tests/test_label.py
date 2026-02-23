@@ -237,6 +237,7 @@ class TestLabelMain:
             replace_chars='',
             clip_len=0,
             unique=False,
+            seqtype='dna',
         )
 
         label_main(args)
@@ -334,7 +335,28 @@ class TestLabelMain:
             replace_chars='',
             clip_len=0,
             unique=False,
+            seqtype='dna',
         )
         with pytest.raises(Exception) as exc_info:
             label_main(args)
         assert 'DNA-only input is required' in str(exc_info.value)
+
+    def test_label_accepts_protein_input_when_seqtype_protein(self, temp_dir, mock_args):
+        input_path = temp_dir / "input.fasta"
+        output_path = temp_dir / "output.fasta"
+        records = [SeqRecord(Seq("MKT"), id="prot.1", description="")]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(input_path),
+            outfile=str(output_path),
+            replace_chars='.--_',
+            clip_len=0,
+            unique=False,
+            seqtype='protein',
+        )
+        label_main(args)
+
+        result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
+        assert len(result) == 1
+        assert result[0].id == "prot_1"

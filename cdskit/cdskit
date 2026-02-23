@@ -43,6 +43,18 @@ p_threads = argparse.ArgumentParser(add_help=False)
 p_threads.add_argument('--threads', metavar='INT', default=1, type=int, required=False, action='store',
                        help='default=%(default)s: Number of worker threads for supported commands. 0 uses all detected CPUs.')
 
+p_seqtype = argparse.ArgumentParser(add_help=False)
+p_seqtype.add_argument(
+    '--seqtype',
+    metavar='dna|protein|auto',
+    default='auto',
+    type=str,
+    required=False,
+    action='store',
+    choices=['dna', 'protein', 'auto'],
+    help='default=%(default)s: Expected sequence type for input validation.',
+)
+
 
 
 def strtobool(val):
@@ -87,7 +99,7 @@ def command_aggregate(args):
     sys.stderr.write('cdskit aggregate: ended at {}\n'.format(datetime.now()))
 
 help_aggregate = 'Extracting the longest sequences combined with a sequence name regex. See `cdskit aggregate -h`'
-p_aggregate = subparsers.add_parser('aggregate', help=help_aggregate, parents=[p_version,p_infile,p_outfile,p_threads])
+p_aggregate = subparsers.add_parser('aggregate', help=help_aggregate, parents=[p_version,p_infile,p_outfile,p_seqtype,p_threads])
 p_aggregate.add_argument('-m', '--mode', metavar='STR', default='longest', type=str, required=False, action='store',
                          choices=['longest', ],
                          help='default=%(default)s: Criterion to keep a sequence during aggregation.')
@@ -165,7 +177,7 @@ def command_intersection(args):
     sys.stderr.write('cdskit intersection: ended at {}\n'.format(datetime.now()))
 
 help_intersection = 'Dropping non-overlapping sequence labels between two sequences files or between a sequence file and a gff file. See `cdskit intersection -h`'
-p_intersection = subparsers.add_parser('intersection', help=help_intersection, parents=[p_version,p_infile,p_outfile,p_gffio,p_threads])
+p_intersection = subparsers.add_parser('intersection', help=help_intersection, parents=[p_version,p_infile,p_outfile,p_gffio,p_seqtype,p_threads])
 p_intersection.add_argument('--seqfile2', metavar='PATH', default=None, type=str, required=False, action='store',
                             help='default=%(default)s: Input sequence file 2.')
 p_intersection.add_argument('--inseqformat2', metavar='STR', default='fasta', type=str, required=False, action='store',
@@ -187,7 +199,7 @@ def command_label(args):
     sys.stderr.write('cdskit label: ended at {}\n'.format(datetime.now()))
 
 help_label = 'Modifying sequence labels. See `cdskit label -h`'
-p_label = subparsers.add_parser('label', help=help_label, parents=[p_version,p_infile,p_outfile,p_threads])
+p_label = subparsers.add_parser('label', help=help_label, parents=[p_version,p_infile,p_outfile,p_seqtype,p_threads])
 p_label.add_argument('--replace_chars', metavar='FROM1FROM2...--TO', default='', type=str, required=False, action='store',
                      help='default=%(default)s: Replace sequence label characters. For example, "!@#$%%^&*+=/?<>|--_" replaces various characters with underbar ("_").')
 p_label.add_argument('--clip_len', metavar='INT', default=0, type=int, required=False, action='store',
@@ -300,7 +312,7 @@ def command_printseq(args):
     sys.stderr.write('cdskit printseq: ended at {}\n'.format(datetime.now()))
 
 help_printseq = 'Print a subset of sequences with a regex. See `cdskit printseq -h`'
-p_printseq = subparsers.add_parser('printseq', help=help_printseq, parents=[p_version,p_infile,p_threads])
+p_printseq = subparsers.add_parser('printseq', help=help_printseq, parents=[p_version,p_infile,p_seqtype,p_threads])
 p_printseq.add_argument('-n', '--seqname', default='', type=str, required=False, action='store',
                         help='default=%(default)s: Name of the sequence to print. Regex is supported.')
 p_printseq.add_argument('--show_seqname', metavar='yes|no', default='yes', type=strtobool, required=False, action='store',
@@ -315,7 +327,7 @@ def command_rmseq(args):
     sys.stderr.write('cdskit rmseq: ended at {}\n'.format(datetime.now()))
 
 help_rmseq = 'Removing a subset of sequences by using a sequence name regex and by detecting problematic sequence characters. See `cdskit rmseq -h`'
-p_rmseq = subparsers.add_parser('rmseq', help=help_rmseq, parents=[p_version,p_infile,p_outfile,p_threads])
+p_rmseq = subparsers.add_parser('rmseq', help=help_rmseq, parents=[p_version,p_infile,p_outfile,p_seqtype,p_threads])
 p_rmseq.add_argument('--seqname', default='', type=str, required=False, action='store',
                         help='default=%(default)s: Names of sequences to remove. Regex is supported.')
 p_rmseq.add_argument('--problematic_char', default='NX-?', type=str, required=False, action='store',

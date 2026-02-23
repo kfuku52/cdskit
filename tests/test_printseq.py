@@ -241,10 +241,31 @@ class TestPrintseqMain:
             seqfile=str(input_path),
             seqname='prot1',
             show_seqname=True,
+            seqtype='dna',
         )
         with pytest.raises(Exception) as exc_info:
             printseq_main(args)
         assert "DNA-only input is required" in str(exc_info.value)
+
+    def test_printseq_accepts_protein_input_when_seqtype_protein(self, temp_dir, mock_args, capsys):
+        input_path = temp_dir / "input.fasta"
+        records = [
+            SeqRecord(Seq("MKT"), id="prot1", name="prot1", description=""),
+            SeqRecord(Seq("QQQ"), id="prot2", name="prot2", description=""),
+        ]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(input_path),
+            seqname='prot1',
+            show_seqname=True,
+            seqtype='protein',
+        )
+        printseq_main(args)
+
+        captured = capsys.readouterr()
+        lines = [line for line in captured.out.strip().split('\n') if line]
+        assert lines == [">prot1", "MKT"]
 
 
 class TestPrintseqHelpers:

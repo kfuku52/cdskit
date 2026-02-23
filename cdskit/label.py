@@ -1,7 +1,7 @@
 import sys
 from collections import Counter
 
-from cdskit.util import read_seqs, resolve_threads, stop_if_not_dna, write_seqs
+from cdskit.util import read_seqs, resolve_threads, stop_if_not_seqtype, write_seqs
 
 
 def parse_replace_chars(replace_chars):
@@ -83,7 +83,11 @@ def validate_clip_len(clip_len):
 
 def label_main(args):
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
-    stop_if_not_dna(records=records, label='--seqfile')
+    stop_if_not_seqtype(
+        records=records,
+        seqtype=getattr(args, 'seqtype', 'auto'),
+        label='--seqfile',
+    )
     validate_clip_len(args.clip_len)
     _ = resolve_threads(getattr(args, 'threads', 1))
     if args.replace_chars != '':

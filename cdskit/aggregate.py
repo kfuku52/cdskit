@@ -4,7 +4,7 @@ import re
 import sys
 from functools import partial
 
-from cdskit.util import parallel_map_ordered, read_seqs, resolve_threads, stop_if_not_dna, write_seqs
+from cdskit.util import parallel_map_ordered, read_seqs, resolve_threads, stop_if_not_seqtype, write_seqs
 
 
 def aggregate_name(name, expressions):
@@ -41,7 +41,11 @@ def aggregate_main(args):
     sys.stderr.write('Criterion for aggregated sequences to retain: '+args.mode+'\n')
     validate_aggregate_expressions(expressions)
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
-    stop_if_not_dna(records=records, label='--seqfile')
+    stop_if_not_seqtype(
+        records=records,
+        seqtype=getattr(args, 'seqtype', 'auto'),
+        label='--seqfile',
+    )
     if len(expressions) == 0:
         write_seqs(records=records, outfile=args.outfile, outseqformat=args.outseqformat)
         return

@@ -1,7 +1,7 @@
 import re
 from functools import partial
 
-from cdskit.util import parallel_map_ordered, read_seqs, resolve_threads, stop_if_not_dna
+from cdskit.util import parallel_map_ordered, read_seqs, resolve_threads, stop_if_not_seqtype
 
 
 def record_matches_seqname(record, seqname_pattern):
@@ -28,7 +28,11 @@ def format_printseq_lines(record, show_seqname):
 
 def printseq_main(args):
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
-    stop_if_not_dna(records=records, label='--seqfile')
+    stop_if_not_seqtype(
+        records=records,
+        seqtype=getattr(args, 'seqtype', 'auto'),
+        label='--seqfile',
+    )
     compiled_pattern = compile_seqname_regex(args.seqname)
     threads = resolve_threads(getattr(args, 'threads', 1))
     match_flags = parallel_map_ordered(

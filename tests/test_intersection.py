@@ -58,6 +58,7 @@ class TestIntersectionMain:
             ingff=None,
             outgff=None,
             fix_outrange_gff_records=False,
+            seqtype='dna',
         )
 
         intersection_main(args)
@@ -137,6 +138,7 @@ class TestIntersectionMain:
             ingff=None,
             outgff=None,
             fix_outrange_gff_records=False,
+            seqtype='dna',
         )
 
         intersection_main(args)
@@ -433,6 +435,7 @@ seq1\tsource\tgene\t3\t20\t.\t+\t.\tID=g_end_beyond
             ingff=None,
             outgff=None,
             fix_outrange_gff_records=False,
+            seqtype='dna',
         )
 
         input1_records = list(Bio.SeqIO.parse(str(input1_path), "fasta"))
@@ -444,7 +447,7 @@ seq1\tsource\tgene\t3\t20\t.\t+\t.\tID=g_end_beyond
         if has_non_dna:
             with pytest.raises(Exception) as exc_info:
                 intersection_main(args)
-            assert "DNA-only input is required" in str(exc_info.value)
+            assert "input is required" in str(exc_info.value)
             return
 
         intersection_main(args)
@@ -493,6 +496,7 @@ seq1\tsource\tgene\t3\t20\t.\t+\t.\tID=g_end_beyond
             ingff=None,
             outgff=None,
             fix_outrange_gff_records=False,
+            seqtype='dna',
         )
 
         intersection_main(args)
@@ -594,6 +598,7 @@ chr3\tsource\tgene\t1\t12\t.\t+\t.\tID=gene2
             ingff=None,
             outgff=None,
             fix_outrange_gff_records=False,
+            seqtype='dna',
         )
 
         intersection_main(args)
@@ -683,6 +688,7 @@ chr3\tsource\tgene\t1\t12\t.\t+\t.\tID=gene2
             ingff=None,
             outgff=None,
             fix_outrange_gff_records=False,
+            seqtype='dna',
         )
 
         with pytest.raises(Exception) as exc_info:
@@ -708,8 +714,45 @@ chr3\tsource\tgene\t1\t12\t.\t+\t.\tID=gene2
             ingff=None,
             outgff=None,
             fix_outrange_gff_records=False,
+            seqtype='dna',
         )
 
         with pytest.raises(Exception) as exc_info:
             intersection_main(args)
         assert '--seqfile2' in str(exc_info.value)
+
+    def test_intersection_accepts_protein_input_when_seqtype_protein(self, temp_dir, mock_args):
+        input1_path = temp_dir / "input1.fasta"
+        input2_path = temp_dir / "input2.fasta"
+        output1_path = temp_dir / "output1.fasta"
+        output2_path = temp_dir / "output2.fasta"
+
+        records1 = [
+            SeqRecord(Seq("MKT"), id="protA", name="protA", description=""),
+            SeqRecord(Seq("QQQ"), id="protB", name="protB", description=""),
+        ]
+        records2 = [
+            SeqRecord(Seq("AAA"), id="protA", name="protA", description=""),
+            SeqRecord(Seq("PPP"), id="protC", name="protC", description=""),
+        ]
+        Bio.SeqIO.write(records1, str(input1_path), "fasta")
+        Bio.SeqIO.write(records2, str(input2_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(input1_path),
+            seqfile2=str(input2_path),
+            inseqformat2='fasta',
+            outfile=str(output1_path),
+            outfile2=str(output2_path),
+            outseqformat2='fasta',
+            ingff=None,
+            outgff=None,
+            fix_outrange_gff_records=False,
+            seqtype='protein',
+        )
+        intersection_main(args)
+
+        out1 = list(Bio.SeqIO.parse(str(output1_path), "fasta"))
+        out2 = list(Bio.SeqIO.parse(str(output2_path), "fasta"))
+        assert [r.id for r in out1] == ["protA"]
+        assert [r.id for r in out2] == ["protA"]

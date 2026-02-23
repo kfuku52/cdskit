@@ -515,7 +515,31 @@ class TestRmseqMain:
             seqname='$^',
             problematic_percent=0,
             problematic_char=['N'],
+            seqtype='dna',
         )
         with pytest.raises(Exception) as exc_info:
             rmseq_main(args)
         assert 'DNA-only input is required' in str(exc_info.value)
+
+    def test_rmseq_accepts_protein_input_when_seqtype_protein(self, temp_dir, mock_args):
+        input_path = temp_dir / "input.fasta"
+        output_path = temp_dir / "output.fasta"
+        records = [
+            SeqRecord(Seq("MKT"), id="prot_keep", description=""),
+            SeqRecord(Seq("QQQ"), id="prot_remove", description=""),
+        ]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(input_path),
+            outfile=str(output_path),
+            seqname='prot_remove',
+            problematic_percent=0,
+            problematic_char=['X'],
+            seqtype='protein',
+        )
+        rmseq_main(args)
+
+        result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
+        assert len(result) == 1
+        assert result[0].id == "prot_keep"

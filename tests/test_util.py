@@ -187,6 +187,50 @@ class TestStopIfNotDna:
         assert "P" in str(exc_info.value)
 
 
+class TestStopIfNotProtein:
+    """Tests for stop_if_not_protein function."""
+
+    def test_accepts_protein_sequences(self):
+        records = [
+            SeqRecord(Seq("MKT*"), id="prot1"),
+            SeqRecord(Seq("QX-.?"), id="prot2"),
+        ]
+        util.stop_if_not_protein(records)
+
+    def test_rejects_invalid_protein_letters(self):
+        records = [
+            SeqRecord(Seq("MK1"), id="bad1"),
+            SeqRecord(Seq("QQQ"), id="ok1"),
+        ]
+        with pytest.raises(Exception) as exc_info:
+            util.stop_if_not_protein(records, label="--seqfile")
+        assert "Protein-only input is required" in str(exc_info.value)
+        assert "bad1" in str(exc_info.value)
+        assert "1" in str(exc_info.value)
+
+
+class TestStopIfNotSeqtype:
+    """Tests for stop_if_not_seqtype function."""
+
+    def test_accepts_protein_when_seqtype_protein(self):
+        records = [SeqRecord(Seq("MKT"), id="prot1")]
+        util.stop_if_not_seqtype(records=records, seqtype="protein", label="--seqfile")
+
+    def test_accepts_protein_when_seqtype_auto(self):
+        records = [SeqRecord(Seq("MKT"), id="prot1")]
+        util.stop_if_not_seqtype(records=records, seqtype="auto", label="--seqfile")
+
+    def test_accepts_protein_when_seqtype_default(self):
+        records = [SeqRecord(Seq("MKT"), id="prot1")]
+        util.stop_if_not_seqtype(records=records, label="--seqfile")
+
+    def test_rejects_unknown_seqtype(self):
+        records = [SeqRecord(Seq("ATG"), id="seq1")]
+        with pytest.raises(Exception) as exc_info:
+            util.stop_if_not_seqtype(records=records, seqtype="rna", label="--seqfile")
+        assert "Invalid --seqtype" in str(exc_info.value)
+
+
 class TestStopIfInvalidCodontable:
     def test_accepts_valid_codontable(self):
         util.stop_if_invalid_codontable(1)
