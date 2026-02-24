@@ -22,6 +22,7 @@ from cdskit.localize_model import infer_labels_from_uniprot_cc, load_localize_mo
 
 try:
     import torch  # noqa: F401
+    import torch.nn  # noqa: F401
     HAS_TORCH = True
 except Exception:
     HAS_TORCH = False
@@ -314,6 +315,8 @@ def test_localize_learn_and_predict_bilstm_attention(temp_dir, mock_args):
         dl_lr=1e-3,
         dl_weight_decay=0.0,
         dl_class_weight=True,
+        dl_loss='focal',
+        dl_balanced_batch=True,
         dl_seed=1,
         dl_device='cpu',
         cv_folds=0,
@@ -323,6 +326,8 @@ def test_localize_learn_and_predict_bilstm_attention(temp_dir, mock_args):
     localize_learn_main(args_train)
     model = load_localize_model(str(model_path))
     assert model['model_type'] == 'bilstm_attention_v1'
+    assert model['metadata']['dl_loss'] == 'focal'
+    assert model['metadata']['dl_balanced_batch'] is True
 
     input_path = temp_dir / 'predict_input_bilstm.fasta'
     output_path = temp_dir / 'predict_output_bilstm.tsv'
@@ -381,6 +386,8 @@ def test_localize_learn_bilstm_cross_validation_metrics(temp_dir, mock_args):
         dl_lr=1e-3,
         dl_weight_decay=0.0,
         dl_class_weight=True,
+        dl_loss='ce',
+        dl_balanced_batch=False,
         dl_seed=2,
         dl_device='cpu',
         cv_folds=2,
@@ -396,6 +403,26 @@ def test_localize_learn_bilstm_cross_validation_metrics(temp_dir, mock_args):
     assert metrics['cv_folds'] == 2.0
     assert 0.0 <= metrics['cv_class_accuracy_mean'] <= 1.0
     assert 0.0 <= metrics['cv_perox_accuracy_mean'] <= 1.0
+
+
+def test_localize_learn_rejects_invalid_dl_loss(mock_args):
+    args = mock_args(
+        training_tsv='dummy.tsv',
+        model_out='dummy_model.json',
+        report='',
+        seq_col='sequence',
+        seqtype='dna',
+        label_mode='explicit',
+        localization_col='localization',
+        perox_col='peroxisome',
+        skip_ambiguous=True,
+        codontable=1,
+        dl_loss='unsupported_loss',
+        threads=1,
+    )
+    with pytest.raises(ValueError) as exc_info:
+        localize_learn_main(args)
+    assert '--dl_loss should be ce or focal' in str(exc_info.value)
 
 
 def test_uniprot_cc_label_inference():

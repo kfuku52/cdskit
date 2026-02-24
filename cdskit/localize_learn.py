@@ -489,6 +489,8 @@ def evaluate_cross_validation(
                 seed=dl_train_params['seed'],
                 use_class_weight=dl_train_params['use_class_weight'],
                 device=dl_train_params['device'],
+                loss_name=dl_train_params['loss_name'],
+                balanced_batch=dl_train_params['balanced_batch'],
             )
         else:
             raise ValueError('Unsupported model_arch: {}'.format(model_arch))
@@ -628,6 +630,8 @@ def localize_learn_main(args):
     dl_lr = float(getattr(args, 'dl_lr', 1.0e-3))
     dl_weight_decay = float(getattr(args, 'dl_weight_decay', 1.0e-4))
     dl_class_weight = bool(getattr(args, 'dl_class_weight', True))
+    dl_loss = str(getattr(args, 'dl_loss', 'ce')).strip().lower()
+    dl_balanced_batch = bool(getattr(args, 'dl_balanced_batch', False))
     dl_seed = int(getattr(args, 'dl_seed', 1))
     dl_device = str(getattr(args, 'dl_device', 'auto')).strip().lower()
     if dl_seq_len < 1:
@@ -648,6 +652,8 @@ def localize_learn_main(args):
         raise ValueError('--dl_lr should be > 0.')
     if dl_weight_decay < 0:
         raise ValueError('--dl_weight_decay should be >= 0.')
+    if dl_loss not in ['ce', 'focal']:
+        raise ValueError('--dl_loss should be ce or focal.')
     if model_arch == 'bilstm_attention':
         from cdskit.localize_bilstm import require_torch
         require_torch()
@@ -748,6 +754,8 @@ def localize_learn_main(args):
             seed=dl_seed,
             use_class_weight=dl_class_weight,
             device=dl_device,
+            loss_name=dl_loss,
+            balanced_batch=dl_balanced_batch,
         )
         model_type = 'bilstm_attention_v1'
     else:
@@ -769,6 +777,8 @@ def localize_learn_main(args):
         'seed': dl_seed,
         'use_class_weight': dl_class_weight,
         'device': dl_device,
+        'loss_name': dl_loss,
+        'balanced_batch': dl_balanced_batch,
     }
     model = {
         'model_type': model_type,
@@ -842,6 +852,8 @@ def localize_learn_main(args):
         model['metadata']['dl_lr'] = float(dl_lr)
         model['metadata']['dl_weight_decay'] = float(dl_weight_decay)
         model['metadata']['dl_class_weight'] = bool(dl_class_weight)
+        model['metadata']['dl_loss'] = str(dl_loss)
+        model['metadata']['dl_balanced_batch'] = bool(dl_balanced_batch)
         model['metadata']['dl_seed'] = int(dl_seed)
         model['metadata']['dl_device'] = str(dl_device)
 

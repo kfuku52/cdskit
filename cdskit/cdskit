@@ -302,6 +302,11 @@ p_localize_learn.add_argument('--dl_weight_decay', metavar='FLOAT', default=1e-4
                               help='default=%(default)s: Weight decay for bilstm_attention.')
 p_localize_learn.add_argument('--dl_class_weight', metavar='yes|no', default='yes', type=strtobool, required=False, action='store',
                               help='default=%(default)s: Use inverse-frequency class weights for bilstm_attention.')
+p_localize_learn.add_argument('--dl_loss', metavar='ce|focal', default='ce', type=str, required=False, action='store',
+                              choices=['ce', 'focal'],
+                              help='default=%(default)s: Loss function for bilstm_attention training.')
+p_localize_learn.add_argument('--dl_balanced_batch', metavar='yes|no', default='no', type=strtobool, required=False, action='store',
+                              help='default=%(default)s: Use class-balanced mini-batch sampling for bilstm_attention training.')
 p_localize_learn.add_argument('--dl_seed', metavar='INT', default=1, type=int, required=False, action='store',
                               help='default=%(default)s: Random seed for bilstm_attention training.')
 p_localize_learn.add_argument('--dl_device', metavar='auto|cpu|cuda', default='auto', type=str, required=False, action='store',

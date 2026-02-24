@@ -126,6 +126,91 @@ def _class_weights_from_labels(labels, class_order):
     return np.asarray(weights, dtype=np.float32)
 
 
+def _init_class_sampling_pools(y, rng):
+    observed_classes = sorted(np.unique(y).tolist())
+    pools = dict()
+    cursors = dict()
+    for class_idx in observed_classes:
+        class_indices = np.where(y == class_idx)[0].astype(np.int64)
+        rng.shuffle(class_indices)
+        pools[class_idx] = class_indices
+        cursors[class_idx] = 0
+    return observed_classes, pools, cursors
+
+
+def _draw_index_from_class(class_idx, pools, cursors, rng):
+    pool = pools[class_idx]
+    if pool.shape[0] == 0:
+        raise ValueError('No sample is available for class index {}.'.format(class_idx))
+    cursor = int(cursors[class_idx])
+    if cursor >= pool.shape[0]:
+        pool = pool.copy()
+        rng.shuffle(pool)
+        pools[class_idx] = pool
+        cursor = 0
+    out_index = int(pool[cursor])
+    cursors[class_idx] = cursor + 1
+    return out_index
+
+
+def _sample_balanced_batch_indices(observed_classes, pools, cursors, batch_size, rng):
+    batch = list()
+    num_class = len(observed_classes)
+    if batch_size >= num_class:
+        class_order = np.asarray(observed_classes, dtype=np.int64)
+        rng.shuffle(class_order)
+        for class_idx in class_order.tolist():
+            batch.append(
+                _draw_index_from_class(
+                    class_idx=class_idx,
+                    pools=pools,
+                    cursors=cursors,
+                    rng=rng,
+                )
+            )
+    while len(batch) < batch_size:
+        class_idx = int(observed_classes[int(rng.integers(0, num_class))])
+        batch.append(
+            _draw_index_from_class(
+                class_idx=class_idx,
+                pools=pools,
+                cursors=cursors,
+                rng=rng,
+            )
+        )
+    batch = np.asarray(batch, dtype=np.int64)
+    rng.shuffle(batch)
+    return batch
+
+
+def _resolve_loss_function(torch, nn, weight_tensor, loss_name='ce', focal_gamma=2.0):
+    loss_name = str(loss_name).strip().lower()
+    if loss_name == 'ce':
+        return nn.CrossEntropyLoss(weight=weight_tensor), loss_name
+    if loss_name == 'focal':
+        import torch.nn.functional as F
+        focal_gamma = float(focal_gamma)
+        if focal_gamma < 0:
+            raise ValueError('focal_gamma should be >= 0.')
+
+        def focal_loss(logits, targets):
+            log_probs = F.log_softmax(logits, dim=1)
+            probs = log_probs.exp()
+            target_idx = targets.unsqueeze(1)
+            target_prob = probs.gather(1, target_idx).squeeze(1)
+            ce = F.nll_loss(
+                log_probs,
+                targets,
+                reduction='none',
+                weight=weight_tensor,
+            )
+            focal_factor = (1.0 - target_prob).pow(focal_gamma)
+            return (focal_factor * ce).mean()
+
+        return focal_loss, loss_name
+    raise ValueError('Unsupported loss_name: {}'.format(loss_name))
+
+
 def fit_bilstm_attention_classifier(
     aa_sequences,
     labels,
@@ -142,6 +227,9 @@ def fit_bilstm_attention_classifier(
     seed,
     use_class_weight,
     device,
+    loss_name='ce',
+    balanced_batch=False,
+    focal_gamma=2.0,
 ):
     torch, nn = require_torch()
     np.random.seed(int(seed))
@@ -171,6 +259,12 @@ def fit_bilstm_attention_classifier(
         raise ValueError('--dl_epochs should be >= 1.')
     if batch_size < 1:
         raise ValueError('--dl_batch_size should be >= 1.')
+    loss_name = str(loss_name).strip().lower()
+    if loss_name not in ['ce', 'focal']:
+        raise ValueError('loss_name should be ce or focal.')
+    balanced_batch = bool(balanced_batch)
+    if float(focal_gamma) < 0:
+        raise ValueError('focal_gamma should be >= 0.')
 
     resolved_device = resolve_torch_device(device_text=device)
     model = _build_bilstm_attention_module(
@@ -201,12 +295,48 @@ def fit_bilstm_attention_classifier(
         )
     else:
         weight_tensor = None
-    loss_fn = nn.CrossEntropyLoss(weight=weight_tensor)
+    loss_fn, _ = _resolve_loss_function(
+        torch=torch,
+        nn=nn,
+        weight_tensor=weight_tensor,
+        loss_name=loss_name,
+        focal_gamma=focal_gamma,
+    )
 
     indices = np.arange(x.shape[0], dtype=np.int64)
+    rng = np.random.default_rng(int(seed))
+    n_batch = int(np.ceil(x.shape[0] / float(batch_size)))
     for _ in range(epochs):
-        np.random.shuffle(indices)
         model.train()
+        if balanced_batch:
+            observed_classes, pools, cursors = _init_class_sampling_pools(y=y, rng=rng)
+            for _ in range(n_batch):
+                batch_idx = _sample_balanced_batch_indices(
+                    observed_classes=observed_classes,
+                    pools=pools,
+                    cursors=cursors,
+                    batch_size=batch_size,
+                    rng=rng,
+                )
+                xb = torch.as_tensor(
+                    x[batch_idx, :],
+                    dtype=torch.long,
+                    device=resolved_device,
+                )
+                yb = torch.as_tensor(
+                    y[batch_idx],
+                    dtype=torch.long,
+                    device=resolved_device,
+                )
+                mask = (xb != PAD_INDEX)
+                optimizer.zero_grad(set_to_none=True)
+                logits = model(tokens=xb, mask=mask)
+                loss = loss_fn(logits, yb)
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                optimizer.step()
+            continue
+        rng.shuffle(indices)
         for start in range(0, indices.shape[0], batch_size):
             batch_idx = indices[start:start + batch_size]
             xb = torch.as_tensor(
