@@ -9,6 +9,7 @@ from cdskit.translate import translate_sequence_string
 from cdskit.util import DNA_ALLOWED_CHARS
 
 LOCALIZATION_CLASSES = ('noTP', 'SP', 'mTP', 'cTP', 'lTP')
+TP_STAGE_CLASSES = ('SP', 'mTP', 'cTP', 'lTP')
 
 AA_HYDROPHOBIC = frozenset('AILMFWVY')
 AA_BASIC = frozenset('KRH')
@@ -93,6 +94,80 @@ def softmax(logits):
     if denom <= 0:
         return np.zeros_like(exp_vals)
     return exp_vals / denom
+
+
+def _sanitize_probability(value):
+    try:
+        out = float(value)
+    except Exception:
+        return 0.0
+    if (not np.isfinite(out)) or (out < 0.0):
+        return 0.0
+    return out
+
+
+def normalize_class_probabilities(class_probs):
+    out_probs = {class_name: 0.0 for class_name in LOCALIZATION_CLASSES}
+    if isinstance(class_probs, dict):
+        for class_name in LOCALIZATION_CLASSES:
+            out_probs[class_name] = _sanitize_probability(class_probs.get(class_name, 0.0))
+    total = float(sum(out_probs.values()))
+    if total <= 0.0:
+        out_probs['noTP'] = 1.0
+        return out_probs
+    for class_name in LOCALIZATION_CLASSES:
+        out_probs[class_name] = out_probs[class_name] / total
+    return out_probs
+
+
+def apply_temperature_scaling(class_probs, temperature):
+    probs = normalize_class_probabilities(class_probs=class_probs)
+    try:
+        temp = float(temperature)
+    except Exception:
+        temp = 1.0
+    if (not np.isfinite(temp)) or (temp <= 0.0) or (abs(temp - 1.0) < 1.0e-12):
+        return probs
+    vec = np.asarray([probs[class_name] for class_name in LOCALIZATION_CLASSES], dtype=np.float64)
+    vec = np.clip(vec, 1.0e-12, 1.0)
+    logits = np.log(vec) / temp
+    scaled = softmax(logits)
+    return {LOCALIZATION_CLASSES[i]: float(scaled[i]) for i in range(len(LOCALIZATION_CLASSES))}
+
+
+def _predict_class_with_thresholds(class_probs, class_thresholds):
+    probs = normalize_class_probabilities(class_probs=class_probs)
+    scores = list()
+    for class_name in LOCALIZATION_CLASSES:
+        threshold = 1.0
+        if isinstance(class_thresholds, dict):
+            threshold = class_thresholds.get(class_name, 1.0)
+        try:
+            threshold = float(threshold)
+        except Exception:
+            threshold = 1.0
+        if (not np.isfinite(threshold)) or (threshold <= 0.0):
+            threshold = 1.0
+        scores.append(float(probs[class_name]) / threshold)
+    pred_idx = int(np.argmax(np.asarray(scores, dtype=np.float64)))
+    return LOCALIZATION_CLASSES[pred_idx], probs
+
+
+def postprocess_localization_probabilities(class_probs, localization_model):
+    probs = normalize_class_probabilities(class_probs=class_probs)
+    calibration = localization_model.get('probability_calibration', {})
+    if isinstance(calibration, dict):
+        method = str(calibration.get('method', '')).strip().lower()
+        if method == 'temperature':
+            probs = apply_temperature_scaling(
+                class_probs=probs,
+                temperature=calibration.get('temperature', 1.0),
+            )
+    pred_class, probs = _predict_class_with_thresholds(
+        class_probs=probs,
+        class_thresholds=localization_model.get('class_thresholds', None),
+    )
+    return pred_class, probs
 
 
 def fraction_in_set(seq, chars):
@@ -409,23 +484,103 @@ def predict_perox(feature_vec, perox_model):
     return pred, probs
 
 
+def _predict_constant_localization(localization_model):
+    class_order = list(localization_model.get('class_order', []))
+    class_label = str(localization_model.get('class_label', '')).strip()
+    if class_label == '':
+        if len(class_order) == 1:
+            class_label = class_order[0]
+        else:
+            raise ValueError('Constant localization model is missing class_label.')
+    if len(class_order) == 0:
+        class_order = [class_label]
+    if class_label not in class_order:
+        class_order.append(class_label)
+    probs = {name: 0.0 for name in class_order}
+    probs[class_label] = 1.0
+    return class_label, probs
+
+
+def _predict_localization_from_model(aa_seq, feature_vec, localization_model, model_type):
+    if str(localization_model.get('mode', '')).strip().lower() == 'constant':
+        return _predict_constant_localization(localization_model=localization_model)
+    if model_type == 'nearest_centroid_v1':
+        return predict_nearest_centroid(
+            feature_vec=feature_vec,
+            model=localization_model,
+        )
+    if model_type == 'bilstm_attention_v1':
+        from cdskit.localize_bilstm import predict_bilstm_attention
+        return predict_bilstm_attention(
+            aa_seq=aa_seq,
+            localization_model=localization_model,
+            device='cpu',
+        )
+    raise ValueError('Unsupported model_type: {}'.format(model_type))
+
+
+def predict_two_stage_localization(aa_seq, feature_vec, localization_model, model_type):
+    stage1_model = localization_model.get('stage1_model', {})
+    stage2_model = localization_model.get('stage2_model', {})
+    if (not isinstance(stage1_model, dict)) or (not isinstance(stage2_model, dict)):
+        raise ValueError('Invalid two-stage localization model payload.')
+
+    _, stage1_probs = _predict_localization_from_model(
+        aa_seq=aa_seq,
+        feature_vec=feature_vec,
+        localization_model=stage1_model,
+        model_type=model_type,
+    )
+    _, stage2_probs = _predict_localization_from_model(
+        aa_seq=aa_seq,
+        feature_vec=feature_vec,
+        localization_model=stage2_model,
+        model_type=model_type,
+    )
+
+    out_probs = {class_name: 0.0 for class_name in LOCALIZATION_CLASSES}
+    p_no_tp = float(stage1_probs.get('noTP', 0.0))
+    p_tp = float(stage1_probs.get('TP', max(0.0, 1.0 - p_no_tp)))
+    out_probs['noTP'] = p_no_tp
+    for class_name in TP_STAGE_CLASSES:
+        out_probs[class_name] = p_tp * float(stage2_probs.get(class_name, 0.0))
+
+    total = float(sum(out_probs.values()))
+    if total <= 0.0:
+        out_probs = {class_name: 0.0 for class_name in LOCALIZATION_CLASSES}
+        out_probs['noTP'] = 1.0
+    else:
+        for class_name in LOCALIZATION_CLASSES:
+            out_probs[class_name] = out_probs[class_name] / total
+
+    pred_idx = int(np.argmax([out_probs[class_name] for class_name in LOCALIZATION_CLASSES]))
+    pred_class = LOCALIZATION_CLASSES[pred_idx]
+    return pred_class, out_probs
+
+
 def predict_localization_and_peroxisome(aa_seq, model):
     feats, perox_signals = extract_localize_features(aa_seq=aa_seq)
     model_type = str(model.get('model_type', ''))
-    if model_type == 'nearest_centroid_v1':
-        pred_class, class_probs = predict_nearest_centroid(
-            feature_vec=feats,
-            model=model['localization_model'],
-        )
-    elif model_type == 'bilstm_attention_v1':
-        from cdskit.localize_bilstm import predict_bilstm_attention
-        pred_class, class_probs = predict_bilstm_attention(
+    localization_model = model['localization_model']
+    localization_strategy = str(localization_model.get('strategy', 'single_stage')).strip().lower()
+    if localization_strategy == 'two_stage':
+        _, class_probs = predict_two_stage_localization(
             aa_seq=aa_seq,
-            localization_model=model['localization_model'],
-            device='cpu',
+            feature_vec=feats,
+            localization_model=localization_model,
+            model_type=model_type,
         )
     else:
-        raise ValueError('Unsupported model_type: {}'.format(model_type))
+        _, class_probs = _predict_localization_from_model(
+            aa_seq=aa_seq,
+            feature_vec=feats,
+            localization_model=localization_model,
+            model_type=model_type,
+        )
+    pred_class, class_probs = postprocess_localization_probabilities(
+        class_probs=class_probs,
+        localization_model=localization_model,
+    )
     _, perox_probs = predict_perox(
         feature_vec=feats,
         perox_model=model['perox_model'],
@@ -442,6 +597,19 @@ def predict_localization_and_peroxisome(aa_seq, model):
     }
 
 
+def _strip_runtime_caches(value):
+    if isinstance(value, dict):
+        out = dict()
+        for key, val in value.items():
+            if key == '_runtime_model_cache':
+                continue
+            out[key] = _strip_runtime_caches(val)
+        return out
+    if isinstance(value, list):
+        return [_strip_runtime_caches(v) for v in value]
+    return value
+
+
 def save_localize_model(model, path):
     model_type = str(model.get('model_type', ''))
     if model_type == 'nearest_centroid_v1':
@@ -451,11 +619,7 @@ def save_localize_model(model, path):
     if model_type == 'bilstm_attention_v1':
         from cdskit.localize_bilstm import require_torch
         torch, _ = require_torch()
-        to_save = dict(model)
-        localization_model = dict(to_save.get('localization_model', {}))
-        if '_runtime_model_cache' in localization_model:
-            del localization_model['_runtime_model_cache']
-        to_save['localization_model'] = localization_model
+        to_save = _strip_runtime_caches(dict(model))
         torch.save({'model': to_save}, path)
         return
     raise ValueError('Unsupported model_type: {}'.format(model_type))

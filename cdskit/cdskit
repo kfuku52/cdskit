@@ -251,8 +251,9 @@ p_localize_learn.add_argument('--training_tsv', metavar='PATH', default='', type
                               help='default=%(default)s: Tab-separated training table path. Use this OR UniProt source options (--uniprot_query/--uniprot_preset).')
 p_localize_learn.add_argument('--uniprot_query', metavar='QUERY', default='', type=str, required=False, action='store',
                               help='default=%(default)s: UniProt query for automatic training-data download. Example: "taxonomy_id:3702". Use this (optionally with --uniprot_preset) OR --training_tsv.')
-p_localize_learn.add_argument('--uniprot_preset', metavar='none|viridiplantae|eukaryota|metazoa|fungi', default='none', type=str, required=False, action='store',
-                              choices=['none', 'viridiplantae', 'eukaryota', 'metazoa', 'fungi'],
+p_localize_learn.add_argument('--uniprot_preset', metavar='none|viridiplantae|eukaryota|metazoa|fungi|non_viridiplantae_euk|protist_core|bacteria_hard_negative', default='none', type=str, required=False, action='store',
+                              choices=['none', 'viridiplantae', 'eukaryota', 'metazoa', 'fungi',
+                                       'non_viridiplantae_euk', 'protist_core', 'bacteria_hard_negative'],
                               help='default=%(default)s: Preset UniProt query scope. This can be combined with --uniprot_query by AND.')
 p_localize_learn.add_argument('--uniprot_reviewed', metavar='yes|no', default='yes', type=strtobool, required=False, action='store',
                               help='default=%(default)s: Restrict UniProt download to reviewed entries (Swiss-Prot).')
@@ -279,9 +280,21 @@ p_localize_learn.add_argument('--cv_folds', metavar='INT', default=0, type=int, 
                               help='default=%(default)s: Number of stratified cross-validation folds for model evaluation. 0 disables CV.')
 p_localize_learn.add_argument('--cv_seed', metavar='INT', default=1, type=int, required=False, action='store',
                               help='default=%(default)s: Random seed for cross-validation fold assignment.')
+p_localize_learn.add_argument('--cv_fold_col', metavar='STR', default='', type=str, required=False, action='store',
+                              help='default=%(default)s: Optional fold-id column for fixed CV splits. When set, folds are derived from this column instead of random stratification.')
 p_localize_learn.add_argument('--model_arch', metavar='nearest_centroid|bilstm_attention', default='nearest_centroid', type=str, required=False, action='store',
                               choices=['nearest_centroid', 'bilstm_attention'],
                               help='default=%(default)s: Localization model architecture.')
+p_localize_learn.add_argument('--localize_strategy', metavar='single_stage|two_stage', default='single_stage', type=str, required=False, action='store',
+                              choices=['single_stage', 'two_stage'],
+                              help='default=%(default)s: Localization class strategy. "two_stage" predicts noTP vs TP first, then TP subclasses.')
+p_localize_learn.add_argument('--localize_temperature_scale', metavar='yes|no', default='no', type=strtobool, required=False, action='store',
+                              help='default=%(default)s: Fit temperature scaling on out-of-fold probabilities (requires CV).')
+p_localize_learn.add_argument('--localize_threshold_tune', metavar='yes|no', default='no', type=strtobool, required=False, action='store',
+                              help='default=%(default)s: Tune class-specific decision thresholds from out-of-fold probabilities (requires CV).')
+p_localize_learn.add_argument('--localize_threshold_objective', metavar='overall|macro', default='macro', type=str, required=False, action='store',
+                              choices=['overall', 'macro'],
+                              help='default=%(default)s: Objective used by --localize_threshold_tune.')
 p_localize_learn.add_argument('--dl_seq_len', metavar='INT', default=200, type=int, required=False, action='store',
                               help='default=%(default)s: N-terminal amino acid length used by bilstm_attention.')
 p_localize_learn.add_argument('--dl_embed_dim', metavar='INT', default=32, type=int, required=False, action='store',

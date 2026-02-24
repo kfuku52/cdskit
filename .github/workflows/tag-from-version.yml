@@ -1,6 +1,10 @@
-name: Manual Tag from Version
+name: Auto Tag from Version
 
 on:
+  push:
+    branches:
+      - master
+      - main
   workflow_dispatch:
 
 jobs:

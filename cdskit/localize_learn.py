@@ -12,11 +12,14 @@ import numpy as np
 from cdskit.localize_model import (
     FEATURE_NAMES,
     LOCALIZATION_CLASSES,
+    TP_STAGE_CLASSES,
     extract_localize_features,
     fit_nearest_centroid_classifier,
     fit_perox_binary_classifier,
     infer_labels_from_uniprot_cc,
     is_dna_like,
+    normalize_class_probabilities,
+    predict_localization_and_peroxisome,
     normalize_localization_label,
     normalize_yes_no,
     save_localize_model,
@@ -36,6 +39,12 @@ UNIPROT_PRESET_QUERIES = {
     'eukaryota': 'taxonomy_id:2759',
     'metazoa': 'taxonomy_id:33208',
     'fungi': 'taxonomy_id:4751',
+    'non_viridiplantae_euk': '(taxonomy_id:2759) AND (NOT taxonomy_id:33090)',
+    'protist_core': (
+        '(taxonomy_id:2759) AND (NOT taxonomy_id:33090) '
+        'AND (NOT taxonomy_id:33208) AND (NOT taxonomy_id:4751)'
+    ),
+    'bacteria_hard_negative': 'taxonomy_id:2',
 }
 
 
@@ -236,6 +245,7 @@ def parse_training_row(
     localization_col,
     perox_col,
     skip_ambiguous,
+    cv_fold_col='',
 ):
     seq_raw = row.get(seq_col, '')
     if seq_raw is None:
@@ -279,8 +289,17 @@ def parse_training_row(
     else:
         raise ValueError('Unsupported --label_mode: {}'.format(label_mode))
 
+    fold_id = None
+    cv_fold_col = str(cv_fold_col or '').strip()
+    if cv_fold_col != '':
+        fold_raw = row.get(cv_fold_col, None)
+        if (fold_raw is None) or (str(fold_raw).strip() == ''):
+            txt = 'Missing fold value in column "{}" at row {} in training table.'
+            raise ValueError(txt.format(cv_fold_col, row_index + 1))
+        fold_id = str(fold_raw).strip()
+
     feats, _ = extract_localize_features(aa_seq=aa_seq)
-    return aa_seq, feats, class_label, perox_label
+    return aa_seq, feats, class_label, perox_label, fold_id
 
 
 def build_training_matrix(
@@ -292,11 +311,15 @@ def build_training_matrix(
     localization_col,
     perox_col,
     skip_ambiguous,
+    cv_fold_col='',
 ):
     features = list()
     aa_sequences = list()
     class_labels = list()
     perox_labels = list()
+    fold_ids = None
+    if str(cv_fold_col or '').strip() != '':
+        fold_ids = list()
     skipped = 0
     for i, row in enumerate(rows):
         parsed = parse_training_row(
@@ -309,19 +332,22 @@ def build_training_matrix(
             localization_col=localization_col,
             perox_col=perox_col,
             skip_ambiguous=skip_ambiguous,
+            cv_fold_col=cv_fold_col,
         )
         if parsed is None:
             skipped += 1
             continue
-        aa_seq, feat_vec, class_label, perox_label = parsed
+        aa_seq, feat_vec, class_label, perox_label, fold_id = parsed
         aa_sequences.append(aa_seq)
         features.append(feat_vec)
         class_labels.append(class_label)
         perox_labels.append(perox_label)
+        if fold_ids is not None:
+            fold_ids.append(fold_id)
     if len(features) == 0:
         raise ValueError('No valid training sample remained after filtering.')
     x = np.asarray(features, dtype=np.float64)
-    return x, aa_sequences, class_labels, perox_labels, skipped
+    return x, aa_sequences, class_labels, perox_labels, skipped, fold_ids
 
 
 def calculate_training_metrics(
@@ -339,27 +365,19 @@ def calculate_training_metrics(
     class_total = {class_name: 0 for class_name in LOCALIZATION_CLASSES}
     class_correct = {class_name: 0 for class_name in LOCALIZATION_CLASSES}
     for i in range(x.shape[0]):
-        if model_arch == 'nearest_centroid':
-            pred = predict_localization_and_peroxisome_from_features(
-                feature_vec=x[i, :],
-                model=model,
-            )
-        elif model_arch == 'bilstm_attention':
-            pred = predict_localization_and_peroxisome_from_sequence(
-                aa_seq=aa_sequences[i],
-                feature_vec=x[i, :],
-                model=model,
-                device=dl_device,
-            )
-        else:
-            raise ValueError('Unsupported model_arch: {}'.format(model_arch))
+        _ = model_arch
+        _ = dl_device
+        pred = predict_localization_and_peroxisome(
+            aa_seq=aa_sequences[i],
+            model=model,
+        )
         true_class = class_labels[i]
         true_perox = perox_labels[i]
         class_total[true_class] = class_total.get(true_class, 0) + 1
         if pred['predicted_class'] == true_class:
             correct_class += 1
             class_correct[true_class] = class_correct.get(true_class, 0) + 1
-        pred_perox = 'yes' if pred['p_peroxisome'] >= 0.5 else 'no'
+        pred_perox = 'yes' if pred['perox_probability_yes'] >= 0.5 else 'no'
         if pred_perox == true_perox:
             correct_perox += 1
         rows.append({
@@ -385,16 +403,119 @@ def calculate_training_metrics(
     }
 
 
-def build_stratified_folds(class_labels, n_folds, seed):
-    if n_folds < 2:
-        raise ValueError('--cv_folds should be >= 2 when cross validation is enabled.')
-    labels = list(class_labels)
-    n_sample = len(labels)
-    if n_sample < n_folds:
-        txt = '--cv_folds ({}) should be <= number of samples ({}).'
-        raise ValueError(txt.format(n_folds, n_sample))
+def _fit_constant_localization_model(class_label):
+    class_label = str(class_label)
+    return {
+        'mode': 'constant',
+        'class_label': class_label,
+        'class_order': [class_label],
+    }
 
-    counts = Counter(labels)
+
+def _fit_arch_specific_localization_model(
+    x,
+    aa_sequences,
+    labels,
+    class_order,
+    model_arch,
+    dl_train_params,
+):
+    labels = list(labels)
+    class_order = list(class_order)
+    if len(labels) == 0:
+        raise ValueError('No training sample was provided to localization classifier.')
+    observed = sorted(set(labels))
+    if len(observed) == 1:
+        return _fit_constant_localization_model(class_label=observed[0])
+    if model_arch == 'nearest_centroid':
+        return fit_nearest_centroid_classifier(
+            features=x,
+            labels=labels,
+            class_order=class_order,
+        )
+    if model_arch == 'bilstm_attention':
+        from cdskit.localize_bilstm import fit_bilstm_attention_classifier
+        return fit_bilstm_attention_classifier(
+            aa_sequences=aa_sequences,
+            labels=labels,
+            class_order=class_order,
+            seq_len=dl_train_params['seq_len'],
+            embed_dim=dl_train_params['embed_dim'],
+            hidden_dim=dl_train_params['hidden_dim'],
+            num_layers=dl_train_params['num_layers'],
+            dropout=dl_train_params['dropout'],
+            epochs=dl_train_params['epochs'],
+            batch_size=dl_train_params['batch_size'],
+            learning_rate=dl_train_params['learning_rate'],
+            weight_decay=dl_train_params['weight_decay'],
+            seed=dl_train_params['seed'],
+            use_class_weight=dl_train_params['use_class_weight'],
+            device=dl_train_params['device'],
+            loss_name=dl_train_params['loss_name'],
+            balanced_batch=dl_train_params['balanced_batch'],
+        )
+    raise ValueError('Unsupported model_arch: {}'.format(model_arch))
+
+
+def fit_localization_model(
+    x,
+    aa_sequences,
+    class_labels,
+    model_arch,
+    dl_train_params,
+    localize_strategy='single_stage',
+):
+    localize_strategy = str(localize_strategy or 'single_stage').strip().lower()
+    if localize_strategy not in ['single_stage', 'two_stage']:
+        raise ValueError('Unsupported localize_strategy: {}'.format(localize_strategy))
+
+    if localize_strategy == 'single_stage':
+        return _fit_arch_specific_localization_model(
+            x=x,
+            aa_sequences=aa_sequences,
+            labels=class_labels,
+            class_order=LOCALIZATION_CLASSES,
+            model_arch=model_arch,
+            dl_train_params=dl_train_params,
+        )
+
+    stage1_labels = ['noTP' if cls == 'noTP' else 'TP' for cls in class_labels]
+    stage1_model = _fit_arch_specific_localization_model(
+        x=x,
+        aa_sequences=aa_sequences,
+        labels=stage1_labels,
+        class_order=('noTP', 'TP'),
+        model_arch=model_arch,
+        dl_train_params=dl_train_params,
+    )
+
+    tp_indices = [i for i, cls in enumerate(class_labels) if cls != 'noTP']
+    if len(tp_indices) == 0:
+        raise ValueError('two_stage strategy requires at least one TP sample.')
+    x_tp = x[tp_indices, :]
+    aa_tp = [aa_sequences[i] for i in tp_indices]
+    labels_tp = [class_labels[i] for i in tp_indices]
+    stage2_class_order = [c for c in TP_STAGE_CLASSES if c in set(labels_tp)]
+    stage2_model = _fit_arch_specific_localization_model(
+        x=x_tp,
+        aa_sequences=aa_tp,
+        labels=labels_tp,
+        class_order=stage2_class_order,
+        model_arch=model_arch,
+        dl_train_params=dl_train_params,
+    )
+    return {
+        'strategy': 'two_stage',
+        'class_order': list(LOCALIZATION_CLASSES),
+        'stage1_class_order': ['noTP', 'TP'],
+        'stage2_class_order': list(stage2_class_order),
+        'stage1_model': stage1_model,
+        'stage2_model': stage2_model,
+    }
+
+
+def _validate_cross_validation_labels(class_labels):
+    counts = Counter(class_labels)
     present_classes = [c for c in LOCALIZATION_CLASSES if counts.get(c, 0) > 0]
     if len(present_classes) < 2:
         txt = (
@@ -409,6 +530,18 @@ def build_stratified_folds(class_labels, n_folds, seed):
             'Insufficient classes: {}.'
         )
         raise ValueError(txt.format(', '.join(insufficient)))
+
+
+def build_stratified_folds(class_labels, n_folds, seed):
+    if n_folds < 2:
+        raise ValueError('--cv_folds should be >= 2 when cross validation is enabled.')
+    labels = list(class_labels)
+    n_sample = len(labels)
+    if n_sample < n_folds:
+        txt = '--cv_folds ({}) should be <= number of samples ({}).'
+        raise ValueError(txt.format(n_folds, n_sample))
+
+    _validate_cross_validation_labels(class_labels=labels)
 
     rng = np.random.default_rng(int(seed))
     fold_buckets = [list() for _ in range(n_folds)]
@@ -428,6 +561,245 @@ def build_stratified_folds(class_labels, n_folds, seed):
     return folds
 
 
+def build_predefined_folds(class_labels, fold_ids):
+    labels = list(class_labels)
+    fold_ids = list(fold_ids)
+    if len(labels) != len(fold_ids):
+        raise ValueError('Length mismatch between class labels and fold ids.')
+    _validate_cross_validation_labels(class_labels=labels)
+
+    fold_to_indices = dict()
+    for i, fold_id in enumerate(fold_ids):
+        key = str(fold_id).strip()
+        if key == '':
+            raise ValueError('Empty fold id was detected in predefined folds.')
+        if key not in fold_to_indices:
+            fold_to_indices[key] = list()
+        fold_to_indices[key].append(int(i))
+
+    ordered_keys = sorted(fold_to_indices.keys())
+    if len(ordered_keys) < 2:
+        raise ValueError('Predefined folds should contain at least 2 unique fold ids.')
+
+    folds = list()
+    for key in ordered_keys:
+        idx_list = fold_to_indices[key]
+        if len(idx_list) == 0:
+            raise ValueError('At least one predefined fold became empty.')
+        folds.append(np.asarray(sorted(idx_list), dtype=np.int64))
+    return folds
+
+
+def _safe_probability_matrix_from_oof(oof_rows):
+    class_to_idx = {class_name: i for i, class_name in enumerate(LOCALIZATION_CLASSES)}
+    probs = list()
+    true_idx = list()
+    fold_idx = list()
+    for row in oof_rows:
+        true_class = str(row.get('true_class', '')).strip()
+        if true_class not in class_to_idx:
+            continue
+        class_probs = normalize_class_probabilities(
+            class_probs=row.get('class_probabilities', {}),
+        )
+        probs.append([float(class_probs[class_name]) for class_name in LOCALIZATION_CLASSES])
+        true_idx.append(int(class_to_idx[true_class]))
+        fold_idx.append(int(row.get('fold', 0)))
+    if len(probs) == 0:
+        raise ValueError('No valid out-of-fold predictions were available for postprocessing.')
+    return (
+        np.asarray(probs, dtype=np.float64),
+        np.asarray(true_idx, dtype=np.int64),
+        np.asarray(fold_idx, dtype=np.int64),
+    )
+
+
+def _apply_temperature_to_matrix(prob_matrix, temperature):
+    try:
+        temp = float(temperature)
+    except Exception:
+        temp = 1.0
+    if (not np.isfinite(temp)) or (temp <= 0.0) or (abs(temp - 1.0) < 1.0e-12):
+        return np.asarray(prob_matrix, dtype=np.float64)
+    clipped = np.clip(np.asarray(prob_matrix, dtype=np.float64), 1.0e-12, 1.0)
+    logits = np.log(clipped) / temp
+    logits = logits - logits.max(axis=1, keepdims=True)
+    exp_vals = np.exp(logits)
+    denom = exp_vals.sum(axis=1, keepdims=True)
+    denom[denom <= 0.0] = 1.0
+    return exp_vals / denom
+
+
+def _class_threshold_vector(class_thresholds):
+    out = np.ones(len(LOCALIZATION_CLASSES), dtype=np.float64)
+    if not isinstance(class_thresholds, dict):
+        return out
+    for i, class_name in enumerate(LOCALIZATION_CLASSES):
+        value = class_thresholds.get(class_name, 1.0)
+        try:
+            value = float(value)
+        except Exception:
+            value = 1.0
+        if (not np.isfinite(value)) or (value <= 0.0):
+            value = 1.0
+        out[i] = value
+    return out
+
+
+def _prediction_indices_from_scores(prob_matrix, class_thresholds):
+    thresholds = _class_threshold_vector(class_thresholds=class_thresholds)
+    scores = np.asarray(prob_matrix, dtype=np.float64) / thresholds[np.newaxis, :]
+    return np.argmax(scores, axis=1).astype(np.int64)
+
+
+def _accuracy_from_indices(true_idx, pred_idx):
+    true_idx = np.asarray(true_idx, dtype=np.int64)
+    pred_idx = np.asarray(pred_idx, dtype=np.int64)
+    n = int(true_idx.shape[0])
+    if n == 0:
+        raise ValueError('No prediction was available to compute accuracy.')
+    overall = float(np.mean(pred_idx == true_idx))
+    by_class = dict()
+    class_acc = list()
+    for class_i, class_name in enumerate(LOCALIZATION_CLASSES):
+        mask = (true_idx == class_i)
+        denom = int(np.sum(mask))
+        if denom <= 0:
+            acc = 0.0
+        else:
+            acc = float(np.mean(pred_idx[mask] == class_i))
+        by_class[class_name] = acc
+        class_acc.append(acc)
+    macro = float(np.mean(np.asarray(class_acc, dtype=np.float64)))
+    return overall, macro, by_class
+
+
+def fit_temperature_from_oof(oof_rows):
+    prob_matrix, true_idx, _ = _safe_probability_matrix_from_oof(oof_rows=oof_rows)
+    base = np.clip(prob_matrix, 1.0e-12, 1.0)
+    candidates = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.4, 1.6, 1.8, 2.0, 2.5, 3.0]
+    best_temp = 1.0
+    best_nll = None
+    row_idx = np.arange(true_idx.shape[0], dtype=np.int64)
+    for temp in candidates:
+        scaled = _apply_temperature_to_matrix(prob_matrix=base, temperature=temp)
+        true_prob = np.clip(scaled[row_idx, true_idx], 1.0e-12, 1.0)
+        nll = float(-np.mean(np.log(true_prob)))
+        if (best_nll is None) or (nll < best_nll - 1.0e-12):
+            best_nll = nll
+            best_temp = float(temp)
+            continue
+        if abs(nll - best_nll) <= 1.0e-12:
+            if abs(float(temp) - 1.0) < abs(best_temp - 1.0):
+                best_temp = float(temp)
+    return float(best_temp)
+
+
+def optimize_class_thresholds_from_oof(oof_rows, temperature, objective):
+    obj = str(objective or 'macro').strip().lower()
+    if obj not in ['overall', 'macro']:
+        raise ValueError('Invalid threshold objective: {}'.format(objective))
+    prob_matrix, true_idx, _ = _safe_probability_matrix_from_oof(oof_rows=oof_rows)
+    prob_matrix = _apply_temperature_to_matrix(prob_matrix=prob_matrix, temperature=temperature)
+
+    thresholds = {class_name: 1.0 for class_name in LOCALIZATION_CLASSES}
+    candidates = [0.60, 0.75, 0.90, 1.00, 1.10, 1.25, 1.40]
+
+    pred_idx = _prediction_indices_from_scores(
+        prob_matrix=prob_matrix,
+        class_thresholds=thresholds,
+    )
+    best_overall, best_macro, _ = _accuracy_from_indices(
+        true_idx=true_idx,
+        pred_idx=pred_idx,
+    )
+    best_score = best_overall if obj == 'overall' else best_macro
+
+    for _ in range(2):
+        improved = False
+        for class_name in LOCALIZATION_CLASSES:
+            current_value = float(thresholds[class_name])
+            class_best_value = current_value
+            class_best_overall = best_overall
+            class_best_macro = best_macro
+            class_best_score = best_score
+            for cand in candidates:
+                trial = dict(thresholds)
+                trial[class_name] = float(cand)
+                trial_pred = _prediction_indices_from_scores(
+                    prob_matrix=prob_matrix,
+                    class_thresholds=trial,
+                )
+                trial_overall, trial_macro, _ = _accuracy_from_indices(
+                    true_idx=true_idx,
+                    pred_idx=trial_pred,
+                )
+                trial_score = trial_overall if obj == 'overall' else trial_macro
+                if trial_score > class_best_score + 1.0e-12:
+                    class_best_value = float(cand)
+                    class_best_overall = trial_overall
+                    class_best_macro = trial_macro
+                    class_best_score = trial_score
+                    continue
+                if abs(trial_score - class_best_score) <= 1.0e-12:
+                    if abs(float(cand) - 1.0) < abs(class_best_value - 1.0):
+                        class_best_value = float(cand)
+                        class_best_overall = trial_overall
+                        class_best_macro = trial_macro
+                        class_best_score = trial_score
+            if abs(class_best_value - current_value) > 1.0e-12:
+                thresholds[class_name] = float(class_best_value)
+                best_overall = class_best_overall
+                best_macro = class_best_macro
+                best_score = class_best_score
+                improved = True
+        if not improved:
+            break
+    return {class_name: float(thresholds[class_name]) for class_name in LOCALIZATION_CLASSES}
+
+
+def evaluate_oof_postprocess(oof_rows, temperature=1.0, class_thresholds=None):
+    prob_matrix, true_idx, fold_idx = _safe_probability_matrix_from_oof(oof_rows=oof_rows)
+    prob_matrix = _apply_temperature_to_matrix(prob_matrix=prob_matrix, temperature=temperature)
+    pred_idx = _prediction_indices_from_scores(
+        prob_matrix=prob_matrix,
+        class_thresholds=class_thresholds,
+    )
+    overall, macro, by_class = _accuracy_from_indices(
+        true_idx=true_idx,
+        pred_idx=pred_idx,
+    )
+
+    fold_rows = list()
+    unique_folds = sorted(set(fold_idx.tolist()))
+    fold_acc = list()
+    for fold_id in unique_folds:
+        mask = (fold_idx == int(fold_id))
+        if int(np.sum(mask)) <= 0:
+            continue
+        fold_acc_value = float(np.mean(pred_idx[mask] == true_idx[mask]))
+        fold_acc.append(fold_acc_value)
+        fold_rows.append({
+            'fold': int(fold_id),
+            'class_accuracy': fold_acc_value,
+        })
+    if len(fold_acc) == 0:
+        fold_mean = overall
+        fold_std = 0.0
+    else:
+        fold_arr = np.asarray(fold_acc, dtype=np.float64)
+        fold_mean = float(fold_arr.mean())
+        fold_std = float(fold_arr.std())
+    return {
+        'class_accuracy_overall': float(overall),
+        'class_accuracy_macro5': float(macro),
+        'class_accuracy_by_class': dict(by_class),
+        'fold_class_accuracy_mean': float(fold_mean),
+        'fold_class_accuracy_std': float(fold_std),
+        'folds': fold_rows,
+    }
+
+
 def evaluate_cross_validation(
     x,
     aa_sequences,
@@ -438,16 +810,25 @@ def evaluate_cross_validation(
     model_arch,
     dl_train_params,
     dl_device,
+    localize_strategy='single_stage',
+    fold_ids=None,
 ):
-    folds = build_stratified_folds(
-        class_labels=class_labels,
-        n_folds=n_folds,
-        seed=seed,
-    )
+    if fold_ids is None:
+        folds = build_stratified_folds(
+            class_labels=class_labels,
+            n_folds=n_folds,
+            seed=seed,
+        )
+    else:
+        folds = build_predefined_folds(
+            class_labels=class_labels,
+            fold_ids=fold_ids,
+        )
     n_sample = int(x.shape[0])
     fold_rows = list()
     class_accs = list()
     perox_accs = list()
+    oof_rows = list()
     class_total = {class_name: 0 for class_name in LOCALIZATION_CLASSES}
     class_correct_by_class = {class_name: 0 for class_name in LOCALIZATION_CLASSES}
     for fold_i, test_idx in enumerate(folds):
@@ -465,40 +846,26 @@ def evaluate_cross_validation(
         perox_train = [perox_labels[i] for i in train_idx.tolist()]
         perox_test = [perox_labels[i] for i in test_idx.tolist()]
 
-        if model_arch == 'nearest_centroid':
-            local_model = fit_nearest_centroid_classifier(
-                features=x_train,
-                labels=class_train,
-                class_order=LOCALIZATION_CLASSES,
-            )
-        elif model_arch == 'bilstm_attention':
-            from cdskit.localize_bilstm import fit_bilstm_attention_classifier
-            local_model = fit_bilstm_attention_classifier(
-                aa_sequences=aa_train,
-                labels=class_train,
-                class_order=LOCALIZATION_CLASSES,
-                seq_len=dl_train_params['seq_len'],
-                embed_dim=dl_train_params['embed_dim'],
-                hidden_dim=dl_train_params['hidden_dim'],
-                num_layers=dl_train_params['num_layers'],
-                dropout=dl_train_params['dropout'],
-                epochs=dl_train_params['epochs'],
-                batch_size=dl_train_params['batch_size'],
-                learning_rate=dl_train_params['learning_rate'],
-                weight_decay=dl_train_params['weight_decay'],
-                seed=dl_train_params['seed'],
-                use_class_weight=dl_train_params['use_class_weight'],
-                device=dl_train_params['device'],
-                loss_name=dl_train_params['loss_name'],
-                balanced_batch=dl_train_params['balanced_batch'],
-            )
-        else:
-            raise ValueError('Unsupported model_arch: {}'.format(model_arch))
+        local_model = fit_localization_model(
+            x=x_train,
+            aa_sequences=aa_train,
+            class_labels=class_train,
+            model_arch=model_arch,
+            dl_train_params=dl_train_params,
+            localize_strategy=localize_strategy,
+        )
         perox_model = fit_perox_binary_classifier(
             features=x_train,
             labels=perox_train,
         )
+        if model_arch == 'nearest_centroid':
+            tmp_model_type = 'nearest_centroid_v1'
+        elif model_arch == 'bilstm_attention':
+            tmp_model_type = 'bilstm_attention_v1'
+        else:
+            raise ValueError('Unsupported model_arch: {}'.format(model_arch))
         tmp_model = {
+            'model_type': tmp_model_type,
             'localization_model': local_model,
             'perox_model': perox_model,
         }
@@ -506,25 +873,26 @@ def evaluate_cross_validation(
         class_correct_fold = 0
         perox_correct = 0
         for row_i in range(x_test.shape[0]):
-            if model_arch == 'nearest_centroid':
-                pred = predict_localization_and_peroxisome_from_features(
-                    feature_vec=x_test[row_i, :],
-                    model=tmp_model,
-                )
-            else:
-                pred = predict_localization_and_peroxisome_from_sequence(
-                    aa_seq=aa_test[row_i],
-                    feature_vec=x_test[row_i, :],
-                    model=tmp_model,
-                    device=dl_device,
-                )
+            _ = dl_device
+            pred = predict_localization_and_peroxisome(
+                aa_seq=aa_test[row_i],
+                model=tmp_model,
+            )
             true_class = class_test[row_i]
             pred_class = pred['predicted_class']
+            oof_rows.append({
+                'index': int(test_idx[row_i]),
+                'fold': int(fold_i + 1),
+                'true_class': true_class,
+                'class_probabilities': normalize_class_probabilities(
+                    class_probs=pred.get('class_probabilities', {}),
+                ),
+            })
             class_total[true_class] = class_total.get(true_class, 0) + 1
             if pred_class == true_class:
                 class_correct_fold += 1
                 class_correct_by_class[true_class] = class_correct_by_class.get(true_class, 0) + 1
-            pred_perox = 'yes' if pred['p_peroxisome'] >= 0.5 else 'no'
+            pred_perox = 'yes' if pred['perox_probability_yes'] >= 0.5 else 'no'
             if pred_perox == perox_test[row_i]:
                 perox_correct += 1
 
@@ -551,51 +919,14 @@ def evaluate_cross_validation(
         else:
             class_accuracy_by_class[class_name] = float(class_correct_by_class.get(class_name, 0)) / denom
     return {
-        'n_folds': int(n_folds),
+        'n_folds': int(len(folds)),
         'class_accuracy_mean': float(class_arr.mean()),
         'class_accuracy_std': float(class_arr.std()),
         'class_accuracy_by_class': class_accuracy_by_class,
         'perox_accuracy_mean': float(perox_arr.mean()),
         'perox_accuracy_std': float(perox_arr.std()),
         'folds': fold_rows,
-    }
-
-
-def predict_localization_and_peroxisome_from_features(feature_vec, model):
-    from cdskit.localize_model import predict_nearest_centroid, predict_perox
-
-    pred_class, class_probs = predict_nearest_centroid(
-        feature_vec=feature_vec,
-        model=model['localization_model'],
-    )
-    _, perox_probs = predict_perox(
-        feature_vec=feature_vec,
-        perox_model=model['perox_model'],
-    )
-    return {
-        'predicted_class': pred_class,
-        'class_probabilities': class_probs,
-        'p_peroxisome': float(perox_probs.get('yes', 0.0)),
-    }
-
-
-def predict_localization_and_peroxisome_from_sequence(aa_seq, feature_vec, model, device='cpu'):
-    from cdskit.localize_bilstm import predict_bilstm_attention
-    from cdskit.localize_model import predict_perox
-
-    pred_class, class_probs = predict_bilstm_attention(
-        aa_seq=aa_seq,
-        localization_model=model['localization_model'],
-        device=device,
-    )
-    _, perox_probs = predict_perox(
-        feature_vec=feature_vec,
-        perox_model=model['perox_model'],
-    )
-    return {
-        'predicted_class': pred_class,
-        'class_probabilities': class_probs,
-        'p_peroxisome': float(perox_probs.get('yes', 0.0)),
+        'oof_rows': oof_rows,
     }
 
 
@@ -616,9 +947,20 @@ def localize_learn_main(args):
     uniprot_out_tsv = getattr(args, 'uniprot_out_tsv', '')
     cv_folds = int(getattr(args, 'cv_folds', 0))
     cv_seed = int(getattr(args, 'cv_seed', 1))
+    cv_fold_col = str(getattr(args, 'cv_fold_col', '')).strip()
     model_arch = str(getattr(args, 'model_arch', 'nearest_centroid')).strip().lower()
     if model_arch not in ['nearest_centroid', 'bilstm_attention']:
         raise ValueError('Unsupported --model_arch: {}'.format(model_arch))
+    localize_strategy = str(getattr(args, 'localize_strategy', 'single_stage')).strip().lower()
+    if localize_strategy not in ['single_stage', 'two_stage']:
+        raise ValueError('--localize_strategy should be single_stage or two_stage.')
+    localize_temperature_scale = bool(getattr(args, 'localize_temperature_scale', False))
+    localize_threshold_tune = bool(getattr(args, 'localize_threshold_tune', False))
+    localize_threshold_objective = str(
+        getattr(args, 'localize_threshold_objective', 'macro')
+    ).strip().lower()
+    if localize_threshold_objective not in ['overall', 'macro']:
+        raise ValueError('--localize_threshold_objective should be overall or macro.')
 
     dl_seq_len = int(getattr(args, 'dl_seq_len', 200))
     dl_embed_dim = int(getattr(args, 'dl_embed_dim', 32))
@@ -659,7 +1001,7 @@ def localize_learn_main(args):
         require_torch()
     if cv_folds < 0:
         raise ValueError('--cv_folds should be >= 0.')
-    if cv_folds == 1:
+    if (cv_fold_col == '') and (cv_folds == 1):
         raise ValueError('--cv_folds should be 0 (disabled) or >= 2.')
 
     has_training_tsv = (str(training_tsv).strip() != '')
@@ -718,7 +1060,7 @@ def localize_learn_main(args):
                 out_path=uniprot_out_tsv,
             )
 
-    x, aa_sequences, class_labels, perox_labels, skipped = build_training_matrix(
+    x, aa_sequences, class_labels, perox_labels, skipped, fold_ids = build_training_matrix(
         rows=rows,
         seq_col=args.seq_col,
         seqtype=args.seqtype,
@@ -727,43 +1069,9 @@ def localize_learn_main(args):
         localization_col=args.localization_col,
         perox_col=args.perox_col,
         skip_ambiguous=args.skip_ambiguous,
+        cv_fold_col=cv_fold_col,
     )
 
-    if model_arch == 'nearest_centroid':
-        localization_model = fit_nearest_centroid_classifier(
-            features=x,
-            labels=class_labels,
-            class_order=LOCALIZATION_CLASSES,
-        )
-        model_type = 'nearest_centroid_v1'
-    elif model_arch == 'bilstm_attention':
-        from cdskit.localize_bilstm import fit_bilstm_attention_classifier
-        localization_model = fit_bilstm_attention_classifier(
-            aa_sequences=aa_sequences,
-            labels=class_labels,
-            class_order=LOCALIZATION_CLASSES,
-            seq_len=dl_seq_len,
-            embed_dim=dl_embed_dim,
-            hidden_dim=dl_hidden_dim,
-            num_layers=dl_num_layers,
-            dropout=dl_dropout,
-            epochs=dl_epochs,
-            batch_size=dl_batch_size,
-            learning_rate=dl_lr,
-            weight_decay=dl_weight_decay,
-            seed=dl_seed,
-            use_class_weight=dl_class_weight,
-            device=dl_device,
-            loss_name=dl_loss,
-            balanced_batch=dl_balanced_batch,
-        )
-        model_type = 'bilstm_attention_v1'
-    else:
-        raise ValueError('Unsupported --model_arch: {}'.format(model_arch))
-    perox_model = fit_perox_binary_classifier(
-        features=x,
-        labels=perox_labels,
-    )
     dl_train_params = {
         'seq_len': dl_seq_len,
         'embed_dim': dl_embed_dim,
@@ -780,6 +1088,47 @@ def localize_learn_main(args):
         'loss_name': dl_loss,
         'balanced_batch': dl_balanced_batch,
     }
+    localization_model = fit_localization_model(
+        x=x,
+        aa_sequences=aa_sequences,
+        class_labels=class_labels,
+        model_arch=model_arch,
+        dl_train_params=dl_train_params,
+        localize_strategy=localize_strategy,
+    )
+    if model_arch == 'nearest_centroid':
+        model_type = 'nearest_centroid_v1'
+    elif model_arch == 'bilstm_attention':
+        model_type = 'bilstm_attention_v1'
+    else:
+        raise ValueError('Unsupported --model_arch: {}'.format(model_arch))
+    perox_model = fit_perox_binary_classifier(
+        features=x,
+        labels=perox_labels,
+    )
+
+    effective_cv_folds = int(cv_folds)
+    predefined_folds_active = (cv_fold_col != '')
+    if predefined_folds_active:
+        unique_folds = sorted(set(fold_ids))
+        if len(unique_folds) < 2:
+            raise ValueError('--cv_fold_col should contain at least 2 unique fold ids.')
+        if cv_folds not in [0, len(unique_folds)]:
+            txt = (
+                'When --cv_fold_col is used, --cv_folds should be 0 or match '
+                'the number of unique fold ids ({}).'
+            )
+            raise ValueError(txt.format(len(unique_folds)))
+        effective_cv_folds = int(len(unique_folds))
+    elif cv_folds == 1:
+        raise ValueError('--cv_folds should be 0 (disabled) or >= 2.')
+    if (localize_temperature_scale or localize_threshold_tune) and (effective_cv_folds < 2):
+        txt = (
+            '--localize_temperature_scale/--localize_threshold_tune requires '
+            'cross validation (--cv_folds >= 2 or --cv_fold_col).'
+        )
+        raise ValueError(txt)
+
     model = {
         'model_type': model_type,
         'feature_names': list(FEATURE_NAMES),
@@ -796,6 +1145,10 @@ def localize_learn_main(args):
             'perox_col': args.perox_col,
             'codontable': int(args.codontable),
             'model_arch': model_arch,
+            'localize_strategy': localize_strategy,
+            'localize_temperature_scale': bool(localize_temperature_scale),
+            'localize_threshold_tune': bool(localize_threshold_tune),
+            'localize_threshold_objective': str(localize_threshold_objective),
             'data_source': 'training_tsv' if has_training_tsv else 'uniprot_query',
             'uniprot_query': '' if has_training_tsv else str(resolved_uniprot_query),
             'uniprot_preset': '' if has_training_tsv else preset_name,
@@ -803,6 +1156,8 @@ def localize_learn_main(args):
             'uniprot_exclude_fragments': bool(uniprot_exclude_fragments),
             'uniprot_sampling': str(uniprot_sampling),
             'uniprot_sampling_seed': int(uniprot_sampling_seed),
+            'cv_fold_col': cv_fold_col,
+            'cv_predefined_folds': bool(predefined_folds_active),
             'class_counts': dict(Counter(class_labels)),
             'perox_counts': dict(Counter(perox_labels)),
         },
@@ -818,19 +1173,22 @@ def localize_learn_main(args):
     )
     model['metadata']['class_train_accuracy_by_class'] = dict(metrics['class_accuracy_by_class'])
     cv_metrics = None
-    if cv_folds >= 2:
+    postproc_metrics = None
+    if effective_cv_folds >= 2:
         cv_metrics = evaluate_cross_validation(
             x=x,
             aa_sequences=aa_sequences,
             class_labels=class_labels,
             perox_labels=perox_labels,
-            n_folds=cv_folds,
+            n_folds=effective_cv_folds,
             seed=cv_seed,
             model_arch=model_arch,
             dl_train_params=dl_train_params,
             dl_device=dl_device,
+            localize_strategy=localize_strategy,
+            fold_ids=fold_ids if predefined_folds_active else None,
         )
-        model['metadata']['cv_folds'] = int(cv_folds)
+        model['metadata']['cv_folds'] = int(cv_metrics['n_folds'])
         model['metadata']['cv_seed'] = int(cv_seed)
         model['metadata']['cv_class_accuracy_mean'] = float(cv_metrics['class_accuracy_mean'])
         model['metadata']['cv_class_accuracy_std'] = float(cv_metrics['class_accuracy_std'])
@@ -841,6 +1199,51 @@ def localize_learn_main(args):
         model['metadata']['cv_folds'] = 0
         model['metadata']['cv_seed'] = int(cv_seed)
         model['metadata']['cv_class_accuracy_by_class'] = dict()
+    if cv_metrics is not None and (localize_temperature_scale or localize_threshold_tune):
+        oof_rows = cv_metrics.get('oof_rows', [])
+        tuned_temperature = 1.0
+        if localize_temperature_scale:
+            tuned_temperature = fit_temperature_from_oof(oof_rows=oof_rows)
+            localization_model['probability_calibration'] = {
+                'method': 'temperature',
+                'temperature': float(tuned_temperature),
+            }
+            model['metadata']['localize_temperature'] = float(tuned_temperature)
+        tuned_thresholds = None
+        if localize_threshold_tune:
+            tuned_thresholds = optimize_class_thresholds_from_oof(
+                oof_rows=oof_rows,
+                temperature=tuned_temperature,
+                objective=localize_threshold_objective,
+            )
+            localization_model['class_thresholds'] = dict(tuned_thresholds)
+            model['metadata']['localize_class_thresholds'] = dict(tuned_thresholds)
+        postproc_metrics = evaluate_oof_postprocess(
+            oof_rows=oof_rows,
+            temperature=tuned_temperature,
+            class_thresholds=tuned_thresholds,
+        )
+        model['metadata']['cv_postproc_class_accuracy_overall'] = float(
+            postproc_metrics['class_accuracy_overall']
+        )
+        model['metadata']['cv_postproc_class_accuracy_macro5'] = float(
+            postproc_metrics['class_accuracy_macro5']
+        )
+        model['metadata']['cv_postproc_class_accuracy_by_class'] = dict(
+            postproc_metrics['class_accuracy_by_class']
+        )
+        metrics = calculate_training_metrics(
+            x=x,
+            aa_sequences=aa_sequences,
+            class_labels=class_labels,
+            perox_labels=perox_labels,
+            model=model,
+            model_arch=model_arch,
+            dl_device=dl_device,
+        )
+        model['metadata']['class_train_accuracy_by_class'] = dict(
+            metrics['class_accuracy_by_class']
+        )
     if model_arch == 'bilstm_attention':
         model['metadata']['dl_seq_len'] = int(dl_seq_len)
         model['metadata']['dl_embed_dim'] = int(dl_embed_dim)
@@ -919,6 +1322,46 @@ def localize_learn_main(args):
             report_rows.append({
                 'metric': 'cv_fold{}_perox_accuracy'.format(fold_id),
                 'value': float(fold_row['perox_accuracy']),
+            })
+    if postproc_metrics is not None:
+        if localize_temperature_scale:
+            report_rows.append({
+                'metric': 'postproc_temperature',
+                'value': float(model['metadata'].get('localize_temperature', 1.0)),
+            })
+        if localize_threshold_tune:
+            saved_thresholds = model['metadata'].get('localize_class_thresholds', {})
+            for class_name in LOCALIZATION_CLASSES:
+                report_rows.append({
+                    'metric': 'postproc_threshold_{}'.format(class_name),
+                    'value': float(saved_thresholds.get(class_name, 1.0)),
+                })
+        report_rows.append({
+            'metric': 'cv_postproc_class_accuracy_overall',
+            'value': float(postproc_metrics['class_accuracy_overall']),
+        })
+        report_rows.append({
+            'metric': 'cv_postproc_class_accuracy_macro5',
+            'value': float(postproc_metrics['class_accuracy_macro5']),
+        })
+        report_rows.append({
+            'metric': 'cv_postproc_fold_class_accuracy_mean',
+            'value': float(postproc_metrics['fold_class_accuracy_mean']),
+        })
+        report_rows.append({
+            'metric': 'cv_postproc_fold_class_accuracy_std',
+            'value': float(postproc_metrics['fold_class_accuracy_std']),
+        })
+        for class_name in LOCALIZATION_CLASSES:
+            report_rows.append({
+                'metric': 'cv_postproc_class_accuracy_{}'.format(class_name),
+                'value': float(postproc_metrics['class_accuracy_by_class'].get(class_name, 0.0)),
+            })
+        for fold_row in postproc_metrics['folds']:
+            fold_id = int(fold_row['fold'])
+            report_rows.append({
+                'metric': 'cv_postproc_fold{}_class_accuracy'.format(fold_id),
+                'value': float(fold_row['class_accuracy']),
             })
     for class_name in LOCALIZATION_CLASSES:
         report_rows.append({

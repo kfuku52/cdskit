@@ -17,7 +17,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from cdskit.localize import localize_main
 import cdskit.localize_learn as localize_learn_module
 from cdskit.localize_learn import localize_learn_main
-from cdskit.localize_model import infer_labels_from_uniprot_cc, load_localize_model
+from cdskit.localize_model import (
+    infer_labels_from_uniprot_cc,
+    load_localize_model,
+    postprocess_localization_probabilities,
+)
 
 
 try:
@@ -175,6 +179,92 @@ def build_training_table_for_cv(path):
         writer = csv.DictWriter(
             out,
             fieldnames=['id', 'sequence', 'localization', 'peroxisome'],
+            delimiter='\t',
+            lineterminator='\n',
+        )
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+    return rows
+
+
+def build_training_table_for_cv_with_fold(path):
+    rows = [
+        {
+            'id': 'noTP_1',
+            'sequence': aa_to_cds('MGPVNQDEGPVNQDEGPVNQDESKL'),
+            'localization': 'noTP',
+            'peroxisome': 'yes',
+            'fold_id': 'foldA',
+        },
+        {
+            'id': 'noTP_2',
+            'sequence': aa_to_cds('MAGPVNQDEGPVNQDEGATNVQDE'),
+            'localization': 'noTP',
+            'peroxisome': 'no',
+            'fold_id': 'foldB',
+        },
+        {
+            'id': 'SP_1',
+            'sequence': aa_to_cds('MKKLLLLLLLLLLAVAVAASAASA'),
+            'localization': 'SP',
+            'peroxisome': 'no',
+            'fold_id': 'foldA',
+        },
+        {
+            'id': 'SP_2',
+            'sequence': aa_to_cds('MKKLLLLLLLLLLAAVVAASAASA'),
+            'localization': 'SP',
+            'peroxisome': 'no',
+            'fold_id': 'foldB',
+        },
+        {
+            'id': 'mTP_1',
+            'sequence': aa_to_cds('MRRKRRAARAKRRNQAAARRRAA'),
+            'localization': 'mTP',
+            'peroxisome': 'no',
+            'fold_id': 'foldA',
+        },
+        {
+            'id': 'mTP_2',
+            'sequence': aa_to_cds('MRRKRRASRAKRRNQAAARRRAA'),
+            'localization': 'mTP',
+            'peroxisome': 'no',
+            'fold_id': 'foldB',
+        },
+        {
+            'id': 'cTP_1',
+            'sequence': aa_to_cds('MSTSTSTTSTASSSAATSTASSTT'),
+            'localization': 'cTP',
+            'peroxisome': 'no',
+            'fold_id': 'foldA',
+        },
+        {
+            'id': 'cTP_2',
+            'sequence': aa_to_cds('MSTSTASTSTASSSAATSTASSTT'),
+            'localization': 'cTP',
+            'peroxisome': 'no',
+            'fold_id': 'foldB',
+        },
+        {
+            'id': 'lTP_1',
+            'sequence': aa_to_cds('MARRVAAARRLLLLLVVVVVAAST'),
+            'localization': 'lTP',
+            'peroxisome': 'no',
+            'fold_id': 'foldA',
+        },
+        {
+            'id': 'lTP_2',
+            'sequence': aa_to_cds('MARRVAAARRLLLLLIVVVVAAST'),
+            'localization': 'lTP',
+            'peroxisome': 'no',
+            'fold_id': 'foldB',
+        },
+    ]
+    with open(path, 'w', encoding='utf-8', newline='') as out:
+        writer = csv.DictWriter(
+            out,
+            fieldnames=['id', 'sequence', 'localization', 'peroxisome', 'fold_id'],
             delimiter='\t',
             lineterminator='\n',
         )
@@ -425,6 +515,130 @@ def test_localize_learn_rejects_invalid_dl_loss(mock_args):
     assert '--dl_loss should be ce or focal' in str(exc_info.value)
 
 
+def test_localize_learn_two_stage_strategy_nearest_centroid(temp_dir, mock_args):
+    train_tsv = temp_dir / 'train_localize_two_stage.tsv'
+    model_path = temp_dir / 'localize_model_two_stage.json'
+    output_path = temp_dir / 'localize_two_stage_output.tsv'
+    build_training_table_for_cv(train_tsv)
+
+    args_train = mock_args(
+        training_tsv=str(train_tsv),
+        model_out=str(model_path),
+        report='',
+        seq_col='sequence',
+        seqtype='dna',
+        label_mode='explicit',
+        localization_col='localization',
+        perox_col='peroxisome',
+        skip_ambiguous=True,
+        codontable=1,
+        localize_strategy='two_stage',
+        cv_folds=2,
+        cv_seed=7,
+        threads=1,
+    )
+    localize_learn_main(args_train)
+    model = load_localize_model(str(model_path))
+    assert model['metadata']['localize_strategy'] == 'two_stage'
+    assert model['localization_model']['strategy'] == 'two_stage'
+    assert 'stage1_model' in model['localization_model']
+    assert 'stage2_model' in model['localization_model']
+
+    input_path = temp_dir / 'localize_two_stage_input.fasta'
+    records = [
+        SeqRecord(Seq(aa_to_cds('MGPVNQDEGPVNQDEGPVNQDESKL')), id='seq_notp', description=''),
+        SeqRecord(Seq(aa_to_cds('MKKLLLLLLLLLLAVAVAASAASA')), id='seq_sp', description=''),
+        SeqRecord(Seq(aa_to_cds('MARRVAAARRLLLLLVVVVVAAST')), id='seq_ltp', description=''),
+    ]
+    Bio.SeqIO.write(records, str(input_path), 'fasta')
+    args_pred = mock_args(
+        seqfile=str(input_path),
+        inseqformat='fasta',
+        codontable=1,
+        model=str(model_path),
+        report=str(output_path),
+        include_features=False,
+        threads=1,
+    )
+    localize_main(args_pred)
+    with open(output_path, 'r', encoding='utf-8') as inp:
+        rows = list(csv.DictReader(inp, delimiter='\t'))
+    assert len(rows) == 3
+    valid = {'noTP', 'SP', 'mTP', 'cTP', 'lTP'}
+    for row in rows:
+        assert row['predicted_class'] in valid
+
+
+def test_localize_learn_predefined_cv_fold_col(temp_dir, mock_args):
+    train_tsv = temp_dir / 'train_localize_predefined_fold.tsv'
+    model_path = temp_dir / 'localize_model_predefined_fold.json'
+    report_path = temp_dir / 'localize_report_predefined_fold.tsv'
+    build_training_table_for_cv_with_fold(train_tsv)
+
+    args = mock_args(
+        training_tsv=str(train_tsv),
+        model_out=str(model_path),
+        report=str(report_path),
+        seq_col='sequence',
+        seqtype='dna',
+        label_mode='explicit',
+        localization_col='localization',
+        perox_col='peroxisome',
+        skip_ambiguous=True,
+        codontable=1,
+        cv_folds=0,
+        cv_seed=1,
+        cv_fold_col='fold_id',
+        threads=1,
+    )
+    localize_learn_main(args)
+
+    model = load_localize_model(str(model_path))
+    assert model['metadata']['cv_predefined_folds'] is True
+    assert model['metadata']['cv_fold_col'] == 'fold_id'
+    assert model['metadata']['cv_folds'] == 2
+    with open(report_path, 'r', encoding='utf-8') as inp:
+        metrics = {row['metric']: float(row['value']) for row in csv.DictReader(inp, delimiter='\t')}
+    assert metrics['cv_folds'] == 2.0
+    assert 0.0 <= metrics['cv_class_accuracy_mean'] <= 1.0
+
+
+def test_localize_learn_rejects_missing_predefined_fold_value(temp_dir, mock_args):
+    train_tsv = temp_dir / 'train_localize_missing_fold.tsv'
+    rows = build_training_table_for_cv_with_fold(train_tsv)
+    rows[0]['fold_id'] = ''
+    with open(train_tsv, 'w', encoding='utf-8', newline='') as out:
+        writer = csv.DictWriter(
+            out,
+            fieldnames=['id', 'sequence', 'localization', 'peroxisome', 'fold_id'],
+            delimiter='\t',
+            lineterminator='\n',
+        )
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+
+    args = mock_args(
+        training_tsv=str(train_tsv),
+        model_out=str(temp_dir / 'dummy.json'),
+        report='',
+        seq_col='sequence',
+        seqtype='dna',
+        label_mode='explicit',
+        localization_col='localization',
+        perox_col='peroxisome',
+        skip_ambiguous=True,
+        codontable=1,
+        cv_folds=0,
+        cv_seed=1,
+        cv_fold_col='fold_id',
+        threads=1,
+    )
+    with pytest.raises(ValueError) as exc_info:
+        localize_learn_main(args)
+    assert 'Missing fold value in column "fold_id"' in str(exc_info.value)
+
+
 def test_uniprot_cc_label_inference():
     cls, perox, ambiguous = infer_labels_from_uniprot_cc(
         'SUBCELLULAR LOCATION: Chloroplast; Thylakoid lumen. Peroxisome.'
@@ -432,6 +646,97 @@ def test_uniprot_cc_label_inference():
     assert cls == 'lTP'
     assert perox == 'yes'
     assert ambiguous is False
+
+
+def test_postprocess_localization_probabilities_with_temperature_and_thresholds():
+    localization_model = {
+        'class_order': ['noTP', 'SP', 'mTP', 'cTP', 'lTP'],
+        'probability_calibration': {
+            'method': 'temperature',
+            'temperature': 2.0,
+        },
+        'class_thresholds': {
+            'noTP': 1.2,
+            'SP': 0.8,
+            'mTP': 1.0,
+            'cTP': 1.0,
+            'lTP': 1.0,
+        },
+    }
+    pred, out_probs = postprocess_localization_probabilities(
+        class_probs={'noTP': 0.55, 'SP': 0.45},
+        localization_model=localization_model,
+    )
+    assert pred == 'SP'
+    assert abs(sum(out_probs.values()) - 1.0) < 1.0e-9
+    assert out_probs['SP'] > 0.45
+
+
+def test_localize_learn_rejects_postprocess_tuning_without_cv(temp_dir, mock_args):
+    train_tsv = temp_dir / 'train_localize_no_cv.tsv'
+    build_training_table(train_tsv)
+    args = mock_args(
+        training_tsv=str(train_tsv),
+        model_out=str(temp_dir / 'localize_model_no_cv.json'),
+        report='',
+        seq_col='sequence',
+        seqtype='dna',
+        label_mode='explicit',
+        localization_col='localization',
+        perox_col='peroxisome',
+        skip_ambiguous=True,
+        codontable=1,
+        cv_folds=0,
+        localize_temperature_scale=True,
+        localize_threshold_tune=False,
+        threads=1,
+    )
+    with pytest.raises(ValueError) as exc_info:
+        localize_learn_main(args)
+    assert '--localize_temperature_scale/--localize_threshold_tune requires cross validation' in str(exc_info.value)
+
+
+def test_localize_learn_postprocess_tuning_writes_metrics(temp_dir, mock_args):
+    train_tsv = temp_dir / 'train_localize_postproc.tsv'
+    model_path = temp_dir / 'localize_model_postproc.json'
+    report_path = temp_dir / 'localize_report_postproc.tsv'
+    build_training_table_for_cv(train_tsv)
+
+    args = mock_args(
+        training_tsv=str(train_tsv),
+        model_out=str(model_path),
+        report=str(report_path),
+        seq_col='sequence',
+        seqtype='dna',
+        label_mode='explicit',
+        localization_col='localization',
+        perox_col='peroxisome',
+        skip_ambiguous=True,
+        codontable=1,
+        cv_folds=2,
+        cv_seed=3,
+        localize_temperature_scale=True,
+        localize_threshold_tune=True,
+        localize_threshold_objective='macro',
+        threads=1,
+    )
+    localize_learn_main(args)
+
+    model = load_localize_model(str(model_path))
+    assert model['metadata']['localize_temperature_scale'] is True
+    assert model['metadata']['localize_threshold_tune'] is True
+    assert model['localization_model']['probability_calibration']['method'] == 'temperature'
+    assert model['localization_model']['probability_calibration']['temperature'] > 0.0
+    assert set(model['localization_model']['class_thresholds'].keys()) == {'noTP', 'SP', 'mTP', 'cTP', 'lTP'}
+
+    with open(report_path, 'r', encoding='utf-8') as inp:
+        metrics = {row['metric']: float(row['value']) for row in csv.DictReader(inp, delimiter='\t')}
+    assert 'cv_postproc_class_accuracy_overall' in metrics
+    assert 'cv_postproc_class_accuracy_macro5' in metrics
+    assert 'postproc_temperature' in metrics
+    assert 'postproc_threshold_noTP' in metrics
+    assert 0.0 <= metrics['cv_postproc_class_accuracy_overall'] <= 1.0
+    assert 0.0 <= metrics['cv_postproc_class_accuracy_macro5'] <= 1.0
 
 
 def test_localize_learn_uniprot_download_mocked(monkeypatch, temp_dir, mock_args):
@@ -590,6 +895,43 @@ def test_localize_learn_uniprot_preset_combines_query(monkeypatch, temp_dir, moc
     assert 'keyword:Transit peptide' in query_text
     assert 'reviewed:true' in query_text
     assert 'fragment:true' in query_text
+
+
+def test_resolve_uniprot_query_new_presets():
+    q_non_vir, p_non_vir = localize_learn_module.resolve_uniprot_query(
+        uniprot_query='',
+        uniprot_preset='non_viridiplantae_euk',
+    )
+    assert p_non_vir == 'non_viridiplantae_euk'
+    assert q_non_vir == '(taxonomy_id:2759) AND (NOT taxonomy_id:33090)'
+
+    q_protist, p_protist = localize_learn_module.resolve_uniprot_query(
+        uniprot_query='',
+        uniprot_preset='protist_core',
+    )
+    assert p_protist == 'protist_core'
+    assert 'taxonomy_id:2759' in q_protist
+    assert 'NOT taxonomy_id:33090' in q_protist
+    assert 'NOT taxonomy_id:33208' in q_protist
+    assert 'NOT taxonomy_id:4751' in q_protist
+
+    q_bac, p_bac = localize_learn_module.resolve_uniprot_query(
+        uniprot_query='',
+        uniprot_preset='bacteria_hard_negative',
+    )
+    assert p_bac == 'bacteria_hard_negative'
+    assert q_bac == 'taxonomy_id:2'
+
+
+def test_resolve_uniprot_query_combines_new_preset_with_user_query():
+    q, p = localize_learn_module.resolve_uniprot_query(
+        uniprot_query='keyword:Signal peptide',
+        uniprot_preset='non_viridiplantae_euk',
+    )
+    assert p == 'non_viridiplantae_euk'
+    assert '(taxonomy_id:2759) AND (NOT taxonomy_id:33090)' in q
+    assert 'keyword:Signal peptide' in q
+    assert 'AND' in q
 
 
 def test_fetch_uniprot_training_rows_head_vs_random_sampling(monkeypatch):
