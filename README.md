@@ -50,10 +50,6 @@ See [Wiki](https://github.com/kfuku52/cdskit/wiki) for detailed descriptions.
 
 - [`longestcds`](https://github.com/kfuku52/cdskit/wiki/cdskit-longestcds): Finding the longest CDS by six-frame translation (+/- strands, 3 frames each)
 
-- `localize`: Predicting targeting peptide classes (`noTP`, `SP`, `mTP`, `cTP`, `lTP`) and peroxisome targeting probability from in-frame CDS (input length must be a multiple of 3)
-
-- `localize-learn`: Training a `localize` model from tab-separated data, or auto-downloaded UniProt entries (`explicit` labels or `uniprot_cc` text inference mode)
-
 - [`mask`](https://github.com/kfuku52/cdskit/wiki/cdskit-mask): Masking ambiguous and/or stop codons
 
 - [`maxalign`](https://github.com/kfuku52/cdskit/wiki/cdskit-maxalign): Removing sequences to maximize codon-based alignment area ([MaxAlign](https://link.springer.com/article/10.1186/1471-2105-8-312))
@@ -88,68 +84,6 @@ All subcommands support `--threads INT` for multi-threaded processing.
 - `--threads 1`: single-threaded (default)
 - `--threads 2` or larger: multi-threaded
 - `--threads 0`: auto-detect available CPU count
-
-## Localization prediction
-
-Train with a local TSV:
-
-```
-cdskit localize-learn \
-  --training_tsv train.tsv \
-  --seq_col sequence \
-  --label_mode explicit \
-  --localization_col localization \
-  --perox_col peroxisome \
-  --model_out localize_model.json
-```
-
-Train by auto-downloading UniProt data:
-
-```
-cdskit localize-learn \
-  --uniprot_preset viridiplantae \
-  --uniprot_query "keyword:Transit peptide" \
-  --label_mode uniprot_cc \
-  --seq_col sequence \
-  --localization_col cc_subcellular_location \
-  --uniprot_fields accession,sequence,cc_subcellular_location \
-  --uniprot_exclude_fragments yes \
-  --uniprot_out_tsv uniprot_download.tsv \
-  --model_out localize_model.json
-```
-
-Train a BiLSTM+attention model (PyTorch required):
-
-```
-cdskit localize-learn \
-  --training_tsv uniprot_download.tsv \
-  --seq_col sequence \
-  --seqtype protein \
-  --label_mode uniprot_cc \
-  --localization_col cc_subcellular_location \
-  --model_arch bilstm_attention \
-  --dl_seq_len 120 \
-  --dl_embed_dim 32 \
-  --dl_hidden_dim 64 \
-  --dl_epochs 10 \
-  --cv_folds 3 \
-  --model_out localize_bilstm.pt
-```
-
-Notes:
-
-- `--uniprot_preset` can be used alone or combined with `--uniprot_query`.
-- If `--label_mode explicit` is used with UniProt source, `--uniprot_fields` must include both `--localization_col` and `--perox_col`.
-- Reports include overall `class_train_accuracy` plus per-class values (`class_train_accuracy_noTP`, etc.). With `--cv_folds`, per-class CV accuracies are also reported (`cv_class_accuracy_noTP`, etc.).
-
-Predict from in-frame CDS:
-
-```
-cdskit localize \
-  --seqfile cds.fasta \
-  --model localize_model.json \
-  --report localize.tsv
-```
 
 ## Citation
 There is no published paper on CDSKIT itself, but we used and cited CDSKIT in several papers including [Fukushima & Pollock (2023, Nat Ecol Evol 7: 155-170)](https://www.nature.com/articles/s41559-022-01932-7).
