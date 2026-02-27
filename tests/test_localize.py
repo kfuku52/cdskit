@@ -21,6 +21,7 @@ from cdskit.localize_model import (
     infer_labels_from_uniprot_cc,
     load_localize_model,
     postprocess_localization_probabilities,
+    predict_localization_and_peroxisome,
 )
 
 
@@ -418,6 +419,10 @@ def test_localize_learn_and_predict_bilstm_attention(temp_dir, mock_args):
     assert model['model_type'] == 'bilstm_attention_v1'
     assert model['metadata']['dl_loss'] == 'focal'
     assert model['metadata']['dl_balanced_batch'] is True
+    assert float(model['metadata']['dl_aux_tp_weight']) >= 0.0
+    assert float(model['metadata']['dl_aux_ctp_ltp_weight']) >= 0.0
+    assert model['localization_model'].get('use_feature_fusion', False) is True
+    assert int(model['localization_model'].get('feature_dim', 0)) > 0
 
     input_path = temp_dir / 'predict_input_bilstm.fasta'
     output_path = temp_dir / 'predict_output_bilstm.tsv'
@@ -445,6 +450,16 @@ def test_localize_learn_and_predict_bilstm_attention(temp_dir, mock_args):
     valid = {'noTP', 'SP', 'mTP', 'cTP', 'lTP'}
     for row in rows:
         assert row['predicted_class'] in valid
+
+    from cdskit.localize_bilstm import predict_bilstm_attention
+    pred_name, pred_probs = predict_bilstm_attention(
+        aa_seq='MKKLLLLLLLLLLAVAVAASAASA',
+        localization_model=model['localization_model'],
+        device='cpu',
+        feature_vec=None,
+    )
+    assert pred_name in valid
+    assert sum(pred_probs.values()) == pytest.approx(1.0, abs=1.0e-6)
 
 
 @pytest.mark.skipif(not HAS_TORCH, reason='torch is required for bilstm_attention test')
@@ -495,6 +510,107 @@ def test_localize_learn_bilstm_cross_validation_metrics(temp_dir, mock_args):
     assert 0.0 <= metrics['cv_perox_accuracy_mean'] <= 1.0
 
 
+@pytest.mark.skipif(not HAS_TORCH, reason='torch is required for esm_head model save/load')
+def test_localize_learn_esm_head_head_only_mode(monkeypatch, temp_dir, mock_args):
+    import torch
+    import cdskit.localize_esm_head as esm_module
+
+    train_tsv = temp_dir / 'train_localize_esm.tsv'
+    model_path = temp_dir / 'localize_model_esm.pt'
+    build_training_table_for_cv(train_tsv)
+
+    captured = {}
+
+    def fake_require_transformers():
+        return object(), object(), object(), object()
+
+    def fake_fit_esm_head_classifier(
+        aa_sequences,
+        labels,
+        class_order,
+        model_name,
+        model_local_dir,
+        max_len,
+        pooling,
+        epochs,
+        batch_size,
+        learning_rate,
+        weight_decay,
+        seed,
+        use_class_weight,
+        device,
+    ):
+        captured['model_name'] = model_name
+        captured['model_local_dir'] = model_local_dir
+        captured['max_len'] = max_len
+        captured['pooling'] = pooling
+        source_type = 'local' if str(model_local_dir).strip() != '' else 'huggingface'
+        n_class = len(class_order)
+        in_dim = 8
+        return {
+            'class_order': list(class_order),
+            'model_name': str(model_name),
+            'model_local_dir': str(model_local_dir),
+            'model_source_type': source_type,
+            'max_len': int(max_len),
+            'pooling': str(pooling),
+            'head_in_dim': int(in_dim),
+            'head_state_dict': {
+                'weight': torch.zeros((n_class, in_dim), dtype=torch.float32),
+                'bias': torch.zeros((n_class,), dtype=torch.float32),
+            },
+            'device': str(device),
+        }
+
+    def fake_predict_esm_head(aa_seq, localization_model, device='cpu'):
+        class_order = list(localization_model['class_order'])
+        probs = {name: 0.0 for name in class_order}
+        probs[class_order[0]] = 1.0
+        return class_order[0], probs
+
+    monkeypatch.setattr(esm_module, 'require_transformers', fake_require_transformers)
+    monkeypatch.setattr(esm_module, 'fit_esm_head_classifier', fake_fit_esm_head_classifier)
+    monkeypatch.setattr(esm_module, 'predict_esm_head', fake_predict_esm_head)
+
+    args = mock_args(
+        training_tsv=str(train_tsv),
+        model_out=str(model_path),
+        report='',
+        seq_col='sequence',
+        seqtype='dna',
+        label_mode='explicit',
+        localization_col='localization',
+        perox_col='peroxisome',
+        skip_ambiguous=True,
+        codontable=1,
+        model_arch='esm_head',
+        esm_model_name='facebook/esm2_t6_8M_UR50D',
+        esm_model_local_dir='',
+        esm_pooling='cls',
+        esm_max_len=128,
+        dl_epochs=1,
+        dl_batch_size=8,
+        dl_lr=1e-3,
+        dl_weight_decay=0.0,
+        dl_class_weight=True,
+        dl_seed=1,
+        dl_device='cpu',
+        cv_folds=0,
+        cv_seed=1,
+        threads=1,
+    )
+    localize_learn_main(args)
+    assert model_path.exists()
+    model = load_localize_model(str(model_path))
+    assert model['model_type'] == 'esm_head_v1'
+    assert model['metadata']['model_arch'] == 'esm_head'
+    assert model['metadata']['esm_model_name'] == 'facebook/esm2_t6_8M_UR50D'
+    assert model['metadata']['esm_model_local_dir'] == ''
+    assert model['localization_model']['model_source_type'] == 'huggingface'
+    assert captured['model_local_dir'] == ''
+    assert captured['model_name'] == 'facebook/esm2_t6_8M_UR50D'
+
+
 def test_localize_learn_rejects_invalid_dl_loss(mock_args):
     args = mock_args(
         training_tsv='dummy.tsv',
@@ -513,6 +629,28 @@ def test_localize_learn_rejects_invalid_dl_loss(mock_args):
     with pytest.raises(ValueError) as exc_info:
         localize_learn_main(args)
     assert '--dl_loss should be ce or focal' in str(exc_info.value)
+
+
+def test_localize_learn_rejects_negative_aux_weight(mock_args):
+    args = mock_args(
+        training_tsv='dummy.tsv',
+        model_out='dummy_model.json',
+        report='',
+        seq_col='sequence',
+        seqtype='dna',
+        label_mode='explicit',
+        localization_col='localization',
+        perox_col='peroxisome',
+        skip_ambiguous=True,
+        codontable=1,
+        cv_folds=0,
+        cv_seed=1,
+        dl_aux_tp_weight=-0.1,
+        threads=1,
+    )
+    with pytest.raises(ValueError) as exc_info:
+        localize_learn_main(args)
+    assert '--dl_aux_tp_weight should be >= 0.' in str(exc_info.value)
 
 
 def test_localize_learn_two_stage_strategy_nearest_centroid(temp_dir, mock_args):
@@ -567,6 +705,95 @@ def test_localize_learn_two_stage_strategy_nearest_centroid(temp_dir, mock_args)
     valid = {'noTP', 'SP', 'mTP', 'cTP', 'lTP'}
     for row in rows:
         assert row['predicted_class'] in valid
+
+
+def test_localize_learn_two_stage_ctp_ltp_strategy_nearest_centroid(temp_dir, mock_args):
+    train_tsv = temp_dir / 'train_localize_two_stage_ctp_ltp.tsv'
+    model_path = temp_dir / 'localize_model_two_stage_ctp_ltp.json'
+    output_path = temp_dir / 'localize_two_stage_ctp_ltp_output.tsv'
+    build_training_table_for_cv(train_tsv)
+
+    args_train = mock_args(
+        training_tsv=str(train_tsv),
+        model_out=str(model_path),
+        report='',
+        seq_col='sequence',
+        seqtype='dna',
+        label_mode='explicit',
+        localization_col='localization',
+        perox_col='peroxisome',
+        skip_ambiguous=True,
+        codontable=1,
+        localize_strategy='two_stage_ctp_ltp',
+        cv_folds=2,
+        cv_seed=13,
+        threads=1,
+    )
+    localize_learn_main(args_train)
+    model = load_localize_model(str(model_path))
+    assert model['metadata']['localize_strategy'] == 'two_stage_ctp_ltp'
+    assert model['localization_model']['strategy'] == 'two_stage_ctp_ltp'
+    assert set(model['localization_model']['stage3_class_order']) == {'cTP', 'lTP'}
+    assert 'stage3_model' in model['localization_model']
+
+    input_path = temp_dir / 'localize_two_stage_ctp_ltp_input.fasta'
+    records = [
+        SeqRecord(Seq(aa_to_cds('MSTSTSTTSTASSSAATSTASSTT')), id='seq_ctp', description=''),
+        SeqRecord(Seq(aa_to_cds('MARRVAAARRLLLLLVVVVVAAST')), id='seq_ltp', description=''),
+    ]
+    Bio.SeqIO.write(records, str(input_path), 'fasta')
+    args_pred = mock_args(
+        seqfile=str(input_path),
+        inseqformat='fasta',
+        codontable=1,
+        model=str(model_path),
+        report=str(output_path),
+        include_features=False,
+        threads=1,
+    )
+    localize_main(args_pred)
+    with open(output_path, 'r', encoding='utf-8') as inp:
+        rows = list(csv.DictReader(inp, delimiter='\t'))
+    assert len(rows) == 2
+    valid = {'noTP', 'SP', 'mTP', 'cTP', 'lTP'}
+    for row in rows:
+        assert row['predicted_class'] in valid
+
+
+def test_predict_two_stage_ctp_ltp_submodel_overrides_ctp_ltp_split():
+    model = {
+        'model_type': 'nearest_centroid_v1',
+        'localization_model': {
+            'strategy': 'two_stage_ctp_ltp',
+            'class_order': ['noTP', 'SP', 'mTP', 'cTP', 'lTP'],
+            'stage1_model': {
+                'mode': 'constant',
+                'class_label': 'TP',
+                'class_order': ['noTP', 'TP'],
+            },
+            'stage2_model': {
+                'mode': 'constant',
+                'class_label': 'cTP',
+                'class_order': ['SP', 'mTP', 'cTP', 'lTP'],
+            },
+            'stage3_model': {
+                'mode': 'constant',
+                'class_label': 'lTP',
+                'class_order': ['cTP', 'lTP'],
+            },
+        },
+        'perox_model': {
+            'mode': 'constant',
+            'yes_probability': 0.0,
+        },
+    }
+
+    pred = predict_localization_and_peroxisome(
+        aa_seq='MARRVAAARRLLLLLVVVVVAAST',
+        model=model,
+    )
+    assert pred['predicted_class'] == 'lTP'
+    assert pred['class_probabilities']['lTP'] > pred['class_probabilities']['cTP']
 
 
 def test_localize_learn_predefined_cv_fold_col(temp_dir, mock_args):

@@ -10,9 +10,11 @@ from urllib import request as urllib_request
 import numpy as np
 
 from cdskit.localize_model import (
+    CTP_LTP_STAGE_CLASSES,
     FEATURE_NAMES,
     LOCALIZATION_CLASSES,
     TP_STAGE_CLASSES,
+    compose_two_stage_ctp_ltp_probabilities,
     extract_localize_features,
     fit_nearest_centroid_classifier,
     fit_perox_binary_classifier,
@@ -33,6 +35,9 @@ from cdskit.util import stop_if_invalid_codontable
 UNIPROT_SEARCH_URL = 'https://rest.uniprot.org/uniprotkb/search'
 UNIPROT_MAX_PAGE_SIZE = 500
 UNIPROT_DEFAULT_FIELDS = ('accession', 'sequence', 'cc_subcellular_location')
+TWO_STAGE_CTP_LTP_GATE_GRID = [0.0, 0.10, 0.20, 0.30, 0.40, 0.50]
+TWO_STAGE_CTP_LTP_BETA_GRID = [0.0, 0.25, 0.50, 0.75, 1.0]
+TWO_STAGE_CTP_LTP_LTP_THRESHOLD_GRID = [0.40, 0.50, 0.60, 0.70]
 UNIPROT_PRESET_QUERIES = {
     'none': '',
     'viridiplantae': 'taxonomy_id:33090',
@@ -437,6 +442,7 @@ def _fit_arch_specific_localization_model(
         from cdskit.localize_bilstm import fit_bilstm_attention_classifier
         return fit_bilstm_attention_classifier(
             aa_sequences=aa_sequences,
+            feature_matrix=x,
             labels=labels,
             class_order=class_order,
             seq_len=dl_train_params['seq_len'],
@@ -453,6 +459,26 @@ def _fit_arch_specific_localization_model(
             device=dl_train_params['device'],
             loss_name=dl_train_params['loss_name'],
             balanced_batch=dl_train_params['balanced_batch'],
+            aux_tp_weight=dl_train_params['aux_tp_weight'],
+            aux_ctp_ltp_weight=dl_train_params['aux_ctp_ltp_weight'],
+        )
+    if model_arch == 'esm_head':
+        from cdskit.localize_esm_head import fit_esm_head_classifier
+        return fit_esm_head_classifier(
+            aa_sequences=aa_sequences,
+            labels=labels,
+            class_order=class_order,
+            model_name=dl_train_params['esm_model_name'],
+            model_local_dir=dl_train_params['esm_model_local_dir'],
+            max_len=dl_train_params['esm_max_len'],
+            pooling=dl_train_params['esm_pooling'],
+            epochs=dl_train_params['epochs'],
+            batch_size=dl_train_params['batch_size'],
+            learning_rate=dl_train_params['learning_rate'],
+            weight_decay=dl_train_params['weight_decay'],
+            seed=dl_train_params['seed'],
+            use_class_weight=dl_train_params['use_class_weight'],
+            device=dl_train_params['device'],
         )
     raise ValueError('Unsupported model_arch: {}'.format(model_arch))
 
@@ -466,7 +492,7 @@ def fit_localization_model(
     localize_strategy='single_stage',
 ):
     localize_strategy = str(localize_strategy or 'single_stage').strip().lower()
-    if localize_strategy not in ['single_stage', 'two_stage']:
+    if localize_strategy not in ['single_stage', 'two_stage', 'two_stage_ctp_ltp']:
         raise ValueError('Unsupported localize_strategy: {}'.format(localize_strategy))
 
     if localize_strategy == 'single_stage':
@@ -504,13 +530,43 @@ def fit_localization_model(
         model_arch=model_arch,
         dl_train_params=dl_train_params,
     )
+
+    if localize_strategy == 'two_stage':
+        return {
+            'strategy': 'two_stage',
+            'class_order': list(LOCALIZATION_CLASSES),
+            'stage1_class_order': ['noTP', 'TP'],
+            'stage2_class_order': list(stage2_class_order),
+            'stage1_model': stage1_model,
+            'stage2_model': stage2_model,
+        }
+
+    ctp_ltp_indices = [i for i, cls in enumerate(class_labels) if cls in CTP_LTP_STAGE_CLASSES]
+    stage3_model = dict()
+    stage3_class_order = list()
+    if len(ctp_ltp_indices) > 0:
+        x_ctp_ltp = x[ctp_ltp_indices, :]
+        aa_ctp_ltp = [aa_sequences[i] for i in ctp_ltp_indices]
+        labels_ctp_ltp = [class_labels[i] for i in ctp_ltp_indices]
+        stage3_class_order = [c for c in CTP_LTP_STAGE_CLASSES if c in set(labels_ctp_ltp)]
+        stage3_model = _fit_arch_specific_localization_model(
+            x=x_ctp_ltp,
+            aa_sequences=aa_ctp_ltp,
+            labels=labels_ctp_ltp,
+            class_order=stage3_class_order,
+            model_arch=model_arch,
+            dl_train_params=dl_train_params,
+        )
+
     return {
-        'strategy': 'two_stage',
+        'strategy': 'two_stage_ctp_ltp',
         'class_order': list(LOCALIZATION_CLASSES),
         'stage1_class_order': ['noTP', 'TP'],
         'stage2_class_order': list(stage2_class_order),
+        'stage3_class_order': list(stage3_class_order),
         'stage1_model': stage1_model,
         'stage2_model': stage2_model,
+        'stage3_model': stage3_model,
     }
 
 
@@ -800,6 +856,239 @@ def evaluate_oof_postprocess(oof_rows, temperature=1.0, class_thresholds=None):
     }
 
 
+def _safe_two_stage_ctp_ltp_arrays_from_oof(oof_rows):
+    class_to_idx = {class_name: i for i, class_name in enumerate(LOCALIZATION_CLASSES)}
+    rows = sorted(oof_rows, key=lambda r: int(r.get('index', -1)))
+
+    base_probs = list()
+    stage3_probs = list()
+    true_idx = list()
+    fold_idx = list()
+    for row in rows:
+        true_class = str(row.get('true_class', '')).strip()
+        if true_class not in class_to_idx:
+            continue
+        details = row.get('two_stage_ctp_ltp_details', {})
+        if not isinstance(details, dict):
+            continue
+        base = normalize_class_probabilities(
+            class_probs=details.get('base_class_probabilities', row.get('class_probabilities', {})),
+        )
+        s3 = details.get('stage3_ctp_ltp_probabilities', {})
+        try:
+            p_ctp = float(s3.get('cTP', 0.0))
+            p_ltp = float(s3.get('lTP', 0.0))
+        except Exception:
+            p_ctp = 0.0
+            p_ltp = 0.0
+        if p_ctp < 0.0:
+            p_ctp = 0.0
+        if p_ltp < 0.0:
+            p_ltp = 0.0
+        s3_total = p_ctp + p_ltp
+        if s3_total <= 0.0:
+            p_ctp = 0.5
+            p_ltp = 0.5
+        else:
+            p_ctp = p_ctp / s3_total
+            p_ltp = p_ltp / s3_total
+
+        base_probs.append([float(base[class_name]) for class_name in LOCALIZATION_CLASSES])
+        stage3_probs.append([float(p_ctp), float(p_ltp)])
+        true_idx.append(int(class_to_idx[true_class]))
+        fold_idx.append(int(row.get('fold', 0)))
+
+    if len(base_probs) == 0:
+        raise ValueError(
+            'No valid two_stage_ctp_ltp OOF details were available for stage3 tuning.'
+        )
+    return (
+        np.asarray(base_probs, dtype=np.float64),
+        np.asarray(stage3_probs, dtype=np.float64),
+        np.asarray(true_idx, dtype=np.int64),
+        np.asarray(fold_idx, dtype=np.int64),
+    )
+
+
+def _compose_two_stage_ctp_ltp_prob_matrix(base_prob_matrix, stage3_prob_matrix, gate, beta, ltp_threshold):
+    out = np.asarray(base_prob_matrix, dtype=np.float64).copy()
+    stage3 = np.asarray(stage3_prob_matrix, dtype=np.float64)
+
+    gate = float(max(0.0, min(1.0, gate)))
+    beta = float(max(0.0, min(1.0, beta)))
+    ltp_threshold = float(max(1.0e-3, min(1.0 - 1.0e-3, ltp_threshold)))
+
+    ctp_idx = LOCALIZATION_CLASSES.index('cTP')
+    ltp_idx = LOCALIZATION_CLASSES.index('lTP')
+    mass = out[:, ctp_idx] + out[:, ltp_idx]
+    gate_mask = (mass > 0.0) & (mass >= gate)
+    if not np.any(gate_mask):
+        return out
+
+    stage2_ctp_frac = np.full_like(mass, 0.5, dtype=np.float64)
+    stage2_ltp_frac = np.full_like(mass, 0.5, dtype=np.float64)
+    nonzero_mask = (mass > 0.0)
+    stage2_ctp_frac[nonzero_mask] = out[nonzero_mask, ctp_idx] / mass[nonzero_mask]
+    stage2_ltp_frac[nonzero_mask] = out[nonzero_mask, ltp_idx] / mass[nonzero_mask]
+
+    blend_ctp = ((1.0 - beta) * stage2_ctp_frac) + (beta * stage3[:, 0])
+    blend_ltp = ((1.0 - beta) * stage2_ltp_frac) + (beta * stage3[:, 1])
+    denom_blend = blend_ctp + blend_ltp
+    safe_blend = np.where(denom_blend > 0.0, denom_blend, 1.0)
+    blend_ctp = blend_ctp / safe_blend
+    blend_ltp = blend_ltp / safe_blend
+
+    score_ctp = blend_ctp / max(1.0e-6, (1.0 - ltp_threshold))
+    score_ltp = blend_ltp / max(1.0e-6, ltp_threshold)
+    denom_score = score_ctp + score_ltp
+    safe_score = np.where(denom_score > 0.0, denom_score, 1.0)
+    adj_ctp = score_ctp / safe_score
+    adj_ltp = score_ltp / safe_score
+
+    out[gate_mask, ctp_idx] = mass[gate_mask] * adj_ctp[gate_mask]
+    out[gate_mask, ltp_idx] = mass[gate_mask] * adj_ltp[gate_mask]
+
+    row_sum = out.sum(axis=1, keepdims=True)
+    row_sum[row_sum <= 0.0] = 1.0
+    out = out / row_sum
+    return out
+
+
+def _classification_summary_from_indices(true_idx, pred_idx):
+    true_idx = np.asarray(true_idx, dtype=np.int64)
+    pred_idx = np.asarray(pred_idx, dtype=np.int64)
+    n = int(true_idx.shape[0])
+    if n <= 0:
+        raise ValueError('No OOF sample was provided.')
+    overall = float(np.mean(true_idx == pred_idx))
+
+    f1_vals = list()
+    ltp_idx = LOCALIZATION_CLASSES.index('lTP')
+    ltp_precision = 0.0
+    ltp_recall = 0.0
+    ltp_f1 = 0.0
+    for class_i, _ in enumerate(LOCALIZATION_CLASSES):
+        tp = int(np.sum((pred_idx == class_i) & (true_idx == class_i)))
+        fp = int(np.sum((pred_idx == class_i) & (true_idx != class_i)))
+        fn = int(np.sum((pred_idx != class_i) & (true_idx == class_i)))
+        precision = 0.0 if (tp + fp) <= 0 else (float(tp) / float(tp + fp))
+        recall = 0.0 if (tp + fn) <= 0 else (float(tp) / float(tp + fn))
+        f1 = 0.0 if (precision + recall) <= 0 else ((2.0 * precision * recall) / (precision + recall))
+        f1_vals.append(float(f1))
+        if class_i == ltp_idx:
+            ltp_precision = float(precision)
+            ltp_recall = float(recall)
+            ltp_f1 = float(f1)
+    return {
+        'overall_accuracy': float(overall),
+        'macro_f1': float(np.mean(np.asarray(f1_vals, dtype=np.float64))),
+        'ltp_precision': float(ltp_precision),
+        'ltp_recall': float(ltp_recall),
+        'ltp_f1': float(ltp_f1),
+    }
+
+
+def optimize_two_stage_ctp_ltp_from_oof(oof_rows, min_ltp_precision=0.0):
+    min_ltp_precision = float(max(0.0, min(1.0, min_ltp_precision)))
+    base_prob, stage3_prob, true_idx, _ = _safe_two_stage_ctp_ltp_arrays_from_oof(oof_rows=oof_rows)
+
+    best = None
+    best_prob = None
+    for gate in TWO_STAGE_CTP_LTP_GATE_GRID:
+        for beta in TWO_STAGE_CTP_LTP_BETA_GRID:
+            for ltp_threshold in TWO_STAGE_CTP_LTP_LTP_THRESHOLD_GRID:
+                prob = _compose_two_stage_ctp_ltp_prob_matrix(
+                    base_prob_matrix=base_prob,
+                    stage3_prob_matrix=stage3_prob,
+                    gate=gate,
+                    beta=beta,
+                    ltp_threshold=ltp_threshold,
+                )
+                pred_idx = np.argmax(prob, axis=1).astype(np.int64)
+                summary = _classification_summary_from_indices(
+                    true_idx=true_idx,
+                    pred_idx=pred_idx,
+                )
+                if summary['ltp_precision'] + 1.0e-12 < min_ltp_precision:
+                    continue
+                key = (
+                    float(summary['macro_f1']),
+                    float(summary['ltp_f1']),
+                    float(summary['overall_accuracy']),
+                )
+                if (best is None) or (key > best['key']):
+                    best = {
+                        'key': key,
+                        'gate_threshold': float(gate),
+                        'blend_beta': float(beta),
+                        'ltp_threshold': float(ltp_threshold),
+                        'summary': summary,
+                    }
+                    best_prob = prob
+
+    if best is None:
+        prob = _compose_two_stage_ctp_ltp_prob_matrix(
+            base_prob_matrix=base_prob,
+            stage3_prob_matrix=stage3_prob,
+            gate=0.0,
+            beta=1.0,
+            ltp_threshold=0.5,
+        )
+        pred_idx = np.argmax(prob, axis=1).astype(np.int64)
+        best = {
+            'key': (
+                _classification_summary_from_indices(true_idx=true_idx, pred_idx=pred_idx)['macro_f1'],
+                _classification_summary_from_indices(true_idx=true_idx, pred_idx=pred_idx)['ltp_f1'],
+                _classification_summary_from_indices(true_idx=true_idx, pred_idx=pred_idx)['overall_accuracy'],
+            ),
+            'gate_threshold': 0.0,
+            'blend_beta': 1.0,
+            'ltp_threshold': 0.5,
+            'summary': _classification_summary_from_indices(true_idx=true_idx, pred_idx=pred_idx),
+        }
+        best_prob = prob
+
+    return {
+        'stage3_gate_threshold': float(best['gate_threshold']),
+        'stage3_blend_beta': float(best['blend_beta']),
+        'stage3_ltp_threshold': float(best['ltp_threshold']),
+        'min_ltp_precision': float(min_ltp_precision),
+        'summary': dict(best['summary']),
+        'best_prob_matrix': best_prob,
+    }
+
+
+def apply_two_stage_ctp_ltp_params_to_oof_rows(
+    oof_rows,
+    stage3_gate_threshold,
+    stage3_blend_beta,
+    stage3_ltp_threshold,
+):
+    out_rows = list()
+    for row in sorted(oof_rows, key=lambda r: int(r.get('index', -1))):
+        out_row = dict(row)
+        details = out_row.get('two_stage_ctp_ltp_details', {})
+        if isinstance(details, dict) and (len(details) > 0):
+            base_probs = details.get('base_class_probabilities', out_row.get('class_probabilities', {}))
+            stage3_probs = details.get('stage3_ctp_ltp_probabilities', {})
+            tuned_probs, tuned_detail = compose_two_stage_ctp_ltp_probabilities(
+                base_class_probs=base_probs,
+                stage3_ctp_ltp_probs=stage3_probs,
+                stage3_gate_threshold=stage3_gate_threshold,
+                stage3_blend_beta=stage3_blend_beta,
+                stage3_ltp_threshold=stage3_ltp_threshold,
+            )
+            tuned_details = dict(details)
+            tuned_details['gate_threshold'] = float(tuned_detail['gate_threshold'])
+            tuned_details['blend_beta'] = float(tuned_detail['blend_beta'])
+            tuned_details['ltp_threshold'] = float(tuned_detail['ltp_threshold'])
+            tuned_details['gate_active'] = bool(tuned_detail['gate_active'])
+            out_row['two_stage_ctp_ltp_details'] = tuned_details
+            out_row['class_probabilities'] = normalize_class_probabilities(class_probs=tuned_probs)
+        out_rows.append(out_row)
+    return out_rows
+
+
 def evaluate_cross_validation(
     x,
     aa_sequences,
@@ -812,6 +1101,7 @@ def evaluate_cross_validation(
     dl_device,
     localize_strategy='single_stage',
     fold_ids=None,
+    verbose=False,
 ):
     if fold_ids is None:
         folds = build_stratified_folds(
@@ -832,6 +1122,15 @@ def evaluate_cross_validation(
     class_total = {class_name: 0 for class_name in LOCALIZATION_CLASSES}
     class_correct_by_class = {class_name: 0 for class_name in LOCALIZATION_CLASSES}
     for fold_i, test_idx in enumerate(folds):
+        if verbose:
+            print(
+                '[CV] fold {}/{} start (n_test={})'.format(
+                    int(fold_i + 1),
+                    int(len(folds)),
+                    int(len(test_idx)),
+                ),
+                flush=True,
+            )
         train_mask = np.ones(n_sample, dtype=bool)
         train_mask[test_idx] = False
         train_idx = np.where(train_mask)[0]
@@ -862,6 +1161,8 @@ def evaluate_cross_validation(
             tmp_model_type = 'nearest_centroid_v1'
         elif model_arch == 'bilstm_attention':
             tmp_model_type = 'bilstm_attention_v1'
+        elif model_arch == 'esm_head':
+            tmp_model_type = 'esm_head_v1'
         else:
             raise ValueError('Unsupported model_arch: {}'.format(model_arch))
         tmp_model = {
@@ -880,14 +1181,18 @@ def evaluate_cross_validation(
             )
             true_class = class_test[row_i]
             pred_class = pred['predicted_class']
-            oof_rows.append({
+            oof_row = {
                 'index': int(test_idx[row_i]),
                 'fold': int(fold_i + 1),
                 'true_class': true_class,
                 'class_probabilities': normalize_class_probabilities(
                     class_probs=pred.get('class_probabilities', {}),
                 ),
-            })
+            }
+            stage3_details = pred.get('two_stage_ctp_ltp_details', {})
+            if isinstance(stage3_details, dict) and (len(stage3_details) > 0):
+                oof_row['two_stage_ctp_ltp_details'] = stage3_details
+            oof_rows.append(oof_row)
             class_total[true_class] = class_total.get(true_class, 0) + 1
             if pred_class == true_class:
                 class_correct_fold += 1
@@ -908,6 +1213,16 @@ def evaluate_cross_validation(
             'class_accuracy': class_acc,
             'perox_accuracy': perox_acc,
         })
+        if verbose:
+            print(
+                '[CV] fold {}/{} done: class_acc={:.4f}, perox_acc={:.4f}'.format(
+                    int(fold_i + 1),
+                    int(len(folds)),
+                    float(class_acc),
+                    float(perox_acc),
+                ),
+                flush=True,
+            )
 
     class_arr = np.asarray(class_accs, dtype=np.float64)
     perox_arr = np.asarray(perox_accs, dtype=np.float64)
@@ -949,11 +1264,12 @@ def localize_learn_main(args):
     cv_seed = int(getattr(args, 'cv_seed', 1))
     cv_fold_col = str(getattr(args, 'cv_fold_col', '')).strip()
     model_arch = str(getattr(args, 'model_arch', 'nearest_centroid')).strip().lower()
-    if model_arch not in ['nearest_centroid', 'bilstm_attention']:
+    if model_arch not in ['nearest_centroid', 'bilstm_attention', 'esm_head']:
         raise ValueError('Unsupported --model_arch: {}'.format(model_arch))
     localize_strategy = str(getattr(args, 'localize_strategy', 'single_stage')).strip().lower()
-    if localize_strategy not in ['single_stage', 'two_stage']:
-        raise ValueError('--localize_strategy should be single_stage or two_stage.')
+    if localize_strategy not in ['single_stage', 'two_stage', 'two_stage_ctp_ltp']:
+        txt = '--localize_strategy should be single_stage, two_stage, or two_stage_ctp_ltp.'
+        raise ValueError(txt)
     localize_temperature_scale = bool(getattr(args, 'localize_temperature_scale', False))
     localize_threshold_tune = bool(getattr(args, 'localize_threshold_tune', False))
     localize_threshold_objective = str(
@@ -974,8 +1290,14 @@ def localize_learn_main(args):
     dl_class_weight = bool(getattr(args, 'dl_class_weight', True))
     dl_loss = str(getattr(args, 'dl_loss', 'ce')).strip().lower()
     dl_balanced_batch = bool(getattr(args, 'dl_balanced_batch', False))
+    dl_aux_tp_weight = float(getattr(args, 'dl_aux_tp_weight', 0.0))
+    dl_aux_ctp_ltp_weight = float(getattr(args, 'dl_aux_ctp_ltp_weight', 0.0))
     dl_seed = int(getattr(args, 'dl_seed', 1))
     dl_device = str(getattr(args, 'dl_device', 'auto')).strip().lower()
+    esm_model_name = str(getattr(args, 'esm_model_name', 'facebook/esm2_t6_8M_UR50D')).strip()
+    esm_model_local_dir = str(getattr(args, 'esm_model_local_dir', '')).strip()
+    esm_pooling = str(getattr(args, 'esm_pooling', 'cls')).strip().lower()
+    esm_max_len = int(getattr(args, 'esm_max_len', 200))
     if dl_seq_len < 1:
         raise ValueError('--dl_seq_len should be >= 1.')
     if dl_embed_dim < 1:
@@ -996,9 +1318,20 @@ def localize_learn_main(args):
         raise ValueError('--dl_weight_decay should be >= 0.')
     if dl_loss not in ['ce', 'focal']:
         raise ValueError('--dl_loss should be ce or focal.')
+    if dl_aux_tp_weight < 0.0:
+        raise ValueError('--dl_aux_tp_weight should be >= 0.')
+    if dl_aux_ctp_ltp_weight < 0.0:
+        raise ValueError('--dl_aux_ctp_ltp_weight should be >= 0.')
+    if esm_pooling not in ['cls', 'mean']:
+        raise ValueError('--esm_pooling should be cls or mean.')
+    if esm_max_len < 4:
+        raise ValueError('--esm_max_len should be >= 4.')
     if model_arch == 'bilstm_attention':
         from cdskit.localize_bilstm import require_torch
         require_torch()
+    if model_arch == 'esm_head':
+        from cdskit.localize_esm_head import require_transformers
+        require_transformers()
     if cv_folds < 0:
         raise ValueError('--cv_folds should be >= 0.')
     if (cv_fold_col == '') and (cv_folds == 1):
@@ -1087,6 +1420,12 @@ def localize_learn_main(args):
         'device': dl_device,
         'loss_name': dl_loss,
         'balanced_batch': dl_balanced_batch,
+        'aux_tp_weight': dl_aux_tp_weight,
+        'aux_ctp_ltp_weight': dl_aux_ctp_ltp_weight,
+        'esm_model_name': esm_model_name,
+        'esm_model_local_dir': esm_model_local_dir,
+        'esm_pooling': esm_pooling,
+        'esm_max_len': esm_max_len,
     }
     localization_model = fit_localization_model(
         x=x,
@@ -1100,6 +1439,8 @@ def localize_learn_main(args):
         model_type = 'nearest_centroid_v1'
     elif model_arch == 'bilstm_attention':
         model_type = 'bilstm_attention_v1'
+    elif model_arch == 'esm_head':
+        model_type = 'esm_head_v1'
     else:
         raise ValueError('Unsupported --model_arch: {}'.format(model_arch))
     perox_model = fit_perox_binary_classifier(
@@ -1174,6 +1515,7 @@ def localize_learn_main(args):
     model['metadata']['class_train_accuracy_by_class'] = dict(metrics['class_accuracy_by_class'])
     cv_metrics = None
     postproc_metrics = None
+    two_stage_ctp_ltp_tune = None
     if effective_cv_folds >= 2:
         cv_metrics = evaluate_cross_validation(
             x=x,
@@ -1195,10 +1537,56 @@ def localize_learn_main(args):
         model['metadata']['cv_class_accuracy_by_class'] = dict(cv_metrics['class_accuracy_by_class'])
         model['metadata']['cv_perox_accuracy_mean'] = float(cv_metrics['perox_accuracy_mean'])
         model['metadata']['cv_perox_accuracy_std'] = float(cv_metrics['perox_accuracy_std'])
+
+        if localize_strategy == 'two_stage_ctp_ltp':
+            two_stage_ctp_ltp_tune = optimize_two_stage_ctp_ltp_from_oof(
+                oof_rows=cv_metrics.get('oof_rows', []),
+                min_ltp_precision=0.0,
+            )
+            localization_model['stage3_gate_threshold'] = float(
+                two_stage_ctp_ltp_tune['stage3_gate_threshold']
+            )
+            localization_model['stage3_blend_beta'] = float(
+                two_stage_ctp_ltp_tune['stage3_blend_beta']
+            )
+            localization_model['stage3_ltp_threshold'] = float(
+                two_stage_ctp_ltp_tune['stage3_ltp_threshold']
+            )
+            model['metadata']['two_stage_ctp_ltp_stage3_gate_threshold'] = float(
+                two_stage_ctp_ltp_tune['stage3_gate_threshold']
+            )
+            model['metadata']['two_stage_ctp_ltp_stage3_blend_beta'] = float(
+                two_stage_ctp_ltp_tune['stage3_blend_beta']
+            )
+            model['metadata']['two_stage_ctp_ltp_stage3_ltp_threshold'] = float(
+                two_stage_ctp_ltp_tune['stage3_ltp_threshold']
+            )
+            model['metadata']['two_stage_ctp_ltp_oof_macro_f1'] = float(
+                two_stage_ctp_ltp_tune['summary']['macro_f1']
+            )
+            model['metadata']['two_stage_ctp_ltp_oof_ltp_precision'] = float(
+                two_stage_ctp_ltp_tune['summary']['ltp_precision']
+            )
+            model['metadata']['two_stage_ctp_ltp_oof_ltp_recall'] = float(
+                two_stage_ctp_ltp_tune['summary']['ltp_recall']
+            )
+            model['metadata']['two_stage_ctp_ltp_oof_ltp_f1'] = float(
+                two_stage_ctp_ltp_tune['summary']['ltp_f1']
+            )
+            cv_metrics['oof_rows'] = apply_two_stage_ctp_ltp_params_to_oof_rows(
+                oof_rows=cv_metrics.get('oof_rows', []),
+                stage3_gate_threshold=two_stage_ctp_ltp_tune['stage3_gate_threshold'],
+                stage3_blend_beta=two_stage_ctp_ltp_tune['stage3_blend_beta'],
+                stage3_ltp_threshold=two_stage_ctp_ltp_tune['stage3_ltp_threshold'],
+            )
     else:
         model['metadata']['cv_folds'] = 0
         model['metadata']['cv_seed'] = int(cv_seed)
         model['metadata']['cv_class_accuracy_by_class'] = dict()
+        if localize_strategy == 'two_stage_ctp_ltp':
+            localization_model['stage3_gate_threshold'] = 0.0
+            localization_model['stage3_blend_beta'] = 1.0
+            localization_model['stage3_ltp_threshold'] = 0.5
     if cv_metrics is not None and (localize_temperature_scale or localize_threshold_tune):
         oof_rows = cv_metrics.get('oof_rows', [])
         tuned_temperature = 1.0
@@ -1257,6 +1645,20 @@ def localize_learn_main(args):
         model['metadata']['dl_class_weight'] = bool(dl_class_weight)
         model['metadata']['dl_loss'] = str(dl_loss)
         model['metadata']['dl_balanced_batch'] = bool(dl_balanced_batch)
+        model['metadata']['dl_aux_tp_weight'] = float(dl_aux_tp_weight)
+        model['metadata']['dl_aux_ctp_ltp_weight'] = float(dl_aux_ctp_ltp_weight)
+        model['metadata']['dl_seed'] = int(dl_seed)
+        model['metadata']['dl_device'] = str(dl_device)
+    if model_arch == 'esm_head':
+        model['metadata']['esm_model_name'] = str(esm_model_name)
+        model['metadata']['esm_model_local_dir'] = str(esm_model_local_dir)
+        model['metadata']['esm_pooling'] = str(esm_pooling)
+        model['metadata']['esm_max_len'] = int(esm_max_len)
+        model['metadata']['dl_epochs'] = int(dl_epochs)
+        model['metadata']['dl_batch_size'] = int(dl_batch_size)
+        model['metadata']['dl_lr'] = float(dl_lr)
+        model['metadata']['dl_weight_decay'] = float(dl_weight_decay)
+        model['metadata']['dl_class_weight'] = bool(dl_class_weight)
         model['metadata']['dl_seed'] = int(dl_seed)
         model['metadata']['dl_device'] = str(dl_device)
 

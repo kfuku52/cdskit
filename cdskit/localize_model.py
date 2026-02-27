@@ -10,6 +10,7 @@ from cdskit.util import DNA_ALLOWED_CHARS
 
 LOCALIZATION_CLASSES = ('noTP', 'SP', 'mTP', 'cTP', 'lTP')
 TP_STAGE_CLASSES = ('SP', 'mTP', 'cTP', 'lTP')
+CTP_LTP_STAGE_CLASSES = ('cTP', 'lTP')
 
 AA_HYDROPHOBIC = frozenset('AILMFWVY')
 AA_BASIC = frozenset('KRH')
@@ -515,6 +516,14 @@ def _predict_localization_from_model(aa_seq, feature_vec, localization_model, mo
             aa_seq=aa_seq,
             localization_model=localization_model,
             device='cpu',
+            feature_vec=feature_vec,
+        )
+    if model_type == 'esm_head_v1':
+        from cdskit.localize_esm_head import predict_esm_head
+        return predict_esm_head(
+            aa_seq=aa_seq,
+            localization_model=localization_model,
+            device='cpu',
         )
     raise ValueError('Unsupported model_type: {}'.format(model_type))
 
@@ -558,6 +567,188 @@ def predict_two_stage_localization(aa_seq, feature_vec, localization_model, mode
     return pred_class, out_probs
 
 
+def _normalize_ctp_ltp_probs(stage3_probs):
+    p_ctp = float(stage3_probs.get('cTP', 0.0))
+    p_ltp = float(stage3_probs.get('lTP', 0.0))
+    if p_ctp < 0.0:
+        p_ctp = 0.0
+    if p_ltp < 0.0:
+        p_ltp = 0.0
+    total = p_ctp + p_ltp
+    if total <= 0.0:
+        return {'cTP': 0.5, 'lTP': 0.5}
+    return {
+        'cTP': p_ctp / total,
+        'lTP': p_ltp / total,
+    }
+
+
+def _clip_float(value, lower, upper, default):
+    try:
+        out = float(value)
+    except Exception:
+        out = float(default)
+    if not np.isfinite(out):
+        out = float(default)
+    if out < lower:
+        out = float(lower)
+    if out > upper:
+        out = float(upper)
+    return float(out)
+
+
+def compose_two_stage_ctp_ltp_probabilities(
+    base_class_probs,
+    stage3_ctp_ltp_probs,
+    stage3_gate_threshold=0.0,
+    stage3_blend_beta=1.0,
+    stage3_ltp_threshold=0.5,
+):
+    base = normalize_class_probabilities(class_probs=base_class_probs)
+    out = dict(base)
+    stage3 = _normalize_ctp_ltp_probs(stage3_probs=stage3_ctp_ltp_probs)
+
+    gate_threshold = _clip_float(
+        value=stage3_gate_threshold,
+        lower=0.0,
+        upper=1.0,
+        default=0.0,
+    )
+    blend_beta = _clip_float(
+        value=stage3_blend_beta,
+        lower=0.0,
+        upper=1.0,
+        default=1.0,
+    )
+    ltp_threshold = _clip_float(
+        value=stage3_ltp_threshold,
+        lower=1.0e-3,
+        upper=1.0 - 1.0e-3,
+        default=0.5,
+    )
+
+    ctp_ltp_mass = float(base.get('cTP', 0.0) + base.get('lTP', 0.0))
+    gate_active = (ctp_ltp_mass > 0.0) and (ctp_ltp_mass >= gate_threshold)
+    stage2_ctp_frac = 0.5
+    stage2_ltp_frac = 0.5
+    if ctp_ltp_mass > 0.0:
+        stage2_ctp_frac = float(base.get('cTP', 0.0)) / ctp_ltp_mass
+        stage2_ltp_frac = float(base.get('lTP', 0.0)) / ctp_ltp_mass
+
+    if gate_active:
+        blend_ctp = ((1.0 - blend_beta) * stage2_ctp_frac) + (blend_beta * float(stage3['cTP']))
+        blend_ltp = ((1.0 - blend_beta) * stage2_ltp_frac) + (blend_beta * float(stage3['lTP']))
+        denom_blend = blend_ctp + blend_ltp
+        if denom_blend <= 0.0:
+            blend_ctp = 0.5
+            blend_ltp = 0.5
+        else:
+            blend_ctp = blend_ctp / denom_blend
+            blend_ltp = blend_ltp / denom_blend
+
+        # Soft threshold adjustment: larger stage3_ltp_threshold penalizes lTP.
+        score_ctp = blend_ctp / max(1.0e-6, (1.0 - ltp_threshold))
+        score_ltp = blend_ltp / max(1.0e-6, ltp_threshold)
+        denom_score = score_ctp + score_ltp
+        if denom_score <= 0.0:
+            adj_ctp = 0.5
+            adj_ltp = 0.5
+        else:
+            adj_ctp = score_ctp / denom_score
+            adj_ltp = score_ltp / denom_score
+
+        out['cTP'] = ctp_ltp_mass * adj_ctp
+        out['lTP'] = ctp_ltp_mass * adj_ltp
+
+    total = float(sum(out.values()))
+    if total <= 0.0:
+        out = {class_name: 0.0 for class_name in LOCALIZATION_CLASSES}
+        out['noTP'] = 1.0
+    else:
+        for class_name in LOCALIZATION_CLASSES:
+            out[class_name] = out[class_name] / total
+
+    details = {
+        'gate_threshold': float(gate_threshold),
+        'blend_beta': float(blend_beta),
+        'ltp_threshold': float(ltp_threshold),
+        'ctp_ltp_mass': float(ctp_ltp_mass),
+        'gate_active': bool(gate_active),
+        'stage2_ctp_frac': float(stage2_ctp_frac),
+        'stage2_ltp_frac': float(stage2_ltp_frac),
+        'stage3_ctp_frac': float(stage3['cTP']),
+        'stage3_ltp_frac': float(stage3['lTP']),
+    }
+    return out, details
+
+
+def predict_two_stage_ctp_ltp_localization(
+    aa_seq,
+    feature_vec,
+    localization_model,
+    model_type,
+    return_details=False,
+):
+    _, base_probs = predict_two_stage_localization(
+        aa_seq=aa_seq,
+        feature_vec=feature_vec,
+        localization_model=localization_model,
+        model_type=model_type,
+    )
+    stage3_model = localization_model.get('stage3_model', None)
+    if not isinstance(stage3_model, dict):
+        pred_idx = int(np.argmax([base_probs[class_name] for class_name in LOCALIZATION_CLASSES]))
+        pred_class = LOCALIZATION_CLASSES[pred_idx]
+        if return_details:
+            return pred_class, base_probs, {
+                'base_class_probabilities': dict(base_probs),
+                'stage3_ctp_ltp_probabilities': {'cTP': 0.5, 'lTP': 0.5},
+                'gate_threshold': 0.0,
+                'blend_beta': 1.0,
+                'ltp_threshold': 0.5,
+                'ctp_ltp_mass': float(base_probs.get('cTP', 0.0) + base_probs.get('lTP', 0.0)),
+                'gate_active': False,
+            }
+        return pred_class, base_probs
+    if len(stage3_model) == 0:
+        pred_idx = int(np.argmax([base_probs[class_name] for class_name in LOCALIZATION_CLASSES]))
+        pred_class = LOCALIZATION_CLASSES[pred_idx]
+        if return_details:
+            return pred_class, base_probs, {
+                'base_class_probabilities': dict(base_probs),
+                'stage3_ctp_ltp_probabilities': {'cTP': 0.5, 'lTP': 0.5},
+                'gate_threshold': 0.0,
+                'blend_beta': 1.0,
+                'ltp_threshold': 0.5,
+                'ctp_ltp_mass': float(base_probs.get('cTP', 0.0) + base_probs.get('lTP', 0.0)),
+                'gate_active': False,
+            }
+        return pred_class, base_probs
+
+    _, stage3_probs = _predict_localization_from_model(
+        aa_seq=aa_seq,
+        feature_vec=feature_vec,
+        localization_model=stage3_model,
+        model_type=model_type,
+    )
+    stage3_probs = _normalize_ctp_ltp_probs(stage3_probs=stage3_probs)
+    out_probs, details = compose_two_stage_ctp_ltp_probabilities(
+        base_class_probs=base_probs,
+        stage3_ctp_ltp_probs=stage3_probs,
+        stage3_gate_threshold=localization_model.get('stage3_gate_threshold', 0.0),
+        stage3_blend_beta=localization_model.get('stage3_blend_beta', 1.0),
+        stage3_ltp_threshold=localization_model.get('stage3_ltp_threshold', 0.5),
+    )
+    details['base_class_probabilities'] = dict(base_probs)
+    details['stage3_ctp_ltp_probabilities'] = dict(stage3_probs)
+
+    pred_idx = int(np.argmax([out_probs[class_name] for class_name in LOCALIZATION_CLASSES]))
+    pred_class = LOCALIZATION_CLASSES[pred_idx]
+    if return_details:
+        return pred_class, out_probs, details
+    return pred_class, out_probs
+
+
 def predict_localization_and_peroxisome(aa_seq, model):
     feats, perox_signals = extract_localize_features(aa_seq=aa_seq)
     model_type = str(model.get('model_type', ''))
@@ -569,6 +760,14 @@ def predict_localization_and_peroxisome(aa_seq, model):
             feature_vec=feats,
             localization_model=localization_model,
             model_type=model_type,
+        )
+    elif localization_strategy == 'two_stage_ctp_ltp':
+        _, class_probs, strategy_details = predict_two_stage_ctp_ltp_localization(
+            aa_seq=aa_seq,
+            feature_vec=feats,
+            localization_model=localization_model,
+            model_type=model_type,
+            return_details=True,
         )
     else:
         _, class_probs = _predict_localization_from_model(
@@ -585,7 +784,7 @@ def predict_localization_and_peroxisome(aa_seq, model):
         feature_vec=feats,
         perox_model=model['perox_model'],
     )
-    return {
+    out = {
         'predicted_class': pred_class,
         'class_probabilities': class_probs,
         'perox_probability_yes': float(perox_probs.get('yes', 0.0)),
@@ -595,6 +794,9 @@ def predict_localization_and_peroxisome(aa_seq, model):
         'pts1_match': bool(perox_signals['pts1_match']),
         'pts2_match': bool(perox_signals['pts2_match']),
     }
+    if localization_strategy == 'two_stage_ctp_ltp':
+        out['two_stage_ctp_ltp_details'] = strategy_details
+    return out
 
 
 def _strip_runtime_caches(value):
@@ -616,7 +818,7 @@ def save_localize_model(model, path):
         with open(path, 'w', encoding='utf-8') as out:
             json.dump(model, out, indent=2, sort_keys=True)
         return
-    if model_type == 'bilstm_attention_v1':
+    if model_type in ['bilstm_attention_v1', 'esm_head_v1']:
         from cdskit.localize_bilstm import require_torch
         torch, _ = require_torch()
         to_save = _strip_runtime_caches(dict(model))
@@ -653,7 +855,7 @@ def load_localize_model(path):
     for key in required:
         if key not in model:
             raise ValueError('Invalid model file. Missing key: {}'.format(key))
-    if model['model_type'] not in ['nearest_centroid_v1', 'bilstm_attention_v1']:
+    if model['model_type'] not in ['nearest_centroid_v1', 'bilstm_attention_v1', 'esm_head_v1']:
         raise ValueError('Unsupported model_type: {}'.format(model['model_type']))
     return model
 

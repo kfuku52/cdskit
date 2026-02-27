@@ -282,12 +282,12 @@ p_localize_learn.add_argument('--cv_seed', metavar='INT', default=1, type=int, r
                               help='default=%(default)s: Random seed for cross-validation fold assignment.')
 p_localize_learn.add_argument('--cv_fold_col', metavar='STR', default='', type=str, required=False, action='store',
                               help='default=%(default)s: Optional fold-id column for fixed CV splits. When set, folds are derived from this column instead of random stratification.')
-p_localize_learn.add_argument('--model_arch', metavar='nearest_centroid|bilstm_attention', default='nearest_centroid', type=str, required=False, action='store',
-                              choices=['nearest_centroid', 'bilstm_attention'],
+p_localize_learn.add_argument('--model_arch', metavar='nearest_centroid|bilstm_attention|esm_head', default='nearest_centroid', type=str, required=False, action='store',
+                              choices=['nearest_centroid', 'bilstm_attention', 'esm_head'],
                               help='default=%(default)s: Localization model architecture.')
-p_localize_learn.add_argument('--localize_strategy', metavar='single_stage|two_stage', default='single_stage', type=str, required=False, action='store',
-                              choices=['single_stage', 'two_stage'],
-                              help='default=%(default)s: Localization class strategy. "two_stage" predicts noTP vs TP first, then TP subclasses.')
+p_localize_learn.add_argument('--localize_strategy', metavar='single_stage|two_stage|two_stage_ctp_ltp', default='single_stage', type=str, required=False, action='store',
+                              choices=['single_stage', 'two_stage', 'two_stage_ctp_ltp'],
+                              help='default=%(default)s: Localization class strategy. "two_stage" predicts noTP vs TP first, then TP subclasses. "two_stage_ctp_ltp" adds a cTP-vs-lTP sub-model on top of two_stage.')
 p_localize_learn.add_argument('--localize_temperature_scale', metavar='yes|no', default='no', type=strtobool, required=False, action='store',
                               help='default=%(default)s: Fit temperature scaling on out-of-fold probabilities (requires CV).')
 p_localize_learn.add_argument('--localize_threshold_tune', metavar='yes|no', default='no', type=strtobool, required=False, action='store',
@@ -320,11 +320,24 @@ p_localize_learn.add_argument('--dl_loss', metavar='ce|focal', default='ce', typ
                               help='default=%(default)s: Loss function for bilstm_attention training.')
 p_localize_learn.add_argument('--dl_balanced_batch', metavar='yes|no', default='no', type=strtobool, required=False, action='store',
                               help='default=%(default)s: Use class-balanced mini-batch sampling for bilstm_attention training.')
+p_localize_learn.add_argument('--dl_aux_tp_weight', metavar='FLOAT', default=0.0, type=float, required=False, action='store',
+                              help='default=%(default)s: Auxiliary loss weight for noTP-vs-TP head in bilstm_attention training.')
+p_localize_learn.add_argument('--dl_aux_ctp_ltp_weight', metavar='FLOAT', default=0.0, type=float, required=False, action='store',
+                              help='default=%(default)s: Auxiliary loss weight for cTP-vs-lTP head in bilstm_attention training.')
 p_localize_learn.add_argument('--dl_seed', metavar='INT', default=1, type=int, required=False, action='store',
                               help='default=%(default)s: Random seed for bilstm_attention training.')
 p_localize_learn.add_argument('--dl_device', metavar='auto|cpu|cuda', default='auto', type=str, required=False, action='store',
                               choices=['auto', 'cpu', 'cuda'],
                               help='default=%(default)s: Device for bilstm_attention training and evaluation.')
+p_localize_learn.add_argument('--esm_model_name', metavar='STR', default='facebook/esm2_t6_8M_UR50D', type=str, required=False, action='store',
+                              help='default=%(default)s: Hugging Face model id used by --model_arch esm_head.')
+p_localize_learn.add_argument('--esm_model_local_dir', metavar='PATH', default='', type=str, required=False, action='store',
+                              help='default=%(default)s: Optional local directory for --model_arch esm_head. If empty, model files are auto-downloaded from Hugging Face.')
+p_localize_learn.add_argument('--esm_pooling', metavar='cls|mean', default='cls', type=str, required=False, action='store',
+                              choices=['cls', 'mean'],
+                              help='default=%(default)s: Sequence pooling method for --model_arch esm_head.')
+p_localize_learn.add_argument('--esm_max_len', metavar='INT', default=200, type=int, required=False, action='store',
+                              help='default=%(default)s: Maximum amino-acid length for --model_arch esm_head tokenization.')
 p_localize_learn.add_argument('--model_out', metavar='PATH', default='cdskit_localize_model.json', type=str, required=False, action='store',
                               help='default=%(default)s: Output model path.')
 p_localize_learn.add_argument('--report', metavar='PATH', default='', type=str, required=False, action='store',

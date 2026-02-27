@@ -69,6 +69,7 @@ def encode_aa_sequences(aa_sequences, seq_len, aa_to_idx=None):
 
 
 def _build_bilstm_attention_module(
+    torch,
     nn,
     vocab_size,
     embed_dim,
@@ -76,6 +77,7 @@ def _build_bilstm_attention_module(
     num_layers,
     dropout,
     num_class,
+    feature_dim=0,
 ):
     class BilstmAttentionClassifier(nn.Module):
         def __init__(self):
@@ -95,16 +97,50 @@ def _build_bilstm_attention_module(
                 dropout=lstm_dropout,
             )
             self.attention = nn.Linear(int(hidden_dim) * 2, 1)
-            self.classifier = nn.Linear(int(hidden_dim) * 2, int(num_class))
+            self.use_feature_fusion = int(feature_dim) > 0
+            feature_proj_dim = int(hidden_dim)
+            if self.use_feature_fusion:
+                self.feature_mlp = nn.Sequential(
+                    nn.Linear(int(feature_dim), feature_proj_dim),
+                    nn.ReLU(),
+                    nn.Dropout(float(dropout)),
+                )
+                classifier_in_dim = (int(hidden_dim) * 2) + feature_proj_dim
+            else:
+                self.feature_mlp = None
+                classifier_in_dim = int(hidden_dim) * 2
+            self.classifier = nn.Linear(classifier_in_dim, int(num_class))
 
-        def forward(self, tokens, mask):
+        def forward(self, tokens, mask, feature_vec=None, return_representation=False):
             emb = self.embedding(tokens)
-            encoded, _ = self.encoder(emb)
+            lengths = mask.long().sum(dim=1)
+            lengths = lengths.clamp(min=1)
+            packed = nn.utils.rnn.pack_padded_sequence(
+                emb,
+                lengths=lengths.detach().cpu(),
+                batch_first=True,
+                enforce_sorted=False,
+            )
+            encoded_packed, _ = self.encoder(packed)
+            encoded, _ = nn.utils.rnn.pad_packed_sequence(
+                encoded_packed,
+                batch_first=True,
+                total_length=tokens.shape[1],
+            )
             att_logits = self.attention(encoded).squeeze(-1)
             att_logits = att_logits.masked_fill(~mask, -1.0e9)
             att_w = att_logits.softmax(dim=1)
             context = (encoded * att_w.unsqueeze(-1)).sum(dim=1)
-            logits = self.classifier(context)
+            if self.use_feature_fusion:
+                if feature_vec is None:
+                    feature_vec = context.new_zeros((context.shape[0], int(feature_dim)))
+                fused_feature = self.feature_mlp(feature_vec)
+                classifier_input = torch.cat([context, fused_feature], dim=1)
+            else:
+                classifier_input = context
+            logits = self.classifier(classifier_input)
+            if return_representation:
+                return logits, classifier_input
             return logits
 
     return BilstmAttentionClassifier()
@@ -124,6 +160,20 @@ def _class_weights_from_labels(labels, class_order):
         else:
             weights.append(n_total / (n_class * count))
     return np.asarray(weights, dtype=np.float32)
+
+
+def _class_weights_from_binary_targets(targets, num_class=2):
+    targets = np.asarray(targets, dtype=np.int64)
+    weights = np.zeros((int(num_class),), dtype=np.float32)
+    if targets.shape[0] <= 0:
+        return weights
+    n_total = float(targets.shape[0])
+    n_class = float(num_class)
+    for class_idx in range(int(num_class)):
+        count = float(np.sum(targets == class_idx))
+        if count > 0.0:
+            weights[class_idx] = n_total / (n_class * count)
+    return weights
 
 
 def _init_class_sampling_pools(y, rng):
@@ -211,6 +261,22 @@ def _resolve_loss_function(torch, nn, weight_tensor, loss_name='ce', focal_gamma
     raise ValueError('Unsupported loss_name: {}'.format(loss_name))
 
 
+def _prepare_feature_matrix(feature_matrix, n_row):
+    if feature_matrix is None:
+        return None, None, None
+    feat = np.asarray(feature_matrix, dtype=np.float32)
+    if feat.ndim != 2:
+        raise ValueError('feature_matrix should be 2D array.')
+    if int(feat.shape[0]) != int(n_row):
+        txt = 'feature_matrix row count mismatch: expected {}, got {}.'
+        raise ValueError(txt.format(int(n_row), int(feat.shape[0])))
+    feat_mean = feat.mean(axis=0).astype(np.float32)
+    feat_scale = feat.std(axis=0).astype(np.float32)
+    feat_scale[feat_scale < 1.0e-6] = 1.0
+    feat_norm = (feat - feat_mean[np.newaxis, :]) / feat_scale[np.newaxis, :]
+    return feat_norm.astype(np.float32), feat_mean, feat_scale
+
+
 def fit_bilstm_attention_classifier(
     aa_sequences,
     labels,
@@ -230,6 +296,9 @@ def fit_bilstm_attention_classifier(
     loss_name='ce',
     balanced_batch=False,
     focal_gamma=2.0,
+    feature_matrix=None,
+    aux_tp_weight=0.0,
+    aux_ctp_ltp_weight=0.0,
 ):
     torch, nn = require_torch()
     np.random.seed(int(seed))
@@ -250,6 +319,13 @@ def fit_bilstm_attention_classifier(
         aa_to_idx=aa_to_idx,
     )
     y = np.asarray([label_to_idx[v] for v in labels], dtype=np.int64)
+    feature_x, feature_mean, feature_scale = _prepare_feature_matrix(
+        feature_matrix=feature_matrix,
+        n_row=x.shape[0],
+    )
+    feature_dim = 0
+    if feature_x is not None:
+        feature_dim = int(feature_x.shape[1])
 
     if x.shape[0] != y.shape[0]:
         raise ValueError('Input sequence count and label count mismatch.')
@@ -265,9 +341,16 @@ def fit_bilstm_attention_classifier(
     balanced_batch = bool(balanced_batch)
     if float(focal_gamma) < 0:
         raise ValueError('focal_gamma should be >= 0.')
+    aux_tp_weight = float(aux_tp_weight)
+    aux_ctp_ltp_weight = float(aux_ctp_ltp_weight)
+    if aux_tp_weight < 0.0:
+        raise ValueError('aux_tp_weight should be >= 0.')
+    if aux_ctp_ltp_weight < 0.0:
+        raise ValueError('aux_ctp_ltp_weight should be >= 0.')
 
     resolved_device = resolve_torch_device(device_text=device)
     model = _build_bilstm_attention_module(
+        torch=torch,
         nn=nn,
         vocab_size=len(aa_to_idx),
         embed_dim=embed_dim,
@@ -275,10 +358,48 @@ def fit_bilstm_attention_classifier(
         num_layers=num_layers,
         dropout=dropout,
         num_class=len(class_order),
+        feature_dim=feature_dim,
     )
     model.to(resolved_device)
+    representation_dim = int(model.classifier.in_features)
+    has_no_tp = 'noTP' in label_to_idx
+    has_ctp_ltp_pair = ('cTP' in label_to_idx) and ('lTP' in label_to_idx)
+    no_tp_idx = int(label_to_idx.get('noTP', 0))
+    ctp_idx = int(label_to_idx.get('cTP', -1))
+    ltp_idx = int(label_to_idx.get('lTP', -1))
+    y_tp = (y != no_tp_idx).astype(np.int64)
+    y_ctp_ltp = np.full((y.shape[0],), -1, dtype=np.int64)
+    if (ctp_idx >= 0) and (ltp_idx >= 0):
+        y_ctp_ltp[y == ctp_idx] = 0
+        y_ctp_ltp[y == ltp_idx] = 1
+
+    use_aux_tp = (aux_tp_weight > 0.0) and has_no_tp
+    use_aux_ctp_ltp = (aux_ctp_ltp_weight > 0.0) and has_ctp_ltp_pair
+    aux_tp_head = None
+    aux_tp_loss_fn = None
+    aux_ctp_ltp_head = None
+    aux_ctp_ltp_loss_fn = None
+    if use_aux_tp:
+        aux_tp_head = nn.Linear(representation_dim, 2)
+        aux_tp_head.to(resolved_device)
+        tp_w = _class_weights_from_binary_targets(targets=y_tp, num_class=2)
+        tp_w_t = torch.as_tensor(tp_w, dtype=torch.float32, device=resolved_device)
+        aux_tp_loss_fn = nn.CrossEntropyLoss(weight=tp_w_t)
+    if use_aux_ctp_ltp:
+        aux_ctp_ltp_head = nn.Linear(representation_dim, 2)
+        aux_ctp_ltp_head.to(resolved_device)
+        valid_targets = y_ctp_ltp[y_ctp_ltp >= 0]
+        ctp_ltp_w = _class_weights_from_binary_targets(targets=valid_targets, num_class=2)
+        ctp_ltp_w_t = torch.as_tensor(ctp_ltp_w, dtype=torch.float32, device=resolved_device)
+        aux_ctp_ltp_loss_fn = nn.CrossEntropyLoss(weight=ctp_ltp_w_t)
+
+    parameters = list(model.parameters())
+    if aux_tp_head is not None:
+        parameters.extend(list(aux_tp_head.parameters()))
+    if aux_ctp_ltp_head is not None:
+        parameters.extend(list(aux_ctp_ltp_head.parameters()))
     optimizer = torch.optim.AdamW(
-        model.parameters(),
+        parameters,
         lr=float(learning_rate),
         weight_decay=float(weight_decay),
     )
@@ -306,8 +427,42 @@ def fit_bilstm_attention_classifier(
     indices = np.arange(x.shape[0], dtype=np.int64)
     rng = np.random.default_rng(int(seed))
     n_batch = int(np.ceil(x.shape[0] / float(batch_size)))
+    use_auxiliary = use_aux_tp or use_aux_ctp_ltp
+
+    def _compute_total_loss(batch_idx, logits, yb, representation):
+        loss = loss_fn(logits, yb)
+        if use_aux_tp:
+            tp_targets = torch.as_tensor(
+                y_tp[batch_idx],
+                dtype=torch.long,
+                device=resolved_device,
+            )
+            tp_logits = aux_tp_head(representation)
+            loss = loss + (aux_tp_weight * aux_tp_loss_fn(tp_logits, tp_targets))
+        if use_aux_ctp_ltp:
+            ctp_ltp_targets_np = y_ctp_ltp[batch_idx]
+            keep_mask_np = (ctp_ltp_targets_np >= 0)
+            if np.any(keep_mask_np):
+                keep_mask = torch.as_tensor(
+                    keep_mask_np,
+                    dtype=torch.bool,
+                    device=resolved_device,
+                )
+                ctp_ltp_targets = torch.as_tensor(
+                    ctp_ltp_targets_np[keep_mask_np],
+                    dtype=torch.long,
+                    device=resolved_device,
+                )
+                ctp_ltp_logits = aux_ctp_ltp_head(representation[keep_mask, :])
+                loss = loss + (aux_ctp_ltp_weight * aux_ctp_ltp_loss_fn(ctp_ltp_logits, ctp_ltp_targets))
+        return loss
+
     for _ in range(epochs):
         model.train()
+        if aux_tp_head is not None:
+            aux_tp_head.train()
+        if aux_ctp_ltp_head is not None:
+            aux_ctp_ltp_head.train()
         if balanced_batch:
             observed_classes, pools, cursors = _init_class_sampling_pools(y=y, rng=rng)
             for _ in range(n_batch):
@@ -328,12 +483,33 @@ def fit_bilstm_attention_classifier(
                     dtype=torch.long,
                     device=resolved_device,
                 )
+                fb = None
+                if feature_x is not None:
+                    fb = torch.as_tensor(
+                        feature_x[batch_idx, :],
+                        dtype=torch.float32,
+                        device=resolved_device,
+                    )
                 mask = (xb != PAD_INDEX)
                 optimizer.zero_grad(set_to_none=True)
-                logits = model(tokens=xb, mask=mask)
-                loss = loss_fn(logits, yb)
+                if use_auxiliary:
+                    logits, rep = model(
+                        tokens=xb,
+                        mask=mask,
+                        feature_vec=fb,
+                        return_representation=True,
+                    )
+                    loss = _compute_total_loss(
+                        batch_idx=batch_idx,
+                        logits=logits,
+                        yb=yb,
+                        representation=rep,
+                    )
+                else:
+                    logits = model(tokens=xb, mask=mask, feature_vec=fb)
+                    loss = loss_fn(logits, yb)
                 loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                torch.nn.utils.clip_grad_norm_(parameters, max_norm=1.0)
                 optimizer.step()
             continue
         rng.shuffle(indices)
@@ -349,12 +525,33 @@ def fit_bilstm_attention_classifier(
                 dtype=torch.long,
                 device=resolved_device,
             )
+            fb = None
+            if feature_x is not None:
+                fb = torch.as_tensor(
+                    feature_x[batch_idx, :],
+                    dtype=torch.float32,
+                    device=resolved_device,
+                )
             mask = (xb != PAD_INDEX)
             optimizer.zero_grad(set_to_none=True)
-            logits = model(tokens=xb, mask=mask)
-            loss = loss_fn(logits, yb)
+            if use_auxiliary:
+                logits, rep = model(
+                    tokens=xb,
+                    mask=mask,
+                    feature_vec=fb,
+                    return_representation=True,
+                )
+                loss = _compute_total_loss(
+                    batch_idx=batch_idx,
+                    logits=logits,
+                    yb=yb,
+                    representation=rep,
+                )
+            else:
+                logits = model(tokens=xb, mask=mask, feature_vec=fb)
+                loss = loss_fn(logits, yb)
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            torch.nn.utils.clip_grad_norm_(parameters, max_norm=1.0)
             optimizer.step()
 
     state_dict = {
@@ -369,6 +566,12 @@ def fit_bilstm_attention_classifier(
         'hidden_dim': int(hidden_dim),
         'num_layers': int(num_layers),
         'dropout': float(dropout),
+        'use_feature_fusion': bool(feature_dim > 0),
+        'feature_dim': int(feature_dim),
+        'feature_mean': None if feature_mean is None else feature_mean.astype(np.float32).tolist(),
+        'feature_scale': None if feature_scale is None else feature_scale.astype(np.float32).tolist(),
+        'aux_tp_weight': float(aux_tp_weight),
+        'aux_ctp_ltp_weight': float(aux_ctp_ltp_weight),
         'state_dict': state_dict,
         'device': str(resolved_device),
     }
@@ -385,6 +588,7 @@ def _get_runtime_bilstm_model(localization_model, device_text='cpu'):
         return cache[cache_key], resolved_device
 
     model = _build_bilstm_attention_module(
+        torch=torch,
         nn=nn,
         vocab_size=len(localization_model['aa_to_idx']),
         embed_dim=localization_model['embed_dim'],
@@ -392,6 +596,7 @@ def _get_runtime_bilstm_model(localization_model, device_text='cpu'):
         num_layers=localization_model['num_layers'],
         dropout=localization_model.get('dropout', 0.0),
         num_class=len(localization_model['class_order']),
+        feature_dim=int(localization_model.get('feature_dim', 0)),
     )
     model.load_state_dict(localization_model['state_dict'], strict=True)
     model.eval()
@@ -405,6 +610,7 @@ def predict_bilstm_attention_batch(
     localization_model,
     device='cpu',
     batch_size=512,
+    feature_matrix=None,
 ):
     torch, _ = require_torch()
     model, resolved_device = _get_runtime_bilstm_model(
@@ -418,6 +624,31 @@ def predict_bilstm_attention_batch(
         seq_len=seq_len,
         aa_to_idx=aa_to_idx,
     )
+    feature_x = None
+    feature_dim = int(localization_model.get('feature_dim', 0))
+    use_feature_fusion = bool(localization_model.get('use_feature_fusion', feature_dim > 0))
+    if use_feature_fusion and (feature_dim > 0):
+        if feature_matrix is None:
+            feature_x = np.zeros((x.shape[0], feature_dim), dtype=np.float32)
+        else:
+            feature_x = np.asarray(feature_matrix, dtype=np.float32)
+            if feature_x.ndim != 2:
+                raise ValueError('feature_matrix should be 2D array.')
+            if int(feature_x.shape[0]) != int(x.shape[0]):
+                txt = 'feature_matrix row count mismatch: expected {}, got {}.'
+                raise ValueError(txt.format(int(x.shape[0]), int(feature_x.shape[0])))
+            if int(feature_x.shape[1]) != int(feature_dim):
+                txt = 'feature_matrix column mismatch: expected {}, got {}.'
+                raise ValueError(txt.format(int(feature_dim), int(feature_x.shape[1])))
+        mean = localization_model.get('feature_mean', None)
+        scale = localization_model.get('feature_scale', None)
+        if (mean is not None) and (scale is not None):
+            mean = np.asarray(mean, dtype=np.float32)
+            scale = np.asarray(scale, dtype=np.float32)
+            if mean.shape[0] == feature_dim and scale.shape[0] == feature_dim:
+                safe_scale = scale.copy()
+                safe_scale[safe_scale < 1.0e-6] = 1.0
+                feature_x = (feature_x - mean[np.newaxis, :]) / safe_scale[np.newaxis, :]
     probs = list()
     with torch.no_grad():
         for start in range(0, x.shape[0], int(batch_size)):
@@ -428,7 +659,15 @@ def predict_bilstm_attention_batch(
                 device=resolved_device,
             )
             mask = (xb != PAD_INDEX)
-            logits = model(tokens=xb, mask=mask)
+            fb = None
+            if feature_x is not None:
+                batch_f = feature_x[start:start + int(batch_size), :]
+                fb = torch.as_tensor(
+                    batch_f,
+                    dtype=torch.float32,
+                    device=resolved_device,
+                )
+            logits = model(tokens=xb, mask=mask, feature_vec=fb)
             batch_probs = logits.softmax(dim=1).detach().cpu().numpy()
             probs.append(batch_probs)
     if len(probs) == 0:
@@ -436,12 +675,16 @@ def predict_bilstm_attention_batch(
     return np.vstack(probs).astype(np.float64)
 
 
-def predict_bilstm_attention(aa_seq, localization_model, device='cpu'):
+def predict_bilstm_attention(aa_seq, localization_model, device='cpu', feature_vec=None):
+    feature_matrix = None
+    if feature_vec is not None:
+        feature_matrix = np.asarray([feature_vec], dtype=np.float32)
     probs = predict_bilstm_attention_batch(
         aa_sequences=[aa_seq],
         localization_model=localization_model,
         device=device,
         batch_size=1,
+        feature_matrix=feature_matrix,
     )
     class_order = list(localization_model['class_order'])
     class_probs = {class_order[i]: float(probs[0, i]) for i in range(len(class_order))}
