@@ -40,11 +40,11 @@ See [Wiki](https://github.com/kfuku52/cdskit/wiki) for detailed descriptions.
 
 - [`backtrim`](https://github.com/kfuku52/cdskit/wiki/cdskit-backtrim): Back-translating a trimmed protein alignment
 
-- `codonstats`: Printing codon-aware per-sequence and aggregate codon-usage statistics
+- [`codonstats`](https://github.com/kfuku52/cdskit/wiki/cdskit-codonstats): Printing codon-aware per-sequence and aggregate codon-usage statistics
 
-- `degeneracy`: Extracting aligned 0/2/3/4-fold degenerate nucleotide positions
+- [`degeneracy`](https://github.com/kfuku52/cdskit/wiki/cdskit-degeneracy): Extracting aligned 0/2/3/4-fold degenerate nucleotide positions
 
-- `filter`: Filtering CDS by sequence-level quality rules
+- [`filter`](https://github.com/kfuku52/cdskit/wiki/cdskit-filter): Filtering CDS by sequence-level quality rules
 
 - [`gapjust`](https://github.com/kfuku52/cdskit/wiki/cdskit-gapjust): Adjusting consecutive Ns to the fixed length
 
@@ -56,7 +56,7 @@ See [Wiki](https://github.com/kfuku52/cdskit/wiki) for detailed descriptions.
 
 - [`longestorf`](https://github.com/kfuku52/cdskit/wiki/cdskit-longestorf): Finding the longest ORF by six-frame translation (+/- strands, 3 frames each)
 
-- [`longestcds`](https://github.com/kfuku52/cdskit/wiki/cdskit-longestcds): Deprecated alias of `longestorf`
+- [`longestcds`](https://github.com/kfuku52/cdskit/wiki/cdskit-longestorf): Deprecated alias of `longestorf`
 
 - [`mask`](https://github.com/kfuku52/cdskit/wiki/cdskit-mask): Masking ambiguous and/or stop codons
 
@@ -78,7 +78,7 @@ See [Wiki](https://github.com/kfuku52/cdskit/wiki) for detailed descriptions.
 
 - [`translate`](https://github.com/kfuku52/cdskit/wiki/cdskit-translate): Translating CDS nucleotide sequences to amino acids
 
-- `trimcodon`: Trimming aligned CDS codon columns by occupancy and ambiguity thresholds
+- [`trimcodon`](https://github.com/kfuku52/cdskit/wiki/cdskit-trimcodon): Trimming aligned CDS codon columns by occupancy and ambiguity thresholds
 
 - [`validate`](https://github.com/kfuku52/cdskit/wiki/cdskit-validate): Validating aligned CDS quality and reporting issues
 
