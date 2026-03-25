@@ -44,8 +44,6 @@ See [Wiki](https://github.com/kfuku52/cdskit/wiki) for detailed descriptions.
 
 - `degeneracy`: Extracting aligned 0/2/3/4-fold degenerate nucleotide positions
 
-- `draw`: Drawing codon-state alignment maps as SVG
-
 - `filter`: Filtering CDS by sequence-level quality rules
 
 - [`gapjust`](https://github.com/kfuku52/cdskit/wiki/cdskit-gapjust): Adjusting consecutive Ns to the fixed length
@@ -68,7 +66,7 @@ See [Wiki](https://github.com/kfuku52/cdskit/wiki) for detailed descriptions.
 
 - [`parsegb`](https://github.com/kfuku52/cdskit/wiki/cdskit-parsegb): Converting the GenBank format
 
-- `plot`: Plotting alignment-level CDS quality summaries as SVG
+- [`plot`](https://github.com/kfuku52/cdskit/wiki/cdskit-plot): Plotting aligned CDS summaries, codon-state maps, or nucleotide alignment views with consensus codon/AA and AA frequency logos using matplotlib (`--mode summary|map|msa`; default output is PDF, override with `--format`)
 
 - [`printseq`](https://github.com/kfuku52/cdskit/wiki/cdskit-printseq): Print a subset of sequences with a regex
 

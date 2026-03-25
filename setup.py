@@ -31,7 +31,7 @@ setup(
     },
     keywords='codon sequences',
     packages=find_packages(),
-    install_requires=['numpy', 'biopython'],
+    install_requires=['numpy', 'biopython', 'matplotlib'],
     extras_require={
         'test': ['pytest', 'pytest-cov'],
         'ml': ['torch'],

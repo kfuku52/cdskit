@@ -36,7 +36,7 @@ p_outfile.add_argument('-of', '--outseqformat', metavar='STR', default='fasta', 
 
 p_viz_outfile = argparse.ArgumentParser(add_help=False)
 p_viz_outfile.add_argument('-o', '--outfile', metavar='PATH', default='-', type=str, required=False, action='store',
-                 help='default=%(default)s: Output SVG file. Use "-" for STDOUT.')
+                 help='default=%(default)s: Output plot file. Use "-" for STDOUT.')
 
 p_codon = argparse.ArgumentParser(add_help=False)
 p_codon.add_argument('-d', '--codontable', metavar='INT', default=1, type=int, required=False, action='store',
@@ -459,12 +459,25 @@ def command_plot(args):
     plot_main(args)
     sys.stderr.write('cdskit plot: ended at {}\n'.format(datetime.now()))
 
-help_plot = 'Plotting alignment-level CDS quality summaries as SVG. See `cdskit plot -h`'
+help_plot = 'Plotting alignment-level CDS summaries and alignment views. See `cdskit plot -h`'
 p_plot = subparsers.add_parser('plot', help=help_plot, parents=[p_version,p_infile,p_viz_outfile,p_codon,p_threads])
+p_plot.add_argument('--mode', metavar='summary|map|msa', default='summary', type=str, required=False, action='store',
+                    choices=['summary', 'map', 'msa'],
+                    help='default=%(default)s: Plot mode. "summary" draws site-level QC lines; "map" draws a sequence-by-site codon-state tile map; "msa" draws a nucleotide alignment with consensus codon/AA and an AA frequency logo.')
 p_plot.add_argument('--width', metavar='INT', default=1100, type=int, required=False, action='store',
-                    help='default=%(default)s: SVG width in pixels.')
+                    help='default=%(default)s: Figure width in pixels.')
 p_plot.add_argument('--height', metavar='INT', default=780, type=int, required=False, action='store',
-                    help='default=%(default)s: SVG height in pixels.')
+                    help='default=%(default)s: Figure height in pixels.')
+p_plot.add_argument('--format', '--plotformat', metavar='pdf|svg|png', default='auto', type=str, required=False, action='store',
+                    dest='plotformat',
+                    choices=['auto', 'pdf', 'svg', 'png'],
+                    help='default=%(default)s: Output format. "auto" infers from --outfile extension, otherwise defaults to PDF.')
+p_plot.add_argument('--row_height', metavar='INT', default=18, type=int, required=False, action='store',
+                    help='default=%(default)s: Height of each sequence row in pixels when --mode=map or --mode=msa.')
+p_plot.add_argument('--label_width', metavar='INT', default=180, type=int, required=False, action='store',
+                    help='default=%(default)s: Width reserved for sequence labels when --mode=map or --mode=msa.')
+p_plot.add_argument('--wrap', metavar='INT', default=60, type=int, required=False, action='store',
+                    help='default=%(default)s: Number of alignment columns per block when --mode=msa. Must be a multiple of three.')
 p_plot.add_argument('--min_occupancy', metavar='FLOAT', default=0.5, type=float, required=False, action='store',
                     help='default=%(default)s: Minimum occupancy threshold to show as the keep/remove cutoff.')
 p_plot.add_argument('--max_ambiguous_fraction', metavar='FLOAT', default=1.0, type=float, required=False, action='store',
@@ -474,7 +487,7 @@ p_plot.add_argument('--drop_stop_codon', metavar='yes|no', default=False, type=s
 p_plot.add_argument('--title', metavar='STR', default='', type=str, required=False, action='store',
                     help='default=%(default)s: Optional figure title.')
 p_plot.add_argument('--top_n', metavar='INT', default=10, type=int, required=False, action='store',
-                    help='default=%(default)s: Number of sequences to show in the ambiguous-codon bar chart.')
+                    help='default=%(default)s: Number of sequences to show in the ambiguous-codon bar chart for --mode=summary or --mode=map.')
 p_plot.set_defaults(handler=command_plot)
 
 
@@ -490,35 +503,6 @@ p_codonstats.add_argument('--mode', metavar='summary|usage|both', default='summa
                           choices=['summary', 'usage', 'both'],
                           help='default=%(default)s: Output summary table, aggregate codon usage table, or both.')
 p_codonstats.set_defaults(handler=command_codonstats)
-
-
-def command_draw(args):
-    from cdskit.draw import draw_main
-    sys.stderr.write('cdskit draw: started at {}\n'.format(datetime.now()))
-    draw_main(args)
-    sys.stderr.write('cdskit draw: ended at {}\n'.format(datetime.now()))
-
-help_draw = 'Drawing codon-state alignment maps as SVG. See `cdskit draw -h`'
-p_draw = subparsers.add_parser('draw', help=help_draw, parents=[p_version,p_infile,p_viz_outfile,p_codon,p_threads])
-p_draw.add_argument('--width', metavar='INT', default=1100, type=int, required=False, action='store',
-                    help='default=%(default)s: SVG width in pixels.')
-p_draw.add_argument('--height', metavar='INT', default=720, type=int, required=False, action='store',
-                    help='default=%(default)s: SVG height in pixels.')
-p_draw.add_argument('--row_height', metavar='INT', default=18, type=int, required=False, action='store',
-                    help='default=%(default)s: Height of each sequence row in pixels.')
-p_draw.add_argument('--label_width', metavar='INT', default=180, type=int, required=False, action='store',
-                    help='default=%(default)s: Width reserved for sequence labels in pixels.')
-p_draw.add_argument('--min_occupancy', metavar='FLOAT', default=0.5, type=float, required=False, action='store',
-                    help='default=%(default)s: Minimum occupancy threshold to show in the keep/remove strip.')
-p_draw.add_argument('--max_ambiguous_fraction', metavar='FLOAT', default=1.0, type=float, required=False, action='store',
-                    help='default=%(default)s: Maximum ambiguous-codon fraction threshold to show in the keep/remove strip.')
-p_draw.add_argument('--drop_stop_codon', metavar='yes|no', default=False, type=strtobool, required=False, action='store',
-                    help='default=%(default)s: Treat stop-codon-containing sites as removed in the keep/remove strip.')
-p_draw.add_argument('--title', metavar='STR', default='', type=str, required=False, action='store',
-                    help='default=%(default)s: Optional figure title.')
-p_draw.add_argument('--top_n', metavar='INT', default=10, type=int, required=False, action='store',
-                    help='default=%(default)s: Number of sequences to show in the ambiguous-codon bar chart.')
-p_draw.set_defaults(handler=command_draw)
 
 
 def command_translate(args):

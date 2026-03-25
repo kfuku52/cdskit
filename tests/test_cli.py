@@ -130,6 +130,7 @@ class TestCLIModuleImport:
             'cdskit.mask',
             'cdskit.pad',
             'cdskit.parsegb',
+            'cdskit.plot',
             'cdskit.printseq',
             'cdskit.rmseq',
             'cdskit.split',
