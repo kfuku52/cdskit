@@ -1,8 +1,8 @@
-# cdskit longestcds
+# cdskit longestorf
 
-`cdskit longestcds` is a deprecated alias of `cdskit longestorf`.
+`cdskit longestorf` searches six translated frames (3 on `+` strand and 3 on `-` strand) and returns the longest ORF candidate for each input sequence.
 
-Use `cdskit longestorf` for new workflows. The behavior is otherwise unchanged: it searches six translated frames (3 on `+` strand and 3 on `-` strand) and returns the longest ORF candidate for each input sequence.
+This is the canonical command name. `cdskit longestcds` remains available as a deprecated alias.
 
 ### Example
 

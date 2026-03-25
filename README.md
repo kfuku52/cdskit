@@ -40,6 +40,14 @@ See [Wiki](https://github.com/kfuku52/cdskit/wiki) for detailed descriptions.
 
 - [`backtrim`](https://github.com/kfuku52/cdskit/wiki/cdskit-backtrim): Back-translating a trimmed protein alignment
 
+- `codonstats`: Printing codon-aware per-sequence and aggregate codon-usage statistics
+
+- `degeneracy`: Extracting aligned 0/2/3/4-fold degenerate nucleotide positions
+
+- `draw`: Drawing codon-state alignment maps as SVG
+
+- `filter`: Filtering CDS by sequence-level quality rules
+
 - [`gapjust`](https://github.com/kfuku52/cdskit/wiki/cdskit-gapjust): Adjusting consecutive Ns to the fixed length
 
 - [`hammer`](https://github.com/kfuku52/cdskit/wiki/cdskit-hammer): Removing less-occupied codon columns from a gappy alignment
@@ -48,7 +56,9 @@ See [Wiki](https://github.com/kfuku52/cdskit/wiki) for detailed descriptions.
 
 - [`label`](https://github.com/kfuku52/cdskit/wiki/cdskit-label): Modifying sequence labels
 
-- [`longestcds`](https://github.com/kfuku52/cdskit/wiki/cdskit-longestcds): Finding the longest CDS by six-frame translation (+/- strands, 3 frames each)
+- [`longestorf`](https://github.com/kfuku52/cdskit/wiki/cdskit-longestorf): Finding the longest ORF by six-frame translation (+/- strands, 3 frames each)
+
+- [`longestcds`](https://github.com/kfuku52/cdskit/wiki/cdskit-longestcds): Deprecated alias of `longestorf`
 
 - [`mask`](https://github.com/kfuku52/cdskit/wiki/cdskit-mask): Masking ambiguous and/or stop codons
 
@@ -57,6 +67,8 @@ See [Wiki](https://github.com/kfuku52/cdskit/wiki) for detailed descriptions.
 - [`pad`](https://github.com/kfuku52/cdskit/wiki/cdskit-pad): Making nucleotide sequences in-frame by head and tail paddings
 
 - [`parsegb`](https://github.com/kfuku52/cdskit/wiki/cdskit-parsegb): Converting the GenBank format
+
+- `plot`: Plotting alignment-level CDS quality summaries as SVG
 
 - [`printseq`](https://github.com/kfuku52/cdskit/wiki/cdskit-printseq): Print a subset of sequences with a regex
 
@@ -67,6 +79,8 @@ See [Wiki](https://github.com/kfuku52/cdskit/wiki) for detailed descriptions.
 - [`stats`](https://github.com/kfuku52/cdskit/wiki/cdskit-stats): Printing sequence statistics
 
 - [`translate`](https://github.com/kfuku52/cdskit/wiki/cdskit-translate): Translating CDS nucleotide sequences to amino acids
+
+- `trimcodon`: Trimming aligned CDS codon columns by occupancy and ambiguity thresholds
 
 - [`validate`](https://github.com/kfuku52/cdskit/wiki/cdskit-validate): Validating aligned CDS quality and reporting issues
 
