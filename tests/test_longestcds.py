@@ -241,9 +241,9 @@ class TestLongestCdsMain:
 
 
 class TestLongestCommandAliases:
-    """Tests for longestorf canonical command behavior."""
+    """Tests for longestorf canonical command and longestcds alias behavior."""
 
-    def test_longestcds_cli_is_not_available(self, temp_dir):
+    def test_longestcds_cli_warns_deprecated_alias(self, temp_dir):
         input_path = temp_dir / "input.fasta"
         output_path = temp_dir / "output.fasta"
         cli_path = Path(__file__).parent.parent / "cdskit" / "cdskit"
@@ -260,13 +260,14 @@ class TestLongestCommandAliases:
                 "--outfile",
                 str(output_path),
             ],
+            check=True,
             capture_output=True,
             text=True,
         )
 
-        assert completed.returncode != 0
-        assert "invalid choice" in completed.stderr.lower()
-        assert not output_path.exists()
+        assert "deprecated" in completed.stderr.lower()
+        result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
+        assert str(result[0].seq) == "ATGAAATAG"
 
     def test_longestorf_cli_is_canonical_without_deprecation_warning(self, temp_dir):
         input_path = temp_dir / "input.fasta"
