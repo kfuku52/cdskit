@@ -243,24 +243,15 @@ p_label.add_argument('--unique', metavar='yes|no', default='no', type=strtobool,
 p_label.set_defaults(handler=command_label)
 
 
-def run_longestorf(args, invoked_as, deprecated=False):
+def run_longestorf(args, invoked_as):
     from cdskit.longestorf import longestorf_main
-    if deprecated:
-        sys.stderr.write(
-            'Warning: `cdskit longestcds` is deprecated and may be removed in a future release. '
-            'Use `cdskit longestorf` instead.\n'
-        )
     sys.stderr.write(f'cdskit {invoked_as}: started at {datetime.now()}\n')
     longestorf_main(args)
     sys.stderr.write(f'cdskit {invoked_as}: ended at {datetime.now()}\n')
 
 
 def command_longestorf(args):
-    run_longestorf(args=args, invoked_as='longestorf', deprecated=False)
-
-
-def command_longestcds(args):
-    run_longestorf(args=args, invoked_as='longestcds', deprecated=True)
+    run_longestorf(args=args, invoked_as='longestorf')
 
 
 help_longestorf = 'Finding the longest ORF from six-frame translation. See `cdskit longestorf -h`'
@@ -268,13 +259,6 @@ p_longestorf = subparsers.add_parser('longestorf', help=help_longestorf, parents
 p_longestorf.add_argument('--annotate_seqname', metavar='yes|no', default='no', type=strtobool, required=False, action='store',
                           help='default=%(default)s: Whether to append strand/frame/coordinate metadata to FASTA headers.')
 p_longestorf.set_defaults(handler=command_longestorf)
-
-
-help_longestcds = 'Deprecated alias of longestorf. See `cdskit longestorf -h`'
-p_longestcds = subparsers.add_parser('longestcds', help=help_longestcds, parents=[p_version,p_infile,p_outfile,p_codon,p_threads])
-p_longestcds.add_argument('--annotate_seqname', metavar='yes|no', default='no', type=strtobool, required=False, action='store',
-                          help='default=%(default)s: Whether to append strand/frame/coordinate metadata to FASTA headers.')
-p_longestcds.set_defaults(handler=command_longestcds)
 
 
 def command_mask(args):
