@@ -162,16 +162,30 @@ dataset:
 | --- | ---: | ---: | --- |
 | TargetP 2.0 paper Table 1 | 0.890 | - | published reference |
 | cdskit nearest centroid | 0.543 | 0.863 | quick CPU baseline, rerun locally |
-| cdskit BiLSTM | 0.705 | 0.925 | cached fold-fixed OOF run |
-| cdskit ESM2 t6 head | 0.606 | 0.953 | cached fold-fixed OOF run |
-| cdskit BiLSTM/ESM blend | 0.785 | 0.963 | cached classwise blend |
-| cdskit BiLSTM/ESM blend + thresholds | 0.789 | 0.966 | cached classwise blend with class thresholds |
+| cdskit BiLSTM | 0.857 | 0.976 | cached fold-fixed OOF run with organism gate |
+| cdskit ESM2 t6 head | 0.726 | 0.968 | cached fold-fixed OOF run with organism gate |
+| cdskit BiLSTM/ESM blend, global alpha | 0.857 | 0.976 | cached blend, optimized on all OOF rows |
+| cdskit BiLSTM/ESM blend, classwise alpha | 0.864 | 0.976 | cached classwise blend, optimized on all OOF rows |
+| cdskit BiLSTM/ESM blend + thresholds | 0.890 | 0.977 | cached classwise blend with thresholds, optimized on all OOF rows |
+| cdskit BiLSTM/ESM foldwise blend + thresholds | 0.892 | 0.976 | classwise alpha and thresholds optimized on training folds only |
+
+Per-class F1 for the same snapshot:
+
+| Class | TargetP F1 | BiLSTM F1 | ESM F1 | blend(global) F1 | blend(classwise) F1 | blend(threshold) F1 | blend(foldwise) F1 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| noTP | 0.980 | 0.985 | 0.981 | 0.985 | 0.985 | 0.986 | 0.985 |
+| SP | 0.980 | 0.975 | 0.968 | 0.975 | 0.975 | 0.976 | 0.973 |
+| mTP | 0.860 | 0.869 | 0.815 | 0.869 | 0.872 | 0.884 | 0.877 |
+| cTP | 0.880 | 0.892 | 0.867 | 0.892 | 0.894 | 0.884 | 0.887 |
+| lTP | 0.750 | 0.563 | 0.000 | 0.563 | 0.595 | 0.722 | 0.738 |
 
 This means `cdskit localize` is usable as a CPU-first local predictor and can be
-benchmarked reproducibly on the TargetP dataset, but it still trails TargetP 2.0
-on rare transit-peptide classes, especially `lTP`.
+benchmarked reproducibly on the TargetP dataset. The stricter foldwise blend
+snapshot is above the TargetP 2.0 Table 1 macro-F1 reference, but it still trails
+TargetP on `SP` and the rare `lTP` class.
 
-In the cached threshold-blend run, `lTP` F1 improved from 0.412 to 0.438. For
-DeepLoc sorting signals, `--rare_label_threshold_objective f2` raised `TH`
-recall from 0.762 to 0.810, but lowered `TH` F1 from 0.325 to 0.288, so it is a
-recall-oriented option rather than a better default.
+In the cached foldwise blend run, `lTP` F1 improved from 0.595 with classwise
+alpha alone to 0.738 after per-class thresholds. For DeepLoc sorting signals,
+`--rare_label_threshold_objective f2` raised `TH` recall from 0.762 to 0.810, but
+lowered `TH` F1 from 0.325 to 0.288, so it is a recall-oriented option rather
+than a better default.
