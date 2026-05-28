@@ -117,6 +117,7 @@ class TestCLIModuleImport:
             'cdskit.aggregate',
             'cdskit.backalign',
             'cdskit.backtrim',
+            'cdskit.deeploc_benchmark',
             'cdskit.hammer',
             'cdskit.intersection',
             'cdskit.label',

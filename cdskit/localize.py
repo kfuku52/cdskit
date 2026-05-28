@@ -1,10 +1,13 @@
 from functools import partial
 
 from cdskit.localize_model import (
+    BROAD_FEATURE_NAMES,
     FEATURE_NAMES,
     LOCALIZATION_CLASSES,
     load_localize_model,
     predict_localization_and_peroxisome,
+    predict_multilabel_localization,
+    to_canonical_aa_sequence,
     translate_inframe_cds_to_aa,
     write_rows_json,
     write_rows_tsv,
@@ -16,15 +19,51 @@ from cdskit.util import (
     stop_if_invalid_codontable,
     stop_if_not_dna,
     stop_if_not_multiple_of_three,
+    stop_if_not_protein,
 )
 
 
-def _predict_single_record(record, codontable, model, include_features, organism_group=''):
-    aa_seq = translate_inframe_cds_to_aa(
-        cds_seq=str(record.seq),
+def _record_to_aa_sequence(record, codontable, seqtype):
+    seqtype = str(seqtype or 'dna').strip().lower()
+    if seqtype == 'protein':
+        return to_canonical_aa_sequence(aa_seq=str(record.seq))
+    if seqtype == 'dna':
+        return translate_inframe_cds_to_aa(
+            cds_seq=str(record.seq),
+            codontable=codontable,
+            seq_id=record.id,
+        )
+    raise ValueError('--seqtype should be dna or protein.')
+
+
+def _predict_single_record(record, codontable, seqtype, model, include_features, organism_group=''):
+    aa_seq = _record_to_aa_sequence(
+        record=record,
         codontable=codontable,
-        seq_id=record.id,
+        seqtype=seqtype,
     )
+    if str(model.get('model_type', '')) == 'multilabel_centroid_v1':
+        pred = predict_multilabel_localization(
+            aa_seq=aa_seq,
+            model=model,
+            kingdom=organism_group,
+        )
+        class_order = list(model['localization_model']['class_order'])
+        row = {
+            'seq_id': record.id,
+            'predicted_labels': ';'.join(pred['predicted_labels']),
+        }
+        for class_name in class_order:
+            row['p_{}'.format(class_name)] = float(
+                pred['class_probabilities'].get(class_name, 0.0)
+            )
+        if 'peroxisome' in class_order:
+            row['perox_signal_type'] = pred['perox_signal_type']
+        if include_features:
+            for name, value in zip(BROAD_FEATURE_NAMES, pred['feature_values']):
+                row[name] = float(value)
+        return row
+
     pred = predict_localization_and_peroxisome(
         aa_seq=aa_seq,
         model=model,
@@ -47,7 +86,17 @@ def _predict_single_record(record, codontable, model, include_features, organism
     return row
 
 
-def _resolve_output_fields(include_features):
+def _resolve_output_fields(include_features, model=None):
+    if isinstance(model, dict) and str(model.get('model_type', '')) == 'multilabel_centroid_v1':
+        class_order = list(model['localization_model']['class_order'])
+        fields = ['seq_id', 'predicted_labels']
+        fields.extend(['p_{}'.format(class_name) for class_name in class_order])
+        if 'peroxisome' in class_order:
+            fields.append('perox_signal_type')
+        if include_features:
+            fields.extend(BROAD_FEATURE_NAMES)
+        return fields
+
     fields = [
         'seq_id',
         'predicted_class',
@@ -66,20 +115,28 @@ def _resolve_output_fields(include_features):
 
 def localize_main(args):
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
-    stop_if_not_dna(records=records, label='--seqfile')
-    stop_if_not_multiple_of_three(records=records)
-    stop_if_invalid_codontable(codontable=args.codontable, label='--codontable')
+    seqtype = str(getattr(args, 'seqtype', 'dna') or 'dna').strip().lower()
+    if seqtype == 'protein':
+        stop_if_not_protein(records=records, label='--seqfile')
+    elif seqtype == 'dna':
+        stop_if_not_dna(records=records, label='--seqfile')
+        stop_if_not_multiple_of_three(records=records)
+        stop_if_invalid_codontable(codontable=args.codontable, label='--codontable')
+    else:
+        raise ValueError('--seqtype should be dna or protein.')
 
     model = load_localize_model(path=args.model)
-    model_classes = tuple(model['localization_model']['class_order'])
-    if model_classes != LOCALIZATION_CLASSES:
-        txt = 'Model class order mismatch: expected {}, got {}. Exiting.'
-        raise Exception(txt.format(','.join(LOCALIZATION_CLASSES), ','.join(model_classes)))
+    if str(model.get('model_type', '')) != 'multilabel_centroid_v1':
+        model_classes = tuple(model['localization_model']['class_order'])
+        if model_classes != LOCALIZATION_CLASSES:
+            txt = 'Model class order mismatch: expected {}, got {}. Exiting.'
+            raise Exception(txt.format(','.join(LOCALIZATION_CLASSES), ','.join(model_classes)))
 
     threads = resolve_threads(getattr(args, 'threads', 1))
     worker = partial(
         _predict_single_record,
         codontable=args.codontable,
+        seqtype=seqtype,
         model=model,
         include_features=args.include_features,
         organism_group=getattr(args, 'organism_group', ''),
@@ -95,5 +152,8 @@ def localize_main(args):
         write_rows_tsv(
             rows=rows,
             output_path=report_path,
-            fieldnames=_resolve_output_fields(include_features=args.include_features),
+            fieldnames=_resolve_output_fields(
+                include_features=args.include_features,
+                model=model,
+            ),
         )

@@ -11,6 +11,18 @@ from cdskit.util import DNA_ALLOWED_CHARS
 LOCALIZATION_CLASSES = ('noTP', 'SP', 'mTP', 'cTP', 'lTP')
 TP_STAGE_CLASSES = ('SP', 'mTP', 'cTP', 'lTP')
 CTP_LTP_STAGE_CLASSES = ('cTP', 'lTP')
+SUBCELLULAR_LOCALIZATION_CLASSES = (
+    'nucleus',
+    'cytoplasm',
+    'extracellular',
+    'mitochondrion',
+    'cell_membrane',
+    'endoplasmic_reticulum',
+    'chloroplast',
+    'golgi_apparatus',
+    'lysosome_vacuole',
+    'peroxisome',
+)
 
 AA_HYDROPHOBIC = frozenset('AILMFWVY')
 AA_BASIC = frozenset('KRH')
@@ -46,6 +58,9 @@ AA_HYDROPATHY = {
 PTS1_REGEX = re.compile(r'[ASNCGTP][KRHQ][LIVMF]$')
 PTS2_REGEX = re.compile(r'[RK][LIVQ].{4}[HQ][LA]')
 LTP_RR_HYDRO_REGEX = re.compile(r'RR.{0,12}[AILMFWVY]{5,}')
+NLS_BASIC_CLUSTER_REGEX = re.compile(r'[KR]{3,}')
+NLS_BIPARTITE_REGEX = re.compile(r'[KR]{2}.{8,12}[KR]{3,}')
+NES_LIKE_REGEX = re.compile(r'[LIVMF].{1,4}[LIVMF].{1,4}[LIVMF].{1,4}[LIVMF]')
 
 FEATURE_NAMES = [
     'aa_len',
@@ -81,6 +96,34 @@ FEATURE_NAMES = [
     'pts1_match',
     'pts1_skl',
     'pts2_match',
+]
+
+BROAD_FEATURE_NAMES = FEATURE_NAMES + [
+    'n60_basic_frac',
+    'n60_acidic_frac',
+    'n60_hydrophobic_frac',
+    'n60_ser_thr_frac',
+    'n100_basic_frac',
+    'n100_acidic_frac',
+    'n100_hydrophobic_frac',
+    'n100_ser_thr_frac',
+    'global_hydropathy_mean',
+    'global_hydrophobic_run',
+    'hydrophobic_segment_count',
+    'nls_basic_cluster_count',
+    'nls_basic_cluster_match',
+    'nls_bipartite_match',
+    'nes_like_match',
+    'er_kdel_hdel',
+    'er_kkxx',
+    'gpi_like_ctail',
+    'c20_hydrophobic_run',
+    'c20_basic_frac',
+    'c20_acidic_frac',
+    'kingdom_metazoa',
+    'kingdom_viridiplantae',
+    'kingdom_fungi',
+    'kingdom_other',
 ]
 
 
@@ -237,6 +280,43 @@ def longest_hydrophobic_run(seq):
     return float(best)
 
 
+def hydrophobic_segment_count(seq, min_run=17):
+    count = 0
+    current = 0
+    for ch in seq:
+        if ch in AA_HYDROPHOBIC:
+            current += 1
+        else:
+            if current >= int(min_run):
+                count += 1
+            current = 0
+    if current >= int(min_run):
+        count += 1
+    return float(count)
+
+
+def _kingdom_feature_flags(kingdom):
+    txt = str(kingdom or '').strip().lower()
+    txt = re.sub(r'[\s\-]+', '_', txt)
+    is_metazoa = txt in ['metazoa', 'animal', 'animals'] or ('metazoa' in txt)
+    is_plant = (
+        txt in ['plant', 'plants', 'viridiplantae', 'plantae']
+        or ('viridiplantae' in txt)
+        or ('plantae' in txt)
+    )
+    is_fungi = txt in ['fungi', 'fungus'] or ('fungi' in txt)
+    has_known = is_metazoa or is_plant or is_fungi
+    is_other = (txt not in ['', 'unknown', 'auto']) and (not has_known)
+    if txt in ['non_plant', 'nonplant', 'other']:
+        is_other = True
+    return [
+        1.0 if is_metazoa else 0.0,
+        1.0 if is_plant else 0.0,
+        1.0 if is_fungi else 0.0,
+        1.0 if is_other else 0.0,
+    ]
+
+
 def to_canonical_aa_sequence(aa_seq):
     aa_seq = str(aa_seq).upper().replace(' ', '')
     if aa_seq.endswith('*'):
@@ -354,6 +434,42 @@ def extract_localize_features(aa_seq):
         1.0 if perox['pts2_match'] else 0.0,
     ], dtype=np.float64)
     return feats, perox
+
+
+def extract_broad_localize_features(aa_seq, kingdom=''):
+    seq = to_canonical_aa_sequence(aa_seq)
+    base_feats, perox = extract_localize_features(aa_seq=seq)
+    n60 = seq[:60]
+    n100 = seq[:100]
+    c20 = seq[-20:] if len(seq) >= 20 else seq
+    c40 = seq[-40:] if len(seq) >= 40 else seq
+    tail4 = seq[-4:] if len(seq) >= 4 else ''
+
+    nls_count = float(len(NLS_BASIC_CLUSTER_REGEX.findall(seq)))
+    extra_feats = np.array([
+        fraction_in_set(n60, AA_BASIC),
+        fraction_in_set(n60, AA_ACIDIC),
+        fraction_in_set(n60, AA_HYDROPHOBIC),
+        fraction_in_set(n60, AA_SER_THR),
+        fraction_in_set(n100, AA_BASIC),
+        fraction_in_set(n100, AA_ACIDIC),
+        fraction_in_set(n100, AA_HYDROPHOBIC),
+        fraction_in_set(n100, AA_SER_THR),
+        mean_hydropathy(seq),
+        longest_hydrophobic_run(seq),
+        hydrophobic_segment_count(seq),
+        nls_count,
+        1.0 if nls_count > 0.0 else 0.0,
+        1.0 if NLS_BIPARTITE_REGEX.search(seq) else 0.0,
+        1.0 if NES_LIKE_REGEX.search(seq) else 0.0,
+        1.0 if seq.endswith('KDEL') or seq.endswith('HDEL') else 0.0,
+        1.0 if (len(tail4) == 4 and tail4[0] == 'K' and tail4[1] == 'K') else 0.0,
+        1.0 if longest_hydrophobic_run(c40) >= 12.0 else 0.0,
+        longest_hydrophobic_run(c20),
+        fraction_in_set(c20, AA_BASIC_STRICT),
+        fraction_in_set(c20, AA_ACIDIC),
+    ] + _kingdom_feature_flags(kingdom=kingdom), dtype=np.float64)
+    return np.concatenate([base_feats, extra_feats]), perox
 
 
 def normalize_localization_label(label):
@@ -505,6 +621,247 @@ def predict_nearest_centroid(feature_vec, model):
     pred_label = class_order[pred_index]
     out_probs = {class_order[i]: float(probs[i]) for i in range(len(class_order))}
     return pred_label, out_probs
+
+
+def _sigmoid(x):
+    x = np.asarray(x, dtype=np.float64)
+    out = np.zeros_like(x, dtype=np.float64)
+    positive = x >= 0
+    out[positive] = 1.0 / (1.0 + np.exp(-x[positive]))
+    exp_x = np.exp(x[~positive])
+    out[~positive] = exp_x / (1.0 + exp_x)
+    return out
+
+
+def _binary_f1_from_predictions(true_binary, pred_binary):
+    true_binary = np.asarray(true_binary, dtype=np.int64)
+    pred_binary = np.asarray(pred_binary, dtype=np.int64)
+    tp = int(np.sum((true_binary == 1) & (pred_binary == 1)))
+    fp = int(np.sum((true_binary == 0) & (pred_binary == 1)))
+    fn = int(np.sum((true_binary == 1) & (pred_binary == 0)))
+    precision = 0.0 if (tp + fp) <= 0 else float(tp) / float(tp + fp)
+    recall = 0.0 if (tp + fn) <= 0 else float(tp) / float(tp + fn)
+    if precision + recall <= 0.0:
+        return 0.0
+    return float((2.0 * precision * recall) / (precision + recall))
+
+
+def _binary_mcc_from_predictions(true_binary, pred_binary):
+    true_binary = np.asarray(true_binary, dtype=np.int64)
+    pred_binary = np.asarray(pred_binary, dtype=np.int64)
+    tp = int(np.sum((true_binary == 1) & (pred_binary == 1)))
+    fp = int(np.sum((true_binary == 0) & (pred_binary == 1)))
+    fn = int(np.sum((true_binary == 1) & (pred_binary == 0)))
+    tn = int(np.sum((true_binary == 0) & (pred_binary == 0)))
+    denom = float((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
+    if denom <= 0.0:
+        return 0.0
+    return float(((tp * tn) - (fp * fn)) / np.sqrt(denom))
+
+
+def _tune_binary_threshold(prob_vec, true_binary, threshold_grid=None, objective='f1'):
+    prob_vec = np.asarray(prob_vec, dtype=np.float64)
+    true_binary = np.asarray(true_binary, dtype=np.int64)
+    if threshold_grid is None:
+        threshold_grid = np.linspace(0.05, 0.95, 19)
+    objective = str(objective or 'f1').strip().lower()
+    if objective not in ['mcc', 'f1']:
+        raise ValueError('Unsupported threshold objective: {}'.format(objective))
+    best_threshold = 0.5
+    best_score = -1.0e9
+    for threshold in threshold_grid:
+        threshold = float(threshold)
+        pred = (prob_vec >= threshold).astype(np.int64)
+        if objective == 'mcc':
+            score = _binary_mcc_from_predictions(
+                true_binary=true_binary,
+                pred_binary=pred,
+            )
+        else:
+            score = _binary_f1_from_predictions(
+                true_binary=true_binary,
+                pred_binary=pred,
+            )
+        if score > best_score + 1.0e-12:
+            best_score = float(score)
+            best_threshold = threshold
+            continue
+        if abs(score - best_score) <= 1.0e-12:
+            if abs(threshold - 0.5) < abs(best_threshold - 0.5):
+                best_threshold = threshold
+    return float(best_threshold)
+
+
+def fit_multilabel_centroid_classifier(
+    features,
+    label_matrix,
+    class_order,
+    threshold_grid=None,
+    threshold_objective='f1',
+    ensure_one_label=True,
+):
+    x = np.asarray(features, dtype=np.float64)
+    y = np.asarray(label_matrix, dtype=np.int64)
+    if x.ndim != 2:
+        raise ValueError('Feature matrix should be 2D.')
+    if y.ndim != 2:
+        raise ValueError('Label matrix should be 2D.')
+    if x.shape[0] == 0:
+        raise ValueError('No training samples were provided.')
+    if x.shape[0] != y.shape[0]:
+        raise ValueError('Feature and label row counts do not match.')
+    class_order = list(class_order)
+    if y.shape[1] != len(class_order):
+        raise ValueError('Label matrix column count does not match class_order.')
+
+    mean = x.mean(axis=0)
+    std = x.std(axis=0)
+    std[std == 0] = 1.0
+    z = (x - mean) / std
+    total = float(x.shape[0])
+
+    label_models = list()
+    for class_i, class_name in enumerate(class_order):
+        y_col = y[:, class_i]
+        pos_mask = (y_col == 1)
+        neg_mask = ~pos_mask
+        n_pos = int(np.sum(pos_mask))
+        n_neg = int(np.sum(neg_mask))
+        if n_pos == 0 or n_neg == 0:
+            label_models.append({
+                'class_name': class_name,
+                'mode': 'constant',
+                'probability': 1.0 if n_pos > 0 else 0.0,
+                'n_positive': int(n_pos),
+                'n_negative': int(n_neg),
+            })
+            continue
+        prior_pos = (float(n_pos) + 1.0) / (total + 2.0)
+        prior_neg = (float(n_neg) + 1.0) / (total + 2.0)
+        label_models.append({
+            'class_name': class_name,
+            'mode': 'centroid',
+            'positive_centroid': z[pos_mask, :].mean(axis=0).tolist(),
+            'negative_centroid': z[neg_mask, :].mean(axis=0).tolist(),
+            'log_prior_positive': safe_log(prior_pos),
+            'log_prior_negative': safe_log(prior_neg),
+            'n_positive': int(n_pos),
+            'n_negative': int(n_neg),
+        })
+
+    model = {
+        'mode': 'multilabel_centroid',
+        'class_order': list(class_order),
+        'mean': mean.tolist(),
+        'std': std.tolist(),
+        'label_models': label_models,
+        'class_thresholds': {class_name: 0.5 for class_name in class_order},
+        'ensure_one_label': bool(ensure_one_label),
+    }
+    train_prob = predict_multilabel_centroid_matrix(
+        features=x,
+        localization_model=model,
+        apply_thresholds=False,
+    )['prob_matrix']
+    thresholds = dict()
+    for class_i, class_name in enumerate(class_order):
+        thresholds[class_name] = _tune_binary_threshold(
+            prob_vec=train_prob[:, class_i],
+            true_binary=y[:, class_i],
+            threshold_grid=threshold_grid,
+            objective=threshold_objective,
+        )
+    model['class_thresholds'] = thresholds
+    return model
+
+
+def predict_multilabel_centroid_matrix(features, localization_model, apply_thresholds=True):
+    x = np.asarray(features, dtype=np.float64)
+    if x.ndim == 1:
+        x = x.reshape((1, -1))
+    if x.ndim != 2:
+        raise ValueError('Feature matrix should be 2D.')
+    mean = np.asarray(localization_model['mean'], dtype=np.float64)
+    std = np.asarray(localization_model['std'], dtype=np.float64)
+    if x.shape[1] != mean.shape[0]:
+        txt = 'Feature count mismatch: expected {}, got {}.'
+        raise ValueError(txt.format(int(mean.shape[0]), int(x.shape[1])))
+    std[std == 0.0] = 1.0
+    z = (x - mean) / std
+    label_models = list(localization_model.get('label_models', []))
+    class_order = list(localization_model.get('class_order', []))
+    if len(label_models) != len(class_order):
+        raise ValueError('Invalid multilabel model: class_order and label_models differ.')
+    prob = np.zeros((x.shape[0], len(class_order)), dtype=np.float64)
+    for class_i, label_model in enumerate(label_models):
+        mode = str(label_model.get('mode', '')).strip().lower()
+        if mode == 'constant':
+            prob[:, class_i] = float(label_model.get('probability', 0.0))
+            continue
+        if mode != 'centroid':
+            raise ValueError('Unsupported multilabel label model mode: {}'.format(mode))
+        pos_centroid = np.asarray(label_model['positive_centroid'], dtype=np.float64)
+        neg_centroid = np.asarray(label_model['negative_centroid'], dtype=np.float64)
+        pos_diff = z - pos_centroid.reshape((1, -1))
+        neg_diff = z - neg_centroid.reshape((1, -1))
+        pos_dist = np.sum(pos_diff * pos_diff, axis=1)
+        neg_dist = np.sum(neg_diff * neg_diff, axis=1)
+        logits = (
+            (-0.5 * pos_dist)
+            + float(label_model.get('log_prior_positive', 0.0))
+            - (-0.5 * neg_dist)
+            - float(label_model.get('log_prior_negative', 0.0))
+        )
+        prob[:, class_i] = _sigmoid(logits)
+    prob = np.clip(prob, 0.0, 1.0)
+    if not apply_thresholds:
+        return {'prob_matrix': prob}
+
+    thresholds = localization_model.get('class_thresholds', {})
+    threshold_vec = np.asarray([
+        float(thresholds.get(class_name, 0.5)) for class_name in class_order
+    ], dtype=np.float64)
+    threshold_vec[~np.isfinite(threshold_vec)] = 0.5
+    threshold_vec[threshold_vec <= 0.0] = 0.5
+    pred = (prob >= threshold_vec.reshape((1, -1))).astype(np.int64)
+    if bool(localization_model.get('ensure_one_label', True)):
+        empty = np.where(np.sum(pred, axis=1) == 0)[0]
+        if empty.shape[0] > 0:
+            scores = prob[empty, :] / threshold_vec.reshape((1, -1))
+            best = np.argmax(scores, axis=1)
+            pred[empty, best] = 1
+    return {
+        'prob_matrix': prob,
+        'prediction_matrix': pred,
+    }
+
+
+def predict_multilabel_localization(aa_seq, model, kingdom=''):
+    feats, perox_signals = extract_broad_localize_features(
+        aa_seq=aa_seq,
+        kingdom=kingdom,
+    )
+    localization_model = model['localization_model']
+    pred = predict_multilabel_centroid_matrix(
+        features=feats,
+        localization_model=localization_model,
+        apply_thresholds=True,
+    )
+    class_order = list(localization_model['class_order'])
+    prob_vec = pred['prob_matrix'][0, :]
+    pred_vec = pred['prediction_matrix'][0, :]
+    labels = [class_order[i] for i in range(len(class_order)) if int(pred_vec[i]) == 1]
+    return {
+        'predicted_labels': labels,
+        'class_probabilities': {
+            class_order[i]: float(prob_vec[i]) for i in range(len(class_order))
+        },
+        'feature_values': feats,
+        'feature_names': list(BROAD_FEATURE_NAMES),
+        'perox_signal_type': perox_signals['signal_type'],
+        'pts1_match': bool(perox_signals['pts1_match']),
+        'pts2_match': bool(perox_signals['pts2_match']),
+    }
 
 
 def predict_perox(feature_vec, perox_model):
@@ -852,7 +1209,7 @@ def _strip_runtime_caches(value):
 
 def save_localize_model(model, path):
     model_type = str(model.get('model_type', ''))
-    if model_type == 'nearest_centroid_v1':
+    if model_type in ['nearest_centroid_v1', 'multilabel_centroid_v1']:
         with open(path, 'w', encoding='utf-8') as out:
             json.dump(model, out, indent=2, sort_keys=True)
         return
@@ -893,7 +1250,13 @@ def load_localize_model(path):
     for key in required:
         if key not in model:
             raise ValueError('Invalid model file. Missing key: {}'.format(key))
-    if model['model_type'] not in ['nearest_centroid_v1', 'bilstm_attention_v1', 'esm_head_v1']:
+    allowed_model_types = [
+        'nearest_centroid_v1',
+        'bilstm_attention_v1',
+        'esm_head_v1',
+        'multilabel_centroid_v1',
+    ]
+    if model['model_type'] not in allowed_model_types:
         raise ValueError('Unsupported model_type: {}'.format(model['model_type']))
     return model
 

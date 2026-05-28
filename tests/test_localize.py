@@ -340,6 +340,39 @@ class TestLocalizeMain:
         assert float(pred_map['seq_perox']['p_peroxisome']) >= 0.0
         assert float(pred_map['seq_perox']['p_peroxisome']) <= 1.0
 
+    def test_localize_accepts_protein_input(self, temp_dir, mock_args):
+        model_path = train_test_model(temp_dir=temp_dir, mock_args=mock_args)
+        input_path = temp_dir / 'predict_protein_input.fasta'
+        output_path = temp_dir / 'predict_protein_output.tsv'
+        records = [
+            SeqRecord(Seq('MKKLLLLLLLLLLAVAVAASAASA'), id='seq_sp', description=''),
+            SeqRecord(Seq('MRRKRRAARAKRRNQAAARRRAA'), id='seq_mtp', description=''),
+            SeqRecord(Seq('MGPVNQDEGPVNQDEGPVNQDESKL'), id='seq_perox', description=''),
+        ]
+        Bio.SeqIO.write(records, str(input_path), 'fasta')
+
+        args = mock_args(
+            seqfile=str(input_path),
+            inseqformat='fasta',
+            codontable=999,
+            seqtype='protein',
+            model=str(model_path),
+            report=str(output_path),
+            include_features=False,
+            threads=1,
+        )
+        localize_main(args)
+
+        with open(output_path, 'r', encoding='utf-8') as inp:
+            reader = csv.DictReader(inp, delimiter='\t')
+            out_rows = list(reader)
+
+        assert len(out_rows) == 3
+        pred_map = {row['seq_id']: row for row in out_rows}
+        assert pred_map['seq_sp']['predicted_class'] == 'SP'
+        assert pred_map['seq_mtp']['predicted_class'] == 'mTP'
+        assert pred_map['seq_perox']['perox_signal_type'] in ['PTS1', 'PTS2', 'none']
+
     def test_localize_rejects_non_triplet_input(self, temp_dir, mock_args):
         model_path = train_test_model(temp_dir=temp_dir, mock_args=mock_args)
         input_path = temp_dir / 'bad_len.fasta'
