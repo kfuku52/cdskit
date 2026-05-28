@@ -109,3 +109,45 @@ DeepLoc published reference points included in the generated reports:
 
 These lightweight models are therefore useful CPU baselines, but they do not
 match the published transformer-based DeepLoc models.
+
+## TargetP 2.0 comparison
+
+[TargetP 2.0](https://services.healthtech.dtu.dk/services/TargetP-2.0/) is the
+current DTU TargetP server, according to its version history. The official
+TargetP 2.0 page publishes the FASTA sequences and tab-separated annotations
+used for its nested cross-validation dataset. The benchmark helper also
+downloads the fold metadata from the TargetP 2.0 source repository.
+
+```
+python -m cdskit.targetp_benchmark \
+  --download yes \
+  --run_cdskit_cv yes \
+  --model_arch bilstm_attention \
+  --localize_strategy single_stage \
+  --comparison_md targetp2_cdskit_comparison.md
+```
+
+The TargetP task maps to cdskit labels as follows:
+
+| TargetP label | cdskit label |
+| --- | --- |
+| `Other` | `noTP` |
+| `SP` | `SP` |
+| `MT` | `mTP` |
+| `CH` | `cTP` |
+| `TH` | `lTP` |
+
+Current local comparison snapshots on the official 13,005-sequence TargetP 2.0
+dataset:
+
+| Model | Macro F1 | Overall acc. | Notes |
+| --- | ---: | ---: | --- |
+| TargetP 2.0 paper Table 1 | 0.890 | - | published reference |
+| cdskit nearest centroid | 0.543 | 0.863 | quick CPU baseline, rerun locally |
+| cdskit BiLSTM | 0.705 | 0.925 | cached fold-fixed OOF run |
+| cdskit ESM2 t6 head | 0.606 | 0.953 | cached fold-fixed OOF run |
+| cdskit BiLSTM/ESM blend | 0.785 | 0.963 | cached classwise blend |
+
+This means `cdskit localize` is usable as a CPU-first local predictor and can be
+benchmarked reproducibly on the TargetP dataset, but it still trails TargetP 2.0
+on rare transit-peptide classes, especially `lTP`.

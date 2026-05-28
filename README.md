@@ -162,7 +162,8 @@ cdskit localize \
 ```
 
 Compatible multi-label models can also be trained from the public DeepLoc 2.1
-benchmark data with `python -m cdskit.deeploc_benchmark`. See the
+benchmark data with `python -m cdskit.deeploc_benchmark`. TargetP 2.0 comparison
+helpers are available through `python -m cdskit.targetp_benchmark`. See the
 [`localize` wiki page](https://github.com/kfuku52/cdskit/wiki/cdskit-localize)
 for supported localization, membrane, and sorting-signal labels plus benchmark
 commands.
