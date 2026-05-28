@@ -50,7 +50,7 @@ See [Wiki](https://github.com/kfuku52/cdskit/wiki) for detailed descriptions.
 
 - [`longestcds`](https://github.com/kfuku52/cdskit/wiki/cdskit-longestcds): Finding the longest CDS by six-frame translation (+/- strands, 3 frames each)
 
-- `localize`: Predicting targeting peptide classes (`noTP`, `SP`, `mTP`, `cTP`, `lTP`) and peroxisome targeting probability from in-frame CDS (input length must be a multiple of 3)
+- [`localize`](https://github.com/kfuku52/cdskit/wiki/cdskit-localize): Predicting targeting peptide classes (`noTP`, `SP`, `mTP`, `cTP`, `lTP`) or compatible multi-label localization models from CDS or protein input
 
 - `localize-learn`: Training a `localize` model from tab-separated data, or auto-downloaded UniProt entries (`explicit` labels or `uniprot_cc` text inference mode)
 
@@ -150,6 +150,22 @@ cdskit localize \
   --model localize_model.json \
   --report localize.tsv
 ```
+
+Predict from protein sequences:
+
+```
+cdskit localize \
+  --seqfile proteins.faa \
+  --seqtype protein \
+  --model localize_model.json \
+  --report localize.tsv
+```
+
+Compatible multi-label models can also be trained from the public DeepLoc 2.1
+benchmark data with `python -m cdskit.deeploc_benchmark`. See the
+[`localize` wiki page](https://github.com/kfuku52/cdskit/wiki/cdskit-localize)
+for supported localization, membrane, and sorting-signal labels plus benchmark
+commands.
 
 ## Citation
 There is no published paper on CDSKIT itself, but we used and cited CDSKIT in several papers including [Fukushima & Pollock (2023, Nat Ecol Evol 7: 155-170)](https://www.nature.com/articles/s41559-022-01932-7).
