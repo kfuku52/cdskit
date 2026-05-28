@@ -230,6 +230,33 @@ class TestMaxalignMain:
         assert [r.id for r in result] == ["good1", "good2", "good3"]
         assert all(str(r.seq) == "ATGAAACCC" for r in result)
 
+    def test_maxalign_greedy_can_remove_gap_pattern_set_from_zero_area(self, temp_dir, mock_args):
+        """Greedy search should remove a multi-sequence gap-pattern set when single removals do not help."""
+        input_path = temp_dir / "input.fasta"
+        output_path = temp_dir / "output.fasta"
+
+        records = [
+            SeqRecord(Seq("ATG---"), id="seq1", description=""),
+            SeqRecord(Seq("ATG---"), id="seq2", description=""),
+            SeqRecord(Seq("---AAA"), id="seq3", description=""),
+            SeqRecord(Seq("---AAA"), id="seq4", description=""),
+        ]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        args = mock_args(
+            seqfile=str(input_path),
+            outfile=str(output_path),
+            mode='greedy',
+            max_exact_sequences=2,
+            missing_char='-?.',
+        )
+
+        maxalign_main(args)
+
+        result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
+        assert [r.id for r in result] == ["seq3", "seq4"]
+        assert all(str(r.seq) == "AAA" for r in result)
+
     def test_maxalign_exact_tie_break_prefers_more_sequences_then_earlier_indices(self, temp_dir, mock_args):
         """Exact mode tie-break: area, then num_kept, then lexicographic indices."""
         input_path = temp_dir / "input.fasta"
@@ -648,14 +675,25 @@ class TestMaxalignHelpers:
         assert single['kept_indices'] == threaded['kept_indices']
         assert single['area'] == threaded['area']
 
-    def test_solve_greedy_tie_break_prefers_lexicographically_smaller_kept_indices(self):
+    def test_solve_greedy_tie_break_matches_original_scan_order(self):
         matrix = [
             [True, False],
             [False, True],
             [True, True],
         ]
         greedy = solve_greedy(matrix, threads=1)
-        assert greedy['kept_indices'] == [0, 2]
+        assert greedy['kept_indices'] == [1, 2]
+        assert greedy['area'] == 2
+
+    def test_solve_greedy_removes_gap_pattern_set_from_zero_area(self):
+        matrix = [
+            [True, False],
+            [True, False],
+            [False, True],
+            [False, True],
+        ]
+        greedy = solve_greedy(matrix, threads=1)
+        assert greedy['kept_indices'] == [2, 3]
         assert greedy['area'] == 2
 
     def test_solve_exact_process_fallback_to_threads(self, monkeypatch):
