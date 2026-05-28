@@ -204,11 +204,14 @@ scores used for threshold sensitivity checks, pass
 two embedded base predictors with classwise blend weights, class thresholds, and
 optional cdskit-trained SP/lTP specialist models on CPU.
 The benchmark helper can export that runtime format with `--model_out`; this
-trains final base predictors on the full TargetP training table and saves a
-CPU-loadable blend model.
+trains final base predictors on the full TargetP training table, fits the
+cdskit specialist profile, records the foldwise TargetP margin summary in model
+metadata, and saves a CPU-loadable blend model. Use
+`--foldwise_blend_eval yes --foldwise_specialist_eval yes --model_out model.pt`
+when exporting a TargetP-specialized runtime model.
 
-In the specialist run, `SP` F1 improved from 0.976 to 0.980 and `lTP` F1
-improved from 0.743 to 0.759 over the threshold blend. For DeepLoc sorting
+In the foldwise specialist run, `SP` F1 improved from 0.976 to 0.980 and `lTP`
+F1 improved from 0.743 to 0.752 over the threshold blend. For DeepLoc sorting
 signals, `--rare_label_threshold_objective f2` raised `TH` recall from 0.762 to
 0.810, but lowered `TH` F1 from 0.325 to 0.288, so it is a recall-oriented option
 rather than a better default.

@@ -1874,9 +1874,22 @@ def _export_targetp_blend_runtime_model(
             benchmark_out['blend_threshold']['metrics']['macro_f1']
         ),
     }
+    if 'specialist_foldwise' in benchmark_out:
+        metadata['benchmark_specialist_foldwise_macro_f1'] = float(
+            benchmark_out['specialist_foldwise']['metrics']['macro_f1']
+        )
+        metadata['benchmark_specialist_foldwise_min_class_f1_margin'] = float(
+            benchmark_out['specialist_foldwise']['targetp_margin']['min_class_f1_margin']
+        )
+        metadata['benchmark_specialist_foldwise_all_classes_gt_targetp'] = bool(
+            benchmark_out['specialist_foldwise']['targetp_margin']['beats_targetp_all_classes']
+        )
     if 'specialist_foldwise_fixed' in benchmark_out:
         metadata['benchmark_specialist_foldwise_fixed_macro_f1'] = float(
             benchmark_out['specialist_foldwise_fixed']['metrics']['macro_f1']
+        )
+        metadata['benchmark_specialist_foldwise_fixed_min_class_f1_margin'] = float(
+            benchmark_out['specialist_foldwise_fixed']['targetp_margin']['min_class_f1_margin']
         )
         metadata['benchmark_specialist_foldwise_fixed_all_classes_gt_targetp'] = bool(
             benchmark_out['specialist_foldwise_fixed']['targetp_margin']['beats_targetp_all_classes']

@@ -337,6 +337,13 @@ def test_export_targetp_blend_runtime_model_uses_full_training_table(temp_dir, m
         benchmark_out={
             'targetp_macro_f1': 0.89,
             'blend_threshold': {'metrics': {'macro_f1': 0.90}},
+            'specialist_foldwise': {
+                'metrics': {'macro_f1': 0.91},
+                'targetp_margin': {
+                    'min_class_f1_margin': 0.001,
+                    'beats_targetp_all_classes': True,
+                },
+            },
         },
     )
 
@@ -345,6 +352,9 @@ def test_export_targetp_blend_runtime_model_uses_full_training_table(temp_dir, m
     assert saved['path'] == str(temp_dir / 'targetp_blend.pt')
     assert saved['model']['model_type'] == 'targetp_blend_v1'
     assert saved['model']['metadata']['num_used_rows'] == 5
+    assert saved['model']['metadata']['benchmark_specialist_foldwise_macro_f1'] == pytest.approx(0.91)
+    assert saved['model']['metadata']['benchmark_specialist_foldwise_min_class_f1_margin'] == pytest.approx(0.001)
+    assert saved['model']['metadata']['benchmark_specialist_foldwise_all_classes_gt_targetp'] is True
     assert [
         row['model_type']
         for row in saved['model']['localization_model']['base_models']
