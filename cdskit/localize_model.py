@@ -957,6 +957,12 @@ def _predict_localization_from_model(aa_seq, feature_vec, localization_model, mo
             localization_model=localization_model,
             device='cpu',
         )
+    if model_type == 'targetp_blend_v1':
+        return predict_targetp_blend_localization(
+            aa_seq=aa_seq,
+            feature_vec=feature_vec,
+            localization_model=localization_model,
+        )
     raise ValueError('Unsupported model_type: {}'.format(model_type))
 
 
@@ -1027,6 +1033,375 @@ def _clip_float(value, lower, upper, default):
     if out > upper:
         out = float(upper)
     return float(out)
+
+
+def _class_probs_to_vector(class_probs):
+    probs = normalize_class_probabilities(class_probs=class_probs)
+    return np.asarray([probs[class_name] for class_name in LOCALIZATION_CLASSES], dtype=np.float64)
+
+
+def _vector_to_class_probs(prob_vec):
+    prob_vec = np.asarray(prob_vec, dtype=np.float64)
+    prob_vec = np.clip(prob_vec, a_min=0.0, a_max=None)
+    total = float(np.sum(prob_vec))
+    if total <= 0.0:
+        prob_vec = np.zeros((len(LOCALIZATION_CLASSES),), dtype=np.float64)
+        prob_vec[0] = 1.0
+    else:
+        prob_vec = prob_vec / total
+    return {
+        LOCALIZATION_CLASSES[i]: float(prob_vec[i])
+        for i in range(len(LOCALIZATION_CLASSES))
+    }
+
+
+def _targetp_blend_class_probabilities(prob_a, prob_b, alpha_by_class):
+    vec_a = _class_probs_to_vector(prob_a)
+    vec_b = _class_probs_to_vector(prob_b)
+    alpha = np.ones((len(LOCALIZATION_CLASSES),), dtype=np.float64)
+    if isinstance(alpha_by_class, dict):
+        for i, class_name in enumerate(LOCALIZATION_CLASSES):
+            try:
+                alpha[i] = float(alpha_by_class.get(class_name, 1.0))
+            except Exception:
+                alpha[i] = 1.0
+    else:
+        try:
+            alpha[:] = float(alpha_by_class)
+        except Exception:
+            alpha[:] = 1.0
+    alpha = np.clip(alpha, a_min=0.0, a_max=1.0)
+    return _vector_to_class_probs((alpha * vec_a) + ((1.0 - alpha) * vec_b))
+
+
+def _targetp_sp_scan_features(seq):
+    seq = str(seq or '')
+    best_score = -99.0
+    best_cut = 0
+    best_parts = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+    for cut in range(12, min(45, len(seq) - 1)):
+        pre = seq[:cut]
+        nreg = seq[:max(1, cut - 18)]
+        hreg = seq[max(0, cut - 18):max(0, cut - 7)]
+        creg = seq[max(0, cut - 7):cut + 2]
+        m3 = seq[cut - 3] if cut - 3 >= 0 else 'X'
+        m2 = seq[cut - 2] if cut - 2 >= 0 else 'X'
+        m1 = seq[cut - 1] if cut - 1 >= 0 else 'X'
+        p1 = seq[cut] if cut < len(seq) else 'X'
+        small_m3 = 1.0 if m3 in 'AVSGTC' else 0.0
+        small_m1 = 1.0 if m1 in 'ASGTC' else 0.0
+        ala_m1 = 1.0 if m1 == 'A' else 0.0
+        pro_bad = 1.0 if 'P' in (m3 + m2 + m1 + p1) else 0.0
+        hyd = fraction_in_set(hreg, AA_HYDROPHOBIC)
+        run = longest_hydrophobic_run(hreg)
+        small = fraction_in_set(creg, AA_SMALL)
+        ncharge = fraction_in_set(nreg, AA_BASIC) - fraction_in_set(nreg, AA_ACIDIC)
+        st_frac = fraction_in_set(pre, AA_SER_THR)
+        score = (
+            (2.2 * hyd)
+            + (0.15 * run)
+            + (0.8 * small_m3)
+            + (1.0 * small_m1)
+            + (0.4 * ala_m1)
+            + (0.5 * small)
+            + (0.4 * ncharge)
+            - (0.9 * pro_bad)
+            - (0.25 * st_frac)
+        )
+        if score > best_score:
+            best_score = float(score)
+            best_cut = int(cut)
+            best_parts = (
+                float(hyd),
+                float(run),
+                float(small_m3),
+                float(small_m1),
+                float(ala_m1),
+                float(pro_bad),
+                float(small),
+                float(ncharge),
+                float(st_frac),
+            )
+
+    out = [best_score, float(best_cut), float(best_cut) / float(max(1, len(seq)))]
+    out.extend(best_parts)
+    for window in [
+        seq[:15],
+        seq[:25],
+        seq[:35],
+        seq[:50],
+        seq[:80],
+        seq[5:30],
+        seq[20:60],
+        seq[40:100],
+    ]:
+        out.extend([
+            mean_hydropathy(window),
+            longest_hydrophobic_run(window),
+            fraction_in_set(window, AA_HYDROPHOBIC),
+            fraction_in_set(window, AA_BASIC),
+            fraction_in_set(window, AA_ACIDIC),
+            fraction_in_set(window, AA_SER_THR),
+            fraction_in_set(window, AA_SMALL),
+        ])
+    return out
+
+
+def _targetp_ctp_ltp_sequence_features(seq, organism_group):
+    seq = str(seq or '')
+    out = list(extract_broad_localize_features(seq, organism_group)[0])
+    windows = [
+        seq[:20],
+        seq[:40],
+        seq[:60],
+        seq[:80],
+        seq[:100],
+        seq[:120],
+        seq[20:80],
+        seq[40:120],
+    ]
+    groups = [
+        AA_BASIC,
+        AA_ACIDIC,
+        AA_HYDROPHOBIC,
+        AA_SMALL,
+        AA_SER_THR,
+        AA_AROMATIC,
+        frozenset('R'),
+        frozenset('K'),
+        frozenset('A'),
+        frozenset('S'),
+        frozenset('T'),
+        frozenset('P'),
+        frozenset('G'),
+        frozenset('LIV'),
+    ]
+    for window in windows:
+        out.extend([mean_hydropathy(window), longest_hydrophobic_run(window)])
+        out.extend([fraction_in_set(window, group) for group in groups])
+    n_term = seq[:140]
+    for motif in ['RR', 'KR', 'RK', 'KK', 'RA', 'RS', 'SR', 'ST', 'TS', 'SS', 'TP', 'SP']:
+        out.append(1.0 if motif in n_term else 0.0)
+        out.append(float(n_term.find(motif) if motif in n_term else 999))
+    return out
+
+
+def _targetp_specialist_probability_features(base_probs, prob_a, prob_b):
+    base_vec = _class_probs_to_vector(base_probs)
+    vec_a = _class_probs_to_vector(prob_a)
+    vec_b = _class_probs_to_vector(prob_b)
+    ctp_idx = LOCALIZATION_CLASSES.index('cTP')
+    ltp_idx = LOCALIZATION_CLASSES.index('lTP')
+    denom = float(base_vec[ctp_idx] + base_vec[ltp_idx])
+    ltp_ratio = 0.0 if denom <= 0.0 else float(base_vec[ltp_idx]) / denom
+    return np.concatenate([base_vec, vec_a, vec_b, np.asarray([ltp_ratio], dtype=np.float64)])
+
+
+def _targetp_sp_specialist_feature_vector(aa_seq, base_probs, prob_a, prob_b, organism_group):
+    plant_flag = 1.0 if normalize_organism_group(organism_group) == 'plant' else 0.0
+    return np.concatenate([
+        np.asarray(_targetp_sp_scan_features(aa_seq), dtype=np.float64),
+        _targetp_specialist_probability_features(base_probs, prob_a, prob_b),
+        np.asarray([plant_flag], dtype=np.float64),
+    ])
+
+
+def _targetp_ctp_ltp_specialist_feature_vector(aa_seq, base_probs, prob_a, prob_b, organism_group):
+    plant_flag = 1.0 if normalize_organism_group(organism_group) == 'plant' else 0.0
+    return np.concatenate([
+        np.asarray(_targetp_ctp_ltp_sequence_features(aa_seq, organism_group), dtype=np.float64),
+        _targetp_specialist_probability_features(base_probs, prob_a, prob_b),
+        np.asarray([plant_flag], dtype=np.float64),
+    ])
+
+
+def _predict_binary_ensemble_score(feature_vec, models, weights=None):
+    if not isinstance(models, list) or len(models) == 0:
+        return 0.0
+    scores = list()
+    for model in models:
+        if not hasattr(model, 'predict_proba'):
+            raise TypeError('TargetP specialist model should support predict_proba.')
+        proba = np.asarray(model.predict_proba(np.asarray(feature_vec, dtype=np.float64).reshape((1, -1))), dtype=np.float64)
+        classes = getattr(model, 'classes_', [0, 1])
+        class_to_col = {int(cls): i for i, cls in enumerate(list(classes))}
+        scores.append(float(proba[0, class_to_col.get(1, 0)]) if 1 in class_to_col else 0.0)
+    if weights is None:
+        return float(np.mean(np.asarray(scores, dtype=np.float64)))
+    weights = np.asarray(weights, dtype=np.float64)
+    if weights.shape[0] != len(scores):
+        raise ValueError('TargetP specialist weights do not match model count.')
+    total = float(np.sum(weights))
+    if total <= 0.0:
+        raise ValueError('TargetP specialist weights should sum to a positive value.')
+    return float(np.average(np.asarray(scores, dtype=np.float64), weights=weights / total))
+
+
+def _prediction_index_with_thresholds(class_probs, class_thresholds):
+    probs = normalize_class_probabilities(class_probs=class_probs)
+    scores = list()
+    for class_name in LOCALIZATION_CLASSES:
+        threshold = 1.0
+        if isinstance(class_thresholds, dict):
+            threshold = class_thresholds.get(class_name, 1.0)
+        try:
+            threshold = float(threshold)
+        except Exception:
+            threshold = 1.0
+        if (not np.isfinite(threshold)) or threshold <= 0.0:
+            threshold = 1.0
+        scores.append(float(probs[class_name]) / threshold)
+    return int(np.argmax(np.asarray(scores, dtype=np.float64)))
+
+
+def _apply_targetp_specialist_postprocess(
+    aa_seq,
+    base_probs,
+    prob_a,
+    prob_b,
+    localization_model,
+    organism_group,
+):
+    specialist = localization_model.get('targetp_specialist_postprocess', None)
+    if not isinstance(specialist, dict) or not bool(specialist.get('enabled', True)):
+        return None, {}
+
+    class_thresholds = localization_model.get('class_thresholds', {})
+    pred_idx = _prediction_index_with_thresholds(
+        class_probs=base_probs,
+        class_thresholds=class_thresholds,
+    )
+    scores = _class_probs_to_vector(base_probs)
+    thresholds = np.ones((len(LOCALIZATION_CLASSES),), dtype=np.float64)
+    if isinstance(class_thresholds, dict):
+        for i, class_name in enumerate(LOCALIZATION_CLASSES):
+            try:
+                thresholds[i] = float(class_thresholds.get(class_name, 1.0))
+            except Exception:
+                thresholds[i] = 1.0
+            if (not np.isfinite(thresholds[i])) or thresholds[i] <= 0.0:
+                thresholds[i] = 1.0
+    scores = scores / thresholds
+    sp_idx = LOCALIZATION_CLASSES.index('SP')
+    ctp_idx = LOCALIZATION_CLASSES.index('cTP')
+    ltp_idx = LOCALIZATION_CLASSES.index('lTP')
+    non_sp_scores = scores.copy()
+    non_sp_scores[sp_idx] = -np.inf
+    non_sp_pred_idx = int(np.argmax(non_sp_scores))
+
+    sp_feature_vec = _targetp_sp_specialist_feature_vector(
+        aa_seq=aa_seq,
+        base_probs=base_probs,
+        prob_a=prob_a,
+        prob_b=prob_b,
+        organism_group=organism_group,
+    )
+    sp_score = _predict_binary_ensemble_score(
+        feature_vec=sp_feature_vec,
+        models=specialist.get('sp_models', []),
+        weights=specialist.get('sp_weights', None),
+    )
+    sp_threshold = float(specialist.get('sp_threshold', 0.5))
+    sp_positive = sp_score >= sp_threshold
+    if sp_positive:
+        pred_idx = sp_idx
+    elif pred_idx == sp_idx:
+        pred_idx = non_sp_pred_idx
+
+    group = normalize_organism_group(organism_group)
+    ctp_ltp_mass = float(base_probs.get('cTP', 0.0) + base_probs.get('lTP', 0.0))
+    ltp_mass_threshold = float(specialist.get('ltp_mass_threshold', 0.20))
+    ltp_score = 0.0
+    ltp_candidate = (
+        group == 'plant'
+        and (not sp_positive)
+        and (ctp_ltp_mass > ltp_mass_threshold)
+    )
+    if ltp_candidate:
+        ltp_feature_vec = _targetp_ctp_ltp_specialist_feature_vector(
+            aa_seq=aa_seq,
+            base_probs=base_probs,
+            prob_a=prob_a,
+            prob_b=prob_b,
+            organism_group=organism_group,
+        )
+        ltp_score = _predict_binary_ensemble_score(
+            feature_vec=ltp_feature_vec,
+            models=specialist.get('ltp_models', []),
+            weights=specialist.get('ltp_weights', None),
+        )
+        ltp_threshold = float(specialist.get('ltp_threshold', 0.5))
+        if ltp_score >= ltp_threshold:
+            pred_idx = ltp_idx
+        elif pred_idx in [ctp_idx, ltp_idx]:
+            pred_idx = ctp_idx
+
+    details = {
+        'sp_score': float(sp_score),
+        'sp_threshold': float(sp_threshold),
+        'sp_positive': bool(sp_positive),
+        'ltp_score': float(ltp_score),
+        'ltp_threshold': float(specialist.get('ltp_threshold', 0.5)),
+        'ltp_mass_threshold': float(ltp_mass_threshold),
+        'ltp_candidate': bool(ltp_candidate),
+        'ctp_ltp_mass': float(ctp_ltp_mass),
+    }
+    return LOCALIZATION_CLASSES[pred_idx], details
+
+
+def predict_targetp_blend_localization(
+    aa_seq,
+    feature_vec,
+    localization_model,
+    organism_group='',
+    return_details=False,
+):
+    base_models = localization_model.get('base_models', [])
+    if not isinstance(base_models, list) or len(base_models) != 2:
+        raise ValueError('targetp_blend_v1 requires exactly two base_models.')
+    base_probs = list()
+    for base_model in base_models:
+        if not isinstance(base_model, dict):
+            raise ValueError('Invalid targetp_blend_v1 base model payload.')
+        base_model_type = str(base_model.get('model_type', '')).strip()
+        submodel = base_model.get('localization_model', {})
+        _, probs = _predict_localization_from_model(
+            aa_seq=aa_seq,
+            feature_vec=feature_vec,
+            localization_model=submodel,
+            model_type=base_model_type,
+        )
+        base_probs.append(apply_organism_group_constraints(
+            class_probs=probs,
+            organism_group=organism_group,
+        ))
+
+    blend_probs = _targetp_blend_class_probabilities(
+        prob_a=base_probs[0],
+        prob_b=base_probs[1],
+        alpha_by_class=localization_model.get('alpha_by_class', 1.0),
+    )
+    pred_class, out_probs = postprocess_localization_probabilities(
+        class_probs=blend_probs,
+        localization_model=localization_model,
+    )
+    specialist_pred, specialist_details = _apply_targetp_specialist_postprocess(
+        aa_seq=aa_seq,
+        base_probs=out_probs,
+        prob_a=base_probs[0],
+        prob_b=base_probs[1],
+        localization_model=localization_model,
+        organism_group=organism_group,
+    )
+    if specialist_pred is not None:
+        pred_class = specialist_pred
+    if return_details:
+        return pred_class, out_probs, {
+            'base_model_probabilities': [dict(base_probs[0]), dict(base_probs[1])],
+            'blend_probabilities': dict(blend_probs),
+            'specialist_postprocess': specialist_details,
+        }
+    return pred_class, out_probs
 
 
 def compose_two_stage_ctp_ltp_probabilities(
@@ -1186,7 +1561,16 @@ def predict_localization_and_peroxisome(aa_seq, model, organism_group=''):
     model_type = str(model.get('model_type', ''))
     localization_model = model['localization_model']
     localization_strategy = str(localization_model.get('strategy', 'single_stage')).strip().lower()
-    if localization_strategy == 'two_stage':
+    strategy_details = None
+    if model_type == 'targetp_blend_v1':
+        pred_class, class_probs, strategy_details = predict_targetp_blend_localization(
+            aa_seq=aa_seq,
+            feature_vec=feats,
+            localization_model=localization_model,
+            organism_group=organism_group,
+            return_details=True,
+        )
+    elif localization_strategy == 'two_stage':
         _, class_probs = predict_two_stage_localization(
             aa_seq=aa_seq,
             feature_vec=feats,
@@ -1208,14 +1592,15 @@ def predict_localization_and_peroxisome(aa_seq, model, organism_group=''):
             localization_model=localization_model,
             model_type=model_type,
         )
-    class_probs = apply_organism_group_constraints(
-        class_probs=class_probs,
-        organism_group=organism_group,
-    )
-    pred_class, class_probs = postprocess_localization_probabilities(
-        class_probs=class_probs,
-        localization_model=localization_model,
-    )
+    if model_type != 'targetp_blend_v1':
+        class_probs = apply_organism_group_constraints(
+            class_probs=class_probs,
+            organism_group=organism_group,
+        )
+        pred_class, class_probs = postprocess_localization_probabilities(
+            class_probs=class_probs,
+            localization_model=localization_model,
+        )
     _, perox_probs = predict_perox(
         feature_vec=feats,
         perox_model=model['perox_model'],
@@ -1232,6 +1617,8 @@ def predict_localization_and_peroxisome(aa_seq, model, organism_group=''):
     }
     if localization_strategy == 'two_stage_ctp_ltp':
         out['two_stage_ctp_ltp_details'] = strategy_details
+    if model_type == 'targetp_blend_v1':
+        out['targetp_blend_details'] = strategy_details
     return out
 
 
@@ -1254,7 +1641,7 @@ def save_localize_model(model, path):
         with open(path, 'w', encoding='utf-8') as out:
             json.dump(model, out, indent=2, sort_keys=True)
         return
-    if model_type in ['bilstm_attention_v1', 'esm_head_v1', 'multilabel_cnn_v1']:
+    if model_type in ['bilstm_attention_v1', 'esm_head_v1', 'multilabel_cnn_v1', 'targetp_blend_v1']:
         from cdskit.localize_bilstm import require_torch
         torch, _ = require_torch()
         to_save = _strip_runtime_caches(dict(model))
@@ -1276,7 +1663,10 @@ def load_localize_model(path):
         try:
             from cdskit.localize_bilstm import require_torch
             torch, _ = require_torch()
-            payload = torch.load(path, map_location='cpu')
+            try:
+                payload = torch.load(path, map_location='cpu', weights_only=False)
+            except TypeError:
+                payload = torch.load(path, map_location='cpu')
             if isinstance(payload, dict) and ('model' in payload):
                 model = payload['model']
             elif isinstance(payload, dict):
@@ -1295,6 +1685,7 @@ def load_localize_model(path):
         'nearest_centroid_v1',
         'bilstm_attention_v1',
         'esm_head_v1',
+        'targetp_blend_v1',
         'multilabel_centroid_v1',
         'multilabel_cnn_v1',
     ]

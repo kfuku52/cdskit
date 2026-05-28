@@ -58,6 +58,18 @@ AA_TO_CODON = {
 }
 
 
+class ConstantBinaryScore:
+    classes_ = np.asarray([0, 1], dtype=np.int64)
+
+    def __init__(self, score):
+        self.score = float(score)
+
+    def predict_proba(self, x):
+        n_rows = int(np.asarray(x).shape[0])
+        row = np.asarray([1.0 - self.score, self.score], dtype=np.float64)
+        return np.tile(row.reshape((1, 2)), (n_rows, 1))
+
+
 def aa_to_cds(aa_seq):
     return ''.join([AA_TO_CODON[aa] for aa in aa_seq])
 
@@ -915,6 +927,115 @@ def test_predict_localization_respects_non_plant_constraints():
     assert pred['predicted_class'] == 'noTP'
     assert pred['class_probabilities']['cTP'] == pytest.approx(0.0)
     assert pred['class_probabilities']['lTP'] == pytest.approx(0.0)
+
+
+def test_predict_targetp_blend_model_combines_base_models_and_thresholds():
+    class_order = ['noTP', 'SP', 'mTP', 'cTP', 'lTP']
+    model = {
+        'model_type': 'targetp_blend_v1',
+        'feature_names': [],
+        'localization_model': {
+            'class_order': class_order,
+            'base_models': [
+                {
+                    'model_type': 'nearest_centroid_v1',
+                    'localization_model': {
+                        'mode': 'constant',
+                        'class_label': 'noTP',
+                        'class_order': class_order,
+                    },
+                },
+                {
+                    'model_type': 'nearest_centroid_v1',
+                    'localization_model': {
+                        'mode': 'constant',
+                        'class_label': 'lTP',
+                        'class_order': class_order,
+                    },
+                },
+            ],
+            'alpha_by_class': {
+                'noTP': 1.0,
+                'SP': 1.0,
+                'mTP': 1.0,
+                'cTP': 1.0,
+                'lTP': 0.0,
+            },
+            'class_thresholds': {
+                'noTP': 1.0,
+                'SP': 1.0,
+                'mTP': 1.0,
+                'cTP': 1.0,
+                'lTP': 0.4,
+            },
+        },
+        'perox_model': {
+            'mode': 'constant',
+            'yes_probability': 0.0,
+        },
+    }
+
+    pred = predict_localization_and_peroxisome(
+        aa_seq='MARRVAAARRLLLLLVVVVVAAST',
+        model=model,
+        organism_group='plant',
+    )
+
+    assert pred['predicted_class'] == 'lTP'
+    assert pred['class_probabilities']['noTP'] == pytest.approx(0.5)
+    assert pred['class_probabilities']['lTP'] == pytest.approx(0.5)
+    assert 'targetp_blend_details' in pred
+
+
+def test_predict_targetp_blend_specialist_can_override_class_prediction():
+    class_order = ['noTP', 'SP', 'mTP', 'cTP', 'lTP']
+    model = {
+        'model_type': 'targetp_blend_v1',
+        'feature_names': [],
+        'localization_model': {
+            'class_order': class_order,
+            'base_models': [
+                {
+                    'model_type': 'nearest_centroid_v1',
+                    'localization_model': {
+                        'mode': 'constant',
+                        'class_label': 'noTP',
+                        'class_order': class_order,
+                    },
+                },
+                {
+                    'model_type': 'nearest_centroid_v1',
+                    'localization_model': {
+                        'mode': 'constant',
+                        'class_label': 'noTP',
+                        'class_order': class_order,
+                    },
+                },
+            ],
+            'alpha_by_class': 0.5,
+            'targetp_specialist_postprocess': {
+                'enabled': True,
+                'sp_models': [ConstantBinaryScore(0.95)],
+                'sp_threshold': 0.90,
+                'ltp_models': [],
+                'ltp_threshold': 0.50,
+                'ltp_mass_threshold': 0.20,
+            },
+        },
+        'perox_model': {
+            'mode': 'constant',
+            'yes_probability': 0.0,
+        },
+    }
+
+    pred = predict_localization_and_peroxisome(
+        aa_seq='MKKLLLLLLLLLLAVAVAASAASA',
+        model=model,
+        organism_group='non_plant',
+    )
+
+    assert pred['predicted_class'] == 'SP'
+    assert pred['targetp_blend_details']['specialist_postprocess']['sp_positive'] is True
 
 
 def test_localize_learn_predefined_cv_fold_col(temp_dir, mock_args):
