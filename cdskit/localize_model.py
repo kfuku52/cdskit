@@ -633,7 +633,7 @@ def _sigmoid(x):
     return out
 
 
-def _binary_f1_from_predictions(true_binary, pred_binary):
+def _binary_fbeta_from_predictions(true_binary, pred_binary, beta=1.0):
     true_binary = np.asarray(true_binary, dtype=np.int64)
     pred_binary = np.asarray(pred_binary, dtype=np.int64)
     tp = int(np.sum((true_binary == 1) & (pred_binary == 1)))
@@ -643,7 +643,16 @@ def _binary_f1_from_predictions(true_binary, pred_binary):
     recall = 0.0 if (tp + fn) <= 0 else float(tp) / float(tp + fn)
     if precision + recall <= 0.0:
         return 0.0
-    return float((2.0 * precision * recall) / (precision + recall))
+    beta2 = float(beta) * float(beta)
+    return float(((1.0 + beta2) * precision * recall) / ((beta2 * precision) + recall))
+
+
+def _binary_f1_from_predictions(true_binary, pred_binary):
+    return _binary_fbeta_from_predictions(
+        true_binary=true_binary,
+        pred_binary=pred_binary,
+        beta=1.0,
+    )
 
 
 def _binary_mcc_from_predictions(true_binary, pred_binary):
@@ -665,7 +674,7 @@ def _tune_binary_threshold(prob_vec, true_binary, threshold_grid=None, objective
     if threshold_grid is None:
         threshold_grid = np.linspace(0.05, 0.95, 19)
     objective = str(objective or 'f1').strip().lower()
-    if objective not in ['mcc', 'f1']:
+    if objective not in ['mcc', 'f0.5', 'f1', 'f2']:
         raise ValueError('Unsupported threshold objective: {}'.format(objective))
     best_threshold = 0.5
     best_score = -1.0e9
@@ -676,6 +685,18 @@ def _tune_binary_threshold(prob_vec, true_binary, threshold_grid=None, objective
             score = _binary_mcc_from_predictions(
                 true_binary=true_binary,
                 pred_binary=pred,
+            )
+        elif objective == 'f0.5':
+            score = _binary_fbeta_from_predictions(
+                true_binary=true_binary,
+                pred_binary=pred,
+                beta=0.5,
+            )
+        elif objective == 'f2':
+            score = _binary_fbeta_from_predictions(
+                true_binary=true_binary,
+                pred_binary=pred,
+                beta=2.0,
             )
         else:
             score = _binary_f1_from_predictions(
@@ -698,6 +719,7 @@ def fit_multilabel_centroid_classifier(
     class_order,
     threshold_grid=None,
     threshold_objective='f1',
+    threshold_objective_by_class=None,
     ensure_one_label=True,
 ):
     x = np.asarray(features, dtype=np.float64)
@@ -764,12 +786,14 @@ def fit_multilabel_centroid_classifier(
         apply_thresholds=False,
     )['prob_matrix']
     thresholds = dict()
+    threshold_objective_by_class = dict(threshold_objective_by_class or {})
     for class_i, class_name in enumerate(class_order):
+        objective = threshold_objective_by_class.get(class_name, threshold_objective)
         thresholds[class_name] = _tune_binary_threshold(
             prob_vec=train_prob[:, class_i],
             true_binary=y[:, class_i],
             threshold_grid=threshold_grid,
-            objective=threshold_objective,
+            objective=objective,
         )
     model['class_thresholds'] = thresholds
     return model

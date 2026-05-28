@@ -10,6 +10,7 @@ from cdskit.deeploc_benchmark import (
     DEEPLOC_MEMBRANE_LABELS,
     compute_multilabel_metrics,
     evaluate_deeploc21_task_cv,
+    fit_deeploc_multilabel_model,
     prepare_all_deeploc21,
     prepare_deeploc21_hpa_tsv,
     prepare_deeploc21_localization_tsv,
@@ -267,6 +268,50 @@ def test_multilabel_metrics_and_deeploc_cv(temp_dir):
     assert cv['n_rows'] == 4
     assert len(cv['folds']) == 2
     assert 'macro_f1' in cv
+
+
+def test_deeploc_rare_label_threshold_objective_metadata():
+    rows = [
+        {
+            'source': 'swissprot',
+            'accession': 'P1',
+            'kingdom': 'Metazoa',
+            'partition': '0',
+            'sequence': 'MKKKRKAAAGGG',
+            'sorting_signal_labels': 'SP',
+        },
+        {
+            'source': 'swissprot',
+            'accession': 'P2',
+            'kingdom': 'Metazoa',
+            'partition': '0',
+            'sequence': 'MLLLLLLLLLLAAA',
+            'sorting_signal_labels': 'SP',
+        },
+        {
+            'source': 'swissprot',
+            'accession': 'P3',
+            'kingdom': 'Metazoa',
+            'partition': '1',
+            'sequence': 'MSSSSSSSSRRLLLLL',
+            'sorting_signal_labels': 'TH',
+        },
+    ]
+    model = fit_deeploc_multilabel_model(
+        rows=rows,
+        labels=['SP', 'TH'],
+        label_col='sorting_signal_labels',
+        task_name='sorting_signals',
+        model_arch='centroid',
+        dl_params={
+            'threshold_objective': 'f1',
+            'rare_label_threshold_objective': 'f2',
+            'rare_label_max_count': 1,
+        },
+    )
+    by_class = model['metadata']['rare_label_threshold_objective_by_class']
+    assert by_class == {'TH': 'f2'}
+    assert model['metadata']['threshold_params']['rare_label_max_count'] == 1
 
 
 def test_run_deeploc_benchmark_writes_model_and_localize_predicts(temp_dir):

@@ -505,9 +505,50 @@ def _deeploc_cnn_params(dl_params=None):
         'seed': int(params.get('seed', 1)),
         'class_weight': _to_bool_yes_no(params.get('class_weight', 'yes')),
         'feature_fusion': _to_bool_yes_no(params.get('feature_fusion', 'no')),
+        'sample_weight_power': float(params.get('sample_weight_power', 0.0)),
         'device': str(params.get('device', 'auto')),
         'threshold_objective': str(params.get('threshold_objective', 'f1')),
+        'rare_label_threshold_objective': str(
+            params.get('rare_label_threshold_objective', 'none')
+        ),
+        'rare_label_max_count': int(params.get('rare_label_max_count', 0)),
+        'rare_label_max_frac': float(params.get('rare_label_max_frac', 0.0)),
     }
+
+
+def _threshold_params(dl_params=None):
+    params = dict(dl_params or {})
+    return {
+        'threshold_objective': str(params.get('threshold_objective', 'f1')),
+        'rare_label_threshold_objective': str(
+            params.get('rare_label_threshold_objective', 'none')
+        ),
+        'rare_label_max_count': int(params.get('rare_label_max_count', 0)),
+        'rare_label_max_frac': float(params.get('rare_label_max_frac', 0.0)),
+    }
+
+
+def _rare_threshold_objective_by_class(label_matrix, labels, dl_params=None):
+    params = _threshold_params(dl_params=dl_params)
+    objective = str(params['rare_label_threshold_objective']).strip().lower()
+    if objective in ['', 'none']:
+        return {}
+    if objective not in ['mcc', 'f0.5', 'f1', 'f2']:
+        raise ValueError('Unsupported --rare_label_threshold_objective: {}'.format(objective))
+    max_count = int(params['rare_label_max_count'])
+    max_frac = float(params['rare_label_max_frac'])
+    if max_count <= 0 and max_frac <= 0.0:
+        return {}
+    y = np.asarray(label_matrix, dtype=np.int64)
+    out = dict()
+    for class_i, class_name in enumerate(labels):
+        count = int(np.sum(y[:, class_i] == 1))
+        if count <= 0:
+            continue
+        frac = 0.0 if y.shape[0] == 0 else float(count) / float(y.shape[0])
+        if (max_count > 0 and count <= max_count) or (max_frac > 0.0 and frac <= max_frac):
+            out[class_name] = objective
+    return out
 
 
 def _safe_div(num, denom):
@@ -656,6 +697,12 @@ def fit_deeploc_multilabel_model(
         label_col=label_col,
     )
     arch = _normalize_model_arch(model_arch=model_arch)
+    threshold_params = _threshold_params(dl_params=dl_params)
+    threshold_objective_by_class = _rare_threshold_objective_by_class(
+        label_matrix=y,
+        labels=labels,
+        dl_params=dl_params,
+    )
     cnn_params = None
     if arch == 'cnn':
         cnn_params = _deeploc_cnn_params(dl_params=dl_params)
@@ -677,7 +724,9 @@ def fit_deeploc_multilabel_model(
             use_class_weight=cnn_params['class_weight'],
             device=cnn_params['device'],
             feature_matrix=feature_matrix,
+            sample_weight_power=cnn_params['sample_weight_power'],
             threshold_objective=cnn_params['threshold_objective'],
+            threshold_objective_by_class=threshold_objective_by_class,
             ensure_one_label=True,
         )
     else:
@@ -685,6 +734,8 @@ def fit_deeploc_multilabel_model(
             features=x,
             label_matrix=y,
             class_order=labels,
+            threshold_objective=threshold_params['threshold_objective'],
+            threshold_objective_by_class=threshold_objective_by_class,
             ensure_one_label=True,
         )
     localization_model['task'] = str(task_name)
@@ -698,6 +749,8 @@ def fit_deeploc_multilabel_model(
         },
         'model_arch': 'multilabel_cnn' if arch == 'cnn' else 'multilabel_centroid',
         'seqtype': 'protein',
+        'threshold_params': dict(threshold_params),
+        'rare_label_threshold_objective_by_class': dict(threshold_objective_by_class),
     }
     if cnn_params is not None:
         metadata['cnn_params'] = dict(cnn_params)
@@ -1046,7 +1099,11 @@ def build_parser():
     parser.add_argument('--dl_weight_decay', default=1.0e-4, type=float)
     parser.add_argument('--dl_class_weight', default='yes', choices=['yes', 'no'], type=str)
     parser.add_argument('--dl_feature_fusion', default='no', choices=['yes', 'no'], type=str)
-    parser.add_argument('--dl_threshold_objective', default='f1', choices=['f1', 'mcc'], type=str)
+    parser.add_argument('--dl_sample_weight_power', default=0.0, type=float)
+    parser.add_argument('--dl_threshold_objective', default='f1', choices=['f0.5', 'f1', 'f2', 'mcc'], type=str)
+    parser.add_argument('--rare_label_threshold_objective', default='none', choices=['none', 'f0.5', 'f1', 'f2', 'mcc'], type=str)
+    parser.add_argument('--rare_label_max_count', default=0, type=int)
+    parser.add_argument('--rare_label_max_frac', default=0.0, type=float)
     parser.add_argument('--dl_seed', default=1, type=int)
     parser.add_argument('--dl_device', default='auto', choices=['auto', 'cpu', 'cuda', 'mps'], type=str)
     parser.add_argument('--cv_folds', default=5, type=int)
@@ -1085,7 +1142,11 @@ def main():
             'weight_decay': float(args.dl_weight_decay),
             'class_weight': args.dl_class_weight,
             'feature_fusion': args.dl_feature_fusion,
+            'sample_weight_power': float(args.dl_sample_weight_power),
             'threshold_objective': args.dl_threshold_objective,
+            'rare_label_threshold_objective': args.rare_label_threshold_objective,
+            'rare_label_max_count': int(args.rare_label_max_count),
+            'rare_label_max_frac': float(args.rare_label_max_frac),
             'seed': int(args.dl_seed),
             'device': args.dl_device,
         }

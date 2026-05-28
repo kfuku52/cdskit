@@ -133,6 +133,26 @@ def _class_pos_weight(label_matrix):
     return (neg / np.clip(pos, 1.0, None)).astype(np.float32)
 
 
+def _row_sampling_probabilities(label_matrix, sample_weight_power):
+    sample_weight_power = float(sample_weight_power)
+    if sample_weight_power <= 0.0:
+        return None
+    y = np.asarray(label_matrix, dtype=np.float32)
+    pos = np.sum(y > 0.5, axis=0)
+    pos[pos < 1.0] = 1.0
+    class_weight = float(y.shape[0]) / pos
+    row_weight = np.ones((y.shape[0],), dtype=np.float64)
+    positive = (y > 0.5)
+    for row_i in range(y.shape[0]):
+        active = class_weight[positive[row_i, :]]
+        if active.shape[0] > 0:
+            row_weight[row_i] = float(np.max(active))
+    row_weight = np.power(row_weight, sample_weight_power)
+    row_weight[~np.isfinite(row_weight)] = 1.0
+    row_weight[row_weight <= 0.0] = 1.0
+    return row_weight / np.sum(row_weight)
+
+
 def fit_multilabel_cnn_classifier(
     aa_sequences,
     label_matrix,
@@ -150,8 +170,10 @@ def fit_multilabel_cnn_classifier(
     use_class_weight=True,
     device='auto',
     feature_matrix=None,
+    sample_weight_power=0.0,
     threshold_grid=None,
     threshold_objective='f1',
+    threshold_objective_by_class=None,
     ensure_one_label=True,
 ):
     torch, nn = require_torch()
@@ -221,11 +243,24 @@ def fit_multilabel_cnn_classifier(
     )
     rng = np.random.default_rng(int(seed))
     indices = np.arange(x.shape[0], dtype=np.int64)
+    sample_prob = _row_sampling_probabilities(
+        label_matrix=y,
+        sample_weight_power=sample_weight_power,
+    )
     for _ in range(epochs):
-        rng.shuffle(indices)
+        if sample_prob is None:
+            rng.shuffle(indices)
+            epoch_indices = indices
+        else:
+            epoch_indices = rng.choice(
+                indices,
+                size=indices.shape[0],
+                replace=True,
+                p=sample_prob,
+            )
         model.train()
-        for start in range(0, indices.shape[0], batch_size):
-            batch_idx = indices[start:start + batch_size]
+        for start in range(0, epoch_indices.shape[0], batch_size):
+            batch_idx = epoch_indices[start:start + batch_size]
             xb = torch.as_tensor(x[batch_idx, :], dtype=torch.long, device=resolved_device)
             yb = torch.as_tensor(y[batch_idx, :], dtype=torch.float32, device=resolved_device)
             fb = None
@@ -266,12 +301,14 @@ def fit_multilabel_cnn_classifier(
 
     from cdskit.localize_model import _tune_binary_threshold
     thresholds = dict()
+    threshold_objective_by_class = dict(threshold_objective_by_class or {})
     for class_i, class_name in enumerate(class_order):
+        objective = threshold_objective_by_class.get(class_name, threshold_objective)
         thresholds[class_name] = _tune_binary_threshold(
             prob_vec=train_prob[:, class_i],
             true_binary=y[:, class_i],
             threshold_grid=threshold_grid,
-            objective=threshold_objective,
+            objective=objective,
         )
     return {
         'mode': 'multilabel_cnn',
@@ -286,6 +323,7 @@ def fit_multilabel_cnn_classifier(
         'feature_mean': None if feature_mean is None else feature_mean.astype(np.float32).tolist(),
         'feature_scale': None if feature_scale is None else feature_scale.astype(np.float32).tolist(),
         'class_thresholds': thresholds,
+        'sample_weight_power': float(sample_weight_power),
         'ensure_one_label': bool(ensure_one_label),
         'state_dict': {key: value.detach().cpu() for key, value in model.state_dict().items()},
         'device': str(resolved_device),

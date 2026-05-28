@@ -81,6 +81,24 @@ python -m cdskit.deeploc_benchmark \
   --comparison_md localization_cnn_comparison.md
 ```
 
+Rare-label recall experiments can be run with a different threshold objective
+for labels below a count or frequency cutoff. `f2` gives recall more weight than
+precision.
+
+```
+python -m cdskit.deeploc_benchmark \
+  --prepare no \
+  --benchmark yes \
+  --task sorting_signals \
+  --model_arch centroid \
+  --rare_label_threshold_objective f2 \
+  --rare_label_max_count 150
+```
+
+For CNN training, `--dl_sample_weight_power` samples rows containing rare labels
+more often. It is experimental and should be checked against the generated
+comparison report before use.
+
 ## Local benchmark snapshot
 
 The following metrics were reproduced on the public DeepLoc 2.1 prepared data
@@ -147,7 +165,13 @@ dataset:
 | cdskit BiLSTM | 0.705 | 0.925 | cached fold-fixed OOF run |
 | cdskit ESM2 t6 head | 0.606 | 0.953 | cached fold-fixed OOF run |
 | cdskit BiLSTM/ESM blend | 0.785 | 0.963 | cached classwise blend |
+| cdskit BiLSTM/ESM blend + thresholds | 0.789 | 0.966 | cached classwise blend with class thresholds |
 
 This means `cdskit localize` is usable as a CPU-first local predictor and can be
 benchmarked reproducibly on the TargetP dataset, but it still trails TargetP 2.0
 on rare transit-peptide classes, especially `lTP`.
+
+In the cached threshold-blend run, `lTP` F1 improved from 0.412 to 0.438. For
+DeepLoc sorting signals, `--rare_label_threshold_objective f2` raised `TH`
+recall from 0.762 to 0.810, but lowered `TH` F1 from 0.325 to 0.288, so it is a
+recall-oriented option rather than a better default.
