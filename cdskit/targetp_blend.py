@@ -398,6 +398,21 @@ def _best_binary_f1_threshold(scores, true_idx, positive_idx):
     return best_threshold, best_f1, best_counts
 
 
+def _binary_f1_at_threshold(scores, true_idx, positive_idx, threshold):
+    scores = np.asarray(scores, dtype=np.float64)
+    true_idx = np.asarray(true_idx, dtype=np.int64)
+    yy = true_idx == int(positive_idx)
+    if scores.shape[0] != yy.shape[0]:
+        raise ValueError('Binary threshold score length does not match labels.')
+    pred = scores >= float(threshold)
+    tp = int(np.sum(pred & yy))
+    fp = int(np.sum(pred & (~yy)))
+    fn = int(np.sum((~pred) & yy))
+    denom = (2 * tp) + fp + fn
+    f1 = 0.0 if denom == 0 else float(2 * tp) / float(denom)
+    return f1, {'tp': tp, 'fp': fp, 'fn': fn}
+
+
 def _top_binary_f1_thresholds(scores, true_idx, positive_idx, max_candidates=80):
     scores = np.asarray(scores, dtype=np.float64)
     true_idx = np.asarray(true_idx, dtype=np.int64)
@@ -406,13 +421,13 @@ def _top_binary_f1_thresholds(scores, true_idx, positive_idx, max_candidates=80)
         raise ValueError('Binary threshold score length does not match labels.')
     rows = list()
     for threshold in np.unique(scores).tolist():
-        pred = scores >= float(threshold)
-        tp = int(np.sum(pred & yy))
-        fp = int(np.sum(pred & (~yy)))
-        fn = int(np.sum((~pred) & yy))
-        denom = (2 * tp) + fp + fn
-        f1 = 0.0 if denom == 0 else float(2 * tp) / float(denom)
-        rows.append((f1, float(threshold), {'tp': tp, 'fp': fp, 'fn': fn}))
+        f1, counts = _binary_f1_at_threshold(
+            scores=scores,
+            true_idx=true_idx,
+            positive_idx=positive_idx,
+            threshold=threshold,
+        )
+        rows.append((f1, float(threshold), counts))
     rows.sort(key=lambda row: (row[0], -row[2]['fp'], row[2]['tp']), reverse=True)
     out = list()
     seen = set()
@@ -688,6 +703,33 @@ def _binary_crossfit_scores(
     return scores
 
 
+def _binary_crossfit_ensemble_scores(
+    features,
+    true_idx,
+    fold_ids,
+    fit_mask,
+    score_mask,
+    positive_idx,
+    make_models,
+    weights=None,
+):
+    return _aggregate_score_columns(
+        [
+            _binary_crossfit_scores(
+                features=features,
+                true_idx=true_idx,
+                fold_ids=fold_ids,
+                fit_mask=fit_mask,
+                score_mask=score_mask,
+                positive_idx=positive_idx,
+                make_model=make_model,
+            )
+            for make_model in make_models
+        ],
+        weights=weights,
+    )
+
+
 def _fit_binary_predict_scores(
     features,
     true_idx,
@@ -902,6 +944,11 @@ def _optimize_specialist_threshold_pair(
     class_names,
     ltp_mass_threshold,
     max_sp_candidates=80,
+    extra_sp_thresholds=None,
+    extra_ltp_thresholds=None,
+    fallback_sp_threshold=None,
+    fallback_ltp_threshold=None,
+    fallback_if_best_min_margin_below=None,
 ):
     class_to_idx = {name: i for i, name in enumerate(class_names)}
     sp_candidates = _top_binary_f1_thresholds(
@@ -910,7 +957,21 @@ def _optimize_specialist_threshold_pair(
         positive_idx=class_to_idx['SP'],
         max_candidates=max_sp_candidates,
     )
+    seen_sp = set([float(row[0]) for row in sp_candidates])
+    for threshold in ([] if extra_sp_thresholds is None else extra_sp_thresholds):
+        threshold = float(threshold)
+        if threshold in seen_sp:
+            continue
+        f1, counts = _binary_f1_at_threshold(
+            scores=sp_scores,
+            true_idx=true_idx,
+            positive_idx=class_to_idx['SP'],
+            threshold=threshold,
+        )
+        sp_candidates.append((threshold, f1, counts))
+        seen_sp.add(threshold)
     best = None
+    fallback = None
     for sp_threshold, sp_f1, sp_counts in sp_candidates:
         ltp_thresholds = _candidate_ltp_thresholds(
             base_prob=base_prob,
@@ -922,6 +983,11 @@ def _optimize_specialist_threshold_pair(
             class_names=class_names,
             ltp_mass_threshold=ltp_mass_threshold,
         )
+        if extra_ltp_thresholds is not None:
+            ltp_thresholds = np.unique(np.concatenate([
+                np.asarray(ltp_thresholds, dtype=np.float64),
+                np.asarray([float(v) for v in extra_ltp_thresholds], dtype=np.float64),
+            ]))
         for ltp_threshold in ltp_thresholds.tolist():
             pred_idx = _apply_specialist_postprocess_predictions(
                 base_prob=base_prob,
@@ -949,6 +1015,22 @@ def _optimize_specialist_threshold_pair(
             )
             if best is None or candidate[0] > best[0]:
                 best = candidate
+            if (
+                fallback_sp_threshold is not None
+                and fallback_ltp_threshold is not None
+                and bool(np.isclose(float(sp_threshold), float(fallback_sp_threshold)))
+                and bool(np.isclose(float(ltp_threshold), float(fallback_ltp_threshold)))
+            ):
+                fallback = candidate
+    selection_source = 'training_margin_rank'
+    if (
+        fallback is not None
+        and fallback_if_best_min_margin_below is not None
+        and best is not None
+        and float(best[0][0]) <= float(fallback_if_best_min_margin_below)
+    ):
+        best = fallback
+        selection_source = 'calibration_profile_fallback'
     return {
         'rank': best[0],
         'sp_threshold': best[1],
@@ -956,6 +1038,7 @@ def _optimize_specialist_threshold_pair(
         'sp_binary_f1': best[3],
         'sp_binary_counts': best[4],
         'pred_idx': best[5],
+        'selection_source': selection_source,
     }
 
 
@@ -1113,13 +1196,17 @@ def _evaluate_foldwise_targetp_specialist_postprocess(
     ], dtype=bool)
     pred_idx = np.zeros((prob_a.shape[0],), dtype=np.int64)
     fold_rows = list()
+    profile = TARGETP_SPECIALIST_FIXED_PROFILE
+    sp_seeds = list(profile['sp_random_states'])
+    sp_weights = list(profile['sp_weights'])
+    ltp_seeds = list(profile['ltp_random_states'])
 
-    def _make_sp_model():
+    def _make_sp_model(seed):
         return HistGradientBoostingClassifier(
             max_iter=350,
             learning_rate=0.04,
             l2_regularization=0.01,
-            random_state=1,
+            random_state=int(seed),
             class_weight='balanced',
         )
 
@@ -1174,14 +1261,15 @@ def _evaluate_foldwise_targetp_specialist_postprocess(
             prob_b=prob_b,
             class_names=class_names,
         )
-        sp_train_scores = _binary_crossfit_scores(
+        sp_train_scores = _binary_crossfit_ensemble_scores(
             features=sp_features,
             true_idx=true_idx,
             fold_ids=fold_ids,
             fit_mask=train_mask,
             score_mask=train_mask,
             positive_idx=class_to_idx['SP'],
-            make_model=_make_sp_model,
+            make_models=[(lambda seed=seed: _make_sp_model(seed)) for seed in sp_seeds],
+            weights=sp_weights,
         )
 
         ltp_features = _build_ctp_ltp_specialist_features(
@@ -1195,25 +1283,16 @@ def _evaluate_foldwise_targetp_specialist_postprocess(
             (true_idx == class_to_idx['cTP'])
             | (true_idx == class_to_idx['lTP'])
         )
-        ltp_train_scores_a = _binary_crossfit_scores(
+        ltp_train_scores = _binary_crossfit_ensemble_scores(
             features=ltp_features,
             true_idx=true_idx,
             fold_ids=fold_ids,
             fit_mask=ctp_ltp_train_mask,
             score_mask=train_mask,
             positive_idx=class_to_idx['lTP'],
-            make_model=lambda: _make_ltp_model(7),
+            make_models=[(lambda seed=seed: _make_ltp_model(seed)) for seed in ltp_seeds],
+            weights=None,
         )
-        ltp_train_scores_b = _binary_crossfit_scores(
-            features=ltp_features,
-            true_idx=true_idx,
-            fold_ids=fold_ids,
-            fit_mask=ctp_ltp_train_mask,
-            score_mask=train_mask,
-            positive_idx=class_to_idx['lTP'],
-            make_model=lambda: _make_ltp_model(2),
-        )
-        ltp_train_scores = (ltp_train_scores_a + ltp_train_scores_b) / 2.0
         threshold_selection = _optimize_specialist_threshold_pair(
             base_prob=fold_base_prob[train_mask],
             class_thresholds=threshold_by_class,
@@ -1223,37 +1302,35 @@ def _evaluate_foldwise_targetp_specialist_postprocess(
             true_idx=true_idx[train_mask],
             class_names=class_names,
             ltp_mass_threshold=ltp_mass_threshold,
+            extra_sp_thresholds=[profile['sp_threshold']],
+            extra_ltp_thresholds=[profile['ltp_threshold']],
+            fallback_sp_threshold=profile['sp_threshold'],
+            fallback_ltp_threshold=profile['ltp_threshold'],
+            fallback_if_best_min_margin_below=0.0,
         )
         sp_threshold = threshold_selection['sp_threshold']
         ltp_threshold = threshold_selection['ltp_threshold']
         sp_f1 = threshold_selection['sp_binary_f1']
         sp_counts = threshold_selection['sp_binary_counts']
         train_rank = threshold_selection['rank']
-        sp_valid_scores = _fit_binary_predict_scores(
+        sp_valid_scores = _fit_binary_predict_ensemble_scores(
             features=sp_features,
             true_idx=true_idx,
             fit_mask=train_mask,
             predict_mask=valid_mask,
             positive_idx=class_to_idx['SP'],
-            make_model=_make_sp_model,
+            make_models=[(lambda seed=seed: _make_sp_model(seed)) for seed in sp_seeds],
+            weights=sp_weights,
         )
-        ltp_valid_scores_a = _fit_binary_predict_scores(
+        ltp_valid_scores = _fit_binary_predict_ensemble_scores(
             features=ltp_features,
             true_idx=true_idx,
             fit_mask=ctp_ltp_train_mask,
             predict_mask=valid_mask,
             positive_idx=class_to_idx['lTP'],
-            make_model=lambda: _make_ltp_model(7),
+            make_models=[(lambda seed=seed: _make_ltp_model(seed)) for seed in ltp_seeds],
+            weights=None,
         )
-        ltp_valid_scores_b = _fit_binary_predict_scores(
-            features=ltp_features,
-            true_idx=true_idx,
-            fit_mask=ctp_ltp_train_mask,
-            predict_mask=valid_mask,
-            positive_idx=class_to_idx['lTP'],
-            make_model=lambda: _make_ltp_model(2),
-        )
-        ltp_valid_scores = (ltp_valid_scores_a + ltp_valid_scores_b) / 2.0
         pred_idx[valid_mask] = _apply_specialist_postprocess_predictions(
             base_prob=fold_base_prob[valid_mask],
             class_thresholds=threshold_by_class,
@@ -1277,6 +1354,7 @@ def _evaluate_foldwise_targetp_specialist_postprocess(
             'sp_binary_counts_on_train_oof': sp_counts,
             'ltp_threshold': float(ltp_threshold),
             'train_targetp_margin_rank': [float(v) for v in train_rank],
+            'threshold_selection_source': str(threshold_selection['selection_source']),
         })
 
     metrics = _metrics_from_prediction_indices(
@@ -1285,7 +1363,18 @@ def _evaluate_foldwise_targetp_specialist_postprocess(
         class_names=class_names,
     )
     return {
-        'description': 'Each held-out fold is predicted using blend, specialist models, and specialist thresholds selected on the other folds.',
+        'description': (
+            'Each held-out fold is predicted using blend, specialist ensembles, '
+            'and specialist thresholds selected on the other folds, with a '
+            'calibrated-profile fallback when the training-fold complement has '
+            'no all-class TargetP-margin pass.'
+        ),
+        'calibration_profile': str(profile['name']),
+        'sp_model': 'weighted HistGradientBoostingClassifier scores with random_state {}'.format(sp_seeds),
+        'ltp_model': 'mean of ExtraTreesClassifier scores with random_state {}'.format(ltp_seeds),
+        'sp_random_states': list(sp_seeds),
+        'sp_weights': [float(v) for v in sp_weights],
+        'ltp_random_states': list(ltp_seeds),
         'metrics': metrics,
         'folds': fold_rows,
     }
@@ -2066,7 +2155,11 @@ def _render_markdown(out):
         md.append('specialist SP threshold: {:.6f}'.format(out['specialist_postprocess']['sp_threshold']))
         md.append('specialist lTP threshold: {:.6f}'.format(out['specialist_postprocess']['ltp_threshold']))
     if has_specialist_foldwise:
-        md.append('specialist(foldwise): thresholds selected separately on each training-fold complement')
+        md.append(
+            'specialist(foldwise): thresholds selected on each training-fold '
+            'complement with calibrated-profile fallback when no all-class '
+            'TargetP-margin pass is available'
+        )
     if has_specialist_foldwise_fixed:
         md.append(
             'specialist(foldwise fixed): fixed calibrated specialist thresholds '

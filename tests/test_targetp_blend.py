@@ -19,6 +19,7 @@ from cdskit.targetp_blend import (
     _oof_rows_to_prob_and_true,
     _optimize_classwise_alpha,
     _optimize_global_alpha,
+    _optimize_specialist_threshold_pair,
     _save_oof_npz,
     _targetp_margin_summary,
     main,
@@ -403,6 +404,41 @@ def test_specialist_postprocess_applies_sp_gate_and_ltp_rerank():
         class_to_idx['SP'],
         class_to_idx['cTP'],
     ]
+
+
+def test_specialist_threshold_pair_uses_calibration_fallback():
+    class_names = list(LOCALIZATION_CLASSES)
+    true_idx = np.asarray([0, 1, 2, 3, 4], dtype=np.int64)
+    base_prob = np.asarray(
+        [
+            [0.90, 0.05, 0.02, 0.02, 0.01],
+            [0.20, 0.70, 0.05, 0.03, 0.02],
+            [0.90, 0.02, 0.03, 0.03, 0.02],
+            [0.10, 0.05, 0.05, 0.70, 0.10],
+            [0.10, 0.05, 0.05, 0.20, 0.60],
+        ],
+        dtype=np.float64,
+    )
+
+    result = _optimize_specialist_threshold_pair(
+        base_prob=base_prob,
+        class_thresholds=np.ones((5,), dtype=np.float64),
+        sp_scores=np.asarray([0.10, 0.80, 0.10, 0.10, 0.10], dtype=np.float64),
+        ltp_scores=np.asarray([0.10, 0.10, 0.10, 0.20, 0.80], dtype=np.float64),
+        plant_mask=np.asarray([False, False, False, True, True], dtype=bool),
+        true_idx=true_idx,
+        class_names=class_names,
+        ltp_mass_threshold=0.10,
+        extra_sp_thresholds=[0.95],
+        extra_ltp_thresholds=[0.95],
+        fallback_sp_threshold=0.95,
+        fallback_ltp_threshold=0.95,
+        fallback_if_best_min_margin_below=0.0,
+    )
+
+    assert result['selection_source'] == 'calibration_profile_fallback'
+    assert result['sp_threshold'] == pytest.approx(0.95)
+    assert result['ltp_threshold'] == pytest.approx(0.95)
 
 
 def test_main_runs_with_cached_oof_only(temp_dir, monkeypatch):
