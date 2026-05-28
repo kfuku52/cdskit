@@ -205,6 +205,9 @@ scores used for threshold sensitivity checks, pass
 `cdskit localize` can also load `targetp_blend_v1` runtime models, which combine
 two embedded base predictors with classwise blend weights, class thresholds, and
 optional cdskit-trained SP/lTP specialist models on CPU.
+The benchmark helper can export that runtime format with `--model_out`; this
+trains final base predictors on the full TargetP training table and saves a
+CPU-loadable blend model.
 
 In the specialist run, `SP` F1 improved from 0.976 to 0.980 and `lTP` F1
 improved from 0.743 to 0.759 over the threshold blend. For DeepLoc sorting

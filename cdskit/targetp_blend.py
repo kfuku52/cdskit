@@ -9,18 +9,22 @@ from cdskit.localize_model import (
     AA_ACIDIC,
     AA_AROMATIC,
     AA_BASIC,
+    FEATURE_NAMES,
     AA_HYDROPHOBIC,
     AA_SER_THR,
     AA_SMALL,
     extract_broad_localize_features,
+    fit_perox_binary_classifier,
     fraction_in_set,
     longest_hydrophobic_run,
     mean_hydropathy,
+    save_localize_model,
 )
 from cdskit.localize_learn import (
     LOCALIZATION_CLASSES,
     build_training_matrix,
     evaluate_cross_validation,
+    fit_localization_model,
 )
 from cdskit.targetp_benchmark import (
     TARGETP_TABLE1_REFERENCE,
@@ -1515,6 +1519,281 @@ def _run_model_oof(
     }
 
 
+def _bilstm_dl_params_from_args(args):
+    return {
+        'seq_len': int(args.bilstm_dl_seq_len),
+        'embed_dim': int(args.bilstm_dl_embed_dim),
+        'hidden_dim': int(args.bilstm_dl_hidden_dim),
+        'num_layers': int(args.bilstm_dl_num_layers),
+        'dropout': float(args.bilstm_dl_dropout),
+        'epochs': int(args.bilstm_dl_epochs),
+        'batch_size': int(args.bilstm_dl_batch_size),
+        'learning_rate': float(args.bilstm_dl_lr),
+        'weight_decay': float(args.bilstm_dl_weight_decay),
+        'use_class_weight': _to_bool_yes_no(args.bilstm_dl_class_weight),
+        'loss_name': str(args.bilstm_dl_loss),
+        'balanced_batch': _to_bool_yes_no(args.bilstm_dl_balanced_batch),
+        'feature_fusion': _to_bool_yes_no(args.bilstm_dl_feature_fusion),
+        'aux_tp_weight': 0.0,
+        'aux_ctp_ltp_weight': 0.0,
+        'seed': int(args.bilstm_dl_seed),
+        'device': str(args.bilstm_dl_device),
+        'esm_model_name': '',
+        'esm_model_local_dir': '',
+        'esm_pooling': 'cls',
+        'esm_max_len': 0,
+    }
+
+
+def _esm_dl_params_from_args(args):
+    return {
+        'seq_len': 0,
+        'embed_dim': 0,
+        'hidden_dim': 0,
+        'num_layers': 0,
+        'dropout': 0.0,
+        'epochs': int(args.esm_dl_epochs),
+        'batch_size': int(args.esm_dl_batch_size),
+        'learning_rate': float(args.esm_dl_lr),
+        'weight_decay': float(args.esm_dl_weight_decay),
+        'use_class_weight': _to_bool_yes_no(args.esm_dl_class_weight),
+        'loss_name': 'ce',
+        'balanced_batch': False,
+        'seed': int(args.esm_dl_seed),
+        'device': str(args.esm_dl_device),
+        'esm_model_name': str(args.esm_model_name),
+        'esm_model_local_dir': str(args.esm_model_local_dir),
+        'esm_pooling': str(args.esm_pooling),
+        'esm_max_len': int(args.esm_max_len),
+    }
+
+
+def _build_targetp_blend_runtime_model(
+    base_model_a,
+    base_model_b,
+    perox_model,
+    alpha_by_class,
+    class_thresholds,
+    specialist_postprocess=None,
+    metadata=None,
+):
+    localization_model = {
+        'class_order': list(LOCALIZATION_CLASSES),
+        'base_models': [
+            {
+                'model_type': str(base_model_a['model_type']),
+                'localization_model': base_model_a['localization_model'],
+            },
+            {
+                'model_type': str(base_model_b['model_type']),
+                'localization_model': base_model_b['localization_model'],
+            },
+        ],
+        'alpha_by_class': {
+            class_name: float(alpha_by_class[class_name])
+            for class_name in LOCALIZATION_CLASSES
+        },
+        'class_thresholds': {
+            class_name: float(class_thresholds[class_name])
+            for class_name in LOCALIZATION_CLASSES
+        },
+    }
+    if specialist_postprocess is not None:
+        localization_model['targetp_specialist_postprocess'] = specialist_postprocess
+    return {
+        'model_type': 'targetp_blend_v1',
+        'feature_names': list(FEATURE_NAMES),
+        'localization_model': localization_model,
+        'perox_model': perox_model,
+        'metadata': {} if metadata is None else dict(metadata),
+    }
+
+
+def _fit_full_targetp_specialist_postprocess(
+    rows,
+    prob_a,
+    prob_b,
+    base_prob,
+    true_idx,
+    class_names,
+):
+    try:
+        from sklearn.ensemble import ExtraTreesClassifier, HistGradientBoostingClassifier
+    except ImportError as exc:
+        raise RuntimeError(
+            '--model_out with specialist postprocess requires scikit-learn.'
+        ) from exc
+
+    if len(rows) != np.asarray(base_prob).shape[0]:
+        raise ValueError('Training rows and probability rows differ in runtime specialist export.')
+
+    profile = TARGETP_SPECIALIST_FIXED_PROFILE
+    class_to_idx = {name: i for i, name in enumerate(class_names)}
+    sp_features = _build_sp_specialist_features(
+        rows=rows,
+        base_prob=base_prob,
+        prob_a=prob_a,
+        prob_b=prob_b,
+        class_names=class_names,
+    )
+    y_sp = (np.asarray(true_idx, dtype=np.int64) == class_to_idx['SP']).astype(np.int64)
+    sp_models = list()
+    for seed in profile['sp_random_states']:
+        model = HistGradientBoostingClassifier(
+            max_iter=350,
+            learning_rate=0.04,
+            l2_regularization=0.01,
+            random_state=int(seed),
+            class_weight='balanced',
+        )
+        model.fit(sp_features, y_sp)
+        sp_models.append(model)
+
+    ltp_features = _build_ctp_ltp_specialist_features(
+        rows=rows,
+        base_prob=base_prob,
+        prob_a=prob_a,
+        prob_b=prob_b,
+        class_names=class_names,
+    )
+    ctp_ltp_train_mask = (
+        (np.asarray(true_idx, dtype=np.int64) == class_to_idx['cTP'])
+        | (np.asarray(true_idx, dtype=np.int64) == class_to_idx['lTP'])
+    )
+    y_ltp = (np.asarray(true_idx, dtype=np.int64)[ctp_ltp_train_mask] == class_to_idx['lTP']).astype(np.int64)
+    ltp_models = list()
+    for seed in profile['ltp_random_states']:
+        model = ExtraTreesClassifier(
+            n_estimators=500,
+            random_state=int(seed),
+            class_weight='balanced',
+            max_features='sqrt',
+            min_samples_leaf=1,
+            n_jobs=-1,
+        )
+        model.fit(ltp_features[ctp_ltp_train_mask, :], y_ltp)
+        ltp_models.append(model)
+
+    return {
+        'enabled': True,
+        'calibration_profile': str(profile['name']),
+        'training_score_source': 'TargetP OOF base probabilities',
+        'sp_models': sp_models,
+        'sp_weights': [float(v) for v in profile['sp_weights']],
+        'sp_threshold': float(profile['sp_threshold']),
+        'ltp_models': ltp_models,
+        'ltp_threshold': float(profile['ltp_threshold']),
+        'ltp_mass_threshold': float(profile['ltp_mass_threshold']),
+    }
+
+
+def _export_targetp_blend_runtime_model(
+    args,
+    prob_a,
+    prob_b,
+    base_prob,
+    true_idx,
+    alpha_by_class,
+    class_thresholds,
+    benchmark_out,
+):
+    class_names = list(LOCALIZATION_CLASSES)
+    rows = _read_training_rows(path=args.training_tsv)
+    x, aa_sequences, class_labels, perox_labels, skipped, _ = build_training_matrix(
+        rows=rows,
+        seq_col='sequence',
+        seqtype='protein',
+        codontable=1,
+        label_mode='explicit',
+        localization_col='localization',
+        perox_col='peroxisome',
+        skip_ambiguous=True,
+        cv_fold_col='',
+    )
+    if int(skipped) != 0:
+        raise ValueError('TargetP blend runtime export requires no skipped rows.')
+    if x.shape[0] != np.asarray(prob_a).shape[0]:
+        raise ValueError('Training rows and OOF probability rows differ in runtime export.')
+
+    bilstm_localization = fit_localization_model(
+        x=x,
+        aa_sequences=aa_sequences,
+        class_labels=class_labels,
+        model_arch='bilstm_attention',
+        dl_train_params=_bilstm_dl_params_from_args(args),
+        localize_strategy=str(args.localize_strategy),
+    )
+    esm_localization = fit_localization_model(
+        x=x,
+        aa_sequences=aa_sequences,
+        class_labels=class_labels,
+        model_arch='esm_head',
+        dl_train_params=_esm_dl_params_from_args(args),
+        localize_strategy=str(args.localize_strategy),
+    )
+    specialist = None
+    if _to_bool_yes_no(args.model_out_specialist_postprocess):
+        specialist = _fit_full_targetp_specialist_postprocess(
+            rows=rows,
+            prob_a=prob_a,
+            prob_b=prob_b,
+            base_prob=base_prob,
+            true_idx=true_idx,
+            class_names=list(LOCALIZATION_CLASSES),
+        )
+    metadata = {
+        'training_tsv': str(args.training_tsv),
+        'num_training_rows': int(len(rows)),
+        'num_used_rows': int(x.shape[0]),
+        'num_skipped_rows': int(skipped),
+        'model_arch': 'targetp_blend_v1',
+        'base_model_types': ['bilstm_attention_v1', 'esm_head_v1'],
+        'localize_strategy': str(args.localize_strategy),
+        'organism_gate': bool(_to_bool_yes_no(args.organism_gate)),
+        'benchmark_targetp_macro_f1': float(benchmark_out['targetp_macro_f1']),
+        'benchmark_blend_threshold_macro_f1': float(
+            benchmark_out['blend_threshold']['metrics']['macro_f1']
+        ),
+    }
+    if 'specialist_foldwise_fixed' in benchmark_out:
+        metadata['benchmark_specialist_foldwise_fixed_macro_f1'] = float(
+            benchmark_out['specialist_foldwise_fixed']['metrics']['macro_f1']
+        )
+        metadata['benchmark_specialist_foldwise_fixed_all_classes_gt_targetp'] = bool(
+            benchmark_out['specialist_foldwise_fixed']['targetp_margin']['beats_targetp_all_classes']
+        )
+    model = _build_targetp_blend_runtime_model(
+        base_model_a={
+            'model_type': 'bilstm_attention_v1',
+            'localization_model': bilstm_localization,
+        },
+        base_model_b={
+            'model_type': 'esm_head_v1',
+            'localization_model': esm_localization,
+        },
+        perox_model=fit_perox_binary_classifier(
+            features=x,
+            labels=perox_labels,
+        ),
+        alpha_by_class={
+            class_names[i]: float(alpha_by_class[i])
+            for i in range(len(class_names))
+        },
+        class_thresholds={
+            class_names[i]: float(class_thresholds[i])
+            for i in range(len(class_names))
+        },
+        specialist_postprocess=specialist,
+        metadata=metadata,
+    )
+    save_localize_model(model=model, path=str(args.model_out))
+    return {
+        'path': str(args.model_out),
+        'model_type': 'targetp_blend_v1',
+        'specialist_postprocess': bool(specialist is not None),
+    }
+
+
 def _evaluate_foldwise_classwise_blend(
     prob_a,
     prob_b,
@@ -1819,6 +2098,8 @@ def build_parser():
     parser.add_argument('--foldwise_specialist_fixed_eval', default='no', choices=['yes', 'no'], type=str)
     parser.add_argument('--foldwise_specialist_fixed_score_npz', default='', type=str)
     parser.add_argument('--specialist_ltp_mass_threshold', default=0.20, type=float)
+    parser.add_argument('--model_out', default='', type=str)
+    parser.add_argument('--model_out_specialist_postprocess', default='yes', choices=['yes', 'no'], type=str)
     parser.add_argument('--out_json', default='data/localize_bench/targetp2_bilstm_esm_blend.json', type=str)
     parser.add_argument('--out_md', default='data/localize_bench/targetp2_bilstm_esm_blend.md', type=str)
     return parser
@@ -1861,29 +2142,7 @@ def main():
             'used_cache': True,
         }
     else:
-        bilstm_dl = {
-            'seq_len': int(args.bilstm_dl_seq_len),
-            'embed_dim': int(args.bilstm_dl_embed_dim),
-            'hidden_dim': int(args.bilstm_dl_hidden_dim),
-            'num_layers': int(args.bilstm_dl_num_layers),
-            'dropout': float(args.bilstm_dl_dropout),
-            'epochs': int(args.bilstm_dl_epochs),
-            'batch_size': int(args.bilstm_dl_batch_size),
-            'learning_rate': float(args.bilstm_dl_lr),
-            'weight_decay': float(args.bilstm_dl_weight_decay),
-            'use_class_weight': _to_bool_yes_no(args.bilstm_dl_class_weight),
-            'loss_name': str(args.bilstm_dl_loss),
-            'balanced_batch': _to_bool_yes_no(args.bilstm_dl_balanced_batch),
-            'feature_fusion': _to_bool_yes_no(args.bilstm_dl_feature_fusion),
-            'aux_tp_weight': 0.0,
-            'aux_ctp_ltp_weight': 0.0,
-            'seed': int(args.bilstm_dl_seed),
-            'device': str(args.bilstm_dl_device),
-            'esm_model_name': '',
-            'esm_model_local_dir': '',
-            'esm_pooling': 'cls',
-            'esm_max_len': 0,
-        }
+        bilstm_dl = _bilstm_dl_params_from_args(args)
         out = _run_model_oof(
             training_tsv=args.training_tsv,
             model_arch='bilstm_attention',
@@ -1930,26 +2189,7 @@ def main():
             'used_cache': True,
         }
     else:
-        esm_dl = {
-            'seq_len': 0,
-            'embed_dim': 0,
-            'hidden_dim': 0,
-            'num_layers': 0,
-            'dropout': 0.0,
-            'epochs': int(args.esm_dl_epochs),
-            'batch_size': int(args.esm_dl_batch_size),
-            'learning_rate': float(args.esm_dl_lr),
-            'weight_decay': float(args.esm_dl_weight_decay),
-            'use_class_weight': _to_bool_yes_no(args.esm_dl_class_weight),
-            'loss_name': 'ce',
-            'balanced_batch': False,
-            'seed': int(args.esm_dl_seed),
-            'device': str(args.esm_dl_device),
-            'esm_model_name': str(args.esm_model_name),
-            'esm_model_local_dir': str(args.esm_model_local_dir),
-            'esm_pooling': str(args.esm_pooling),
-            'esm_max_len': int(args.esm_max_len),
-        }
+        esm_dl = _esm_dl_params_from_args(args)
         out = _run_model_oof(
             training_tsv=args.training_tsv,
             model_arch='esm_head',
@@ -2142,6 +2382,17 @@ def main():
         )
         out['specialist_foldwise_fixed'] = specialist_foldwise_fixed
     _attach_targetp_margin_summaries(out=out, class_names=class_names)
+    if str(args.model_out).strip() != '':
+        out['model_out'] = _export_targetp_blend_runtime_model(
+            args=args,
+            prob_a=bilstm_prob,
+            prob_b=esm_prob,
+            base_prob=blend_class_prob,
+            true_idx=bilstm_true,
+            alpha_by_class=alpha_by_class,
+            class_thresholds=threshold_by_class,
+            benchmark_out=out,
+        )
     out['class_rows'] = _build_summary_rows(
         targetp_ref=TARGETP_TABLE1_REFERENCE,
         bilstm_metrics=out['bilstm']['metrics'],

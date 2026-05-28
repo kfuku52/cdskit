@@ -1,13 +1,17 @@
+import csv
 import json
 import sys
 
 import numpy as np
 import pytest
 
+import cdskit.targetp_blend as targetp_blend_module
 from cdskit.targetp_blend import (
     LOCALIZATION_CLASSES,
     _aggregate_score_columns,
+    _build_targetp_blend_runtime_model,
     _evaluate_foldwise_classwise_blend,
+    _export_targetp_blend_runtime_model,
     _load_oof_npz,
     _apply_organism_gate,
     _apply_specialist_postprocess_predictions,
@@ -19,6 +23,7 @@ from cdskit.targetp_blend import (
     _targetp_margin_summary,
     main,
 )
+from cdskit.localize_model import predict_localization_and_peroxisome
 
 
 def test_oof_rows_to_prob_and_true_sorts_and_normalizes():
@@ -211,6 +216,138 @@ def test_aggregate_score_columns_supports_mean_and_weights():
         _aggregate_score_columns(scores, weights=[0.2, 0.3, 0.5]),
         np.asarray([0.26, 0.66, 0.74], dtype=np.float64),
     )
+
+
+def test_build_targetp_blend_runtime_model_predicts_with_wrapped_base_models():
+    class_names = list(LOCALIZATION_CLASSES)
+    model = _build_targetp_blend_runtime_model(
+        base_model_a={
+            'model_type': 'nearest_centroid_v1',
+            'localization_model': {
+                'mode': 'constant',
+                'class_label': 'noTP',
+                'class_order': class_names,
+            },
+        },
+        base_model_b={
+            'model_type': 'nearest_centroid_v1',
+            'localization_model': {
+                'mode': 'constant',
+                'class_label': 'lTP',
+                'class_order': class_names,
+            },
+        },
+        perox_model={'mode': 'constant', 'yes_probability': 0.0},
+        alpha_by_class={
+            'noTP': 1.0,
+            'SP': 1.0,
+            'mTP': 1.0,
+            'cTP': 1.0,
+            'lTP': 0.0,
+        },
+        class_thresholds={
+            'noTP': 1.0,
+            'SP': 1.0,
+            'mTP': 1.0,
+            'cTP': 1.0,
+            'lTP': 0.4,
+        },
+        metadata={'source': 'unit-test'},
+    )
+
+    pred = predict_localization_and_peroxisome(
+        aa_seq='MARRVAAARRLLLLLVVVVVAAST',
+        model=model,
+        organism_group='plant',
+    )
+
+    assert model['model_type'] == 'targetp_blend_v1'
+    assert model['metadata']['source'] == 'unit-test'
+    assert pred['predicted_class'] == 'lTP'
+
+
+def test_export_targetp_blend_runtime_model_uses_full_training_table(temp_dir, monkeypatch):
+    class_names = list(LOCALIZATION_CLASSES)
+    training_tsv = temp_dir / 'targetp_export.tsv'
+    with open(training_tsv, 'w', encoding='utf-8', newline='') as out:
+        writer = csv.DictWriter(
+            out,
+            fieldnames=['sequence', 'localization', 'peroxisome'],
+            delimiter='\t',
+            lineterminator='\n',
+        )
+        writer.writeheader()
+        for class_name, seq in [
+            ('noTP', 'MGPVNQDEGPVNQDEGPVNQDE'),
+            ('SP', 'MKKLLLLLLLLLLAVAVAASAASA'),
+            ('mTP', 'MRRKRRAARAKRRNQAAARRRAA'),
+            ('cTP', 'MSTSTSTTSTASSSAATSTASSTT'),
+            ('lTP', 'MARRVAAARRLLLLLVVVVVAAST'),
+        ]:
+            writer.writerow({
+                'sequence': seq,
+                'localization': class_name,
+                'peroxisome': 'no',
+            })
+
+    def fake_fit_localization_model(**kwargs):
+        model_arch = kwargs['model_arch']
+        return {
+            'mode': 'constant',
+            'class_label': 'noTP' if model_arch == 'bilstm_attention' else 'lTP',
+            'class_order': class_names,
+        }
+
+    saved = {}
+
+    def fake_save_localize_model(model, path):
+        saved['model'] = model
+        saved['path'] = path
+
+    monkeypatch.setattr(
+        targetp_blend_module,
+        'fit_localization_model',
+        fake_fit_localization_model,
+    )
+    monkeypatch.setattr(
+        targetp_blend_module,
+        'save_localize_model',
+        fake_save_localize_model,
+    )
+    args = targetp_blend_module.build_parser().parse_args([
+        '--training_tsv',
+        str(training_tsv),
+        '--model_out',
+        str(temp_dir / 'targetp_blend.pt'),
+        '--model_out_specialist_postprocess',
+        'no',
+    ])
+    prob_a = np.tile(np.asarray([[1.0, 0.0, 0.0, 0.0, 0.0]], dtype=np.float64), (5, 1))
+    prob_b = np.tile(np.asarray([[0.0, 0.0, 0.0, 0.0, 1.0]], dtype=np.float64), (5, 1))
+    true_idx = np.arange(5, dtype=np.int64)
+    info = _export_targetp_blend_runtime_model(
+        args=args,
+        prob_a=prob_a,
+        prob_b=prob_b,
+        base_prob=(prob_a + prob_b) / 2.0,
+        true_idx=true_idx,
+        alpha_by_class=np.asarray([0.5, 0.5, 0.5, 0.5, 0.5], dtype=np.float64),
+        class_thresholds=np.ones((5,), dtype=np.float64),
+        benchmark_out={
+            'targetp_macro_f1': 0.89,
+            'blend_threshold': {'metrics': {'macro_f1': 0.90}},
+        },
+    )
+
+    assert info['model_type'] == 'targetp_blend_v1'
+    assert info['specialist_postprocess'] is False
+    assert saved['path'] == str(temp_dir / 'targetp_blend.pt')
+    assert saved['model']['model_type'] == 'targetp_blend_v1'
+    assert saved['model']['metadata']['num_used_rows'] == 5
+    assert [
+        row['model_type']
+        for row in saved['model']['localization_model']['base_models']
+    ] == ['bilstm_attention_v1', 'esm_head_v1']
 
 
 def test_targetp_margin_summary_flags_all_class_pass():
