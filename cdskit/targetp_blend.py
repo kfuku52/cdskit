@@ -343,6 +343,36 @@ def _best_binary_f1_threshold(scores, true_idx, positive_idx):
     return best_threshold, best_f1, best_counts
 
 
+def _top_binary_f1_thresholds(scores, true_idx, positive_idx, max_candidates=80):
+    scores = np.asarray(scores, dtype=np.float64)
+    true_idx = np.asarray(true_idx, dtype=np.int64)
+    yy = true_idx == int(positive_idx)
+    if scores.shape[0] != yy.shape[0]:
+        raise ValueError('Binary threshold score length does not match labels.')
+    rows = list()
+    for threshold in np.unique(scores).tolist():
+        pred = scores >= float(threshold)
+        tp = int(np.sum(pred & yy))
+        fp = int(np.sum(pred & (~yy)))
+        fn = int(np.sum((~pred) & yy))
+        denom = (2 * tp) + fp + fn
+        f1 = 0.0 if denom == 0 else float(2 * tp) / float(denom)
+        rows.append((f1, float(threshold), {'tp': tp, 'fp': fp, 'fn': fn}))
+    rows.sort(key=lambda row: (row[0], -row[2]['fp'], row[2]['tp']), reverse=True)
+    out = list()
+    seen = set()
+    for f1, threshold, counts in rows:
+        if threshold in seen:
+            continue
+        seen.add(threshold)
+        out.append((threshold, f1, counts))
+        if len(out) >= int(max_candidates):
+            break
+    if len(out) == 0:
+        out.append((0.5, 0.0, {'tp': 0, 'fp': 0, 'fn': int(np.sum(yy))}))
+    return out
+
+
 def _targetp_sp_scan_features(seq):
     seq = str(seq or '')
     best_score = -99.0
@@ -542,6 +572,66 @@ def _binary_oof_scores(features, true_idx, fold_ids, train_mask, positive_idx, m
     return scores
 
 
+def _binary_crossfit_scores(
+    features,
+    true_idx,
+    fold_ids,
+    fit_mask,
+    score_mask,
+    positive_idx,
+    make_model,
+):
+    features = np.asarray(features, dtype=np.float64)
+    true_idx = np.asarray(true_idx, dtype=np.int64)
+    fold_ids = np.asarray(fold_ids)
+    fit_mask = np.asarray(fit_mask, dtype=bool)
+    score_mask = np.asarray(score_mask, dtype=bool)
+    scores = np.zeros((features.shape[0],), dtype=np.float64)
+    for fold_id in sorted(set([str(v) for v in fold_ids[score_mask].tolist()])):
+        valid_mask = score_mask & np.asarray([str(v) == fold_id for v in fold_ids.tolist()], dtype=bool)
+        train_mask = fit_mask & (~valid_mask)
+        y_train = (true_idx[train_mask] == int(positive_idx)).astype(np.int64)
+        if features[train_mask].shape[0] == 0:
+            scores[valid_mask] = 0.0
+            continue
+        if len(set(y_train.tolist())) < 2:
+            scores[valid_mask] = float(np.mean(y_train))
+            continue
+        model = make_model()
+        model.fit(features[train_mask], y_train)
+        proba = np.asarray(model.predict_proba(features[valid_mask]), dtype=np.float64)
+        class_to_col = {int(cls): i for i, cls in enumerate(model.classes_.tolist())}
+        scores[valid_mask] = proba[:, class_to_col.get(1, 0)] if 1 in class_to_col else 0.0
+    return scores
+
+
+def _fit_binary_predict_scores(
+    features,
+    true_idx,
+    fit_mask,
+    predict_mask,
+    positive_idx,
+    make_model,
+):
+    features = np.asarray(features, dtype=np.float64)
+    true_idx = np.asarray(true_idx, dtype=np.int64)
+    fit_mask = np.asarray(fit_mask, dtype=bool)
+    predict_mask = np.asarray(predict_mask, dtype=bool)
+    y_train = (true_idx[fit_mask] == int(positive_idx)).astype(np.int64)
+    scores = np.zeros((features.shape[0],), dtype=np.float64)
+    if features[fit_mask].shape[0] == 0:
+        return scores
+    if len(set(y_train.tolist())) < 2:
+        scores[predict_mask] = float(np.mean(y_train))
+        return scores
+    model = make_model()
+    model.fit(features[fit_mask], y_train)
+    proba = np.asarray(model.predict_proba(features[predict_mask]), dtype=np.float64)
+    class_to_col = {int(cls): i for i, cls in enumerate(model.classes_.tolist())}
+    scores[predict_mask] = proba[:, class_to_col.get(1, 0)] if 1 in class_to_col else 0.0
+    return scores
+
+
 def _apply_specialist_postprocess_predictions(
     base_prob,
     class_thresholds,
@@ -647,6 +737,103 @@ def _optimize_ltp_specialist_threshold(
             best_threshold = float(threshold)
             best_pred = pred_idx
     return best_threshold, best_pred, best_rank
+
+
+def _candidate_ltp_thresholds(
+    base_prob,
+    sp_scores,
+    sp_threshold,
+    ltp_scores,
+    plant_mask,
+    true_idx,
+    class_names,
+    ltp_mass_threshold,
+):
+    class_to_idx = {name: i for i, name in enumerate(class_names)}
+    ctp_idx = class_to_idx['cTP']
+    ltp_idx = class_to_idx['lTP']
+    sp_positive = np.asarray(sp_scores, dtype=np.float64) >= float(sp_threshold)
+    ctp_ltp_mass = np.asarray(base_prob, dtype=np.float64)[:, ctp_idx] + np.asarray(base_prob, dtype=np.float64)[:, ltp_idx]
+    relevant = (
+        np.asarray(plant_mask, dtype=bool)
+        & (~sp_positive)
+        & (
+            (np.asarray(true_idx, dtype=np.int64) == ctp_idx)
+            | (np.asarray(true_idx, dtype=np.int64) == ltp_idx)
+            | (ctp_ltp_mass > float(ltp_mass_threshold))
+        )
+    )
+    values = np.unique(np.asarray(ltp_scores, dtype=np.float64)[relevant])
+    if values.shape[0] == 0:
+        values = np.asarray([0.5], dtype=np.float64)
+    return values
+
+
+def _optimize_specialist_threshold_pair(
+    base_prob,
+    class_thresholds,
+    sp_scores,
+    ltp_scores,
+    plant_mask,
+    true_idx,
+    class_names,
+    ltp_mass_threshold,
+    max_sp_candidates=80,
+):
+    class_to_idx = {name: i for i, name in enumerate(class_names)}
+    sp_candidates = _top_binary_f1_thresholds(
+        scores=sp_scores,
+        true_idx=true_idx,
+        positive_idx=class_to_idx['SP'],
+        max_candidates=max_sp_candidates,
+    )
+    best = None
+    for sp_threshold, sp_f1, sp_counts in sp_candidates:
+        ltp_thresholds = _candidate_ltp_thresholds(
+            base_prob=base_prob,
+            sp_scores=sp_scores,
+            sp_threshold=sp_threshold,
+            ltp_scores=ltp_scores,
+            plant_mask=plant_mask,
+            true_idx=true_idx,
+            class_names=class_names,
+            ltp_mass_threshold=ltp_mass_threshold,
+        )
+        for ltp_threshold in ltp_thresholds.tolist():
+            pred_idx = _apply_specialist_postprocess_predictions(
+                base_prob=base_prob,
+                class_thresholds=class_thresholds,
+                sp_scores=sp_scores,
+                sp_threshold=sp_threshold,
+                ltp_scores=ltp_scores,
+                ltp_threshold=float(ltp_threshold),
+                plant_mask=plant_mask,
+                class_names=class_names,
+                ltp_mass_threshold=ltp_mass_threshold,
+            )
+            rank = _targetp_margin_rank(
+                pred_idx=pred_idx,
+                true_idx=true_idx,
+                class_names=class_names,
+            )
+            candidate = (
+                rank,
+                float(sp_threshold),
+                float(ltp_threshold),
+                float(sp_f1),
+                sp_counts,
+                pred_idx,
+            )
+            if best is None or candidate[0] > best[0]:
+                best = candidate
+    return {
+        'rank': best[0],
+        'sp_threshold': best[1],
+        'ltp_threshold': best[2],
+        'sp_binary_f1': best[3],
+        'sp_binary_counts': best[4],
+        'pred_idx': best[5],
+    }
 
 
 def _evaluate_targetp_specialist_postprocess(
@@ -768,6 +955,216 @@ def _evaluate_targetp_specialist_postprocess(
         'ltp_mass_threshold': float(ltp_mass_threshold),
         'targetp_margin_rank': [float(v) for v in rank],
         'metrics': metrics,
+    }
+
+
+def _evaluate_foldwise_targetp_specialist_postprocess(
+    rows,
+    prob_a,
+    prob_b,
+    true_idx,
+    fold_ids,
+    class_names,
+    alpha_grid,
+    threshold_grid,
+    ltp_mass_threshold=0.20,
+):
+    try:
+        from sklearn.ensemble import ExtraTreesClassifier, HistGradientBoostingClassifier
+    except ImportError as exc:
+        raise RuntimeError(
+            '--foldwise_specialist_eval requires scikit-learn in the benchmark environment.'
+        ) from exc
+
+    prob_a = np.asarray(prob_a, dtype=np.float64)
+    prob_b = np.asarray(prob_b, dtype=np.float64)
+    true_idx = np.asarray(true_idx, dtype=np.int64)
+    fold_ids = np.asarray(fold_ids)
+    if len(rows) != prob_a.shape[0]:
+        raise ValueError('Training rows and probability rows differ in foldwise specialist eval.')
+
+    class_to_idx = {name: i for i, name in enumerate(class_names)}
+    plant_mask = np.asarray([
+        str(row.get('organism_group', '')).strip().lower() == 'plant'
+        for row in rows
+    ], dtype=bool)
+    pred_idx = np.zeros((prob_a.shape[0],), dtype=np.int64)
+    fold_rows = list()
+
+    def _make_sp_model():
+        return HistGradientBoostingClassifier(
+            max_iter=350,
+            learning_rate=0.04,
+            l2_regularization=0.01,
+            random_state=1,
+            class_weight='balanced',
+        )
+
+    def _make_ltp_model(seed):
+        return ExtraTreesClassifier(
+            n_estimators=500,
+            random_state=int(seed),
+            class_weight='balanced',
+            max_features='sqrt',
+            min_samples_leaf=1,
+            n_jobs=-1,
+        )
+
+    for fold_id in sorted(set([str(v) for v in fold_ids.tolist()])):
+        valid_mask = np.asarray([str(v) == fold_id for v in fold_ids.tolist()], dtype=bool)
+        train_mask = ~valid_mask
+        if int(np.sum(valid_mask)) == 0 or int(np.sum(train_mask)) == 0:
+            continue
+
+        best_alpha, _ = _optimize_global_alpha(
+            prob_a=prob_a[train_mask],
+            prob_b=prob_b[train_mask],
+            true_idx=true_idx[train_mask],
+            class_names=class_names,
+            grid=alpha_grid,
+        )
+        alpha_by_class, _ = _optimize_classwise_alpha(
+            prob_a=prob_a[train_mask],
+            prob_b=prob_b[train_mask],
+            true_idx=true_idx[train_mask],
+            class_names=class_names,
+            grid=alpha_grid,
+            init_alpha=best_alpha,
+        )
+        fold_base_prob = _blend_classwise(
+            prob_a=prob_a,
+            prob_b=prob_b,
+            alpha_by_class=alpha_by_class,
+        )
+        train_blend = fold_base_prob[train_mask]
+        threshold_by_class, _ = _optimize_class_thresholds(
+            prob_matrix=train_blend,
+            true_idx=true_idx[train_mask],
+            class_names=class_names,
+            grid=threshold_grid,
+        )
+
+        sp_features = _build_sp_specialist_features(
+            rows=rows,
+            base_prob=fold_base_prob,
+            prob_a=prob_a,
+            prob_b=prob_b,
+            class_names=class_names,
+        )
+        sp_train_scores = _binary_crossfit_scores(
+            features=sp_features,
+            true_idx=true_idx,
+            fold_ids=fold_ids,
+            fit_mask=train_mask,
+            score_mask=train_mask,
+            positive_idx=class_to_idx['SP'],
+            make_model=_make_sp_model,
+        )
+
+        ltp_features = _build_ctp_ltp_specialist_features(
+            rows=rows,
+            base_prob=fold_base_prob,
+            prob_a=prob_a,
+            prob_b=prob_b,
+            class_names=class_names,
+        )
+        ctp_ltp_train_mask = train_mask & (
+            (true_idx == class_to_idx['cTP'])
+            | (true_idx == class_to_idx['lTP'])
+        )
+        ltp_train_scores_a = _binary_crossfit_scores(
+            features=ltp_features,
+            true_idx=true_idx,
+            fold_ids=fold_ids,
+            fit_mask=ctp_ltp_train_mask,
+            score_mask=train_mask,
+            positive_idx=class_to_idx['lTP'],
+            make_model=lambda: _make_ltp_model(7),
+        )
+        ltp_train_scores_b = _binary_crossfit_scores(
+            features=ltp_features,
+            true_idx=true_idx,
+            fold_ids=fold_ids,
+            fit_mask=ctp_ltp_train_mask,
+            score_mask=train_mask,
+            positive_idx=class_to_idx['lTP'],
+            make_model=lambda: _make_ltp_model(2),
+        )
+        ltp_train_scores = (ltp_train_scores_a + ltp_train_scores_b) / 2.0
+        threshold_selection = _optimize_specialist_threshold_pair(
+            base_prob=fold_base_prob[train_mask],
+            class_thresholds=threshold_by_class,
+            sp_scores=sp_train_scores[train_mask],
+            ltp_scores=ltp_train_scores[train_mask],
+            plant_mask=plant_mask[train_mask],
+            true_idx=true_idx[train_mask],
+            class_names=class_names,
+            ltp_mass_threshold=ltp_mass_threshold,
+        )
+        sp_threshold = threshold_selection['sp_threshold']
+        ltp_threshold = threshold_selection['ltp_threshold']
+        sp_f1 = threshold_selection['sp_binary_f1']
+        sp_counts = threshold_selection['sp_binary_counts']
+        train_rank = threshold_selection['rank']
+        sp_valid_scores = _fit_binary_predict_scores(
+            features=sp_features,
+            true_idx=true_idx,
+            fit_mask=train_mask,
+            predict_mask=valid_mask,
+            positive_idx=class_to_idx['SP'],
+            make_model=_make_sp_model,
+        )
+        ltp_valid_scores_a = _fit_binary_predict_scores(
+            features=ltp_features,
+            true_idx=true_idx,
+            fit_mask=ctp_ltp_train_mask,
+            predict_mask=valid_mask,
+            positive_idx=class_to_idx['lTP'],
+            make_model=lambda: _make_ltp_model(7),
+        )
+        ltp_valid_scores_b = _fit_binary_predict_scores(
+            features=ltp_features,
+            true_idx=true_idx,
+            fit_mask=ctp_ltp_train_mask,
+            predict_mask=valid_mask,
+            positive_idx=class_to_idx['lTP'],
+            make_model=lambda: _make_ltp_model(2),
+        )
+        ltp_valid_scores = (ltp_valid_scores_a + ltp_valid_scores_b) / 2.0
+        pred_idx[valid_mask] = _apply_specialist_postprocess_predictions(
+            base_prob=fold_base_prob[valid_mask],
+            class_thresholds=threshold_by_class,
+            sp_scores=sp_valid_scores[valid_mask],
+            sp_threshold=sp_threshold,
+            ltp_scores=ltp_valid_scores[valid_mask],
+            ltp_threshold=ltp_threshold,
+            plant_mask=plant_mask[valid_mask],
+            class_names=class_names,
+            ltp_mass_threshold=ltp_mass_threshold,
+        )
+        fold_rows.append({
+            'fold_id': fold_id,
+            'n_train': int(np.sum(train_mask)),
+            'n_valid': int(np.sum(valid_mask)),
+            'global_alpha': float(best_alpha),
+            'alpha_by_class': {class_names[i]: float(alpha_by_class[i]) for i in range(len(class_names))},
+            'class_thresholds': {class_names[i]: float(threshold_by_class[i]) for i in range(len(class_names))},
+            'sp_threshold': float(sp_threshold),
+            'sp_binary_f1_on_train_oof': float(sp_f1),
+            'sp_binary_counts_on_train_oof': sp_counts,
+            'ltp_threshold': float(ltp_threshold),
+            'train_targetp_margin_rank': [float(v) for v in train_rank],
+        })
+
+    metrics = _metrics_from_prediction_indices(
+        pred_idx=pred_idx,
+        true_idx=true_idx,
+        class_names=class_names,
+    )
+    return {
+        'description': 'Each held-out fold is predicted using blend, specialist models, and specialist thresholds selected on the other folds.',
+        'metrics': metrics,
+        'folds': fold_rows,
     }
 
 
@@ -910,6 +1307,7 @@ def _build_summary_rows(
     blend_threshold_metrics,
     blend_foldwise_metrics=None,
     specialist_metrics=None,
+    specialist_foldwise_metrics=None,
 ):
     rows = list()
     for class_name in LOCALIZATION_CLASSES:
@@ -926,6 +1324,10 @@ def _build_summary_rows(
             row['blend_foldwise_f1'] = float(blend_foldwise_metrics['by_class'][class_name]['f1'])
         if specialist_metrics is not None:
             row['specialist_f1'] = float(specialist_metrics['by_class'][class_name]['f1'])
+        if specialist_foldwise_metrics is not None:
+            row['specialist_foldwise_f1'] = float(
+                specialist_foldwise_metrics['by_class'][class_name]['f1']
+            )
         rows.append(row)
     return rows
 
@@ -935,6 +1337,7 @@ def _render_markdown(out):
     md = list()
     has_foldwise = 'blend_foldwise' in out
     has_specialist = 'specialist_postprocess' in out
+    has_specialist_foldwise = 'specialist_foldwise' in out
     class_headers = [
         'Class',
         'TargetP F1',
@@ -948,6 +1351,8 @@ def _render_markdown(out):
         class_headers.append('blend(foldwise) F1')
     if has_specialist:
         class_headers.append('specialist F1')
+    if has_specialist_foldwise:
+        class_headers.append('specialist(foldwise) F1')
     md.append('| {} |'.format(' | '.join(class_headers)))
     md.append('|{}|'.format('|'.join(['---'] + ['---:'] * (len(class_headers) - 1))))
     for row in rows:
@@ -964,6 +1369,8 @@ def _render_markdown(out):
             values.append('{:.3f}'.format(row['blend_foldwise_f1']))
         if has_specialist:
             values.append('{:.3f}'.format(row['specialist_f1']))
+        if has_specialist_foldwise:
+            values.append('{:.3f}'.format(row['specialist_foldwise_f1']))
         md.append('| {} |'.format(' | '.join(values)))
     md.append('')
     metric_headers = [
@@ -979,6 +1386,8 @@ def _render_markdown(out):
         metric_headers.append('blend(foldwise)')
     if has_specialist:
         metric_headers.append('specialist')
+    if has_specialist_foldwise:
+        metric_headers.append('specialist(foldwise)')
     md.append('| {} |'.format(' | '.join(metric_headers)))
     md.append('|{}|'.format('|'.join(['---'] + ['---:'] * (len(metric_headers) - 1))))
     macro_values = [
@@ -1005,6 +1414,9 @@ def _render_markdown(out):
     if has_specialist:
         macro_values.append('{:.3f}'.format(out['specialist_postprocess']['metrics']['macro_f1']))
         acc_values.append('{:.3f}'.format(out['specialist_postprocess']['metrics']['overall_accuracy']))
+    if has_specialist_foldwise:
+        macro_values.append('{:.3f}'.format(out['specialist_foldwise']['metrics']['macro_f1']))
+        acc_values.append('{:.3f}'.format(out['specialist_foldwise']['metrics']['overall_accuracy']))
     md.append('| {} |'.format(' | '.join(macro_values)))
     md.append('| {} |'.format(' | '.join(acc_values)))
     md.append('')
@@ -1014,6 +1426,8 @@ def _render_markdown(out):
     if has_specialist:
         md.append('specialist SP threshold: {:.6f}'.format(out['specialist_postprocess']['sp_threshold']))
         md.append('specialist lTP threshold: {:.6f}'.format(out['specialist_postprocess']['ltp_threshold']))
+    if has_specialist_foldwise:
+        md.append('specialist(foldwise): thresholds selected separately on each training-fold complement')
     return '\n'.join(md)
 
 
@@ -1058,6 +1472,7 @@ def build_parser():
     parser.add_argument('--threshold_grid', default='0.05,0.075,0.1,0.15,0.2,0.3,0.4,0.5,0.65,0.8,1.0,1.25,1.5,2.0,3.0,5.0', type=str)
     parser.add_argument('--foldwise_blend_eval', default='no', choices=['yes', 'no'], type=str)
     parser.add_argument('--specialist_postprocess', default='no', choices=['yes', 'no'], type=str)
+    parser.add_argument('--foldwise_specialist_eval', default='no', choices=['yes', 'no'], type=str)
     parser.add_argument('--specialist_ltp_mass_threshold', default=0.20, type=float)
     parser.add_argument('--out_json', default='data/localize_bench/targetp2_bilstm_esm_blend.json', type=str)
     parser.add_argument('--out_md', default='data/localize_bench/targetp2_bilstm_esm_blend.md', type=str)
@@ -1349,6 +1764,22 @@ def main():
             ltp_mass_threshold=float(args.specialist_ltp_mass_threshold),
         )
         out['specialist_postprocess'] = specialist_postprocess
+    specialist_foldwise = None
+    if _to_bool_yes_no(args.foldwise_specialist_eval):
+        specialist_rows = _read_training_rows(path=args.training_tsv)
+        fold_ids = _read_fold_ids_from_training_tsv(training_tsv=args.training_tsv)
+        specialist_foldwise = _evaluate_foldwise_targetp_specialist_postprocess(
+            rows=specialist_rows,
+            prob_a=bilstm_prob,
+            prob_b=esm_prob,
+            true_idx=bilstm_true,
+            fold_ids=fold_ids,
+            class_names=class_names,
+            alpha_grid=grid,
+            threshold_grid=threshold_grid,
+            ltp_mass_threshold=float(args.specialist_ltp_mass_threshold),
+        )
+        out['specialist_foldwise'] = specialist_foldwise
     out['class_rows'] = _build_summary_rows(
         targetp_ref=TARGETP_TABLE1_REFERENCE,
         bilstm_metrics=out['bilstm']['metrics'],
@@ -1358,6 +1789,7 @@ def main():
         blend_threshold_metrics=out['blend_threshold']['metrics'],
         blend_foldwise_metrics=(None if blend_foldwise is None else out['blend_foldwise']['metrics']),
         specialist_metrics=(None if specialist_postprocess is None else out['specialist_postprocess']['metrics']),
+        specialist_foldwise_metrics=(None if specialist_foldwise is None else out['specialist_foldwise']['metrics']),
     )
     out['markdown'] = _render_markdown(out=out)
 
