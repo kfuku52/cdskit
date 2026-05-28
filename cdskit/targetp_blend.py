@@ -1,7 +1,9 @@
 import argparse
+from contextlib import contextmanager
 import csv
 import json
 import os
+import warnings
 
 import numpy as np
 
@@ -599,6 +601,34 @@ def _build_ctp_ltp_specialist_features(rows, base_prob, prob_a, prob_b, class_na
     return np.hstack([seq_features, prob_features, plant_flag])
 
 
+@contextmanager
+def _sklearn_single_thread_context():
+    try:
+        from threadpoolctl import threadpool_limits
+    except ImportError:
+        yield
+        return
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            'ignore',
+            message=r'\s*Found Intel OpenMP.*',
+            category=RuntimeWarning,
+        )
+        with threadpool_limits(limits=1):
+            yield
+
+
+def _fit_sklearn_model(model, features, y):
+    with _sklearn_single_thread_context():
+        model.fit(features, y)
+    return model
+
+
+def _predict_sklearn_proba(model, features):
+    with _sklearn_single_thread_context():
+        return model.predict_proba(features)
+
+
 def _binary_oof_scores(features, true_idx, fold_ids, train_mask, positive_idx, make_model):
     features = np.asarray(features, dtype=np.float64)
     true_idx = np.asarray(true_idx, dtype=np.int64)
@@ -616,10 +646,10 @@ def _binary_oof_scores(features, true_idx, fold_ids, train_mask, positive_idx, m
             scores[valid_mask] = float(np.mean(y_train))
             continue
         model = make_model()
-        model.fit(features[fit_mask], y_train)
+        _fit_sklearn_model(model, features[fit_mask], y_train)
         if not hasattr(model, 'predict_proba'):
             raise TypeError('Specialist model should support predict_proba.')
-        proba = np.asarray(model.predict_proba(features[valid_mask]), dtype=np.float64)
+        proba = np.asarray(_predict_sklearn_proba(model, features[valid_mask]), dtype=np.float64)
         class_to_col = {int(cls): i for i, cls in enumerate(model.classes_.tolist())}
         scores[valid_mask] = proba[:, class_to_col.get(1, 0)] if 1 in class_to_col else 0.0
     return scores
@@ -651,8 +681,8 @@ def _binary_crossfit_scores(
             scores[valid_mask] = float(np.mean(y_train))
             continue
         model = make_model()
-        model.fit(features[train_mask], y_train)
-        proba = np.asarray(model.predict_proba(features[valid_mask]), dtype=np.float64)
+        _fit_sklearn_model(model, features[train_mask], y_train)
+        proba = np.asarray(_predict_sklearn_proba(model, features[valid_mask]), dtype=np.float64)
         class_to_col = {int(cls): i for i, cls in enumerate(model.classes_.tolist())}
         scores[valid_mask] = proba[:, class_to_col.get(1, 0)] if 1 in class_to_col else 0.0
     return scores
@@ -678,8 +708,8 @@ def _fit_binary_predict_scores(
         scores[predict_mask] = float(np.mean(y_train))
         return scores
     model = make_model()
-    model.fit(features[fit_mask], y_train)
-    proba = np.asarray(model.predict_proba(features[predict_mask]), dtype=np.float64)
+    _fit_sklearn_model(model, features[fit_mask], y_train)
+    proba = np.asarray(_predict_sklearn_proba(model, features[predict_mask]), dtype=np.float64)
     class_to_col = {int(cls): i for i, cls in enumerate(model.classes_.tolist())}
     scores[predict_mask] = proba[:, class_to_col.get(1, 0)] if 1 in class_to_col else 0.0
     return scores
@@ -1001,7 +1031,7 @@ def _evaluate_targetp_specialist_postprocess(
             class_weight='balanced',
             max_features='sqrt',
             min_samples_leaf=1,
-            n_jobs=-1,
+            n_jobs=1,
         )
 
     ltp_scores_a = _binary_oof_scores(
@@ -1100,7 +1130,7 @@ def _evaluate_foldwise_targetp_specialist_postprocess(
             class_weight='balanced',
             max_features='sqrt',
             min_samples_leaf=1,
-            n_jobs=-1,
+            n_jobs=1,
         )
 
     for fold_id in sorted(set([str(v) for v in fold_ids.tolist()])):
@@ -1328,7 +1358,7 @@ def _evaluate_foldwise_fixed_targetp_specialist_postprocess(
             class_weight='balanced',
             max_features='sqrt',
             min_samples_leaf=1,
-            n_jobs=-1,
+            n_jobs=1,
         )
 
     for fold_id in sorted(set([str(v) for v in fold_ids.tolist()])):
@@ -1646,7 +1676,7 @@ def _fit_full_targetp_specialist_postprocess(
             random_state=int(seed),
             class_weight='balanced',
         )
-        model.fit(sp_features, y_sp)
+        _fit_sklearn_model(model, sp_features, y_sp)
         sp_models.append(model)
 
     ltp_features = _build_ctp_ltp_specialist_features(
@@ -1669,9 +1699,9 @@ def _fit_full_targetp_specialist_postprocess(
             class_weight='balanced',
             max_features='sqrt',
             min_samples_leaf=1,
-            n_jobs=-1,
+            n_jobs=1,
         )
-        model.fit(ltp_features[ctp_ltp_train_mask, :], y_ltp)
+        _fit_sklearn_model(model, ltp_features[ctp_ltp_train_mask, :], y_ltp)
         ltp_models.append(model)
 
     return {

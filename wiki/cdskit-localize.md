@@ -160,19 +160,19 @@ The TargetP task maps to cdskit labels as follows:
 Current local comparison snapshots on the official 13,005-sequence TargetP 2.0
 dataset:
 
-| Model | Macro F1 | Overall acc. | Notes |
-| --- | ---: | ---: | --- |
-| TargetP 2.0 paper Table 1 | 0.890 | - | published reference |
-| cdskit nearest centroid | 0.543 | 0.863 | quick CPU baseline, rerun locally |
-| cdskit BiLSTM | 0.857 | 0.976 | cached fold-fixed OOF run with organism gate |
-| cdskit ESM2 t6 head | 0.726 | 0.968 | cached fold-fixed OOF run with organism gate |
-| cdskit BiLSTM/ESM blend, global alpha | 0.857 | 0.976 | cached blend, optimized on all OOF rows |
-| cdskit BiLSTM/ESM blend, classwise alpha | 0.864 | 0.976 | cached classwise blend, optimized on all OOF rows |
-| cdskit BiLSTM/ESM blend + thresholds | 0.896 | 0.977 | cached classwise blend with thresholds, optimized on all OOF rows |
-| cdskit BiLSTM/ESM foldwise blend + thresholds | 0.891 | 0.976 | classwise alpha and thresholds optimized on training folds only |
-| cdskit TargetP specialist postprocess | 0.900 | 0.979 | benchmark-only SP gate and cTP/lTP reranker on OOF probabilities |
-| cdskit TargetP specialist foldwise eval | 0.887 | 0.977 | specialist thresholds selected on each training-fold complement |
-| cdskit TargetP specialist foldwise fixed calibration | 0.900 | 0.979 | fixed calibrated SP gate and cTP/lTP reranker; held-out folds excluded from model fitting |
+| Model | Macro F1 | Overall acc. | Min class dF1 vs TargetP | All classes > TargetP | Notes |
+| --- | ---: | ---: | ---: | :---: | --- |
+| TargetP 2.0 paper Table 1 | 0.890 | - | - | - | published reference |
+| cdskit nearest centroid | 0.543 | 0.863 | -0.6601 | no | quick CPU baseline, rerun locally |
+| cdskit BiLSTM | 0.857 | 0.976 | -0.1866 | no | cached fold-fixed OOF run with organism gate |
+| cdskit ESM2 t6 head | 0.726 | 0.968 | -0.7500 | no | cached fold-fixed OOF run with organism gate |
+| cdskit BiLSTM/ESM blend, global alpha | 0.857 | 0.976 | -0.1866 | no | cached blend, optimized on all OOF rows |
+| cdskit BiLSTM/ESM blend, classwise alpha | 0.864 | 0.976 | -0.1554 | no | cached classwise blend, optimized on all OOF rows |
+| cdskit BiLSTM/ESM blend + thresholds | 0.896 | 0.977 | -0.0071 | no | cached classwise blend with thresholds, optimized on all OOF rows |
+| cdskit BiLSTM/ESM foldwise blend + thresholds | 0.891 | 0.976 | -0.0192 | no | classwise alpha and thresholds optimized on training folds only |
+| cdskit TargetP specialist postprocess | 0.900 | 0.979 | +0.0001 | yes | benchmark-only SP gate and cTP/lTP reranker on OOF probabilities |
+| cdskit TargetP specialist foldwise eval | 0.887 | 0.977 | -0.0417 | no | specialist thresholds selected on each training-fold complement |
+| cdskit TargetP specialist foldwise fixed calibration | 0.900 | 0.979 | +0.0003 | yes | fixed calibrated SP gate and cTP/lTP reranker; held-out folds excluded from model fitting |
 
 Per-class F1 for the same snapshot:
 

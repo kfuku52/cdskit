@@ -1,7 +1,9 @@
 import csv
+from contextlib import contextmanager
 import json
 import math
 import re
+import warnings
 
 import numpy as np
 
@@ -1215,6 +1217,28 @@ def _targetp_ctp_ltp_specialist_feature_vector(aa_seq, base_probs, prob_a, prob_
     ])
 
 
+@contextmanager
+def _targetp_sklearn_single_thread_context():
+    try:
+        from threadpoolctl import threadpool_limits
+    except ImportError:
+        yield
+        return
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            'ignore',
+            message=r'\s*Found Intel OpenMP.*',
+            category=RuntimeWarning,
+        )
+        with threadpool_limits(limits=1):
+            yield
+
+
+def _targetp_predict_sklearn_proba(model, features):
+    with _targetp_sklearn_single_thread_context():
+        return model.predict_proba(features)
+
+
 def _predict_binary_ensemble_score(feature_vec, models, weights=None):
     if not isinstance(models, list) or len(models) == 0:
         return 0.0
@@ -1222,7 +1246,13 @@ def _predict_binary_ensemble_score(feature_vec, models, weights=None):
     for model in models:
         if not hasattr(model, 'predict_proba'):
             raise TypeError('TargetP specialist model should support predict_proba.')
-        proba = np.asarray(model.predict_proba(np.asarray(feature_vec, dtype=np.float64).reshape((1, -1))), dtype=np.float64)
+        proba = np.asarray(
+            _targetp_predict_sklearn_proba(
+                model,
+                np.asarray(feature_vec, dtype=np.float64).reshape((1, -1)),
+            ),
+            dtype=np.float64,
+        )
         classes = getattr(model, 'classes_', [0, 1])
         class_to_col = {int(cls): i for i, cls in enumerate(list(classes))}
         scores.append(float(proba[0, class_to_col.get(1, 0)]) if 1 in class_to_col else 0.0)
