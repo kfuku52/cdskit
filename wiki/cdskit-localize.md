@@ -196,6 +196,11 @@ TargetP, so the fixed-calibration result should be treated as a benchmark
 calibration step rather than a completed production-quality replacement for
 `cdskit localize`.
 
+The blend helper writes per-model TargetP margin summaries to JSON and Markdown,
+including an `All classes > TargetP` row. To save the foldwise fixed specialist
+scores used for threshold sensitivity checks, pass
+`--foldwise_specialist_fixed_score_npz path/to/scores.npz`.
+
 In the specialist run, `SP` F1 improved from 0.976 to 0.980 and `lTP` F1
 improved from 0.743 to 0.759 over the threshold blend. For DeepLoc sorting
 signals, `--rare_label_threshold_objective f2` raised `TH` recall from 0.762 to

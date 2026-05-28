@@ -34,7 +34,7 @@ setup(
     install_requires=['numpy', 'biopython'],
     extras_require={
         'test': ['pytest', 'pytest-cov'],
-        'ml': ['torch'],
+        'ml': ['torch', 'scikit-learn'],
     },
     python_requires='>=3.9',
     classifiers=[

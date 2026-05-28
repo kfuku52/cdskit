@@ -16,6 +16,7 @@ from cdskit.targetp_blend import (
     _optimize_classwise_alpha,
     _optimize_global_alpha,
     _save_oof_npz,
+    _targetp_margin_summary,
     main,
 )
 
@@ -212,6 +213,30 @@ def test_aggregate_score_columns_supports_mean_and_weights():
     )
 
 
+def test_targetp_margin_summary_flags_all_class_pass():
+    class_names = ['noTP', 'SP']
+    targetp_ref = {
+        'noTP': {'f1': 0.80},
+        'SP': {'f1': 0.70},
+    }
+    metrics = {
+        'by_class': {
+            'noTP': {'f1': 0.82},
+            'SP': {'f1': 0.71},
+        },
+    }
+
+    summary = _targetp_margin_summary(
+        metrics=metrics,
+        targetp_ref=targetp_ref,
+        class_names=class_names,
+    )
+
+    assert summary['beats_targetp_all_classes'] is True
+    assert summary['min_class_f1_margin'] == pytest.approx(0.01)
+    assert summary['class_beats_targetp'] == {'noTP': True, 'SP': True}
+
+
 def test_specialist_postprocess_applies_sp_gate_and_ltp_rerank():
     class_names = list(LOCALIZATION_CLASSES)
     class_to_idx = {name: i for i, name in enumerate(class_names)}
@@ -320,8 +345,10 @@ def test_main_runs_with_cached_oof_only(temp_dir, monkeypatch):
     assert result['esm']['used_cache'] is True
     assert 'blend_global' in result
     assert 'blend_classwise' in result
+    assert 'targetp_margin' in result['blend_threshold']
     md = out_md.read_text(encoding='utf-8')
     assert '| Metric | TargetP | bilstm | esm | blend(global) | blend(classwise) |' in md
+    assert '| All classes > TargetP |' in md
 
 
 def test_metrics_from_prob_matrix_computes_expected_accuracy():

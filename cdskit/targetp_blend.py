@@ -27,6 +27,16 @@ from cdskit.targetp_benchmark import (
     compute_prf_by_class,
 )
 
+TARGETP_SPECIALIST_FIXED_PROFILE = {
+    'name': 'targetp_specialist_fixed_v1',
+    'sp_random_states': [2, 13, 31],
+    'sp_weights': [0.22251605108894593, 0.24685472258402566, 0.5306292263270285],
+    'ltp_random_states': [13, 23, 31, 6, 5],
+    'sp_threshold': 0.6975,
+    'ltp_threshold': 0.2525,
+    'ltp_mass_threshold': 0.21,
+}
+
 
 def _read_training_rows(path):
     with open(path, 'r', encoding='utf-8', newline='') as inp:
@@ -307,6 +317,45 @@ def _targetp_margin_rank(pred_idx, true_idx, class_names):
         float(f1[class_names.index('cTP')] if 'cTP' in class_names else 0.0),
         overall,
     )
+
+
+def _targetp_margin_summary(metrics, targetp_ref, class_names):
+    margins = dict()
+    beats = dict()
+    for class_name in class_names:
+        f1 = float(metrics['by_class'][class_name]['f1'])
+        ref_f1 = float(targetp_ref[class_name]['f1'])
+        margin = f1 - ref_f1
+        margins[class_name] = float(margin)
+        beats[class_name] = bool(margin > 0.0)
+    min_margin = min(margins.values()) if len(margins) > 0 else 0.0
+    return {
+        'beats_targetp_all_classes': bool(all(beats.values())),
+        'min_class_f1_margin': float(min_margin),
+        'class_f1_margins': margins,
+        'class_beats_targetp': beats,
+    }
+
+
+def _attach_targetp_margin_summaries(out, class_names):
+    for key in [
+        'bilstm',
+        'esm',
+        'blend_global',
+        'blend_classwise',
+        'blend_threshold',
+        'blend_foldwise',
+        'specialist_postprocess',
+        'specialist_foldwise',
+        'specialist_foldwise_fixed',
+    ]:
+        if key not in out:
+            continue
+        out[key]['targetp_margin'] = _targetp_margin_summary(
+            metrics=out[key]['metrics'],
+            targetp_ref=TARGETP_TABLE1_REFERENCE,
+            class_names=class_names,
+        )
 
 
 def _best_binary_f1_threshold(scores, true_idx, positive_idx):
@@ -1217,7 +1266,8 @@ def _evaluate_foldwise_fixed_targetp_specialist_postprocess(
     class_names,
     alpha_grid,
     threshold_grid,
-    ltp_mass_threshold=0.21,
+    ltp_mass_threshold=None,
+    score_npz='',
 ):
     try:
         from sklearn.ensemble import ExtraTreesClassifier, HistGradientBoostingClassifier
@@ -1240,11 +1290,23 @@ def _evaluate_foldwise_fixed_targetp_specialist_postprocess(
     ], dtype=bool)
     pred_idx = np.zeros((prob_a.shape[0],), dtype=np.int64)
     fold_rows = list()
-    sp_seeds = [2, 13, 31]
-    sp_weights = [0.22251605108894593, 0.24685472258402566, 0.5306292263270285]
-    ltp_seeds = [13, 23, 31, 6, 5]
-    sp_threshold = 0.6975
-    ltp_threshold = 0.2525
+    profile = TARGETP_SPECIALIST_FIXED_PROFILE
+    sp_seeds = list(profile['sp_random_states'])
+    sp_weights = list(profile['sp_weights'])
+    ltp_seeds = list(profile['ltp_random_states'])
+    sp_threshold = float(profile['sp_threshold'])
+    ltp_threshold = float(profile['ltp_threshold'])
+    if ltp_mass_threshold is None:
+        ltp_mass_threshold = float(profile['ltp_mass_threshold'])
+    score_npz = str(score_npz or '').strip()
+    score_cache = None
+    if score_npz != '':
+        score_cache = {
+            'base_prob': np.zeros_like(prob_a, dtype=np.float64),
+            'class_thresholds': np.zeros_like(prob_a, dtype=np.float64),
+            'sp_scores': np.zeros((prob_a.shape[0],), dtype=np.float64),
+            'ltp_scores': np.zeros((prob_a.shape[0],), dtype=np.float64),
+        }
 
     def _make_sp_model(seed):
         return HistGradientBoostingClassifier(
@@ -1345,6 +1407,11 @@ def _evaluate_foldwise_fixed_targetp_specialist_postprocess(
             class_names=class_names,
             ltp_mass_threshold=ltp_mass_threshold,
         )
+        if score_cache is not None:
+            score_cache['base_prob'][valid_mask, :] = fold_base_prob[valid_mask, :]
+            score_cache['class_thresholds'][valid_mask, :] = threshold_by_class.reshape((1, -1))
+            score_cache['sp_scores'][valid_mask] = sp_valid_scores[valid_mask]
+            score_cache['ltp_scores'][valid_mask] = ltp_valid_scores[valid_mask]
         fold_rows.append({
             'fold_id': fold_id,
             'n_train': int(np.sum(train_mask)),
@@ -1359,8 +1426,28 @@ def _evaluate_foldwise_fixed_targetp_specialist_postprocess(
         true_idx=true_idx,
         class_names=class_names,
     )
-    return {
+    if score_cache is not None:
+        score_dir = os.path.dirname(score_npz)
+        if score_dir != '':
+            os.makedirs(score_dir, exist_ok=True)
+        np.savez_compressed(
+            score_npz,
+            base_prob=score_cache['base_prob'],
+            class_thresholds=score_cache['class_thresholds'],
+            sp_scores=score_cache['sp_scores'],
+            ltp_scores=score_cache['ltp_scores'],
+            true_idx=true_idx,
+            plant_mask=plant_mask,
+            fold_ids=fold_ids,
+            class_names=np.asarray(class_names),
+            profile_name=str(profile['name']),
+            sp_threshold=float(sp_threshold),
+            ltp_threshold=float(ltp_threshold),
+            ltp_mass_threshold=float(ltp_mass_threshold),
+        )
+    out = {
         'description': 'Each held-out fold is predicted using fixed calibrated TargetP specialist ensembles. Specialist thresholds are fixed benchmark calibration values, not selected on each training-fold complement.',
+        'calibration_profile': str(profile['name']),
         'sp_model': 'weighted HistGradientBoostingClassifier scores with random_state {}'.format(sp_seeds),
         'ltp_model': 'mean of ExtraTreesClassifier scores with random_state {}'.format(ltp_seeds),
         'sp_random_states': list(sp_seeds),
@@ -1372,6 +1459,9 @@ def _evaluate_foldwise_fixed_targetp_specialist_postprocess(
         'metrics': metrics,
         'folds': fold_rows,
     }
+    if score_npz != '':
+        out['score_npz'] = score_npz
+    return out
 
 
 def _run_model_oof(
@@ -1608,38 +1698,57 @@ def _render_markdown(out):
         metric_headers.append('specialist(foldwise fixed)')
     md.append('| {} |'.format(' | '.join(metric_headers)))
     md.append('|{}|'.format('|'.join(['---'] + ['---:'] * (len(metric_headers) - 1))))
+    metric_keys = [
+        'bilstm',
+        'esm',
+        'blend_global',
+        'blend_classwise',
+        'blend_threshold',
+    ]
+    if has_foldwise:
+        metric_keys.append('blend_foldwise')
+    if has_specialist:
+        metric_keys.append('specialist_postprocess')
+    if has_specialist_foldwise:
+        metric_keys.append('specialist_foldwise')
+    if has_specialist_foldwise_fixed:
+        metric_keys.append('specialist_foldwise_fixed')
     macro_values = [
         'Macro F1',
         '{:.3f}'.format(out['targetp_macro_f1']),
-        '{:.3f}'.format(out['bilstm']['metrics']['macro_f1']),
-        '{:.3f}'.format(out['esm']['metrics']['macro_f1']),
-        '{:.3f}'.format(out['blend_global']['metrics']['macro_f1']),
-        '{:.3f}'.format(out['blend_classwise']['metrics']['macro_f1']),
-        '{:.3f}'.format(out['blend_threshold']['metrics']['macro_f1']),
     ]
+    macro_values.extend([
+        '{:.3f}'.format(out[key]['metrics']['macro_f1'])
+        for key in metric_keys
+    ])
     acc_values = [
         'Overall accuracy',
         '-',
-        '{:.3f}'.format(out['bilstm']['metrics']['overall_accuracy']),
-        '{:.3f}'.format(out['esm']['metrics']['overall_accuracy']),
-        '{:.3f}'.format(out['blend_global']['metrics']['overall_accuracy']),
-        '{:.3f}'.format(out['blend_classwise']['metrics']['overall_accuracy']),
-        '{:.3f}'.format(out['blend_threshold']['metrics']['overall_accuracy']),
     ]
-    if has_foldwise:
-        macro_values.append('{:.3f}'.format(out['blend_foldwise']['metrics']['macro_f1']))
-        acc_values.append('{:.3f}'.format(out['blend_foldwise']['metrics']['overall_accuracy']))
-    if has_specialist:
-        macro_values.append('{:.3f}'.format(out['specialist_postprocess']['metrics']['macro_f1']))
-        acc_values.append('{:.3f}'.format(out['specialist_postprocess']['metrics']['overall_accuracy']))
-    if has_specialist_foldwise:
-        macro_values.append('{:.3f}'.format(out['specialist_foldwise']['metrics']['macro_f1']))
-        acc_values.append('{:.3f}'.format(out['specialist_foldwise']['metrics']['overall_accuracy']))
-    if has_specialist_foldwise_fixed:
-        macro_values.append('{:.3f}'.format(out['specialist_foldwise_fixed']['metrics']['macro_f1']))
-        acc_values.append('{:.3f}'.format(out['specialist_foldwise_fixed']['metrics']['overall_accuracy']))
+    acc_values.extend([
+        '{:.3f}'.format(out[key]['metrics']['overall_accuracy'])
+        for key in metric_keys
+    ])
+    margin_values = [
+        'Min class dF1 vs TargetP',
+        '-',
+    ]
+    margin_values.extend([
+        '{:+.4f}'.format(out[key]['targetp_margin']['min_class_f1_margin'])
+        for key in metric_keys
+    ])
+    beats_values = [
+        'All classes > TargetP',
+        '-',
+    ]
+    beats_values.extend([
+        'yes' if out[key]['targetp_margin']['beats_targetp_all_classes'] else 'no'
+        for key in metric_keys
+    ])
     md.append('| {} |'.format(' | '.join(macro_values)))
     md.append('| {} |'.format(' | '.join(acc_values)))
+    md.append('| {} |'.format(' | '.join(margin_values)))
+    md.append('| {} |'.format(' | '.join(beats_values)))
     md.append('')
     md.append('global alpha (bilstm weight): {:.3f}'.format(out['blend_global']['alpha']))
     md.append('classwise alpha (bilstm weight): {}'.format(out['blend_classwise']['alpha_by_class']))
@@ -1658,6 +1767,10 @@ def _render_markdown(out):
                 out['specialist_foldwise_fixed']['ltp_mass_threshold'],
             )
         )
+        if 'score_npz' in out['specialist_foldwise_fixed']:
+            md.append('specialist(foldwise fixed) score cache: {}'.format(
+                out['specialist_foldwise_fixed']['score_npz']
+            ))
     return '\n'.join(md)
 
 
@@ -1704,6 +1817,7 @@ def build_parser():
     parser.add_argument('--specialist_postprocess', default='no', choices=['yes', 'no'], type=str)
     parser.add_argument('--foldwise_specialist_eval', default='no', choices=['yes', 'no'], type=str)
     parser.add_argument('--foldwise_specialist_fixed_eval', default='no', choices=['yes', 'no'], type=str)
+    parser.add_argument('--foldwise_specialist_fixed_score_npz', default='', type=str)
     parser.add_argument('--specialist_ltp_mass_threshold', default=0.20, type=float)
     parser.add_argument('--out_json', default='data/localize_bench/targetp2_bilstm_esm_blend.json', type=str)
     parser.add_argument('--out_md', default='data/localize_bench/targetp2_bilstm_esm_blend.md', type=str)
@@ -2024,8 +2138,10 @@ def main():
             class_names=class_names,
             alpha_grid=grid,
             threshold_grid=threshold_grid,
+            score_npz=str(args.foldwise_specialist_fixed_score_npz),
         )
         out['specialist_foldwise_fixed'] = specialist_foldwise_fixed
+    _attach_targetp_margin_summaries(out=out, class_names=class_names)
     out['class_rows'] = _build_summary_rows(
         targetp_ref=TARGETP_TABLE1_REFERENCE,
         bilstm_metrics=out['bilstm']['metrics'],
