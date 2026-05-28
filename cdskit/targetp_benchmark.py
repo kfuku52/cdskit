@@ -273,6 +273,8 @@ def run_cdskit_cv_on_targetp(
     localize_strategy='single_stage',
     dl_params=None,
     cv_seed=1,
+    use_organism_group=False,
+    distill_oof_npz='',
 ):
     if dl_params is None:
         dl_params = {
@@ -290,6 +292,9 @@ def run_cdskit_cv_on_targetp(
             'balanced_batch': False,
             'aux_tp_weight': 0.0,
             'aux_ctp_ltp_weight': 0.0,
+            'feature_fusion': True,
+            'distill_weight': 0.0,
+            'distill_temperature': 1.0,
             'seed': 1,
             'device': 'cpu',
             'esm_model_name': 'facebook/esm2_t6_8M_UR50D',
@@ -311,6 +316,23 @@ def run_cdskit_cv_on_targetp(
         skip_ambiguous=True,
         cv_fold_col='fold_id',
     )
+    organism_groups = None
+    if bool(use_organism_group):
+        if skipped != 0:
+            raise ValueError('TargetP organism_group gating requires no skipped rows.')
+        organism_groups = [str(row.get('organism_group', '')) for row in rows]
+    soft_label_matrix = None
+    if str(distill_oof_npz).strip() != '':
+        teacher = np.load(str(distill_oof_npz), allow_pickle=True)
+        if 'prob_matrix' not in teacher.files:
+            raise ValueError('distill_oof_npz is missing prob_matrix.')
+        teacher_classes = [str(v) for v in teacher['class_names'].tolist()]
+        if teacher_classes != list(LOCALIZATION_CLASSES):
+            raise ValueError('distill_oof_npz class_names do not match LOCALIZATION_CLASSES.')
+        soft_label_matrix = np.asarray(teacher['prob_matrix'], dtype=np.float32)
+        if soft_label_matrix.shape != (len(class_labels), len(LOCALIZATION_CLASSES)):
+            txt = 'distill_oof_npz shape mismatch: expected {}, got {}.'
+            raise ValueError(txt.format((len(class_labels), len(LOCALIZATION_CLASSES)), soft_label_matrix.shape))
     cv_metrics = evaluate_cross_validation(
         x=x,
         aa_sequences=aa_sequences,
@@ -323,6 +345,8 @@ def run_cdskit_cv_on_targetp(
         dl_device=str(dl_params.get('device', 'cpu')),
         localize_strategy=localize_strategy,
         fold_ids=fold_ids,
+        organism_groups=organism_groups,
+        soft_label_matrix=soft_label_matrix,
         verbose=True,
     )
     oof_rows = sorted(cv_metrics['oof_rows'], key=lambda r: int(r['index']))
@@ -356,6 +380,8 @@ def run_cdskit_cv_on_targetp(
         'oof_macro_f1': _macro_mean(by_class, list(LOCALIZATION_CLASSES), 'f1'),
         'oof_macro_precision': _macro_mean(by_class, list(LOCALIZATION_CLASSES), 'precision'),
         'oof_macro_recall': _macro_mean(by_class, list(LOCALIZATION_CLASSES), 'recall'),
+        'use_organism_group': bool(use_organism_group),
+        'distill_oof_npz': str(distill_oof_npz),
     }
 
 
@@ -431,6 +457,7 @@ def build_parser():
     parser.add_argument('--prepared_tsv', default='data/localize_bench/targetp2_benchmark.tsv', type=str)
     parser.add_argument('--prepare_report_json', default='data/localize_bench/targetp2_prepare_report.json', type=str)
     parser.add_argument('--run_cdskit_cv', default='yes', choices=['yes', 'no'], type=str)
+    parser.add_argument('--organism_gate', default='no', choices=['yes', 'no'], type=str)
     parser.add_argument('--comparison_json', default='data/localize_bench/targetp2_cdskit_comparison.json', type=str)
     parser.add_argument('--comparison_md', default='data/localize_bench/targetp2_cdskit_comparison.md', type=str)
     parser.add_argument('--model_arch', default='bilstm_attention', choices=['nearest_centroid', 'bilstm_attention', 'esm_head'], type=str)
@@ -449,8 +476,12 @@ def build_parser():
     parser.add_argument('--dl_balanced_batch', default='no', choices=['yes', 'no'], type=str)
     parser.add_argument('--dl_aux_tp_weight', default=0.0, type=float)
     parser.add_argument('--dl_aux_ctp_ltp_weight', default=0.0, type=float)
+    parser.add_argument('--dl_feature_fusion', default='yes', choices=['yes', 'no'], type=str)
+    parser.add_argument('--dl_distill_weight', default=0.0, type=float)
+    parser.add_argument('--dl_distill_temperature', default=1.0, type=float)
+    parser.add_argument('--distill_oof_npz', default='', type=str)
     parser.add_argument('--dl_seed', default=1, type=int)
-    parser.add_argument('--dl_device', default='cpu', choices=['cpu', 'cuda', 'auto'], type=str)
+    parser.add_argument('--dl_device', default='cpu', choices=['cpu', 'cuda', 'mps', 'auto'], type=str)
     parser.add_argument('--esm_model_name', default='facebook/esm2_t6_8M_UR50D', type=str)
     parser.add_argument('--esm_model_local_dir', default='', type=str)
     parser.add_argument('--esm_pooling', default='cls', choices=['cls', 'mean'], type=str)
@@ -512,6 +543,9 @@ def main():
             'balanced_batch': _to_bool_yes_no(args.dl_balanced_batch),
             'aux_tp_weight': float(args.dl_aux_tp_weight),
             'aux_ctp_ltp_weight': float(args.dl_aux_ctp_ltp_weight),
+            'feature_fusion': _to_bool_yes_no(args.dl_feature_fusion),
+            'distill_weight': float(args.dl_distill_weight),
+            'distill_temperature': float(args.dl_distill_temperature),
             'seed': int(args.dl_seed),
             'device': str(args.dl_device),
             'esm_model_name': str(args.esm_model_name),
@@ -525,6 +559,8 @@ def main():
             localize_strategy=str(args.localize_strategy),
             dl_params=dl_params,
             cv_seed=int(args.cv_seed),
+            use_organism_group=_to_bool_yes_no(args.organism_gate),
+            distill_oof_npz=str(args.distill_oof_npz),
         )
         comparison = build_targetp_comparison_table(cdskit_result=cdskit_result)
         comparison_md = render_markdown_table(comparison=comparison)

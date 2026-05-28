@@ -236,6 +236,9 @@ p_localize.add_argument('--report', metavar='PATH', default='-', type=str, requi
                         help='default=%(default)s: Output report path. Use "-" for STDOUT. If PATH ends with ".json", JSON is written; otherwise tab-separated TSV is written.')
 p_localize.add_argument('--include_features', metavar='yes|no', default='no', type=strtobool, required=False, action='store',
                         help='default=%(default)s: Include internal feature values in the output report.')
+p_localize.add_argument('--organism_group', metavar='unknown|plant|non_plant', default='unknown', type=str, required=False, action='store',
+                        choices=['unknown', 'plant', 'non_plant'],
+                        help='default=%(default)s: Optional organism group used to constrain plant-only cTP/lTP predictions.')
 p_localize.set_defaults(handler=command_localize)
 
 
@@ -324,10 +327,12 @@ p_localize_learn.add_argument('--dl_aux_tp_weight', metavar='FLOAT', default=0.0
                               help='default=%(default)s: Auxiliary loss weight for noTP-vs-TP head in bilstm_attention training.')
 p_localize_learn.add_argument('--dl_aux_ctp_ltp_weight', metavar='FLOAT', default=0.0, type=float, required=False, action='store',
                               help='default=%(default)s: Auxiliary loss weight for cTP-vs-lTP head in bilstm_attention training.')
+p_localize_learn.add_argument('--dl_feature_fusion', metavar='yes|no', default='yes', type=strtobool, required=False, action='store',
+                              help='default=%(default)s: Fuse handcrafted localization features into bilstm_attention training.')
 p_localize_learn.add_argument('--dl_seed', metavar='INT', default=1, type=int, required=False, action='store',
                               help='default=%(default)s: Random seed for bilstm_attention training.')
-p_localize_learn.add_argument('--dl_device', metavar='auto|cpu|cuda', default='auto', type=str, required=False, action='store',
-                              choices=['auto', 'cpu', 'cuda'],
+p_localize_learn.add_argument('--dl_device', metavar='auto|cpu|cuda|mps', default='auto', type=str, required=False, action='store',
+                              choices=['auto', 'cpu', 'cuda', 'mps'],
                               help='default=%(default)s: Device for bilstm_attention training and evaluation.')
 p_localize_learn.add_argument('--esm_model_name', metavar='STR', default='facebook/esm2_t6_8M_UR50D', type=str, required=False, action='store',
                               help='default=%(default)s: Hugging Face model id used by --model_arch esm_head.')

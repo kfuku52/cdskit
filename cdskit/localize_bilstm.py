@@ -34,11 +34,17 @@ def resolve_torch_device(device_text='auto'):
     if device_text in ('', 'auto'):
         if torch.cuda.is_available():
             return 'cuda'
+        if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+            return 'mps'
         return 'cpu'
     if device_text == 'cuda':
         if not torch.cuda.is_available():
             raise ValueError('CUDA device was requested but CUDA is not available.')
         return 'cuda'
+    if device_text == 'mps':
+        if (not hasattr(torch.backends, 'mps')) or (not torch.backends.mps.is_available()):
+            raise ValueError('MPS device was requested but MPS is not available.')
+        return 'mps'
     if device_text == 'cpu':
         return 'cpu'
     raise ValueError('Unsupported --dl_device: {}'.format(device_text))
@@ -299,6 +305,9 @@ def fit_bilstm_attention_classifier(
     feature_matrix=None,
     aux_tp_weight=0.0,
     aux_ctp_ltp_weight=0.0,
+    soft_label_matrix=None,
+    distill_weight=0.0,
+    distill_temperature=1.0,
 ):
     torch, nn = require_torch()
     np.random.seed(int(seed))
@@ -319,6 +328,28 @@ def fit_bilstm_attention_classifier(
         aa_to_idx=aa_to_idx,
     )
     y = np.asarray([label_to_idx[v] for v in labels], dtype=np.int64)
+    soft_y = None
+    distill_weight = float(distill_weight)
+    distill_temperature = float(distill_temperature)
+    if distill_weight < 0.0:
+        raise ValueError('distill_weight should be >= 0.')
+    if distill_temperature <= 0.0:
+        raise ValueError('distill_temperature should be > 0.')
+    if soft_label_matrix is not None:
+        soft_y = np.asarray(soft_label_matrix, dtype=np.float32)
+        if soft_y.ndim != 2:
+            raise ValueError('soft_label_matrix should be 2D array.')
+        if int(soft_y.shape[0]) != int(y.shape[0]):
+            txt = 'soft_label_matrix row count mismatch: expected {}, got {}.'
+            raise ValueError(txt.format(int(y.shape[0]), int(soft_y.shape[0])))
+        if int(soft_y.shape[1]) != int(len(class_order)):
+            txt = 'soft_label_matrix column mismatch: expected {}, got {}.'
+            raise ValueError(txt.format(int(len(class_order)), int(soft_y.shape[1])))
+        soft_y[soft_y < 0.0] = 0.0
+        row_sum = soft_y.sum(axis=1, keepdims=True)
+        row_sum[row_sum <= 0.0] = 1.0
+        soft_y = (soft_y / row_sum).astype(np.float32)
+    use_distillation = (soft_y is not None) and (distill_weight > 0.0)
     feature_x, feature_mean, feature_scale = _prepare_feature_matrix(
         feature_matrix=feature_matrix,
         n_row=x.shape[0],
@@ -428,9 +459,22 @@ def fit_bilstm_attention_classifier(
     rng = np.random.default_rng(int(seed))
     n_batch = int(np.ceil(x.shape[0] / float(batch_size)))
     use_auxiliary = use_aux_tp or use_aux_ctp_ltp
+    use_extra_loss = use_auxiliary or use_distillation
+    if use_distillation:
+        import torch.nn.functional as F
 
     def _compute_total_loss(batch_idx, logits, yb, representation):
         loss = loss_fn(logits, yb)
+        if use_distillation:
+            soft_targets = torch.as_tensor(
+                soft_y[batch_idx],
+                dtype=torch.float32,
+                device=resolved_device,
+            )
+            temp = float(distill_temperature)
+            log_probs = F.log_softmax(logits / temp, dim=1)
+            distill_loss = -(soft_targets * log_probs).sum(dim=1).mean() * (temp * temp)
+            loss = loss + (distill_weight * distill_loss)
         if use_aux_tp:
             tp_targets = torch.as_tensor(
                 y_tp[batch_idx],
@@ -492,7 +536,7 @@ def fit_bilstm_attention_classifier(
                     )
                 mask = (xb != PAD_INDEX)
                 optimizer.zero_grad(set_to_none=True)
-                if use_auxiliary:
+                if use_extra_loss:
                     logits, rep = model(
                         tokens=xb,
                         mask=mask,
@@ -534,7 +578,7 @@ def fit_bilstm_attention_classifier(
                 )
             mask = (xb != PAD_INDEX)
             optimizer.zero_grad(set_to_none=True)
-            if use_auxiliary:
+            if use_extra_loss:
                 logits, rep = model(
                     tokens=xb,
                     mask=mask,
@@ -572,6 +616,8 @@ def fit_bilstm_attention_classifier(
         'feature_scale': None if feature_scale is None else feature_scale.astype(np.float32).tolist(),
         'aux_tp_weight': float(aux_tp_weight),
         'aux_ctp_ltp_weight': float(aux_ctp_ltp_weight),
+        'distill_weight': float(distill_weight),
+        'distill_temperature': float(distill_temperature),
         'state_dict': state_dict,
         'device': str(resolved_device),
     }

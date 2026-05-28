@@ -19,13 +19,17 @@ from cdskit.util import (
 )
 
 
-def _predict_single_record(record, codontable, model, include_features):
+def _predict_single_record(record, codontable, model, include_features, organism_group=''):
     aa_seq = translate_inframe_cds_to_aa(
         cds_seq=str(record.seq),
         codontable=codontable,
         seq_id=record.id,
     )
-    pred = predict_localization_and_peroxisome(aa_seq=aa_seq, model=model)
+    pred = predict_localization_and_peroxisome(
+        aa_seq=aa_seq,
+        model=model,
+        organism_group=organism_group,
+    )
     row = {
         'seq_id': record.id,
         'predicted_class': pred['predicted_class'],
@@ -78,6 +82,7 @@ def localize_main(args):
         codontable=args.codontable,
         model=model,
         include_features=args.include_features,
+        organism_group=getattr(args, 'organism_group', ''),
     )
     rows = parallel_map_ordered(items=records, worker=worker, threads=threads)
 
@@ -92,4 +97,3 @@ def localize_main(args):
             output_path=report_path,
             fieldnames=_resolve_output_fields(include_features=args.include_features),
         )
-

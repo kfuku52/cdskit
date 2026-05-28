@@ -6,7 +6,9 @@ import pytest
 
 from cdskit.targetp_blend import (
     LOCALIZATION_CLASSES,
+    _evaluate_foldwise_classwise_blend,
     _load_oof_npz,
+    _apply_organism_gate,
     _metrics_from_prob_matrix,
     _oof_rows_to_prob_and_true,
     _optimize_classwise_alpha,
@@ -67,6 +69,33 @@ def test_oof_cache_save_and_load_roundtrip(temp_dir):
     assert loaded_names == class_names
 
 
+def test_oof_cache_load_can_use_fallback_true_idx(temp_dir):
+    class_names = list(LOCALIZATION_CLASSES)
+    prob_matrix = np.asarray(
+        [
+            [0.70, 0.20, 0.10, 0.00, 0.00],
+            [0.10, 0.70, 0.10, 0.10, 0.00],
+        ],
+        dtype=np.float64,
+    )
+    true_idx = np.asarray([0, 1], dtype=np.int64)
+    npz_path = temp_dir / 'oof_without_true.npz'
+    np.savez_compressed(
+        str(npz_path),
+        prob_matrix=prob_matrix,
+        class_names=np.asarray(class_names),
+    )
+
+    loaded_prob, loaded_true, loaded_names = _load_oof_npz(
+        path=str(npz_path),
+        fallback_true_idx=true_idx,
+    )
+
+    np.testing.assert_allclose(loaded_prob, prob_matrix)
+    np.testing.assert_allclose(loaded_true, true_idx)
+    assert loaded_names == class_names
+
+
 def test_classwise_blend_beats_global_when_models_specialize():
     class_names = list(LOCALIZATION_CLASSES)
     true_idx = np.asarray([0, 1, 2, 3, 4, 0, 1, 2, 3, 4], dtype=np.int64)
@@ -102,6 +131,66 @@ def test_classwise_blend_beats_global_when_models_specialize():
     assert classwise_metrics['macro_f1'] > global_metrics['macro_f1']
     assert classwise_metrics['macro_f1'] == pytest.approx(0.7333333333333333)
     assert alpha_by_class.tolist() == pytest.approx([0.0, 1.0, 0.0, 0.0, 0.0])
+
+
+def test_foldwise_classwise_blend_uses_held_out_folds():
+    class_names = list(LOCALIZATION_CLASSES)
+    true_idx = np.asarray([0, 1, 0, 1], dtype=np.int64)
+    fold_ids = np.asarray(['fold1', 'fold1', 'fold2', 'fold2'])
+    prob_a = np.asarray(
+        [
+            [0.90, 0.10, 0.00, 0.00, 0.00],
+            [0.80, 0.20, 0.00, 0.00, 0.00],
+            [0.90, 0.10, 0.00, 0.00, 0.00],
+            [0.80, 0.20, 0.00, 0.00, 0.00],
+        ],
+        dtype=np.float64,
+    )
+    prob_b = np.asarray(
+        [
+            [0.20, 0.80, 0.00, 0.00, 0.00],
+            [0.10, 0.90, 0.00, 0.00, 0.00],
+            [0.20, 0.80, 0.00, 0.00, 0.00],
+            [0.10, 0.90, 0.00, 0.00, 0.00],
+        ],
+        dtype=np.float64,
+    )
+
+    metrics, fold_rows = _evaluate_foldwise_classwise_blend(
+        prob_a=prob_a,
+        prob_b=prob_b,
+        true_idx=true_idx,
+        fold_ids=fold_ids,
+        class_names=class_names,
+        alpha_grid=[0.0, 1.0],
+        threshold_grid=[1.0],
+    )
+
+    assert len(fold_rows) == 2
+    assert metrics['macro_f1'] > 0.0
+    assert {row['fold_id'] for row in fold_rows} == {'fold1', 'fold2'}
+
+
+def test_apply_organism_gate_removes_non_plant_ctp_ltp_mass():
+    class_names = list(LOCALIZATION_CLASSES)
+    prob = np.asarray(
+        [
+            [0.10, 0.10, 0.10, 0.35, 0.35],
+            [0.10, 0.10, 0.10, 0.35, 0.35],
+        ],
+        dtype=np.float64,
+    )
+
+    gated = _apply_organism_gate(
+        prob_matrix=prob,
+        plant_mask=np.asarray([True, False], dtype=bool),
+        class_names=class_names,
+    )
+
+    np.testing.assert_allclose(gated[0, :], prob[0, :])
+    assert gated[1, class_names.index('cTP')] == pytest.approx(0.0)
+    assert gated[1, class_names.index('lTP')] == pytest.approx(0.0)
+    assert float(gated[1, :].sum()) == pytest.approx(1.0)
 
 
 def test_main_runs_with_cached_oof_only(temp_dir, monkeypatch):

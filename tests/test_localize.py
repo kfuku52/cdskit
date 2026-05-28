@@ -7,6 +7,7 @@ from pathlib import Path
 from urllib import parse as urllib_parse
 
 import Bio.SeqIO
+import numpy as np
 import pytest
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
@@ -510,6 +511,55 @@ def test_localize_learn_bilstm_cross_validation_metrics(temp_dir, mock_args):
     assert 0.0 <= metrics['cv_perox_accuracy_mean'] <= 1.0
 
 
+@pytest.mark.skipif(not HAS_TORCH, reason='torch is required for bilstm_attention test')
+def test_bilstm_attention_accepts_distillation_soft_labels():
+    from cdskit.localize_bilstm import fit_bilstm_attention_classifier
+
+    aa_sequences = [
+        'MGPVNQDEGPVNQDEGPVNQDE',
+        'MKKLLLLLLLLLLAVAVAASAASA',
+        'MGPVNQDEGATNVQDEGATNVQDE',
+        'MKKLLLLLLLLLLAAVVAASAASA',
+    ]
+    labels = ['noTP', 'SP', 'noTP', 'SP']
+    soft = np.asarray(
+        [
+            [0.90, 0.10],
+            [0.15, 0.85],
+            [0.80, 0.20],
+            [0.10, 0.90],
+        ],
+        dtype=np.float32,
+    )
+
+    model = fit_bilstm_attention_classifier(
+        aa_sequences=aa_sequences,
+        labels=labels,
+        class_order=['noTP', 'SP'],
+        seq_len=40,
+        embed_dim=4,
+        hidden_dim=4,
+        num_layers=1,
+        dropout=0.0,
+        epochs=1,
+        batch_size=4,
+        learning_rate=1e-3,
+        weight_decay=0.0,
+        seed=1,
+        use_class_weight=False,
+        device='cpu',
+        loss_name='ce',
+        balanced_batch=False,
+        feature_matrix=None,
+        soft_label_matrix=soft,
+        distill_weight=0.5,
+        distill_temperature=2.0,
+    )
+
+    assert model['distill_weight'] == pytest.approx(0.5)
+    assert model['distill_temperature'] == pytest.approx(2.0)
+
+
 @pytest.mark.skipif(not HAS_TORCH, reason='torch is required for esm_head model save/load')
 def test_localize_learn_esm_head_head_only_mode(monkeypatch, temp_dir, mock_args):
     import torch
@@ -794,6 +844,44 @@ def test_predict_two_stage_ctp_ltp_submodel_overrides_ctp_ltp_split():
     )
     assert pred['predicted_class'] == 'lTP'
     assert pred['class_probabilities']['lTP'] > pred['class_probabilities']['cTP']
+
+
+def test_predict_localization_respects_non_plant_constraints():
+    model = {
+        'model_type': 'nearest_centroid_v1',
+        'localization_model': {
+            'strategy': 'two_stage_ctp_ltp',
+            'class_order': ['noTP', 'SP', 'mTP', 'cTP', 'lTP'],
+            'stage1_model': {
+                'mode': 'constant',
+                'class_label': 'TP',
+                'class_order': ['noTP', 'TP'],
+            },
+            'stage2_model': {
+                'mode': 'constant',
+                'class_label': 'cTP',
+                'class_order': ['SP', 'mTP', 'cTP', 'lTP'],
+            },
+            'stage3_model': {
+                'mode': 'constant',
+                'class_label': 'lTP',
+                'class_order': ['cTP', 'lTP'],
+            },
+        },
+        'perox_model': {
+            'mode': 'constant',
+            'yes_probability': 0.0,
+        },
+    }
+
+    pred = predict_localization_and_peroxisome(
+        aa_seq='MARRVAAARRLLLLLVVVVVAAST',
+        model=model,
+        organism_group='non_plant',
+    )
+    assert pred['predicted_class'] == 'noTP'
+    assert pred['class_probabilities']['cTP'] == pytest.approx(0.0)
+    assert pred['class_probabilities']['lTP'] == pytest.approx(0.0)
 
 
 def test_localize_learn_predefined_cv_fold_col(temp_dir, mock_args):

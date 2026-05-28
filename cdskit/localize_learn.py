@@ -424,6 +424,7 @@ def _fit_arch_specific_localization_model(
     class_order,
     model_arch,
     dl_train_params,
+    soft_label_matrix=None,
 ):
     labels = list(labels)
     class_order = list(class_order)
@@ -440,9 +441,12 @@ def _fit_arch_specific_localization_model(
         )
     if model_arch == 'bilstm_attention':
         from cdskit.localize_bilstm import fit_bilstm_attention_classifier
+        feature_matrix = x
+        if not bool(dl_train_params.get('feature_fusion', True)):
+            feature_matrix = None
         return fit_bilstm_attention_classifier(
             aa_sequences=aa_sequences,
-            feature_matrix=x,
+            feature_matrix=feature_matrix,
             labels=labels,
             class_order=class_order,
             seq_len=dl_train_params['seq_len'],
@@ -461,6 +465,9 @@ def _fit_arch_specific_localization_model(
             balanced_batch=dl_train_params['balanced_batch'],
             aux_tp_weight=dl_train_params['aux_tp_weight'],
             aux_ctp_ltp_weight=dl_train_params['aux_ctp_ltp_weight'],
+            soft_label_matrix=soft_label_matrix,
+            distill_weight=dl_train_params.get('distill_weight', 0.0),
+            distill_temperature=dl_train_params.get('distill_temperature', 1.0),
         )
     if model_arch == 'esm_head':
         from cdskit.localize_esm_head import fit_esm_head_classifier
@@ -490,10 +497,13 @@ def fit_localization_model(
     model_arch,
     dl_train_params,
     localize_strategy='single_stage',
+    soft_label_matrix=None,
 ):
     localize_strategy = str(localize_strategy or 'single_stage').strip().lower()
     if localize_strategy not in ['single_stage', 'two_stage', 'two_stage_ctp_ltp']:
         raise ValueError('Unsupported localize_strategy: {}'.format(localize_strategy))
+    if (soft_label_matrix is not None) and (localize_strategy != 'single_stage'):
+        raise ValueError('Distillation soft labels are currently supported only with single_stage strategy.')
 
     if localize_strategy == 'single_stage':
         return _fit_arch_specific_localization_model(
@@ -503,6 +513,7 @@ def fit_localization_model(
             class_order=LOCALIZATION_CLASSES,
             model_arch=model_arch,
             dl_train_params=dl_train_params,
+            soft_label_matrix=soft_label_matrix,
         )
 
     stage1_labels = ['noTP' if cls == 'noTP' else 'TP' for cls in class_labels]
@@ -1101,6 +1112,8 @@ def evaluate_cross_validation(
     dl_device,
     localize_strategy='single_stage',
     fold_ids=None,
+    organism_groups=None,
+    soft_label_matrix=None,
     verbose=False,
 ):
     if fold_ids is None:
@@ -1144,6 +1157,12 @@ def evaluate_cross_validation(
         class_test = [class_labels[i] for i in test_idx.tolist()]
         perox_train = [perox_labels[i] for i in train_idx.tolist()]
         perox_test = [perox_labels[i] for i in test_idx.tolist()]
+        soft_label_train = None
+        if soft_label_matrix is not None:
+            soft_label_train = np.asarray(soft_label_matrix, dtype=np.float32)[train_idx, :]
+        organism_test = None
+        if organism_groups is not None:
+            organism_test = [organism_groups[i] for i in test_idx.tolist()]
 
         local_model = fit_localization_model(
             x=x_train,
@@ -1152,6 +1171,7 @@ def evaluate_cross_validation(
             model_arch=model_arch,
             dl_train_params=dl_train_params,
             localize_strategy=localize_strategy,
+            soft_label_matrix=soft_label_train,
         )
         perox_model = fit_perox_binary_classifier(
             features=x_train,
@@ -1178,6 +1198,7 @@ def evaluate_cross_validation(
             pred = predict_localization_and_peroxisome(
                 aa_seq=aa_test[row_i],
                 model=tmp_model,
+                organism_group='' if organism_test is None else organism_test[row_i],
             )
             true_class = class_test[row_i]
             pred_class = pred['predicted_class']
@@ -1292,6 +1313,7 @@ def localize_learn_main(args):
     dl_balanced_batch = bool(getattr(args, 'dl_balanced_batch', False))
     dl_aux_tp_weight = float(getattr(args, 'dl_aux_tp_weight', 0.0))
     dl_aux_ctp_ltp_weight = float(getattr(args, 'dl_aux_ctp_ltp_weight', 0.0))
+    dl_feature_fusion = bool(getattr(args, 'dl_feature_fusion', True))
     dl_seed = int(getattr(args, 'dl_seed', 1))
     dl_device = str(getattr(args, 'dl_device', 'auto')).strip().lower()
     esm_model_name = str(getattr(args, 'esm_model_name', 'facebook/esm2_t6_8M_UR50D')).strip()
@@ -1422,6 +1444,7 @@ def localize_learn_main(args):
         'balanced_batch': dl_balanced_batch,
         'aux_tp_weight': dl_aux_tp_weight,
         'aux_ctp_ltp_weight': dl_aux_ctp_ltp_weight,
+        'feature_fusion': dl_feature_fusion,
         'esm_model_name': esm_model_name,
         'esm_model_local_dir': esm_model_local_dir,
         'esm_pooling': esm_pooling,
@@ -1647,6 +1670,7 @@ def localize_learn_main(args):
         model['metadata']['dl_balanced_batch'] = bool(dl_balanced_batch)
         model['metadata']['dl_aux_tp_weight'] = float(dl_aux_tp_weight)
         model['metadata']['dl_aux_ctp_ltp_weight'] = float(dl_aux_ctp_ltp_weight)
+        model['metadata']['dl_feature_fusion'] = bool(dl_feature_fusion)
         model['metadata']['dl_seed'] = int(dl_seed)
         model['metadata']['dl_device'] = str(dl_device)
     if model_arch == 'esm_head':

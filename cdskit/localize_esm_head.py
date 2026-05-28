@@ -21,11 +21,17 @@ def resolve_torch_device(device_text='auto'):
     if device_text in ['', 'auto']:
         if torch.cuda.is_available():
             return 'cuda'
+        if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+            return 'mps'
         return 'cpu'
     if device_text == 'cuda':
         if not torch.cuda.is_available():
             raise ValueError('CUDA device was requested but CUDA is not available.')
         return 'cuda'
+    if device_text == 'mps':
+        if (not hasattr(torch.backends, 'mps')) or (not torch.backends.mps.is_available()):
+            raise ValueError('MPS device was requested but MPS is not available.')
+        return 'mps'
     if device_text == 'cpu':
         return 'cpu'
     raise ValueError('Unsupported --dl_device: {}'.format(device_text))

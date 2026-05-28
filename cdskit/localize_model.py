@@ -121,6 +121,40 @@ def normalize_class_probabilities(class_probs):
     return out_probs
 
 
+def normalize_organism_group(value):
+    txt = str(value or '').strip().lower()
+    txt = re.sub(r'[\s\-]+', '_', txt)
+    mapping = {
+        '': '',
+        'unknown': '',
+        'auto': '',
+        'plant': 'plant',
+        'plants': 'plant',
+        'viridiplantae': 'plant',
+        'nonplant': 'non_plant',
+        'non_plant': 'non_plant',
+        'non_plants': 'non_plant',
+        'other': 'non_plant',
+        'metazoa': 'non_plant',
+        'fungi': 'non_plant',
+        'animal': 'non_plant',
+        'animals': 'non_plant',
+    }
+    if txt in mapping:
+        return mapping[txt]
+    raise ValueError('Unsupported organism_group: {}'.format(value))
+
+
+def apply_organism_group_constraints(class_probs, organism_group=''):
+    group = normalize_organism_group(organism_group)
+    probs = normalize_class_probabilities(class_probs=class_probs)
+    if group == 'non_plant':
+        probs['cTP'] = 0.0
+        probs['lTP'] = 0.0
+        probs = normalize_class_probabilities(class_probs=probs)
+    return probs
+
+
 def apply_temperature_scaling(class_probs, temperature):
     probs = normalize_class_probabilities(class_probs=class_probs)
     try:
@@ -749,7 +783,7 @@ def predict_two_stage_ctp_ltp_localization(
     return pred_class, out_probs
 
 
-def predict_localization_and_peroxisome(aa_seq, model):
+def predict_localization_and_peroxisome(aa_seq, model, organism_group=''):
     feats, perox_signals = extract_localize_features(aa_seq=aa_seq)
     model_type = str(model.get('model_type', ''))
     localization_model = model['localization_model']
@@ -776,6 +810,10 @@ def predict_localization_and_peroxisome(aa_seq, model):
             localization_model=localization_model,
             model_type=model_type,
         )
+    class_probs = apply_organism_group_constraints(
+        class_probs=class_probs,
+        organism_group=organism_group,
+    )
     pred_class, class_probs = postprocess_localization_probabilities(
         class_probs=class_probs,
         localization_model=localization_model,
