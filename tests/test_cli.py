@@ -126,6 +126,7 @@ class TestCLIModuleImport:
             'cdskit.localize_bilstm',
             'cdskit.localize_learn',
             'cdskit.localize_model',
+            'cdskit.localize_multilabel_cnn',
             'cdskit.maxalign',
             'cdskit.mask',
             'cdskit.pad',

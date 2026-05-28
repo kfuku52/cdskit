@@ -3,6 +3,8 @@ import json
 import sys
 from types import SimpleNamespace
 
+import pytest
+
 from cdskit.deeploc_benchmark import (
     DEEPLOC_LOCALIZATION_LABELS,
     DEEPLOC_MEMBRANE_LABELS,
@@ -325,6 +327,104 @@ def test_run_deeploc_benchmark_writes_model_and_localize_predicts(temp_dir):
     assert result['model_out'] == str(model_out)
     assert comparison_json.exists()
     assert 'Published reference' in comparison_md.read_text(encoding='utf-8')
+
+    fasta_path.write_text('>q1\nMKKKRKAAAGGG\n', encoding='utf-8')
+    localize_main(
+        SimpleNamespace(
+            seqfile=str(fasta_path),
+            inseqformat='fasta',
+            codontable=999,
+            model=str(model_out),
+            report=str(report_tsv),
+            include_features=False,
+            seqtype='protein',
+            threads=1,
+            organism_group='metazoa',
+        )
+    )
+    rows = _read_tsv(path=report_tsv)
+    assert rows[0]['seq_id'] == 'q1'
+    assert rows[0]['predicted_labels'] != ''
+    assert 'p_nucleus' in rows[0]
+    assert 'p_peroxisome' in rows[0]
+
+
+def test_run_deeploc_benchmark_writes_cnn_model_and_localize_predicts(temp_dir):
+    pytest.importorskip('torch')
+    prepared_dir = temp_dir / 'prepared'
+    prepared_dir.mkdir()
+    train_tsv = prepared_dir / 'deeploc21_localization_train_validation.tsv'
+    hpa_tsv = prepared_dir / 'deeploc21_hpa_test.tsv'
+    model_out = prepared_dir / 'deeploc_cnn_model.pt'
+    comparison_json = prepared_dir / 'cnn_comparison.json'
+    comparison_md = prepared_dir / 'cnn_comparison.md'
+    report_tsv = prepared_dir / 'cnn_predictions.tsv'
+    fasta_path = prepared_dir / 'input.faa'
+
+    train_rows = [
+        {
+            'source': 'swissprot',
+            'accession': 'P1',
+            'kingdom': 'Metazoa',
+            'partition': '0',
+            'sequence': 'MKKKRKAAAGGG',
+            'localization_labels': 'nucleus',
+        },
+        {
+            'source': 'swissprot',
+            'accession': 'P2',
+            'kingdom': 'Metazoa',
+            'partition': '0',
+            'sequence': 'MLLLLLLLLLLAAA',
+            'localization_labels': 'extracellular',
+        },
+        {
+            'source': 'swissprot',
+            'accession': 'P3',
+            'kingdom': 'Metazoa',
+            'partition': '1',
+            'sequence': 'MKKRKRKGGGGG',
+            'localization_labels': 'nucleus',
+        },
+        {
+            'source': 'swissprot',
+            'accession': 'P4',
+            'kingdom': 'Metazoa',
+            'partition': '1',
+            'sequence': 'MFFFFFFFFFFAAA',
+            'localization_labels': 'extracellular',
+        },
+    ]
+    _write_prepared_localization_tsv(path=train_tsv, rows=train_rows)
+    _write_prepared_localization_tsv(path=hpa_tsv, rows=train_rows[:2])
+
+    result = run_deeploc21_benchmark(
+        prepared_dir=str(prepared_dir),
+        task_name='localization',
+        comparison_json=str(comparison_json),
+        comparison_md=str(comparison_md),
+        model_out=str(model_out),
+        model_arch='cnn',
+        dl_params={
+            'seq_len': 32,
+            'embed_dim': 8,
+            'num_filters': 4,
+            'kernel_sizes': '3,5',
+            'dropout': 0.1,
+            'epochs': 1,
+            'batch_size': 2,
+            'learning_rate': 1.0e-3,
+            'weight_decay': 0.0,
+            'class_weight': 'no',
+            'feature_fusion': 'no',
+            'seed': 1,
+            'device': 'cpu',
+        },
+    )
+    assert result['model'] == 'multilabel_cnn_v1'
+    assert result['model_out'] == str(model_out)
+    assert comparison_json.exists()
+    assert model_out.exists()
 
     fasta_path.write_text('>q1\nMKKKRKAAAGGG\n', encoding='utf-8')
     localize_main(

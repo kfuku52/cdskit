@@ -841,12 +841,29 @@ def predict_multilabel_localization(aa_seq, model, kingdom=''):
         aa_seq=aa_seq,
         kingdom=kingdom,
     )
+    model_type = str(model.get('model_type', ''))
     localization_model = model['localization_model']
-    pred = predict_multilabel_centroid_matrix(
-        features=feats,
-        localization_model=localization_model,
-        apply_thresholds=True,
-    )
+    if model_type == 'multilabel_centroid_v1':
+        pred = predict_multilabel_centroid_matrix(
+            features=feats,
+            localization_model=localization_model,
+            apply_thresholds=True,
+        )
+    elif model_type == 'multilabel_cnn_v1':
+        from cdskit.localize_multilabel_cnn import predict_multilabel_cnn_batch
+        feature_matrix = None
+        if int(localization_model.get('feature_dim', 0)) > 0:
+            feature_matrix = np.asarray(feats, dtype=np.float32).reshape((1, -1))
+        pred = predict_multilabel_cnn_batch(
+            aa_sequences=[aa_seq],
+            localization_model=localization_model,
+            device='cpu',
+            batch_size=1,
+            feature_matrix=feature_matrix,
+            apply_thresholds=True,
+        )
+    else:
+        raise ValueError('Unsupported multilabel model_type: {}'.format(model_type))
     class_order = list(localization_model['class_order'])
     prob_vec = pred['prob_matrix'][0, :]
     pred_vec = pred['prediction_matrix'][0, :]
@@ -1213,7 +1230,7 @@ def save_localize_model(model, path):
         with open(path, 'w', encoding='utf-8') as out:
             json.dump(model, out, indent=2, sort_keys=True)
         return
-    if model_type in ['bilstm_attention_v1', 'esm_head_v1']:
+    if model_type in ['bilstm_attention_v1', 'esm_head_v1', 'multilabel_cnn_v1']:
         from cdskit.localize_bilstm import require_torch
         torch, _ = require_torch()
         to_save = _strip_runtime_caches(dict(model))
@@ -1255,6 +1272,7 @@ def load_localize_model(path):
         'bilstm_attention_v1',
         'esm_head_v1',
         'multilabel_centroid_v1',
+        'multilabel_cnn_v1',
     ]
     if model['model_type'] not in allowed_model_types:
         raise ValueError('Unsupported model_type: {}'.format(model['model_type']))

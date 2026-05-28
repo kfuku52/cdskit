@@ -13,6 +13,10 @@ from cdskit.localize_model import (
     predict_multilabel_centroid_matrix,
     save_localize_model,
 )
+from cdskit.localize_multilabel_cnn import (
+    fit_multilabel_cnn_classifier,
+    predict_multilabel_cnn_batch,
+)
 
 
 DEEPLOC21_URLS = {
@@ -470,6 +474,42 @@ def build_label_matrix(rows, labels, label_col):
     return mat
 
 
+def _normalize_model_arch(model_arch):
+    value = str(model_arch or 'centroid').strip().lower()
+    if value in ['centroid', 'multilabel_centroid', 'multilabel_centroid_v1']:
+        return 'centroid'
+    if value in ['cnn', 'multilabel_cnn', 'multilabel_cnn_v1']:
+        return 'cnn'
+    raise ValueError('Unsupported --model_arch: {}'.format(model_arch))
+
+
+def _model_type_from_arch(model_arch):
+    arch = _normalize_model_arch(model_arch=model_arch)
+    if arch == 'cnn':
+        return 'multilabel_cnn_v1'
+    return 'multilabel_centroid_v1'
+
+
+def _deeploc_cnn_params(dl_params=None):
+    params = dict(dl_params or {})
+    return {
+        'seq_len': int(params.get('seq_len', 512)),
+        'embed_dim': int(params.get('embed_dim', 32)),
+        'num_filters': int(params.get('num_filters', 64)),
+        'kernel_sizes': params.get('kernel_sizes', '3,5,9,15'),
+        'dropout': float(params.get('dropout', 0.25)),
+        'epochs': int(params.get('epochs', 6)),
+        'batch_size': int(params.get('batch_size', 256)),
+        'learning_rate': float(params.get('learning_rate', 1.0e-3)),
+        'weight_decay': float(params.get('weight_decay', 1.0e-4)),
+        'seed': int(params.get('seed', 1)),
+        'class_weight': _to_bool_yes_no(params.get('class_weight', 'yes')),
+        'feature_fusion': _to_bool_yes_no(params.get('feature_fusion', 'no')),
+        'device': str(params.get('device', 'auto')),
+        'threshold_objective': str(params.get('threshold_objective', 'f1')),
+    }
+
+
 def _safe_div(num, denom):
     if denom <= 0:
         return 0.0
@@ -596,7 +636,14 @@ def _fold_ids_from_rows(rows, fold_col='partition', n_folds=5, seed=1):
     return folds
 
 
-def fit_deeploc_multilabel_model(rows, labels, label_col, task_name):
+def fit_deeploc_multilabel_model(
+    rows,
+    labels,
+    label_col,
+    task_name,
+    model_arch='centroid',
+    dl_params=None,
+):
     rows = _filter_multilabel_rows(
         rows=rows,
         labels=labels,
@@ -608,32 +655,81 @@ def fit_deeploc_multilabel_model(rows, labels, label_col, task_name):
         labels=labels,
         label_col=label_col,
     )
-    localization_model = fit_multilabel_centroid_classifier(
-        features=x,
-        label_matrix=y,
-        class_order=labels,
-        ensure_one_label=True,
-    )
+    arch = _normalize_model_arch(model_arch=model_arch)
+    cnn_params = None
+    if arch == 'cnn':
+        cnn_params = _deeploc_cnn_params(dl_params=dl_params)
+        feature_matrix = x if bool(cnn_params['feature_fusion']) else None
+        localization_model = fit_multilabel_cnn_classifier(
+            aa_sequences=[row.get('sequence', '') for row in rows],
+            label_matrix=y,
+            class_order=labels,
+            seq_len=cnn_params['seq_len'],
+            embed_dim=cnn_params['embed_dim'],
+            num_filters=cnn_params['num_filters'],
+            kernel_sizes=cnn_params['kernel_sizes'],
+            dropout=cnn_params['dropout'],
+            epochs=cnn_params['epochs'],
+            batch_size=cnn_params['batch_size'],
+            learning_rate=cnn_params['learning_rate'],
+            weight_decay=cnn_params['weight_decay'],
+            seed=cnn_params['seed'],
+            use_class_weight=cnn_params['class_weight'],
+            device=cnn_params['device'],
+            feature_matrix=feature_matrix,
+            threshold_objective=cnn_params['threshold_objective'],
+            ensure_one_label=True,
+        )
+    else:
+        localization_model = fit_multilabel_centroid_classifier(
+            features=x,
+            label_matrix=y,
+            class_order=labels,
+            ensure_one_label=True,
+        )
     localization_model['task'] = str(task_name)
     localization_model['feature_names'] = list(BROAD_FEATURE_NAMES)
+    model_type = _model_type_from_arch(model_arch=arch)
+    metadata = {
+        'task': str(task_name),
+        'num_training_rows': int(len(rows)),
+        'class_counts': {
+            labels[i]: int(np.sum(y[:, i] == 1)) for i in range(len(labels))
+        },
+        'model_arch': 'multilabel_cnn' if arch == 'cnn' else 'multilabel_centroid',
+        'seqtype': 'protein',
+    }
+    if cnn_params is not None:
+        metadata['cnn_params'] = dict(cnn_params)
     return {
-        'model_type': 'multilabel_centroid_v1',
+        'model_type': model_type,
         'feature_names': list(BROAD_FEATURE_NAMES),
         'localization_model': localization_model,
         'perox_model': {'mode': 'embedded_multilabel'},
-        'metadata': {
-            'task': str(task_name),
-            'num_training_rows': int(len(rows)),
-            'class_counts': {
-                labels[i]: int(np.sum(y[:, i] == 1)) for i in range(len(labels))
-            },
-            'model_arch': 'multilabel_centroid',
-            'seqtype': 'protein',
-        },
+        'metadata': metadata,
     }
 
 
 def _predict_model_on_rows(model, rows):
+    model_type = str(model.get('model_type', ''))
+    if model_type == 'multilabel_cnn_v1':
+        localization_model = model['localization_model']
+        feature_matrix = None
+        if int(localization_model.get('feature_dim', 0)) > 0:
+            feature_matrix = build_deeploc_feature_matrix(rows=rows)
+        batch_size = int(
+            model.get('metadata', {})
+            .get('cnn_params', {})
+            .get('batch_size', 512)
+        )
+        return predict_multilabel_cnn_batch(
+            aa_sequences=[row.get('sequence', '') for row in rows],
+            localization_model=localization_model,
+            device='cpu',
+            batch_size=batch_size,
+            feature_matrix=feature_matrix,
+            apply_thresholds=True,
+        )
     x = build_deeploc_feature_matrix(rows=rows)
     return predict_multilabel_centroid_matrix(
         features=x,
@@ -650,6 +746,8 @@ def evaluate_deeploc21_task_cv(
     fold_col='partition',
     n_folds=5,
     seed=1,
+    model_arch='centroid',
+    dl_params=None,
 ):
     rows = _filter_multilabel_rows(
         rows=_read_prepared_tsv(path=tsv_path),
@@ -681,6 +779,8 @@ def evaluate_deeploc21_task_cv(
             labels=labels,
             label_col=label_col,
             task_name=task_name,
+            model_arch=model_arch,
+            dl_params=dl_params,
         )
         pred = _predict_model_on_rows(model=model, rows=test_rows)
         test_indices = np.where(test_mask)[0]
@@ -709,6 +809,7 @@ def evaluate_deeploc21_task_cv(
     metrics['task'] = str(task_name)
     metrics['tsv_path'] = tsv_path
     metrics['fold_col'] = fold_col
+    metrics['model'] = _model_type_from_arch(model_arch=model_arch)
     metrics['n_input_rows'] = int(len(rows))
     metrics['mean_probability_by_label'] = {
         labels[i]: float(np.mean(prob[:, i])) for i in range(len(labels))
@@ -722,6 +823,8 @@ def evaluate_deeploc21_train_test(
     labels,
     label_col,
     task_name='localization',
+    model_arch='centroid',
+    dl_params=None,
 ):
     train_rows = _filter_multilabel_rows(
         rows=_read_prepared_tsv(path=train_tsv_path),
@@ -738,6 +841,8 @@ def evaluate_deeploc21_train_test(
         labels=labels,
         label_col=label_col,
         task_name=task_name,
+        model_arch=model_arch,
+        dl_params=dl_params,
     )
     pred = _predict_model_on_rows(model=model, rows=test_rows)
     y_true = build_label_matrix(
@@ -753,6 +858,7 @@ def evaluate_deeploc21_train_test(
     metrics['task'] = str(task_name)
     metrics['train_tsv_path'] = train_tsv_path
     metrics['test_tsv_path'] = test_tsv_path
+    metrics['model'] = _model_type_from_arch(model_arch=model_arch)
     metrics['n_train_rows'] = int(len(train_rows))
     metrics['n_test_rows'] = int(len(test_rows))
     return metrics
@@ -849,12 +955,16 @@ def run_deeploc21_benchmark(
     model_out='',
     n_folds=5,
     seed=1,
+    model_arch='centroid',
+    dl_params=None,
 ):
     cfg = _task_config(task_name=task_name, prepared_dir=prepared_dir)
+    model_type = _model_type_from_arch(model_arch=model_arch)
     result = {
         'task': cfg['task'],
         'labels': list(cfg['labels']),
-        'model': 'multilabel_centroid_v1',
+        'model': model_type,
+        'model_arch': _normalize_model_arch(model_arch=model_arch),
         'feature_names': list(BROAD_FEATURE_NAMES),
         'train_tsv': cfg['train_tsv'],
         'published_reference': cfg.get('reference', {}),
@@ -867,6 +977,8 @@ def run_deeploc21_benchmark(
         fold_col='partition',
         n_folds=n_folds,
         seed=seed,
+        model_arch=model_arch,
+        dl_params=dl_params,
     )
     if cfg.get('test_tsv', '') != '':
         result['independent_test'] = evaluate_deeploc21_train_test(
@@ -875,6 +987,8 @@ def run_deeploc21_benchmark(
             labels=cfg['labels'],
             label_col=cfg['label_col'],
             task_name=cfg['task'],
+            model_arch=model_arch,
+            dl_params=dl_params,
         )
     if str(model_out or '').strip() != '':
         train_rows = _read_prepared_tsv(path=cfg['train_tsv'])
@@ -883,6 +997,8 @@ def run_deeploc21_benchmark(
             labels=cfg['labels'],
             label_col=cfg['label_col'],
             task_name=cfg['task'],
+            model_arch=model_arch,
+            dl_params=dl_params,
         )
         model['metadata']['benchmark_task'] = cfg['task']
         model['metadata']['benchmark_train_tsv'] = cfg['train_tsv']
@@ -918,6 +1034,21 @@ def build_parser():
     parser.add_argument('--comparison_json', default='data/localize_bench/deeploc21/comparison.json', type=str)
     parser.add_argument('--comparison_md', default='data/localize_bench/deeploc21/comparison.md', type=str)
     parser.add_argument('--model_out', default='', type=str)
+    parser.add_argument('--model_arch', default='centroid', choices=['centroid', 'cnn'], type=str)
+    parser.add_argument('--dl_seq_len', default=512, type=int)
+    parser.add_argument('--dl_embed_dim', default=32, type=int)
+    parser.add_argument('--dl_num_filters', default=64, type=int)
+    parser.add_argument('--dl_kernel_sizes', default='3,5,9,15', type=str)
+    parser.add_argument('--dl_dropout', default=0.25, type=float)
+    parser.add_argument('--dl_epochs', default=6, type=int)
+    parser.add_argument('--dl_batch_size', default=256, type=int)
+    parser.add_argument('--dl_lr', default=1.0e-3, type=float)
+    parser.add_argument('--dl_weight_decay', default=1.0e-4, type=float)
+    parser.add_argument('--dl_class_weight', default='yes', choices=['yes', 'no'], type=str)
+    parser.add_argument('--dl_feature_fusion', default='no', choices=['yes', 'no'], type=str)
+    parser.add_argument('--dl_threshold_objective', default='f1', choices=['f1', 'mcc'], type=str)
+    parser.add_argument('--dl_seed', default=1, type=int)
+    parser.add_argument('--dl_device', default='auto', choices=['auto', 'cpu', 'cuda', 'mps'], type=str)
     parser.add_argument('--cv_folds', default=5, type=int)
     parser.add_argument('--cv_seed', default=1, type=int)
     parser.add_argument('--timeout_sec', default=120, type=int)
@@ -942,6 +1073,22 @@ def main():
             out_dir=args.out_dir,
         )
     if _to_bool_yes_no(args.benchmark):
+        dl_params = {
+            'seq_len': int(args.dl_seq_len),
+            'embed_dim': int(args.dl_embed_dim),
+            'num_filters': int(args.dl_num_filters),
+            'kernel_sizes': args.dl_kernel_sizes,
+            'dropout': float(args.dl_dropout),
+            'epochs': int(args.dl_epochs),
+            'batch_size': int(args.dl_batch_size),
+            'learning_rate': float(args.dl_lr),
+            'weight_decay': float(args.dl_weight_decay),
+            'class_weight': args.dl_class_weight,
+            'feature_fusion': args.dl_feature_fusion,
+            'threshold_objective': args.dl_threshold_objective,
+            'seed': int(args.dl_seed),
+            'device': args.dl_device,
+        }
         out['benchmark'] = run_deeploc21_benchmark(
             prepared_dir=args.out_dir,
             task_name=args.task,
@@ -950,6 +1097,8 @@ def main():
             model_out=args.model_out,
             n_folds=int(args.cv_folds),
             seed=int(args.cv_seed),
+            model_arch=args.model_arch,
+            dl_params=dl_params,
         )
     report_dir = os.path.dirname(args.report_json)
     if report_dir != '':

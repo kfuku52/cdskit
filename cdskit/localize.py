@@ -23,6 +23,9 @@ from cdskit.util import (
 )
 
 
+MULTILABEL_MODEL_TYPES = {'multilabel_centroid_v1', 'multilabel_cnn_v1'}
+
+
 def _record_to_aa_sequence(record, codontable, seqtype):
     seqtype = str(seqtype or 'dna').strip().lower()
     if seqtype == 'protein':
@@ -42,7 +45,7 @@ def _predict_single_record(record, codontable, seqtype, model, include_features,
         codontable=codontable,
         seqtype=seqtype,
     )
-    if str(model.get('model_type', '')) == 'multilabel_centroid_v1':
+    if str(model.get('model_type', '')) in MULTILABEL_MODEL_TYPES:
         pred = predict_multilabel_localization(
             aa_seq=aa_seq,
             model=model,
@@ -87,7 +90,7 @@ def _predict_single_record(record, codontable, seqtype, model, include_features,
 
 
 def _resolve_output_fields(include_features, model=None):
-    if isinstance(model, dict) and str(model.get('model_type', '')) == 'multilabel_centroid_v1':
+    if isinstance(model, dict) and str(model.get('model_type', '')) in MULTILABEL_MODEL_TYPES:
         class_order = list(model['localization_model']['class_order'])
         fields = ['seq_id', 'predicted_labels']
         fields.extend(['p_{}'.format(class_name) for class_name in class_order])
@@ -126,7 +129,7 @@ def localize_main(args):
         raise ValueError('--seqtype should be dna or protein.')
 
     model = load_localize_model(path=args.model)
-    if str(model.get('model_type', '')) != 'multilabel_centroid_v1':
+    if str(model.get('model_type', '')) not in MULTILABEL_MODEL_TYPES:
         model_classes = tuple(model['localization_model']['class_order'])
         if model_classes != LOCALIZATION_CLASSES:
             txt = 'Model class order mismatch: expected {}, got {}. Exiting.'
