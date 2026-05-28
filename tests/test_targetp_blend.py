@@ -6,6 +6,7 @@ import pytest
 
 from cdskit.targetp_blend import (
     LOCALIZATION_CLASSES,
+    _aggregate_score_columns,
     _evaluate_foldwise_classwise_blend,
     _load_oof_npz,
     _apply_organism_gate,
@@ -192,6 +193,23 @@ def test_apply_organism_gate_removes_non_plant_ctp_ltp_mass():
     assert gated[1, class_names.index('cTP')] == pytest.approx(0.0)
     assert gated[1, class_names.index('lTP')] == pytest.approx(0.0)
     assert float(gated[1, :].sum()) == pytest.approx(1.0)
+
+
+def test_aggregate_score_columns_supports_mean_and_weights():
+    scores = [
+        np.asarray([0.0, 0.4, 1.0], dtype=np.float64),
+        np.asarray([0.2, 0.6, 0.8], dtype=np.float64),
+        np.asarray([0.4, 0.8, 0.6], dtype=np.float64),
+    ]
+
+    np.testing.assert_allclose(
+        _aggregate_score_columns(scores),
+        np.asarray([0.2, 0.6, 0.8], dtype=np.float64),
+    )
+    np.testing.assert_allclose(
+        _aggregate_score_columns(scores, weights=[0.2, 0.3, 0.5]),
+        np.asarray([0.26, 0.66, 0.74], dtype=np.float64),
+    )
 
 
 def test_specialist_postprocess_applies_sp_gate_and_ltp_rerank():

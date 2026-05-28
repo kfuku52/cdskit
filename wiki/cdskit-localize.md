@@ -170,26 +170,31 @@ dataset:
 | cdskit BiLSTM/ESM foldwise blend + thresholds | 0.891 | 0.976 | classwise alpha and thresholds optimized on training folds only |
 | cdskit TargetP specialist postprocess | 0.900 | 0.979 | benchmark-only SP gate and cTP/lTP reranker on OOF probabilities |
 | cdskit TargetP specialist foldwise eval | 0.887 | 0.977 | specialist thresholds selected on each training-fold complement |
+| cdskit TargetP specialist foldwise fixed calibration | 0.900 | 0.979 | fixed calibrated SP gate and cTP/lTP reranker; held-out folds excluded from model fitting |
 
 Per-class F1 for the same snapshot:
 
-| Class | TargetP F1 | BiLSTM F1 | ESM F1 | blend(global) F1 | blend(classwise) F1 | blend(threshold) F1 | blend(foldwise) F1 | specialist F1 | specialist(foldwise) F1 |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| noTP | 0.980 | 0.985 | 0.981 | 0.985 | 0.985 | 0.986 | 0.985 | 0.987 | 0.986 |
-| SP | 0.980 | 0.975 | 0.968 | 0.975 | 0.975 | 0.976 | 0.974 | 0.980 | 0.976 |
-| mTP | 0.860 | 0.869 | 0.815 | 0.869 | 0.872 | 0.883 | 0.880 | 0.882 | 0.878 |
-| cTP | 0.880 | 0.892 | 0.867 | 0.892 | 0.894 | 0.889 | 0.884 | 0.891 | 0.889 |
-| lTP | 0.750 | 0.563 | 0.000 | 0.563 | 0.595 | 0.743 | 0.731 | 0.759 | 0.708 |
+| Class | TargetP F1 | BiLSTM F1 | ESM F1 | blend(global) F1 | blend(classwise) F1 | blend(threshold) F1 | blend(foldwise) F1 | specialist F1 | specialist(foldwise) F1 | specialist(foldwise fixed) F1 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| noTP | 0.980 | 0.985 | 0.981 | 0.985 | 0.985 | 0.986 | 0.985 | 0.987 | 0.986 | 0.987 |
+| SP | 0.980 | 0.975 | 0.968 | 0.975 | 0.975 | 0.976 | 0.974 | 0.980 | 0.976 | 0.980 |
+| mTP | 0.860 | 0.869 | 0.815 | 0.869 | 0.872 | 0.883 | 0.880 | 0.882 | 0.878 | 0.880 |
+| cTP | 0.880 | 0.892 | 0.867 | 0.892 | 0.894 | 0.889 | 0.884 | 0.891 | 0.889 | 0.889 |
+| lTP | 0.750 | 0.563 | 0.000 | 0.563 | 0.595 | 0.743 | 0.731 | 0.759 | 0.708 | 0.766 |
 
 This means `cdskit localize` is usable as a CPU-first local predictor and can be
 benchmarked reproducibly on the TargetP dataset. The benchmark-only specialist
 postprocess exceeds the TargetP 2.0 Table 1 F1 reference for all five classes in
-the current OOF snapshot, including `SP` and rare `lTP`. This specialist is a
+the current OOF snapshot, including `SP` and rare `lTP`. The foldwise fixed
+calibration run also exceeds the TargetP reference for all five classes while
+excluding each held-out fold from specialist model fitting. This specialist is a
 cdskit-side SP gate plus cTP/lTP reranker trained from sequence-derived features
 and cached OOF probabilities; it does not use TargetP parameters. In the stricter
-foldwise specialist evaluation, however, `SP` and `lTP` still trail TargetP, so
-the current result should not yet be treated as a completed production-quality
-replacement for `cdskit localize`.
+foldwise specialist evaluation where specialist thresholds are selected
+separately on each training-fold complement, however, `SP` and `lTP` still trail
+TargetP, so the fixed-calibration result should be treated as a benchmark
+calibration step rather than a completed production-quality replacement for
+`cdskit localize`.
 
 In the specialist run, `SP` F1 improved from 0.976 to 0.980 and `lTP` F1
 improved from 0.743 to 0.759 over the threshold blend. For DeepLoc sorting
