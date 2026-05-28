@@ -38,7 +38,7 @@ In this example, CDSKIT removes one gap-heavy sequence and keeps codon sites tha
 
 ### Key options
 
-- `--mode auto|exact|greedy`: Solver mode. `auto` uses exact search for small inputs and greedy search for larger inputs.
+- `--mode auto|exact|greedy`: Solver mode. `auto` uses exact search for small inputs and greedy search for larger inputs. `exact` exhaustively searches retained-sequence subsets up to `--max_exact_sequences`. `greedy` uses a MaxAlign-like bang-for-the-buck heuristic that removes gap-pattern sets, including paired set synergies, to improve alignment area.
 - `--max_exact_sequences INT`: Maximum number of sequences allowed in exact mode (default: `16`).
 - `--missing_char STR`: Characters treated as missing within a codon (default: `-?.`).
 - `--keep REGEX1,REGEX2,...`: Comma-separated regex patterns of sequence names that should not be dropped.
@@ -51,3 +51,4 @@ In this example, CDSKIT removes one gap-heavy sequence and keeps codon sites tha
 - Input sequence lengths should be multiples of three.
 - Output keeps only retained sequences and codon sites that are complete in the retained set.
 - `--mode auto` switches to `greedy` when the number of input sequences exceeds `--max_exact_sequences`.
+- `greedy` is a heuristic for larger alignments and is not guaranteed to find the globally optimal subset.
