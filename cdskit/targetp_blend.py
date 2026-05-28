@@ -5,6 +5,18 @@ import os
 
 import numpy as np
 
+from cdskit.localize_model import (
+    AA_ACIDIC,
+    AA_AROMATIC,
+    AA_BASIC,
+    AA_HYDROPHOBIC,
+    AA_SER_THR,
+    AA_SMALL,
+    extract_broad_localize_features,
+    fraction_in_set,
+    longest_hydrophobic_run,
+    mean_hydropathy,
+)
 from cdskit.localize_learn import (
     LOCALIZATION_CLASSES,
     build_training_matrix,
@@ -258,6 +270,507 @@ def _apply_organism_gate(prob_matrix, plant_mask, class_names):
     return prob_matrix / row_sum
 
 
+def _targetp_reference_f1_array(class_names):
+    return np.asarray(
+        [TARGETP_TABLE1_REFERENCE[class_name]['f1'] for class_name in class_names],
+        dtype=np.float64,
+    )
+
+
+def _fast_f1_vector(pred_idx, true_idx, n_class):
+    pred_idx = np.asarray(pred_idx, dtype=np.int64)
+    true_idx = np.asarray(true_idx, dtype=np.int64)
+    mat = np.bincount(
+        (true_idx * int(n_class)) + pred_idx,
+        minlength=int(n_class) * int(n_class),
+    ).reshape((int(n_class), int(n_class)))
+    tp = np.diag(mat).astype(np.float64)
+    fp = mat.sum(axis=0).astype(np.float64) - tp
+    fn = mat.sum(axis=1).astype(np.float64) - tp
+    denom = (2.0 * tp) + fp + fn
+    return np.divide(2.0 * tp, denom, out=np.zeros_like(tp), where=denom > 0.0)
+
+
+def _targetp_margin_rank(pred_idx, true_idx, class_names):
+    f1 = _fast_f1_vector(
+        pred_idx=pred_idx,
+        true_idx=true_idx,
+        n_class=len(class_names),
+    )
+    ref = _targetp_reference_f1_array(class_names=class_names)
+    overall = float(np.mean(np.asarray(pred_idx, dtype=np.int64) == np.asarray(true_idx, dtype=np.int64)))
+    return (
+        float(np.min(f1 - ref)),
+        float(np.mean(f1)),
+        float(f1[class_names.index('SP')] if 'SP' in class_names else 0.0),
+        float(f1[class_names.index('lTP')] if 'lTP' in class_names else 0.0),
+        float(f1[class_names.index('cTP')] if 'cTP' in class_names else 0.0),
+        overall,
+    )
+
+
+def _best_binary_f1_threshold(scores, true_idx, positive_idx):
+    scores = np.asarray(scores, dtype=np.float64)
+    true_idx = np.asarray(true_idx, dtype=np.int64)
+    yy = true_idx == int(positive_idx)
+    if scores.shape[0] != yy.shape[0]:
+        raise ValueError('Binary threshold score length does not match labels.')
+    order = np.argsort(-scores)
+    sorted_scores = scores[order]
+    sorted_y = yy[order]
+    total_pos = int(np.sum(yy))
+    tp = 0
+    fp = 0
+    best_f1 = 0.0
+    best_threshold = float(sorted_scores[0]) if sorted_scores.size else 0.5
+    best_counts = {'tp': 0, 'fp': 0, 'fn': total_pos}
+    i = 0
+    while i < sorted_scores.shape[0]:
+        value = float(sorted_scores[i])
+        while i < sorted_scores.shape[0] and float(sorted_scores[i]) == value:
+            if bool(sorted_y[i]):
+                tp += 1
+            else:
+                fp += 1
+            i += 1
+        fn = total_pos - tp
+        denom = (2 * tp) + fp + fn
+        f1 = 0.0 if denom == 0 else float(2 * tp) / float(denom)
+        if f1 > best_f1:
+            best_f1 = f1
+            best_threshold = value
+            best_counts = {'tp': int(tp), 'fp': int(fp), 'fn': int(fn)}
+    return best_threshold, best_f1, best_counts
+
+
+def _targetp_sp_scan_features(seq):
+    seq = str(seq or '')
+    best_score = -99.0
+    best_cut = 0
+    best_parts = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+    for cut in range(12, min(45, len(seq) - 1)):
+        pre = seq[:cut]
+        nreg = seq[:max(1, cut - 18)]
+        hreg = seq[max(0, cut - 18):max(0, cut - 7)]
+        creg = seq[max(0, cut - 7):cut + 2]
+        m3 = seq[cut - 3] if cut - 3 >= 0 else 'X'
+        m2 = seq[cut - 2] if cut - 2 >= 0 else 'X'
+        m1 = seq[cut - 1] if cut - 1 >= 0 else 'X'
+        p1 = seq[cut] if cut < len(seq) else 'X'
+        small_m3 = 1.0 if m3 in 'AVSGTC' else 0.0
+        small_m1 = 1.0 if m1 in 'ASGTC' else 0.0
+        ala_m1 = 1.0 if m1 == 'A' else 0.0
+        pro_bad = 1.0 if 'P' in (m3 + m2 + m1 + p1) else 0.0
+        hyd = fraction_in_set(hreg, AA_HYDROPHOBIC)
+        run = longest_hydrophobic_run(hreg)
+        small = fraction_in_set(creg, AA_SMALL)
+        ncharge = fraction_in_set(nreg, AA_BASIC) - fraction_in_set(nreg, AA_ACIDIC)
+        st_frac = fraction_in_set(pre, AA_SER_THR)
+        score = (
+            (2.2 * hyd)
+            + (0.15 * run)
+            + (0.8 * small_m3)
+            + (1.0 * small_m1)
+            + (0.4 * ala_m1)
+            + (0.5 * small)
+            + (0.4 * ncharge)
+            - (0.9 * pro_bad)
+            - (0.25 * st_frac)
+        )
+        if score > best_score:
+            best_score = float(score)
+            best_cut = int(cut)
+            best_parts = (
+                float(hyd),
+                float(run),
+                float(small_m3),
+                float(small_m1),
+                float(ala_m1),
+                float(pro_bad),
+                float(small),
+                float(ncharge),
+                float(st_frac),
+            )
+
+    out = [best_score, float(best_cut), float(best_cut) / float(max(1, len(seq)))]
+    out.extend(best_parts)
+    for window in [
+        seq[:15],
+        seq[:25],
+        seq[:35],
+        seq[:50],
+        seq[:80],
+        seq[5:30],
+        seq[20:60],
+        seq[40:100],
+    ]:
+        out.extend([
+            mean_hydropathy(window),
+            longest_hydrophobic_run(window),
+            fraction_in_set(window, AA_HYDROPHOBIC),
+            fraction_in_set(window, AA_BASIC),
+            fraction_in_set(window, AA_ACIDIC),
+            fraction_in_set(window, AA_SER_THR),
+            fraction_in_set(window, AA_SMALL),
+        ])
+    return out
+
+
+def _targetp_ctp_ltp_sequence_features(seq, organism_group):
+    seq = str(seq or '')
+    out = list(extract_broad_localize_features(seq, organism_group)[0])
+    windows = [
+        seq[:20],
+        seq[:40],
+        seq[:60],
+        seq[:80],
+        seq[:100],
+        seq[:120],
+        seq[20:80],
+        seq[40:120],
+    ]
+    groups = [
+        AA_BASIC,
+        AA_ACIDIC,
+        AA_HYDROPHOBIC,
+        AA_SMALL,
+        AA_SER_THR,
+        AA_AROMATIC,
+        frozenset('R'),
+        frozenset('K'),
+        frozenset('A'),
+        frozenset('S'),
+        frozenset('T'),
+        frozenset('P'),
+        frozenset('G'),
+        frozenset('LIV'),
+    ]
+    for window in windows:
+        out.extend([mean_hydropathy(window), longest_hydrophobic_run(window)])
+        out.extend([fraction_in_set(window, group) for group in groups])
+    n_term = seq[:140]
+    for motif in ['RR', 'KR', 'RK', 'KK', 'RA', 'RS', 'SR', 'ST', 'TS', 'SS', 'TP', 'SP']:
+        out.append(1.0 if motif in n_term else 0.0)
+        out.append(float(n_term.find(motif) if motif in n_term else 999))
+    return out
+
+
+def _specialist_probability_features(base_prob, prob_a, prob_b, class_names):
+    base_prob = np.asarray(base_prob, dtype=np.float64)
+    prob_a = np.asarray(prob_a, dtype=np.float64)
+    prob_b = np.asarray(prob_b, dtype=np.float64)
+    class_to_idx = {name: i for i, name in enumerate(class_names)}
+    ctp_idx = class_to_idx['cTP']
+    ltp_idx = class_to_idx['lTP']
+    ltp_ratio = base_prob[:, ltp_idx] / np.clip(
+        base_prob[:, ctp_idx] + base_prob[:, ltp_idx],
+        a_min=1.0e-12,
+        a_max=None,
+    )
+    return ltp_ratio, np.hstack([
+        base_prob,
+        prob_a,
+        prob_b,
+        ltp_ratio.reshape((-1, 1)),
+    ])
+
+
+def _build_sp_specialist_features(rows, base_prob, prob_a, prob_b, class_names):
+    ltp_ratio, prob_features = _specialist_probability_features(
+        base_prob=base_prob,
+        prob_a=prob_a,
+        prob_b=prob_b,
+        class_names=class_names,
+    )
+    del ltp_ratio
+    seq_features = np.asarray(
+        [_targetp_sp_scan_features(row.get('sequence', '')) for row in rows],
+        dtype=np.float64,
+    )
+    plant_flag = np.asarray([
+        1.0 if str(row.get('organism_group', '')).strip().lower() == 'plant' else 0.0
+        for row in rows
+    ], dtype=np.float64).reshape((-1, 1))
+    return np.hstack([seq_features, prob_features, plant_flag])
+
+
+def _build_ctp_ltp_specialist_features(rows, base_prob, prob_a, prob_b, class_names):
+    ltp_ratio, prob_features = _specialist_probability_features(
+        base_prob=base_prob,
+        prob_a=prob_a,
+        prob_b=prob_b,
+        class_names=class_names,
+    )
+    del ltp_ratio
+    seq_features = np.asarray([
+        _targetp_ctp_ltp_sequence_features(
+            seq=row.get('sequence', ''),
+            organism_group=row.get('organism_group', ''),
+        )
+        for row in rows
+    ], dtype=np.float64)
+    plant_flag = np.asarray([
+        1.0 if str(row.get('organism_group', '')).strip().lower() == 'plant' else 0.0
+        for row in rows
+    ], dtype=np.float64).reshape((-1, 1))
+    return np.hstack([seq_features, prob_features, plant_flag])
+
+
+def _binary_oof_scores(features, true_idx, fold_ids, train_mask, positive_idx, make_model):
+    features = np.asarray(features, dtype=np.float64)
+    true_idx = np.asarray(true_idx, dtype=np.int64)
+    fold_ids = np.asarray(fold_ids)
+    train_mask = np.asarray(train_mask, dtype=bool)
+    scores = np.zeros((features.shape[0],), dtype=np.float64)
+    for fold_id in sorted(set([str(v) for v in fold_ids.tolist()])):
+        valid_mask = np.asarray([str(v) == fold_id for v in fold_ids.tolist()], dtype=bool)
+        fit_mask = (~valid_mask) & train_mask
+        y_train = (true_idx[fit_mask] == int(positive_idx)).astype(np.int64)
+        if features[fit_mask].shape[0] == 0:
+            scores[valid_mask] = 0.0
+            continue
+        if len(set(y_train.tolist())) < 2:
+            scores[valid_mask] = float(np.mean(y_train))
+            continue
+        model = make_model()
+        model.fit(features[fit_mask], y_train)
+        if not hasattr(model, 'predict_proba'):
+            raise TypeError('Specialist model should support predict_proba.')
+        proba = np.asarray(model.predict_proba(features[valid_mask]), dtype=np.float64)
+        class_to_col = {int(cls): i for i, cls in enumerate(model.classes_.tolist())}
+        scores[valid_mask] = proba[:, class_to_col.get(1, 0)] if 1 in class_to_col else 0.0
+    return scores
+
+
+def _apply_specialist_postprocess_predictions(
+    base_prob,
+    class_thresholds,
+    sp_scores,
+    sp_threshold,
+    ltp_scores,
+    ltp_threshold,
+    plant_mask,
+    class_names,
+    ltp_mass_threshold=0.20,
+):
+    base_prob = np.asarray(base_prob, dtype=np.float64)
+    class_thresholds = np.asarray(class_thresholds, dtype=np.float64)
+    sp_scores = np.asarray(sp_scores, dtype=np.float64)
+    ltp_scores = np.asarray(ltp_scores, dtype=np.float64)
+    plant_mask = np.asarray(plant_mask, dtype=bool)
+    class_to_idx = {name: i for i, name in enumerate(class_names)}
+    sp_idx = class_to_idx['SP']
+    ctp_idx = class_to_idx['cTP']
+    ltp_idx = class_to_idx['lTP']
+
+    pred_idx = _prediction_indices_with_thresholds(
+        prob_matrix=base_prob,
+        thresholds=class_thresholds,
+    )
+    scores = base_prob / np.asarray(class_thresholds, dtype=np.float64).reshape((1, -1))
+    non_sp_scores = scores.copy()
+    non_sp_scores[:, sp_idx] = -np.inf
+    non_sp_pred = np.argmax(non_sp_scores, axis=1).astype(np.int64)
+
+    sp_positive = sp_scores >= float(sp_threshold)
+    pred_idx[sp_positive] = sp_idx
+    demote_sp = (~sp_positive) & (pred_idx == sp_idx)
+    pred_idx[demote_sp] = non_sp_pred[demote_sp]
+
+    ctp_ltp_mass = base_prob[:, ctp_idx] + base_prob[:, ltp_idx]
+    ltp_candidate = (
+        plant_mask
+        & (~sp_positive)
+        & (ctp_ltp_mass > float(ltp_mass_threshold))
+    )
+    pred_idx[ltp_candidate & (ltp_scores >= float(ltp_threshold))] = ltp_idx
+    demote_ltp = (
+        ltp_candidate
+        & (ltp_scores < float(ltp_threshold))
+        & ((pred_idx == ltp_idx) | (pred_idx == ctp_idx))
+    )
+    pred_idx[demote_ltp] = ctp_idx
+    return pred_idx
+
+
+def _optimize_ltp_specialist_threshold(
+    base_prob,
+    class_thresholds,
+    sp_scores,
+    sp_threshold,
+    ltp_scores,
+    plant_mask,
+    true_idx,
+    class_names,
+    ltp_mass_threshold,
+):
+    class_to_idx = {name: i for i, name in enumerate(class_names)}
+    ctp_idx = class_to_idx['cTP']
+    ltp_idx = class_to_idx['lTP']
+    sp_positive = np.asarray(sp_scores, dtype=np.float64) >= float(sp_threshold)
+    ctp_ltp_mass = np.asarray(base_prob, dtype=np.float64)[:, ctp_idx] + np.asarray(base_prob, dtype=np.float64)[:, ltp_idx]
+    relevant = (
+        np.asarray(plant_mask, dtype=bool)
+        & (~sp_positive)
+        & (
+            (np.asarray(true_idx, dtype=np.int64) == ctp_idx)
+            | (np.asarray(true_idx, dtype=np.int64) == ltp_idx)
+            | (ctp_ltp_mass > float(ltp_mass_threshold))
+        )
+    )
+    thresholds = np.unique(np.asarray(ltp_scores, dtype=np.float64)[relevant])
+    if thresholds.shape[0] == 0:
+        thresholds = np.asarray([0.5], dtype=np.float64)
+
+    best_threshold = float(thresholds[0])
+    best_rank = None
+    best_pred = None
+    for threshold in thresholds.tolist():
+        pred_idx = _apply_specialist_postprocess_predictions(
+            base_prob=base_prob,
+            class_thresholds=class_thresholds,
+            sp_scores=sp_scores,
+            sp_threshold=sp_threshold,
+            ltp_scores=ltp_scores,
+            ltp_threshold=float(threshold),
+            plant_mask=plant_mask,
+            class_names=class_names,
+            ltp_mass_threshold=ltp_mass_threshold,
+        )
+        rank = _targetp_margin_rank(
+            pred_idx=pred_idx,
+            true_idx=true_idx,
+            class_names=class_names,
+        )
+        if best_rank is None or rank > best_rank:
+            best_rank = rank
+            best_threshold = float(threshold)
+            best_pred = pred_idx
+    return best_threshold, best_pred, best_rank
+
+
+def _evaluate_targetp_specialist_postprocess(
+    rows,
+    prob_a,
+    prob_b,
+    base_prob,
+    class_thresholds,
+    true_idx,
+    fold_ids,
+    class_names,
+    ltp_mass_threshold=0.20,
+):
+    try:
+        from sklearn.ensemble import ExtraTreesClassifier, HistGradientBoostingClassifier
+    except ImportError as exc:
+        raise RuntimeError(
+            '--specialist_postprocess requires scikit-learn in the benchmark environment.'
+        ) from exc
+
+    if len(rows) != np.asarray(base_prob).shape[0]:
+        raise ValueError('Training rows and probability rows differ in specialist postprocess.')
+
+    class_to_idx = {name: i for i, name in enumerate(class_names)}
+    plant_mask = np.asarray([
+        str(row.get('organism_group', '')).strip().lower() == 'plant'
+        for row in rows
+    ], dtype=bool)
+    sp_features = _build_sp_specialist_features(
+        rows=rows,
+        base_prob=base_prob,
+        prob_a=prob_a,
+        prob_b=prob_b,
+        class_names=class_names,
+    )
+    sp_scores = _binary_oof_scores(
+        features=sp_features,
+        true_idx=true_idx,
+        fold_ids=fold_ids,
+        train_mask=np.ones((len(rows),), dtype=bool),
+        positive_idx=class_to_idx['SP'],
+        make_model=lambda: HistGradientBoostingClassifier(
+            max_iter=350,
+            learning_rate=0.04,
+            l2_regularization=0.01,
+            random_state=1,
+            class_weight='balanced',
+        ),
+    )
+    sp_threshold, sp_f1, sp_counts = _best_binary_f1_threshold(
+        scores=sp_scores,
+        true_idx=true_idx,
+        positive_idx=class_to_idx['SP'],
+    )
+
+    ltp_features = _build_ctp_ltp_specialist_features(
+        rows=rows,
+        base_prob=base_prob,
+        prob_a=prob_a,
+        prob_b=prob_b,
+        class_names=class_names,
+    )
+    ctp_ltp_train_mask = (
+        (np.asarray(true_idx, dtype=np.int64) == class_to_idx['cTP'])
+        | (np.asarray(true_idx, dtype=np.int64) == class_to_idx['lTP'])
+    )
+
+    def _make_ltp_model(seed):
+        return ExtraTreesClassifier(
+            n_estimators=500,
+            random_state=int(seed),
+            class_weight='balanced',
+            max_features='sqrt',
+            min_samples_leaf=1,
+            n_jobs=-1,
+        )
+
+    ltp_scores_a = _binary_oof_scores(
+        features=ltp_features,
+        true_idx=true_idx,
+        fold_ids=fold_ids,
+        train_mask=ctp_ltp_train_mask,
+        positive_idx=class_to_idx['lTP'],
+        make_model=lambda: _make_ltp_model(7),
+    )
+    ltp_scores_b = _binary_oof_scores(
+        features=ltp_features,
+        true_idx=true_idx,
+        fold_ids=fold_ids,
+        train_mask=ctp_ltp_train_mask,
+        positive_idx=class_to_idx['lTP'],
+        make_model=lambda: _make_ltp_model(2),
+    )
+    ltp_scores = (ltp_scores_a + ltp_scores_b) / 2.0
+    ltp_threshold, pred_idx, rank = _optimize_ltp_specialist_threshold(
+        base_prob=base_prob,
+        class_thresholds=class_thresholds,
+        sp_scores=sp_scores,
+        sp_threshold=sp_threshold,
+        ltp_scores=ltp_scores,
+        plant_mask=plant_mask,
+        true_idx=true_idx,
+        class_names=class_names,
+        ltp_mass_threshold=ltp_mass_threshold,
+    )
+    metrics = _metrics_from_prediction_indices(
+        pred_idx=pred_idx,
+        true_idx=true_idx,
+        class_names=class_names,
+    )
+    return {
+        'description': 'TargetP benchmark-only SP gate and cTP/lTP reranker trained from sequence-derived features and OOF probabilities.',
+        'sp_model': 'HistGradientBoostingClassifier(max_iter=350, learning_rate=0.04, class_weight=balanced)',
+        'ltp_model': 'mean of ExtraTreesClassifier OOF scores with random_state 7 and 2',
+        'sp_threshold': float(sp_threshold),
+        'sp_binary_f1_at_threshold': float(sp_f1),
+        'sp_binary_counts_at_threshold': sp_counts,
+        'ltp_threshold': float(ltp_threshold),
+        'ltp_mass_threshold': float(ltp_mass_threshold),
+        'targetp_margin_rank': [float(v) for v in rank],
+        'metrics': metrics,
+    }
+
+
 def _run_model_oof(
     training_tsv,
     model_arch,
@@ -396,6 +909,7 @@ def _build_summary_rows(
     blend_class_metrics,
     blend_threshold_metrics,
     blend_foldwise_metrics=None,
+    specialist_metrics=None,
 ):
     rows = list()
     for class_name in LOCALIZATION_CLASSES:
@@ -410,6 +924,8 @@ def _build_summary_rows(
         }
         if blend_foldwise_metrics is not None:
             row['blend_foldwise_f1'] = float(blend_foldwise_metrics['by_class'][class_name]['f1'])
+        if specialist_metrics is not None:
+            row['specialist_f1'] = float(specialist_metrics['by_class'][class_name]['f1'])
         rows.append(row)
     return rows
 
@@ -418,89 +934,86 @@ def _render_markdown(out):
     rows = out['class_rows']
     md = list()
     has_foldwise = 'blend_foldwise' in out
+    has_specialist = 'specialist_postprocess' in out
+    class_headers = [
+        'Class',
+        'TargetP F1',
+        'bilstm F1',
+        'esm F1',
+        'blend(global) F1',
+        'blend(classwise) F1',
+        'blend(threshold) F1',
+    ]
     if has_foldwise:
-        md.append('| Class | TargetP F1 | bilstm F1 | esm F1 | blend(global) F1 | blend(classwise) F1 | blend(threshold) F1 | blend(foldwise) F1 |')
-        md.append('|---|---:|---:|---:|---:|---:|---:|---:|')
-    else:
-        md.append('| Class | TargetP F1 | bilstm F1 | esm F1 | blend(global) F1 | blend(classwise) F1 | blend(threshold) F1 |')
-        md.append('|---|---:|---:|---:|---:|---:|---:|')
+        class_headers.append('blend(foldwise) F1')
+    if has_specialist:
+        class_headers.append('specialist F1')
+    md.append('| {} |'.format(' | '.join(class_headers)))
+    md.append('|{}|'.format('|'.join(['---'] + ['---:'] * (len(class_headers) - 1))))
     for row in rows:
+        values = [
+            row['class'],
+            '{:.3f}'.format(row['targetp_f1']),
+            '{:.3f}'.format(row['bilstm_f1']),
+            '{:.3f}'.format(row['esm_f1']),
+            '{:.3f}'.format(row['blend_global_f1']),
+            '{:.3f}'.format(row['blend_classwise_f1']),
+            '{:.3f}'.format(row['blend_threshold_f1']),
+        ]
         if has_foldwise:
-            md.append(
-                '| {c} | {t:.3f} | {b:.3f} | {e:.3f} | {g:.3f} | {cw:.3f} | {th:.3f} | {fw:.3f} |'.format(
-                    c=row['class'],
-                    t=row['targetp_f1'],
-                    b=row['bilstm_f1'],
-                    e=row['esm_f1'],
-                    g=row['blend_global_f1'],
-                    cw=row['blend_classwise_f1'],
-                    th=row['blend_threshold_f1'],
-                    fw=row['blend_foldwise_f1'],
-                )
-            )
-        else:
-            md.append(
-                '| {c} | {t:.3f} | {b:.3f} | {e:.3f} | {g:.3f} | {cw:.3f} | {th:.3f} |'.format(
-                    c=row['class'],
-                    t=row['targetp_f1'],
-                    b=row['bilstm_f1'],
-                    e=row['esm_f1'],
-                    g=row['blend_global_f1'],
-                    cw=row['blend_classwise_f1'],
-                    th=row['blend_threshold_f1'],
-                )
-            )
+            values.append('{:.3f}'.format(row['blend_foldwise_f1']))
+        if has_specialist:
+            values.append('{:.3f}'.format(row['specialist_f1']))
+        md.append('| {} |'.format(' | '.join(values)))
     md.append('')
+    metric_headers = [
+        'Metric',
+        'TargetP',
+        'bilstm',
+        'esm',
+        'blend(global)',
+        'blend(classwise)',
+        'blend(threshold)',
+    ]
     if has_foldwise:
-        md.append('| Metric | TargetP | bilstm | esm | blend(global) | blend(classwise) | blend(threshold) | blend(foldwise) |')
-        md.append('|---|---:|---:|---:|---:|---:|---:|---:|')
-        md.append(
-            '| Macro F1 | {tp:.3f} | {b:.3f} | {e:.3f} | {g:.3f} | {cw:.3f} | {th:.3f} | {fw:.3f} |'.format(
-                tp=out['targetp_macro_f1'],
-                b=out['bilstm']['metrics']['macro_f1'],
-                e=out['esm']['metrics']['macro_f1'],
-                g=out['blend_global']['metrics']['macro_f1'],
-                cw=out['blend_classwise']['metrics']['macro_f1'],
-                th=out['blend_threshold']['metrics']['macro_f1'],
-                fw=out['blend_foldwise']['metrics']['macro_f1'],
-            )
-        )
-        md.append(
-            '| Overall accuracy | - | {b:.3f} | {e:.3f} | {g:.3f} | {cw:.3f} | {th:.3f} | {fw:.3f} |'.format(
-                b=out['bilstm']['metrics']['overall_accuracy'],
-                e=out['esm']['metrics']['overall_accuracy'],
-                g=out['blend_global']['metrics']['overall_accuracy'],
-                cw=out['blend_classwise']['metrics']['overall_accuracy'],
-                th=out['blend_threshold']['metrics']['overall_accuracy'],
-                fw=out['blend_foldwise']['metrics']['overall_accuracy'],
-            )
-        )
-    else:
-        md.append('| Metric | TargetP | bilstm | esm | blend(global) | blend(classwise) | blend(threshold) |')
-        md.append('|---|---:|---:|---:|---:|---:|---:|')
-        md.append(
-            '| Macro F1 | {tp:.3f} | {b:.3f} | {e:.3f} | {g:.3f} | {cw:.3f} | {th:.3f} |'.format(
-                tp=out['targetp_macro_f1'],
-                b=out['bilstm']['metrics']['macro_f1'],
-                e=out['esm']['metrics']['macro_f1'],
-                g=out['blend_global']['metrics']['macro_f1'],
-                cw=out['blend_classwise']['metrics']['macro_f1'],
-                th=out['blend_threshold']['metrics']['macro_f1'],
-            )
-        )
-        md.append(
-            '| Overall accuracy | - | {b:.3f} | {e:.3f} | {g:.3f} | {cw:.3f} | {th:.3f} |'.format(
-                b=out['bilstm']['metrics']['overall_accuracy'],
-                e=out['esm']['metrics']['overall_accuracy'],
-                g=out['blend_global']['metrics']['overall_accuracy'],
-                cw=out['blend_classwise']['metrics']['overall_accuracy'],
-                th=out['blend_threshold']['metrics']['overall_accuracy'],
-            )
-        )
+        metric_headers.append('blend(foldwise)')
+    if has_specialist:
+        metric_headers.append('specialist')
+    md.append('| {} |'.format(' | '.join(metric_headers)))
+    md.append('|{}|'.format('|'.join(['---'] + ['---:'] * (len(metric_headers) - 1))))
+    macro_values = [
+        'Macro F1',
+        '{:.3f}'.format(out['targetp_macro_f1']),
+        '{:.3f}'.format(out['bilstm']['metrics']['macro_f1']),
+        '{:.3f}'.format(out['esm']['metrics']['macro_f1']),
+        '{:.3f}'.format(out['blend_global']['metrics']['macro_f1']),
+        '{:.3f}'.format(out['blend_classwise']['metrics']['macro_f1']),
+        '{:.3f}'.format(out['blend_threshold']['metrics']['macro_f1']),
+    ]
+    acc_values = [
+        'Overall accuracy',
+        '-',
+        '{:.3f}'.format(out['bilstm']['metrics']['overall_accuracy']),
+        '{:.3f}'.format(out['esm']['metrics']['overall_accuracy']),
+        '{:.3f}'.format(out['blend_global']['metrics']['overall_accuracy']),
+        '{:.3f}'.format(out['blend_classwise']['metrics']['overall_accuracy']),
+        '{:.3f}'.format(out['blend_threshold']['metrics']['overall_accuracy']),
+    ]
+    if has_foldwise:
+        macro_values.append('{:.3f}'.format(out['blend_foldwise']['metrics']['macro_f1']))
+        acc_values.append('{:.3f}'.format(out['blend_foldwise']['metrics']['overall_accuracy']))
+    if has_specialist:
+        macro_values.append('{:.3f}'.format(out['specialist_postprocess']['metrics']['macro_f1']))
+        acc_values.append('{:.3f}'.format(out['specialist_postprocess']['metrics']['overall_accuracy']))
+    md.append('| {} |'.format(' | '.join(macro_values)))
+    md.append('| {} |'.format(' | '.join(acc_values)))
     md.append('')
     md.append('global alpha (bilstm weight): {:.3f}'.format(out['blend_global']['alpha']))
     md.append('classwise alpha (bilstm weight): {}'.format(out['blend_classwise']['alpha_by_class']))
     md.append('class thresholds: {}'.format(out['blend_threshold']['class_thresholds']))
+    if has_specialist:
+        md.append('specialist SP threshold: {:.6f}'.format(out['specialist_postprocess']['sp_threshold']))
+        md.append('specialist lTP threshold: {:.6f}'.format(out['specialist_postprocess']['ltp_threshold']))
     return '\n'.join(md)
 
 
@@ -544,6 +1057,8 @@ def build_parser():
     parser.add_argument('--blend_grid_step', default=0.05, type=float)
     parser.add_argument('--threshold_grid', default='0.05,0.075,0.1,0.15,0.2,0.3,0.4,0.5,0.65,0.8,1.0,1.25,1.5,2.0,3.0,5.0', type=str)
     parser.add_argument('--foldwise_blend_eval', default='no', choices=['yes', 'no'], type=str)
+    parser.add_argument('--specialist_postprocess', default='no', choices=['yes', 'no'], type=str)
+    parser.add_argument('--specialist_ltp_mass_threshold', default=0.20, type=float)
     parser.add_argument('--out_json', default='data/localize_bench/targetp2_bilstm_esm_blend.json', type=str)
     parser.add_argument('--out_md', default='data/localize_bench/targetp2_bilstm_esm_blend.md', type=str)
     return parser
@@ -818,6 +1333,22 @@ def main():
     }
     if blend_foldwise is not None:
         out['blend_foldwise'] = blend_foldwise
+    specialist_postprocess = None
+    if _to_bool_yes_no(args.specialist_postprocess):
+        specialist_rows = _read_training_rows(path=args.training_tsv)
+        fold_ids = _read_fold_ids_from_training_tsv(training_tsv=args.training_tsv)
+        specialist_postprocess = _evaluate_targetp_specialist_postprocess(
+            rows=specialist_rows,
+            prob_a=bilstm_prob,
+            prob_b=esm_prob,
+            base_prob=blend_class_prob,
+            class_thresholds=threshold_by_class,
+            true_idx=bilstm_true,
+            fold_ids=fold_ids,
+            class_names=class_names,
+            ltp_mass_threshold=float(args.specialist_ltp_mass_threshold),
+        )
+        out['specialist_postprocess'] = specialist_postprocess
     out['class_rows'] = _build_summary_rows(
         targetp_ref=TARGETP_TABLE1_REFERENCE,
         bilstm_metrics=out['bilstm']['metrics'],
@@ -826,6 +1357,7 @@ def main():
         blend_class_metrics=out['blend_classwise']['metrics'],
         blend_threshold_metrics=out['blend_threshold']['metrics'],
         blend_foldwise_metrics=(None if blend_foldwise is None else out['blend_foldwise']['metrics']),
+        specialist_metrics=(None if specialist_postprocess is None else out['specialist_postprocess']['metrics']),
     )
     out['markdown'] = _render_markdown(out=out)
 

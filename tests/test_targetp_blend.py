@@ -9,6 +9,7 @@ from cdskit.targetp_blend import (
     _evaluate_foldwise_classwise_blend,
     _load_oof_npz,
     _apply_organism_gate,
+    _apply_specialist_postprocess_predictions,
     _metrics_from_prob_matrix,
     _oof_rows_to_prob_and_true,
     _optimize_classwise_alpha,
@@ -191,6 +192,37 @@ def test_apply_organism_gate_removes_non_plant_ctp_ltp_mass():
     assert gated[1, class_names.index('cTP')] == pytest.approx(0.0)
     assert gated[1, class_names.index('lTP')] == pytest.approx(0.0)
     assert float(gated[1, :].sum()) == pytest.approx(1.0)
+
+
+def test_specialist_postprocess_applies_sp_gate_and_ltp_rerank():
+    class_names = list(LOCALIZATION_CLASSES)
+    class_to_idx = {name: i for i, name in enumerate(class_names)}
+    prob = np.asarray(
+        [
+            [0.30, 0.60, 0.05, 0.03, 0.02],
+            [0.30, 0.20, 0.05, 0.35, 0.10],
+            [0.10, 0.10, 0.05, 0.25, 0.50],
+        ],
+        dtype=np.float64,
+    )
+
+    pred = _apply_specialist_postprocess_predictions(
+        base_prob=prob,
+        class_thresholds=np.asarray([1.0, 1.0, 1.0, 1.0, 1.0], dtype=np.float64),
+        sp_scores=np.asarray([0.20, 0.95, 0.10], dtype=np.float64),
+        sp_threshold=0.90,
+        ltp_scores=np.asarray([0.10, 0.80, 0.30], dtype=np.float64),
+        ltp_threshold=0.50,
+        plant_mask=np.asarray([False, True, True], dtype=bool),
+        class_names=class_names,
+        ltp_mass_threshold=0.20,
+    )
+
+    assert pred.tolist() == [
+        class_to_idx['noTP'],
+        class_to_idx['SP'],
+        class_to_idx['cTP'],
+    ]
 
 
 def test_main_runs_with_cached_oof_only(temp_dir, monkeypatch):

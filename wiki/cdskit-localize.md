@@ -168,24 +168,29 @@ dataset:
 | cdskit BiLSTM/ESM blend, classwise alpha | 0.864 | 0.976 | cached classwise blend, optimized on all OOF rows |
 | cdskit BiLSTM/ESM blend + thresholds | 0.890 | 0.977 | cached classwise blend with thresholds, optimized on all OOF rows |
 | cdskit BiLSTM/ESM foldwise blend + thresholds | 0.892 | 0.976 | classwise alpha and thresholds optimized on training folds only |
+| cdskit TargetP specialist postprocess | 0.900 | 0.979 | benchmark-only SP gate and cTP/lTP reranker on OOF probabilities |
 
 Per-class F1 for the same snapshot:
 
-| Class | TargetP F1 | BiLSTM F1 | ESM F1 | blend(global) F1 | blend(classwise) F1 | blend(threshold) F1 | blend(foldwise) F1 |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| noTP | 0.980 | 0.985 | 0.981 | 0.985 | 0.985 | 0.986 | 0.985 |
-| SP | 0.980 | 0.975 | 0.968 | 0.975 | 0.975 | 0.976 | 0.973 |
-| mTP | 0.860 | 0.869 | 0.815 | 0.869 | 0.872 | 0.884 | 0.877 |
-| cTP | 0.880 | 0.892 | 0.867 | 0.892 | 0.894 | 0.884 | 0.887 |
-| lTP | 0.750 | 0.563 | 0.000 | 0.563 | 0.595 | 0.722 | 0.738 |
+| Class | TargetP F1 | BiLSTM F1 | ESM F1 | blend(global) F1 | blend(classwise) F1 | blend(threshold) F1 | blend(foldwise) F1 | specialist F1 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| noTP | 0.980 | 0.985 | 0.981 | 0.985 | 0.985 | 0.986 | 0.985 | 0.987 |
+| SP | 0.980 | 0.975 | 0.968 | 0.975 | 0.975 | 0.976 | 0.973 | 0.980 |
+| mTP | 0.860 | 0.869 | 0.815 | 0.869 | 0.872 | 0.884 | 0.877 | 0.882 |
+| cTP | 0.880 | 0.892 | 0.867 | 0.892 | 0.894 | 0.884 | 0.887 | 0.891 |
+| lTP | 0.750 | 0.563 | 0.000 | 0.563 | 0.595 | 0.722 | 0.738 | 0.759 |
 
 This means `cdskit localize` is usable as a CPU-first local predictor and can be
-benchmarked reproducibly on the TargetP dataset. The stricter foldwise blend
-snapshot is above the TargetP 2.0 Table 1 macro-F1 reference, but it still trails
-TargetP on `SP` and the rare `lTP` class.
+benchmarked reproducibly on the TargetP dataset. The benchmark-only specialist
+postprocess exceeds the TargetP 2.0 Table 1 F1 reference for all five classes in
+the current OOF snapshot, including `SP` and rare `lTP`. This specialist is a
+cdskit-side SP gate plus cTP/lTP reranker trained from sequence-derived features
+and cached OOF probabilities; it does not use TargetP parameters. It still needs
+production-model integration and stricter nested validation before it should be
+treated as the default `cdskit localize` predictor.
 
-In the cached foldwise blend run, `lTP` F1 improved from 0.595 with classwise
-alpha alone to 0.738 after per-class thresholds. For DeepLoc sorting signals,
-`--rare_label_threshold_objective f2` raised `TH` recall from 0.762 to 0.810, but
-lowered `TH` F1 from 0.325 to 0.288, so it is a recall-oriented option rather
-than a better default.
+In the specialist run, `SP` F1 improved from 0.976 to 0.980 and `lTP` F1
+improved from 0.743 to 0.759 over the threshold blend. For DeepLoc sorting
+signals, `--rare_label_threshold_objective f2` raised `TH` recall from 0.762 to
+0.810, but lowered `TH` F1 from 0.325 to 0.288, so it is a recall-oriented option
+rather than a better default.
