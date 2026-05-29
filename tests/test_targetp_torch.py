@@ -8,8 +8,8 @@ from cdskit.localize_model import (
     save_localize_model,
 )
 from cdskit.targetp_torch import (
-    BLOSUM62,
     TARGETP_BLOSUM62_ORDER,
+    TARGETP_BLOSUM62_PROBABILITIES,
     encode_targetp_blosum_sequences,
     export_targetp2_torch_localize_model,
     fit_targetp2_torch_model,
@@ -20,14 +20,17 @@ from cdskit.targetp_torch import (
 )
 
 
-def test_targetp_blosum_encoder_matches_normalized_blosum62_rows():
+def test_targetp_blosum_encoder_matches_official_probability_rows():
     table = targetp_blosum62_probability_table()
     x, lengths = encode_targetp_blosum_sequences(['AUX'], seq_len=5, blosum_table=table)
-    expected_a = np.power(2.0, BLOSUM62[TARGETP_BLOSUM62_ORDER.index('A')])
-    expected_a = expected_a / expected_a.sum()
 
     assert lengths.tolist() == [3]
-    np.testing.assert_allclose(x[0, 0, :], expected_a, rtol=1.0e-6, atol=1.0e-7)
+    np.testing.assert_allclose(
+        x[0, 0, :],
+        TARGETP_BLOSUM62_PROBABILITIES[TARGETP_BLOSUM62_ORDER.index('A')],
+        rtol=1.0e-6,
+        atol=1.0e-7,
+    )
     np.testing.assert_allclose(x[0, 1, :], table['C'], rtol=1.0e-6, atol=1.0e-7)
     np.testing.assert_allclose(x[0, 2, :], np.full((20,), 0.05), rtol=1.0e-6, atol=1.0e-7)
     np.testing.assert_allclose(x[0, 3, :], np.full((20,), 0.05), rtol=1.0e-6, atol=1.0e-7)

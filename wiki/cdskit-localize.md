@@ -321,7 +321,11 @@ PyTorch trainer now defaults to `--initializer targetp_tf`, which uses
 Glorot-style conv/linear initialization and LSTM forget-gate biasing to better
 match the original TensorFlow 1 TargetP implementation. This improves
 implementation fidelity, but short one-model probes remain far below TargetP
-and should not be treated as production-quality scores.
+and should not be treated as production-quality scores. The runtime encoder now
+uses the same BLOSUM62 probability rows as the official TargetP NPZ data; a
+FASTA-to-NPZ check on the first ten TargetP rows matched to within `5.96e-08`
+maximum absolute difference. Earlier cdskit runtime exports used a `2^BLOSUM62`
+normalization instead, which was incompatible with the TargetP training input.
 
 The blend helper writes per-model TargetP margin summaries to JSON and Markdown,
 including an `All classes > TargetP` row. To save the foldwise fixed specialist
