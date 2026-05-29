@@ -194,8 +194,14 @@ def test_notp_ctp_ltp_override_is_foldwise(temp_dir):
         ltp_ctp_n_estimators=5,
         notp_ctp_random_state=3,
         ltp_ctp_random_state=4,
+        notp_ctp_min_samples_leaf=2,
+        ltp_ctp_class_weight='balanced_subsample',
+        ltp_ctp_min_samples_leaf=2,
     )
 
     assert result['metrics']['macro_f1'] >= 0.0
     assert [fold['fold_id'] for fold in result['folds']] == ['fold1', 'fold2']
     assert all(fold['n_ltp_ctp_specialist_train'] == 2 for fold in result['folds'])
+    assert result['profile']['notp_ctp_min_samples_leaf'] == 2
+    assert result['profile']['ltp_ctp_class_weight'] == 'balanced_subsample'
+    assert result['profile']['ltp_ctp_min_samples_leaf'] == 2

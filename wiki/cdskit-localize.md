@@ -229,7 +229,8 @@ selection.
 | cdskit TargetP OOF stack RF100 + foldwise noTP/cTP/lTP override | 0.787 | 0.963 | same stack plus nested noTP-to-cTP then plant cTP-to-lTP RandomForest specialists; exact macro F1 0.78738 |
 | cdskit TargetP second-level RF/HGB OOF stack + foldwise lTP/cTP override | 0.787 | 0.966 | fair foldwise second-level stack over RF100 and HGB200 stack OOFs plus sequence features; exact macro F1 0.78747 |
 | cdskit TargetP OOF stack RF100 + delayed lTP signal override | 0.796 | 0.963 | fair foldwise lTP/cTP specialist with delayed signal-peptide and RR-after-hydrophobic features; exact macro F1 0.79552 |
-| cdskit TargetP organism-specialized RF100 stack + delayed lTP/noTP specialists | 0.801 | 0.961 | fair foldwise stack trains separate plant and non-plant meta-classifiers, then applies nested noTP-to-cTP and plant cTP-to-lTP specialists; exact macro F1 0.80074, best reproducible fair score so far |
+| cdskit TargetP organism-specialized RF100 stack + delayed lTP/noTP specialists | 0.801 | 0.961 | fair foldwise stack trains separate plant and non-plant meta-classifiers, then applies nested noTP-to-cTP and plant cTP-to-lTP specialists; exact macro F1 0.80074 |
+| cdskit TargetP organism-specialized RF100 stack + tuned lTP specialist | 0.803 | 0.962 | same stack with the lTP/cTP specialist tuned independently as RF50, `balanced_subsample`, leaf2; exact macro F1 0.80274, best reproducible fair score so far |
 
 The command used for the feature/ESM run was:
 
@@ -291,7 +292,7 @@ The fair RF stack can be regenerated with:
 PYTHONPATH=. python -m cdskit.targetp_stack \
   --training_tsv data/localize_bench/targetp2_benchmark.tsv \
   --base_oof_npzs data/localize_bench/targetp2_oof_feature_binary_et600_leaf2_formal.npz,data/localize_bench/targetp2_oof_esm_formal_mps_b128.npz,data/localize_bench/targetp2_oof_feature_ensemble_formal_et300.npz,data/localize_bench/targetp2_oof_bilstm_formal_mps_b2048.npz \
-  --stack_oof_npz data/localize_bench/targetp2_oof_stack_rf100_orgsplit_ltp_signal_rs123_nogate.npz \
+  --stack_oof_npz data/localize_bench/targetp2_oof_stack_rf100_orgsplit_ltp_signal_rs123_leaf2subsample_nogate.npz \
   --model_kind random_forest \
   --n_estimators 100 \
   --random_state 11 \
@@ -303,13 +304,19 @@ PYTHONPATH=. python -m cdskit.targetp_stack \
   --organism_specialized_stack yes \
   --ltp_ctp_override yes \
   --ltp_ctp_model_kind random_forest \
-  --ltp_ctp_n_estimators 100 \
+  --ltp_ctp_n_estimators 50 \
   --ltp_ctp_random_state 123 \
+  --ltp_ctp_class_weight balanced_subsample \
+  --ltp_ctp_min_samples_leaf 2 \
+  --ltp_ctp_score_min 0.01 \
+  --ltp_ctp_score_max 0.90 \
+  --ltp_ctp_score_step 0.01 \
   --notp_ctp_ltp_override yes \
   --notp_ctp_model_kind random_forest \
   --notp_ctp_n_estimators 200 \
-  --out_json data/localize_bench/targetp2_stack_rf100_orgsplit_ltp_signal_rs123_nogate_eval.json \
-  --out_md data/localize_bench/targetp2_stack_rf100_orgsplit_ltp_signal_rs123_nogate_eval.md
+  --notp_ctp_random_state 400 \
+  --out_json data/localize_bench/targetp2_stack_rf100_orgsplit_ltp_signal_rs123_leaf2subsample_nogate_eval.json \
+  --out_md data/localize_bench/targetp2_stack_rf100_orgsplit_ltp_signal_rs123_leaf2subsample_nogate_eval.md
 ```
 
 Do not apply the stack input organism gate when selecting this model: on the
@@ -346,19 +353,24 @@ gain: each held-out fold trains one meta-classifier on the other-fold plant
 rows and one on the other-fold non-plant rows. With the same delayed lTP
 specialist and the nested noTP-to-cTP specialist, exact macro F1 increases to
 0.80074 (`noTP` 0.978, `SP` 0.956, `mTP` 0.819, `cTP` 0.751, `lTP` 0.500).
-This improves rare-class lTP but trades away cTP, so it is still not
-TargetP-like overall.
-Follow-up probes did not improve on this: averaging multiple lTP specialist
-random seeds reduced macro F1 to 0.785 or lower, two-way cTP/lTP reclassification
-peaked at 0.79498, and appending the delayed lTP signal features to the main
-stack feature matrix reduced the RF100+specialist score to 0.76860. The features
-therefore help as a specialist-only signal, not as a general stack input. A
-foldwise PSSM over N-terminal amino acid positions also did not help as an
-added stack input: the best RF100+PSSM stack score was 0.784 macro F1.
+Tuning the lTP/cTP specialist separately from the main stack gives a small
+additional gain: RF50 with `class_weight=balanced_subsample` and leaf2 reaches
+exact macro F1 0.80274 (`noTP` 0.978, `SP` 0.956, `mTP` 0.819, `cTP` 0.760,
+`lTP` 0.500). This improves rare-class lTP but still trades away cTP, so it is
+not TargetP-like overall.
+Follow-up probes did not close the gap: averaging multiple lTP specialist
+random seeds reduced macro F1 to 0.785 or lower, two-way cTP/lTP
+reclassification peaked at 0.79498, appending the delayed lTP signal features
+to the main stack feature matrix reduced the RF100+specialist score to 0.76860,
+and external UniProt weak-label augmentation or N-terminal k-mer logistic models
+did not beat the current stack. The delayed lTP features therefore help as a
+specialist-only signal, not as a general stack input. A foldwise PSSM over
+N-terminal amino acid positions also did not help as an added stack input: the
+best RF100+PSSM stack score was 0.784 macro F1.
 
 lTP remains the limiting class. The organism-specialized stack moves held-out
 lTP F1 to 0.500, but that is still far below the TargetP 2.0 reference of
-0.750 and it lowers cTP F1 to 0.751. Reaching TargetP-like lTP/cTP performance
+0.750 and it lowers cTP F1 to 0.760. Reaching TargetP-like lTP/cTP performance
 likely requires a stronger sequence encoder or additional lTP-specific training
 data, not only threshold tuning.
 

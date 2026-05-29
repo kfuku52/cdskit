@@ -52,12 +52,16 @@ TARGETP_STACK_LTP_CTP_DEFAULTS = {
     'ltp_ctp_override': True,
     'ltp_ctp_model_kind': 'random_forest',
     'ltp_ctp_n_estimators': 300,
+    'ltp_ctp_class_weight': '',
+    'ltp_ctp_min_samples_leaf': 0,
 }
 
 TARGETP_STACK_NOTP_CTP_LTP_DEFAULTS = {
     'notp_ctp_ltp_override': True,
     'notp_ctp_model_kind': 'random_forest',
     'notp_ctp_n_estimators': 200,
+    'notp_ctp_class_weight': '',
+    'notp_ctp_min_samples_leaf': 0,
 }
 
 
@@ -395,6 +399,8 @@ def evaluate_foldwise_ltp_ctp_override(
     class_weight='balanced',
     max_features='sqrt',
     min_samples_leaf=1,
+    ltp_ctp_class_weight=None,
+    ltp_ctp_min_samples_leaf=None,
 ):
     class_names = list(class_names)
     ctp_idx = int(class_names.index('cTP'))
@@ -404,6 +410,16 @@ def evaluate_foldwise_ltp_ctp_override(
     prob_matrix = np.asarray(prob_matrix, dtype=np.float64)
     plant_mask = plant_mask_from_rows(rows=rows)
     features = build_ltp_ctp_specialist_feature_matrix(rows=rows).astype(np.float32)
+    ltp_ctp_class_weight = (
+        class_weight
+        if ltp_ctp_class_weight is None
+        else ltp_ctp_class_weight
+    )
+    ltp_ctp_min_samples_leaf = (
+        min_samples_leaf
+        if ltp_ctp_min_samples_leaf is None
+        else int(ltp_ctp_min_samples_leaf)
+    )
     pred_idx = np.zeros((true_idx.shape[0],), dtype=np.int64)
     fold_rows = list()
     for fold_id in sorted(set([str(v) for v in fold_ids.tolist()])):
@@ -448,9 +464,9 @@ def evaluate_foldwise_ltp_ctp_override(
             model_kind=model_kind,
             n_estimators=n_estimators,
             random_state=int(random_state) + len(fold_rows),
-            class_weight=class_weight,
+            class_weight=ltp_ctp_class_weight,
             max_features=max_features,
-            min_samples_leaf=min_samples_leaf,
+            min_samples_leaf=ltp_ctp_min_samples_leaf,
         )
         classifier.fit(
             features[specialist_train, :],
@@ -530,9 +546,9 @@ def evaluate_foldwise_ltp_ctp_override(
             'model_kind': str(model_kind),
             'n_estimators': int(n_estimators),
             'random_state': int(random_state),
-            'class_weight': str(class_weight),
+            'class_weight': str(ltp_ctp_class_weight),
             'max_features': str(max_features),
-            'min_samples_leaf': int(min_samples_leaf),
+            'min_samples_leaf': int(ltp_ctp_min_samples_leaf),
         },
     }
 
@@ -554,6 +570,10 @@ def evaluate_foldwise_notp_ctp_ltp_override(
     class_weight='balanced',
     max_features='sqrt',
     min_samples_leaf=1,
+    notp_ctp_class_weight=None,
+    notp_ctp_min_samples_leaf=None,
+    ltp_ctp_class_weight=None,
+    ltp_ctp_min_samples_leaf=None,
 ):
     class_names = list(class_names)
     notp_idx = int(class_names.index('noTP'))
@@ -565,6 +585,26 @@ def evaluate_foldwise_notp_ctp_ltp_override(
     plant_mask = plant_mask_from_rows(rows=rows)
     features = build_targetp_feature_matrix(rows=rows).astype(np.float32)
     ltp_features = build_ltp_ctp_specialist_feature_matrix(rows=rows).astype(np.float32)
+    notp_ctp_class_weight = (
+        class_weight
+        if notp_ctp_class_weight is None
+        else notp_ctp_class_weight
+    )
+    ltp_ctp_class_weight = (
+        class_weight
+        if ltp_ctp_class_weight is None
+        else ltp_ctp_class_weight
+    )
+    notp_ctp_min_samples_leaf = (
+        min_samples_leaf
+        if notp_ctp_min_samples_leaf is None
+        else int(notp_ctp_min_samples_leaf)
+    )
+    ltp_ctp_min_samples_leaf = (
+        min_samples_leaf
+        if ltp_ctp_min_samples_leaf is None
+        else int(ltp_ctp_min_samples_leaf)
+    )
     pred_idx = np.zeros((true_idx.shape[0],), dtype=np.int64)
     fold_rows = list()
     for fold_i, fold_id in enumerate(sorted(set([str(v) for v in fold_ids.tolist()]))):
@@ -598,9 +638,9 @@ def evaluate_foldwise_notp_ctp_ltp_override(
                 model_kind=notp_ctp_model_kind,
                 n_estimators=notp_ctp_n_estimators,
                 random_state=int(notp_ctp_random_state) + int(fold_i),
-                class_weight=class_weight,
+                class_weight=notp_ctp_class_weight,
                 max_features=max_features,
-                min_samples_leaf=min_samples_leaf,
+                min_samples_leaf=notp_ctp_min_samples_leaf,
             )
             notp_classifier.fit(
                 features[train_mask, :][notp_train_rows, :],
@@ -655,9 +695,9 @@ def evaluate_foldwise_notp_ctp_ltp_override(
                 model_kind=ltp_ctp_model_kind,
                 n_estimators=ltp_ctp_n_estimators,
                 random_state=int(ltp_ctp_random_state) + int(fold_i),
-                class_weight=class_weight,
+                class_weight=ltp_ctp_class_weight,
                 max_features=max_features,
-                min_samples_leaf=min_samples_leaf,
+                min_samples_leaf=ltp_ctp_min_samples_leaf,
             )
             ltp_classifier.fit(
                 ltp_features[specialist_train, :],
@@ -741,9 +781,13 @@ def evaluate_foldwise_notp_ctp_ltp_override(
             'notp_ctp_model_kind': str(notp_ctp_model_kind),
             'notp_ctp_n_estimators': int(notp_ctp_n_estimators),
             'notp_ctp_random_state': int(notp_ctp_random_state),
+            'notp_ctp_class_weight': str(notp_ctp_class_weight),
+            'notp_ctp_min_samples_leaf': int(notp_ctp_min_samples_leaf),
             'ltp_ctp_model_kind': str(ltp_ctp_model_kind),
             'ltp_ctp_n_estimators': int(ltp_ctp_n_estimators),
             'ltp_ctp_random_state': int(ltp_ctp_random_state),
+            'ltp_ctp_class_weight': str(ltp_ctp_class_weight),
+            'ltp_ctp_min_samples_leaf': int(ltp_ctp_min_samples_leaf),
             'class_weight': str(class_weight),
             'max_features': str(max_features),
             'min_samples_leaf': int(min_samples_leaf),
@@ -810,6 +854,16 @@ def build_parser():
     )
     parser.add_argument('--ltp_ctp_n_estimators', default=TARGETP_STACK_LTP_CTP_DEFAULTS['ltp_ctp_n_estimators'], type=int)
     parser.add_argument('--ltp_ctp_random_state', default='', type=str)
+    parser.add_argument(
+        '--ltp_ctp_class_weight',
+        default=TARGETP_STACK_LTP_CTP_DEFAULTS['ltp_ctp_class_weight'],
+        type=str,
+    )
+    parser.add_argument(
+        '--ltp_ctp_min_samples_leaf',
+        default=TARGETP_STACK_LTP_CTP_DEFAULTS['ltp_ctp_min_samples_leaf'],
+        type=int,
+    )
     parser.add_argument('--ltp_ctp_score_min', default=0.02, type=float)
     parser.add_argument('--ltp_ctp_score_max', default=0.80, type=float)
     parser.add_argument('--ltp_ctp_score_step', default=0.01, type=float)
@@ -827,6 +881,16 @@ def build_parser():
     )
     parser.add_argument('--notp_ctp_n_estimators', default=TARGETP_STACK_NOTP_CTP_LTP_DEFAULTS['notp_ctp_n_estimators'], type=int)
     parser.add_argument('--notp_ctp_random_state', default='', type=str)
+    parser.add_argument(
+        '--notp_ctp_class_weight',
+        default=TARGETP_STACK_NOTP_CTP_LTP_DEFAULTS['notp_ctp_class_weight'],
+        type=str,
+    )
+    parser.add_argument(
+        '--notp_ctp_min_samples_leaf',
+        default=TARGETP_STACK_NOTP_CTP_LTP_DEFAULTS['notp_ctp_min_samples_leaf'],
+        type=int,
+    )
     parser.add_argument(
         '--organism_gate',
         default='yes' if TARGETP_STACK_DEFAULTS['organism_gate'] else 'no',
@@ -896,6 +960,26 @@ def main():
         if str(args.notp_ctp_random_state).strip() != ''
         else int(args.random_state) + 389
     )
+    ltp_ctp_class_weight = (
+        args.class_weight
+        if str(args.ltp_ctp_class_weight).strip() == ''
+        else str(args.ltp_ctp_class_weight)
+    )
+    notp_ctp_class_weight = (
+        args.class_weight
+        if str(args.notp_ctp_class_weight).strip() == ''
+        else str(args.notp_ctp_class_weight)
+    )
+    ltp_ctp_min_samples_leaf = (
+        int(args.min_samples_leaf)
+        if int(args.ltp_ctp_min_samples_leaf) <= 0
+        else int(args.ltp_ctp_min_samples_leaf)
+    )
+    notp_ctp_min_samples_leaf = (
+        int(args.min_samples_leaf)
+        if int(args.notp_ctp_min_samples_leaf) <= 0
+        else int(args.notp_ctp_min_samples_leaf)
+    )
     results = {
         'stack_argmax': {
             'metrics': _metrics_from_prob_matrix(
@@ -935,6 +1019,8 @@ def main():
             class_weight=args.class_weight,
             max_features=args.max_features,
             min_samples_leaf=int(args.min_samples_leaf),
+            ltp_ctp_class_weight=ltp_ctp_class_weight,
+            ltp_ctp_min_samples_leaf=ltp_ctp_min_samples_leaf,
         )
         if _to_bool(args.notp_ctp_ltp_override):
             results['stack_foldwise_notp_ctp_ltp_override'] = evaluate_foldwise_notp_ctp_ltp_override(
@@ -954,6 +1040,10 @@ def main():
                 class_weight=args.class_weight,
                 max_features=args.max_features,
                 min_samples_leaf=int(args.min_samples_leaf),
+                notp_ctp_class_weight=notp_ctp_class_weight,
+                notp_ctp_min_samples_leaf=notp_ctp_min_samples_leaf,
+                ltp_ctp_class_weight=ltp_ctp_class_weight,
+                ltp_ctp_min_samples_leaf=ltp_ctp_min_samples_leaf,
             )
     out = {
         'training_tsv': str(args.training_tsv),
