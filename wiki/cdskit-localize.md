@@ -387,6 +387,17 @@ so the current blocker is no longer just TensorFlow-cell fidelity; the torch
 training recipe needs a better way to make the rare TargetP classes learn
 without breaking the fair fold protocol.
 
+The torch trainer now exposes two rare-class training levers for experiments:
+`--type_class_weight sqrt_balanced|log_balanced` for milder class weighting than
+the unstable full `balanced` weights, and `--cleavage_loss_weight` to downweight
+or disable the cleavage-site auxiliary loss while testing type-class learning.
+On `outer0_val1`, h16/n_filters8 with `sqrt_balanced` still collapsed to noTP
+only (0.169 covered-fold macro F1). h32/n_filters12 with balanced batches and
+`--cleavage_loss_weight 0.0` reached 0.343 covered-fold macro F1 and produced
+nonzero rare-class F1 (`mTP` 0.045, `cTP` 0.073, `lTP` 0.063), so balanced-batch
+type-only warmup is a plausible next probe, but it is far below TargetP-like
+performance on its own.
+
 An official-ish long probe can be continued with:
 
 ```
@@ -413,6 +424,7 @@ PYTHONPATH=. python -u scripts/targetp_torch_eval.py \
   --rnn_keep_prob 0.8 \
   --selection_metric val_macro_f1 \
   --type_class_weight none \
+  --cleavage_loss_weight 1.0 \
   --balanced_batch no \
   --initializer targetp_tf \
   --grad_clip_norm 0.0 \

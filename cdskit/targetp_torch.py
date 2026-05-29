@@ -41,6 +41,7 @@ TARGETP_TORCH_DEFAULTS = {
     'max_lr_reductions': 5,
     'patience_epochs': 8,
     'type_class_weight': 'none',
+    'cleavage_loss_weight': 1.0,
     'selection_metric': 'val_loss',
     'balanced_batch': 'no',
     'initializer': 'targetp_tf',
@@ -465,12 +466,42 @@ def _normalize_targetp_torch_state_dict(torch, state, config):
     return state
 
 
-def _targetp2_loss(torch, outputs, y_type, y_cs, type_weight=None):
+def _targetp_type_class_weight_vector(y_type_train, mode, num_class):
+    mode = str(mode or 'none').strip().lower()
+    if mode == 'none':
+        return None
+    if mode not in ['balanced', 'sqrt_balanced', 'log_balanced']:
+        raise ValueError('type_class_weight should be none, balanced, sqrt_balanced, or log_balanced.')
+    counts = np.bincount(
+        np.asarray(y_type_train, dtype=np.int64),
+        minlength=int(num_class),
+    ).astype(np.float32)
+    total = float(np.sum(counts))
+    weights = np.ones((int(num_class),), dtype=np.float32)
+    for class_i in range(int(num_class)):
+        if counts[class_i] <= 0.0:
+            weights[class_i] = 0.0
+        else:
+            weights[class_i] = total / (float(num_class) * float(counts[class_i]))
+    if mode == 'sqrt_balanced':
+        weights = np.sqrt(weights, dtype=np.float32)
+    elif mode == 'log_balanced':
+        weights = (1.0 + np.log1p(weights)).astype(np.float32)
+    positive = weights[weights > 0.0]
+    if positive.shape[0] > 0:
+        weights = weights / float(np.mean(positive))
+    return weights.astype(np.float32)
+
+
+def _targetp2_loss(torch, outputs, y_type, y_cs, type_weight=None, cleavage_loss_weight=1.0):
     import torch.nn.functional as F
 
     type_logits = outputs['type_logits']
     align = outputs['attention_logits']
     loss = F.cross_entropy(type_logits, y_type.long(), weight=type_weight)
+    cleavage_loss_weight = float(cleavage_loss_weight)
+    if cleavage_loss_weight <= 0.0:
+        return loss
     cs_pos = torch.argmax(y_cs.long(), dim=1)
     batch_size = max(1, int(y_type.shape[0]))
     for class_idx, head_idx in TARGETP_SIGNAL_CLASS_TO_HEAD.items():
@@ -481,7 +512,10 @@ def _targetp2_loss(torch, outputs, y_type, y_cs, type_weight=None):
                 cs_pos,
                 reduction='none',
             )
-            loss = loss + ((per_sample * class_mask.to(dtype=per_sample.dtype)).sum() / float(batch_size))
+            loss = loss + (
+                cleavage_loss_weight
+                * ((per_sample * class_mask.to(dtype=per_sample.dtype)).sum() / float(batch_size))
+            )
     return loss
 
 
@@ -551,7 +585,19 @@ def _predict_encoded_with_module(torch, module, device, x, lengths, org, batch_s
     return np.vstack(probs).astype(np.float32)
 
 
-def _evaluate_encoded(torch, module, device, x, y_type, y_cs, lengths, org, batch_size, type_weight=None):
+def _evaluate_encoded(
+    torch,
+    module,
+    device,
+    x,
+    y_type,
+    y_cs,
+    lengths,
+    org,
+    batch_size,
+    type_weight=None,
+    cleavage_loss_weight=1.0,
+):
     module.eval()
     losses = list()
     probs = list()
@@ -569,6 +615,7 @@ def _evaluate_encoded(torch, module, device, x, y_type, y_cs, lengths, org, batc
                 y_type=yb,
                 y_cs=cb,
                 type_weight=type_weight,
+                cleavage_loss_weight=cleavage_loss_weight,
             )
             losses.append(float(loss.detach().cpu().item()))
             probs.append(torch.softmax(outputs['type_logits'], dim=1).detach().cpu().numpy())
@@ -735,18 +782,12 @@ def fit_targetp2_torch_model(
     rng = np.random.default_rng(int(seed))
     type_weight = None
     weight_mode = str(config.get('type_class_weight', 'none')).strip().lower()
-    if weight_mode not in ['none', 'balanced']:
-        raise ValueError('type_class_weight should be none or balanced.')
-    if weight_mode == 'balanced':
-        counts = np.bincount(
-            np.asarray(y_type_train, dtype=np.int64),
-            minlength=len(LOCALIZATION_CLASSES),
-        ).astype(np.float32)
-        total = float(np.sum(counts))
-        weights = np.zeros((len(LOCALIZATION_CLASSES),), dtype=np.float32)
-        for class_i in range(len(LOCALIZATION_CLASSES)):
-            if counts[class_i] > 0.0:
-                weights[class_i] = total / (float(len(LOCALIZATION_CLASSES)) * float(counts[class_i]))
+    weights = _targetp_type_class_weight_vector(
+        y_type_train=y_type_train,
+        mode=weight_mode,
+        num_class=len(LOCALIZATION_CLASSES),
+    )
+    if weights is not None:
         type_weight = torch.as_tensor(weights, dtype=torch.float32, device=resolved_device)
 
     batch_size = int(config['batch_size'])
@@ -840,6 +881,7 @@ def fit_targetp2_torch_model(
                 y_type=yb,
                 y_cs=cb,
                 type_weight=type_weight,
+                cleavage_loss_weight=float(config.get('cleavage_loss_weight', 1.0)),
             )
             loss.backward()
             grad_clip_norm = float(config.get('grad_clip_norm', 0.0))
@@ -859,6 +901,7 @@ def fit_targetp2_torch_model(
             org=org_val,
             batch_size=batch_size,
             type_weight=type_weight,
+            cleavage_loss_weight=float(config.get('cleavage_loss_weight', 1.0)),
         )
         train_loss = float(np.mean(np.asarray(train_losses, dtype=np.float64))) if len(train_losses) > 0 else 0.0
         row = {
@@ -932,6 +975,7 @@ def fit_targetp2_torch_model(
         org=org_val,
         batch_size=batch_size,
         type_weight=type_weight,
+        cleavage_loss_weight=float(config.get('cleavage_loss_weight', 1.0)),
     )
     final_val_metrics = {
         'loss': float(final_val['loss']),

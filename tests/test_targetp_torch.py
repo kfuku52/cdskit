@@ -18,6 +18,8 @@ from cdskit.targetp_torch import (
     _can_resume_optimizer_state,
     _normalize_targetp_torch_state_dict,
     _payload_rnn_impl_from_state,
+    _targetp2_loss,
+    _targetp_type_class_weight_vector,
     load_torch_payload,
     organism_group_to_targetp_org,
     targetp_blosum62_probability_table,
@@ -256,6 +258,50 @@ def test_targetp_tf_cell_converts_legacy_torch_lstmcell_state():
     new_h, new_c = module.fw_cell(x, (h, c))
     torch.testing.assert_close(new_h, old_h, rtol=1.0e-6, atol=1.0e-6)
     torch.testing.assert_close(new_c, old_c, rtol=1.0e-6, atol=1.0e-6)
+
+
+def test_targetp_type_class_weight_modes_are_ordered_and_normalized():
+    y = np.asarray([0] * 20 + [1] * 10 + [2] * 5 + [3] * 2 + [4], dtype=np.int64)
+    balanced = _targetp_type_class_weight_vector(y, mode='balanced', num_class=5)
+    sqrt_balanced = _targetp_type_class_weight_vector(y, mode='sqrt_balanced', num_class=5)
+    log_balanced = _targetp_type_class_weight_vector(y, mode='log_balanced', num_class=5)
+
+    assert _targetp_type_class_weight_vector(y, mode='none', num_class=5) is None
+    for weights in [balanced, sqrt_balanced, log_balanced]:
+        assert tuple(weights.shape) == (5,)
+        np.testing.assert_allclose(np.mean(weights), 1.0, rtol=1.0e-6, atol=1.0e-6)
+        assert weights[4] > weights[3] > weights[2] > weights[1] > weights[0]
+    assert (balanced[4] / balanced[0]) > (sqrt_balanced[4] / sqrt_balanced[0])
+    assert (sqrt_balanced[4] / sqrt_balanced[0]) > (log_balanced[4] / log_balanced[0])
+
+
+def test_targetp_loss_can_disable_cleavage_auxiliary_term():
+    torch = pytest.importorskip('torch')
+
+    outputs = {
+        'type_logits': torch.zeros((2, len(LOCALIZATION_CLASSES)), dtype=torch.float32),
+        'attention_logits': torch.zeros((2, 12, 4), dtype=torch.float32),
+    }
+    y_type = torch.asarray([0, 1], dtype=torch.long)
+    y_cs = torch.zeros((2, 12), dtype=torch.long)
+    y_cs[1, 4] = 1
+
+    type_only = _targetp2_loss(
+        torch=torch,
+        outputs=outputs,
+        y_type=y_type,
+        y_cs=y_cs,
+        cleavage_loss_weight=0.0,
+    )
+    with_cleavage = _targetp2_loss(
+        torch=torch,
+        outputs=outputs,
+        y_type=y_type,
+        y_cs=y_cs,
+        cleavage_loss_weight=1.0,
+    )
+
+    assert float(with_cleavage.detach().cpu().item()) > float(type_only.detach().cpu().item())
 
 
 def test_targetp_torch_training_can_resume_epoch_checkpoint(temp_dir):

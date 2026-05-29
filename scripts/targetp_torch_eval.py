@@ -36,7 +36,13 @@ def build_parser():
     parser.add_argument('--rnn_keep_prob', default=TARGETP_TORCH_DEFAULTS['rnn_keep_prob'], type=float)
     parser.add_argument('--patience_epochs', default=TARGETP_TORCH_DEFAULTS['patience_epochs'], type=int)
     parser.add_argument('--max_lr_reductions', default=TARGETP_TORCH_DEFAULTS['max_lr_reductions'], type=int)
-    parser.add_argument('--type_class_weight', default=TARGETP_TORCH_DEFAULTS['type_class_weight'], choices=['none', 'balanced'], type=str)
+    parser.add_argument(
+        '--type_class_weight',
+        default=TARGETP_TORCH_DEFAULTS['type_class_weight'],
+        choices=['none', 'balanced', 'sqrt_balanced', 'log_balanced'],
+        type=str,
+    )
+    parser.add_argument('--cleavage_loss_weight', default=TARGETP_TORCH_DEFAULTS['cleavage_loss_weight'], type=float)
     parser.add_argument('--selection_metric', default=TARGETP_TORCH_DEFAULTS['selection_metric'], choices=['val_loss', 'val_macro_f1'], type=str)
     parser.add_argument('--balanced_batch', default=TARGETP_TORCH_DEFAULTS['balanced_batch'], choices=['yes', 'no'], type=str)
     parser.add_argument('--initializer', default=TARGETP_TORCH_DEFAULTS['initializer'], choices=['targetp_tf', 'pytorch'], type=str)
@@ -63,6 +69,7 @@ def main():
         'patience_epochs': int(args.patience_epochs),
         'max_lr_reductions': int(args.max_lr_reductions),
         'type_class_weight': args.type_class_weight,
+        'cleavage_loss_weight': float(args.cleavage_loss_weight),
         'selection_metric': args.selection_metric,
         'balanced_batch': args.balanced_batch,
         'initializer': args.initializer,
