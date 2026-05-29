@@ -16,6 +16,7 @@ from cdskit.targetp_torch import (
     initialize_targetp2_torch_module,
     _build_targetp2_torch_module,
     _can_resume_optimizer_state,
+    _normalize_targetp_torch_state_dict,
     _payload_rnn_impl_from_state,
     load_torch_payload,
     organism_group_to_targetp_org,
@@ -140,7 +141,7 @@ def test_targetp_tf_initializer_sets_lstm_forget_bias():
             np.testing.assert_allclose(param.detach().cpu().numpy()[hidden:2 * hidden], expected)
 
 
-def test_targetp_tf_cell_impl_has_lstmcell_forget_bias_and_outputs():
+def test_targetp_tf_cell_impl_has_single_kernel_bias_and_outputs():
     torch = pytest.importorskip('torch')
     import torch.nn as nn
 
@@ -165,11 +166,10 @@ def test_targetp_tf_cell_impl_has_lstmcell_forget_bias_and_outputs():
     assert hasattr(module, 'fw_cell')
     assert hasattr(module, 'bw_cell')
     for cell in [module.fw_cell, module.bw_cell]:
-        for name, param in cell.named_parameters():
-            if 'bias' in name:
-                hidden = int(param.shape[0] // 4)
-                expected = np.ones((hidden,), dtype=np.float32) if 'bias_ih' in name else np.zeros((hidden,), dtype=np.float32)
-                np.testing.assert_allclose(param.detach().cpu().numpy()[hidden:2 * hidden], expected)
+        assert tuple(cell.kernel.shape) == (3 + 4, 4 * 4)
+        assert tuple(cell.bias.shape) == (4 * 4,)
+        np.testing.assert_allclose(cell.bias.detach().cpu().numpy(), np.zeros((4 * 4,), dtype=np.float32))
+        assert cell.forget_bias == 1.0
     x, _, _, lengths, org = _tiny_targetp_arrays(seq_len=12)
     module.eval()
     with torch.no_grad():
@@ -212,6 +212,50 @@ def test_targetp_torch_detects_rnn_impl_from_state_dict():
 
     assert _payload_rnn_impl_from_state({'state_dict': legacy.state_dict()}) == 'torch_lstm'
     assert _payload_rnn_impl_from_state({'state_dict': tf_cell.state_dict()}) == 'targetp_tf_cell'
+
+
+def test_targetp_tf_cell_converts_legacy_torch_lstmcell_state():
+    torch = pytest.importorskip('torch')
+    import torch.nn as nn
+
+    old_cell = nn.LSTMCell(input_size=3, hidden_size=4)
+    torch.manual_seed(11)
+    for param in old_cell.parameters():
+        param.data.normal_(mean=0.0, std=0.2)
+    old_state = {
+        'fw_cell.weight_ih': old_cell.weight_ih.detach().clone(),
+        'fw_cell.weight_hh': old_cell.weight_hh.detach().clone(),
+        'fw_cell.bias_ih': old_cell.bias_ih.detach().clone(),
+        'fw_cell.bias_hh': old_cell.bias_hh.detach().clone(),
+    }
+    converted = _normalize_targetp_torch_state_dict(
+        torch=torch,
+        state=old_state,
+        config={'rnn_impl': 'targetp_tf_cell'},
+    )
+    module = _build_targetp2_torch_module(
+        torch=torch,
+        nn=nn,
+        seq_len=12,
+        hidden_rnn=4,
+        n_filters=3,
+        hidden_fc=5,
+        n_attention=4,
+        attention_size=4,
+        rnn_impl='targetp_tf_cell',
+    )
+    module.fw_cell.load_state_dict({
+        'kernel': converted['fw_cell.kernel'],
+        'bias': converted['fw_cell.bias'],
+    })
+
+    x = torch.randn(2, 3)
+    h = torch.randn(2, 4)
+    c = torch.randn(2, 4)
+    old_h, old_c = old_cell(x, (h, c))
+    new_h, new_c = module.fw_cell(x, (h, c))
+    torch.testing.assert_close(new_h, old_h, rtol=1.0e-6, atol=1.0e-6)
+    torch.testing.assert_close(new_c, old_c, rtol=1.0e-6, atol=1.0e-6)
 
 
 def test_targetp_torch_training_can_resume_epoch_checkpoint(temp_dir):

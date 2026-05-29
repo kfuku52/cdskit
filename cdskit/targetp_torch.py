@@ -204,6 +204,27 @@ def _build_targetp2_torch_module(
     if rnn_impl not in ['torch_lstm', 'targetp_tf_cell']:
         raise ValueError('Unsupported TargetP torch rnn_impl: {}'.format(rnn_impl))
 
+    class TargetPTFLSTMCell(nn.Module):
+        def __init__(self, input_size, hidden_size, forget_bias=1.0):
+            super().__init__()
+            self.input_size = int(input_size)
+            self.hidden_size = int(hidden_size)
+            self.forget_bias = float(forget_bias)
+            self._targetp_tf_lstm_cell = True
+            self.kernel = nn.Parameter(torch.empty(self.input_size + self.hidden_size, 4 * self.hidden_size))
+            self.bias = nn.Parameter(torch.empty(4 * self.hidden_size))
+
+        def forward(self, x, state):
+            h, c = state
+            gates = torch.matmul(torch.cat([x, h], dim=1), self.kernel) + self.bias
+            i_gate, j_gate, f_gate, o_gate = torch.chunk(gates, chunks=4, dim=1)
+            next_c = (
+                c * torch.sigmoid(f_gate + self.forget_bias)
+                + torch.sigmoid(i_gate) * torch.tanh(j_gate)
+            )
+            next_h = torch.tanh(next_c) * torch.sigmoid(o_gate)
+            return next_h, next_c
+
     class TargetP2TorchNet(nn.Module):
         def __init__(self):
             super().__init__()
@@ -220,8 +241,8 @@ def _build_targetp2_torch_module(
             self.conv_dropout = nn.Dropout(p=max(0.0, min(1.0, 1.0 - float(encoder_keep_prob))))
             self.organism_fc = nn.Linear(int(n_org), int(hidden_rnn))
             if self.rnn_impl == 'targetp_tf_cell':
-                self.fw_cell = nn.LSTMCell(input_size=int(n_filters), hidden_size=int(hidden_rnn))
-                self.bw_cell = nn.LSTMCell(input_size=int(n_filters), hidden_size=int(hidden_rnn))
+                self.fw_cell = TargetPTFLSTMCell(input_size=int(n_filters), hidden_size=int(hidden_rnn))
+                self.bw_cell = TargetPTFLSTMCell(input_size=int(n_filters), hidden_size=int(hidden_rnn))
             else:
                 self.encoder = nn.LSTM(
                     input_size=int(n_filters),
@@ -374,7 +395,10 @@ def initialize_targetp2_torch_module(torch, nn, module, initializer='targetp_tf'
                     param[hidden:2 * hidden].fill_(1.0)
 
     for child in module.modules():
-        if isinstance(child, nn.Conv1d) or isinstance(child, nn.Linear):
+        if bool(getattr(child, '_targetp_tf_lstm_cell', False)):
+            nn.init.xavier_uniform_(child.kernel)
+            nn.init.zeros_(child.bias)
+        elif isinstance(child, nn.Conv1d) or isinstance(child, nn.Linear):
             nn.init.xavier_uniform_(child.weight)
             if child.bias is not None:
                 nn.init.zeros_(child.bias)
@@ -382,6 +406,63 @@ def initialize_targetp2_torch_module(torch, nn, module, initializer='targetp_tf'
             for name, param in child.named_parameters():
                 _initialize_lstm_param(name=name, param=param)
     return module
+
+
+def _convert_legacy_torch_lstmcell_state_dict(torch, state):
+    if not isinstance(state, dict):
+        return state
+    if 'fw_cell.kernel' in state or 'bw_cell.kernel' in state:
+        return state
+    if 'fw_cell.weight_ih' not in state and 'bw_cell.weight_ih' not in state:
+        return state
+    out = dict(state)
+    for prefix in ['fw_cell', 'bw_cell']:
+        w_ih_key = prefix + '.weight_ih'
+        w_hh_key = prefix + '.weight_hh'
+        if w_ih_key not in state or w_hh_key not in state:
+            continue
+        w_ih = state[w_ih_key]
+        w_hh = state[w_hh_key]
+        hidden = int(w_hh.shape[1])
+        bias_ih = state.get(prefix + '.bias_ih')
+        bias_hh = state.get(prefix + '.bias_hh')
+        if bias_ih is None:
+            bias_ih = torch.zeros((4 * hidden,), dtype=w_ih.dtype, device=w_ih.device)
+        if bias_hh is None:
+            bias_hh = torch.zeros((4 * hidden,), dtype=w_ih.dtype, device=w_ih.device)
+        old_to_new = [0, 2, 1, 3]  # PyTorch i,f,g,o -> TargetP/TF i,j,f,o.
+        kernel_chunks = list()
+        bias_chunks = list()
+        bias_sum = bias_ih + bias_hh
+        for new_i, old_i in enumerate(old_to_new):
+            old_slice = slice(int(old_i) * hidden, (int(old_i) + 1) * hidden)
+            kernel_chunks.append(
+                torch.cat(
+                    [
+                        w_ih[old_slice, :].transpose(0, 1),
+                        w_hh[old_slice, :].transpose(0, 1),
+                    ],
+                    dim=0,
+                )
+            )
+            bias_chunk = bias_sum[old_slice].clone()
+            if int(new_i) == 2:
+                bias_chunk = bias_chunk - 1.0
+            bias_chunks.append(bias_chunk)
+        out[prefix + '.kernel'] = torch.cat(kernel_chunks, dim=1).clone()
+        out[prefix + '.bias'] = torch.cat(bias_chunks, dim=0).clone()
+        for suffix in ['weight_ih', 'weight_hh', 'bias_ih', 'bias_hh']:
+            out.pop(prefix + '.' + suffix, None)
+    return out
+
+
+def _normalize_targetp_torch_state_dict(torch, state, config):
+    if not isinstance(state, dict):
+        return state
+    rnn_impl = str((config or {}).get('rnn_impl', '')).strip().lower()
+    if rnn_impl == 'targetp_tf_cell':
+        return _convert_legacy_torch_lstmcell_state_dict(torch=torch, state=state)
+    return state
 
 
 def _targetp2_loss(torch, outputs, y_type, y_cs, type_weight=None):
@@ -683,10 +764,19 @@ def fit_targetp2_torch_model(
     start_epoch = 0
     if isinstance(resume_payload, dict):
         state = resume_payload.get('latest_state_dict', resume_payload.get('state_dict'))
+        state = _normalize_targetp_torch_state_dict(
+            torch=torch,
+            state=state,
+            config=config,
+        )
         if state is not None:
             module.load_state_dict(state, strict=True)
         if resume_payload.get('state_dict') is not None:
-            best_state = resume_payload['state_dict']
+            best_state = _normalize_targetp_torch_state_dict(
+                torch=torch,
+                state=resume_payload['state_dict'],
+                config=config,
+            )
         best_metrics = resume_payload.get('best_metrics')
         best_epoch = int(resume_payload.get('best_epoch', 0) or 0)
         history = list(resume_payload.get('history', []))
@@ -902,7 +992,12 @@ def _get_runtime_targetp2_module(localization_model, device_text='cpu'):
         encoder_keep_prob=float(config.get('encoder_keep_prob', 1.0)),
         rnn_impl=str(config.get('rnn_impl', 'torch_lstm')),
     )
-    module.load_state_dict(localization_model['state_dict'], strict=True)
+    state_dict = _normalize_targetp_torch_state_dict(
+        torch=torch,
+        state=localization_model['state_dict'],
+        config=config,
+    )
+    module.load_state_dict(state_dict, strict=True)
     module.eval()
     module.to(resolved_device)
     cache[cache_key] = module
