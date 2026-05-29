@@ -326,6 +326,8 @@ uses the same BLOSUM62 probability rows as the official TargetP NPZ data; a
 FASTA-to-NPZ check on the first ten TargetP rows matched to within `5.96e-08`
 maximum absolute difference. Earlier cdskit runtime exports used a `2^BLOSUM62`
 normalization instead, which was incompatible with the TargetP training input.
+Gradient clipping is also optional through `--grad_clip_norm`; the default is
+`0.0` to match the official TargetP training script.
 
 The blend helper writes per-model TargetP margin summaries to JSON and Markdown,
 including an `All classes > TargetP` row. To save the foldwise fixed specialist

@@ -40,6 +40,7 @@ def build_parser():
     parser.add_argument('--selection_metric', default=TARGETP_TORCH_DEFAULTS['selection_metric'], choices=['val_loss', 'val_macro_f1'], type=str)
     parser.add_argument('--balanced_batch', default=TARGETP_TORCH_DEFAULTS['balanced_batch'], choices=['yes', 'no'], type=str)
     parser.add_argument('--initializer', default=TARGETP_TORCH_DEFAULTS['initializer'], choices=['targetp_tf', 'pytorch'], type=str)
+    parser.add_argument('--grad_clip_norm', default=TARGETP_TORCH_DEFAULTS['grad_clip_norm'], type=float)
     parser.add_argument('--verbose', default='no', choices=['yes', 'no'], type=str)
     return parser
 
@@ -64,6 +65,7 @@ def main():
         'selection_metric': args.selection_metric,
         'balanced_batch': args.balanced_batch,
         'initializer': args.initializer,
+        'grad_clip_norm': float(args.grad_clip_norm),
         'verbose': str(args.verbose).strip().lower() == 'yes',
     }
     result = run_targetp2_torch_nested_oof(

@@ -44,6 +44,7 @@ TARGETP_TORCH_DEFAULTS = {
     'selection_metric': 'val_loss',
     'balanced_batch': 'no',
     'initializer': 'targetp_tf',
+    'grad_clip_norm': 0.0,
 }
 
 
@@ -567,7 +568,9 @@ def fit_targetp2_torch_model(
                 type_weight=type_weight,
             )
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(module.parameters(), max_norm=5.0)
+            grad_clip_norm = float(config.get('grad_clip_norm', 0.0))
+            if grad_clip_norm > 0.0:
+                torch.nn.utils.clip_grad_norm_(module.parameters(), max_norm=grad_clip_norm)
             optimizer.step()
             train_losses.append(float(loss.detach().cpu().item()))
 

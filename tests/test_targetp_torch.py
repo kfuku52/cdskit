@@ -87,7 +87,9 @@ def test_targetp_torch_payload_can_predict_and_roundtrip(temp_dir):
         epochs=1,
         batch_size=3,
         learning_rate=0.001,
+        grad_clip_norm=0.0,
     )
+    assert payload['config']['grad_clip_norm'] == 0.0
     model = export_targetp2_torch_localize_model(model_payload=payload)
     out_path = temp_dir / 'targetp_torch.pt'
     save_localize_model(model=model, path=str(out_path))
