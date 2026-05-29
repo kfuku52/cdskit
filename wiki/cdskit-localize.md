@@ -403,9 +403,13 @@ type-only warmup is a plausible next probe. Extending the h64/n_filters16
 balanced-batch type-only run to 12 epochs selected epoch 8 and improved the
 covered outer-fold argmax macro F1 to 0.652. Validation-fitted thresholds raised
 the same held-out fold to 0.705 macro F1 (`noTP` 0.954, `SP` 0.928, `mTP` 0.633,
-`cTP` 0.619, `lTP` 0.389). This is the strongest TargetP torch single-model
-probe so far, but it is still a one-fold probe and remains below the fair RF
-stack score of 0.787 and the TargetP 2.0 reference macro F1 of 0.890.
+`cTP` 0.619, `lTP` 0.389). The same recipe on `outer1_val2` needed 16 epochs
+and reached only 0.624 validation-threshold macro F1 (`noTP` 0.940, `SP` 0.907,
+`mTP` 0.562, `cTP` 0.465, `lTP` 0.244). Combining these two held-out folds gives
+0.663 validation-threshold macro F1, below both the fair RF stack score of 0.787
+and the TargetP 2.0 reference macro F1 of 0.890. The torch path is therefore
+useful as a candidate signal for future stacking, but it is not yet a
+replacement for the current fair stack.
 
 The h64 balanced-batch type-only probe can be reproduced or continued with:
 
