@@ -6,10 +6,14 @@ import os
 import numpy as np
 
 from cdskit.localize_learn import LOCALIZATION_CLASSES
+from cdskit.localize_model import normalize_organism_group
 from cdskit.targetp_benchmark import TARGETP_TABLE1_REFERENCE
 from cdskit.targetp_feature_ensemble import (
     _class_rows,
     _metrics_from_prob_matrix,
+    _metrics_from_prediction_indices,
+    _prediction_indices_with_thresholds,
+    optimize_class_thresholds,
     evaluate_foldwise_thresholds,
     build_targetp_feature_matrix,
 )
@@ -31,6 +35,12 @@ TARGETP_STACK_DEFAULTS = {
     'organism_gate': False,
 }
 
+TARGETP_STACK_LTP_CTP_DEFAULTS = {
+    'ltp_ctp_override': True,
+    'ltp_ctp_model_kind': 'random_forest',
+    'ltp_ctp_n_estimators': 300,
+}
+
 
 def read_training_rows(path):
     with open(path, 'r', encoding='utf-8', newline='') as inp:
@@ -39,6 +49,13 @@ def read_training_rows(path):
 
 def fold_ids_from_rows(rows):
     return np.asarray([str(row.get('fold_id', '')) for row in rows])
+
+
+def plant_mask_from_rows(rows):
+    return np.asarray([
+        normalize_organism_group(row.get('organism_group', '')) == 'plant'
+        for row in rows
+    ], dtype=bool)
 
 
 def make_targetp_stack_classifier(
@@ -209,6 +226,161 @@ def run_targetp_stack_oof(
     }
 
 
+def evaluate_foldwise_ltp_ctp_override(
+    prob_matrix,
+    true_idx,
+    fold_ids,
+    rows,
+    class_names,
+    threshold_grid,
+    score_grid,
+    model_kind='random_forest',
+    n_estimators=300,
+    random_state=101,
+    class_weight='balanced',
+    max_features='sqrt',
+    min_samples_leaf=1,
+):
+    class_names = list(class_names)
+    ctp_idx = int(class_names.index('cTP'))
+    ltp_idx = int(class_names.index('lTP'))
+    true_idx = np.asarray(true_idx, dtype=np.int64)
+    fold_ids = np.asarray(fold_ids)
+    prob_matrix = np.asarray(prob_matrix, dtype=np.float64)
+    plant_mask = plant_mask_from_rows(rows=rows)
+    features = build_targetp_feature_matrix(rows=rows).astype(np.float32)
+    pred_idx = np.zeros((true_idx.shape[0],), dtype=np.int64)
+    fold_rows = list()
+    for fold_id in sorted(set([str(v) for v in fold_ids.tolist()])):
+        valid_mask = np.asarray([str(v) == fold_id for v in fold_ids.tolist()], dtype=bool)
+        train_mask = ~valid_mask
+        base_thresholds, _ = optimize_class_thresholds(
+            prob_matrix=prob_matrix[train_mask, :],
+            true_idx=true_idx[train_mask],
+            class_names=class_names,
+            grid=threshold_grid,
+        )
+        train_base = _prediction_indices_with_thresholds(
+            prob_matrix=prob_matrix[train_mask, :],
+            thresholds=base_thresholds,
+        )
+        valid_base = _prediction_indices_with_thresholds(
+            prob_matrix=prob_matrix[valid_mask, :],
+            thresholds=base_thresholds,
+        )
+        specialist_train = (
+            train_mask
+            & plant_mask
+            & np.isin(true_idx, [ctp_idx, ltp_idx])
+        )
+        if len(set(true_idx[specialist_train].tolist())) < 2:
+            pred_idx[valid_mask] = valid_base
+            fold_rows.append({
+                'fold_id': str(fold_id),
+                'class_thresholds': {
+                    class_names[i]: float(base_thresholds[i]) for i in range(len(class_names))
+                },
+                'ltp_score_threshold': None,
+                'train_macro_f1': None,
+                'train_override_count': 0,
+                'valid_override_count': 0,
+                'n_train': int(np.sum(train_mask)),
+                'n_valid': int(np.sum(valid_mask)),
+                'n_specialist_train': int(np.sum(specialist_train)),
+            })
+            continue
+        classifier = make_targetp_stack_classifier(
+            model_kind=model_kind,
+            n_estimators=n_estimators,
+            random_state=int(random_state) + len(fold_rows),
+            class_weight=class_weight,
+            max_features=max_features,
+            min_samples_leaf=min_samples_leaf,
+        )
+        classifier.fit(
+            features[specialist_train, :],
+            (true_idx[specialist_train] == ltp_idx).astype(np.int64),
+        )
+        train_score = np.asarray(
+            classifier.predict_proba(features[train_mask, :]),
+            dtype=np.float64,
+        )
+        valid_score = np.asarray(
+            classifier.predict_proba(features[valid_mask, :]),
+            dtype=np.float64,
+        )
+        classes = [int(value) for value in list(classifier.classes_)]
+        if 1 not in classes:
+            pred_idx[valid_mask] = valid_base
+            continue
+        train_score = train_score[:, classes.index(1)]
+        valid_score = valid_score[:, classes.index(1)]
+        train_plant = plant_mask[train_mask]
+        valid_plant = plant_mask[valid_mask]
+        best_threshold = None
+        best_metrics = None
+        best_override_count = 0
+        for trial in score_grid:
+            trial_pred = train_base.copy()
+            override_mask = (
+                train_plant
+                & (train_base == ctp_idx)
+                & (train_score >= float(trial))
+            )
+            trial_pred[override_mask] = ltp_idx
+            metrics = _metrics_from_prediction_indices(
+                pred_idx=trial_pred,
+                true_idx=true_idx[train_mask],
+                class_names=class_names,
+            )
+            if best_metrics is None or metrics['macro_f1'] > best_metrics['macro_f1']:
+                best_threshold = float(trial)
+                best_metrics = metrics
+                best_override_count = int(np.sum(override_mask))
+        valid_pred = valid_base.copy()
+        valid_override = (
+            valid_plant
+            & (valid_base == ctp_idx)
+            & (valid_score >= float(best_threshold))
+        )
+        valid_pred[valid_override] = ltp_idx
+        pred_idx[valid_mask] = valid_pred
+        fold_rows.append({
+            'fold_id': str(fold_id),
+            'class_thresholds': {
+                class_names[i]: float(base_thresholds[i]) for i in range(len(class_names))
+            },
+            'ltp_score_threshold': float(best_threshold),
+            'train_macro_f1': float(best_metrics['macro_f1']),
+            'train_override_count': int(best_override_count),
+            'valid_override_count': int(np.sum(valid_override)),
+            'n_train': int(np.sum(train_mask)),
+            'n_valid': int(np.sum(valid_mask)),
+            'n_specialist_train': int(np.sum(specialist_train)),
+        })
+    return {
+        'description': (
+            'Each held-out fold uses class thresholds and a plant cTP-vs-lTP '
+            'specialist trained only on the other folds; cTP predictions above '
+            'the nested specialist threshold are overridden to lTP.'
+        ),
+        'metrics': _metrics_from_prediction_indices(
+            pred_idx=pred_idx,
+            true_idx=true_idx,
+            class_names=class_names,
+        ),
+        'folds': fold_rows,
+        'profile': {
+            'model_kind': str(model_kind),
+            'n_estimators': int(n_estimators),
+            'random_state': int(random_state),
+            'class_weight': str(class_weight),
+            'max_features': str(max_features),
+            'min_samples_leaf': int(min_samples_leaf),
+        },
+    }
+
+
 def _targetp_macro_f1(class_names):
     return float(np.mean(np.asarray([
         TARGETP_TABLE1_REFERENCE[class_name]['f1'] for class_name in class_names
@@ -254,6 +426,22 @@ def build_parser():
     parser.add_argument('--max_features', default=TARGETP_STACK_DEFAULTS['max_features'], type=str)
     parser.add_argument('--min_samples_leaf', default=TARGETP_STACK_DEFAULTS['min_samples_leaf'], type=int)
     parser.add_argument('--include_sequence_features', default='yes', choices=['yes', 'no'], type=str)
+    parser.add_argument(
+        '--ltp_ctp_override',
+        default='yes' if TARGETP_STACK_LTP_CTP_DEFAULTS['ltp_ctp_override'] else 'no',
+        choices=['yes', 'no'],
+        type=str,
+    )
+    parser.add_argument(
+        '--ltp_ctp_model_kind',
+        default=TARGETP_STACK_LTP_CTP_DEFAULTS['ltp_ctp_model_kind'],
+        choices=['random_forest', 'extra_trees', 'hist_gradient_boosting'],
+        type=str,
+    )
+    parser.add_argument('--ltp_ctp_n_estimators', default=TARGETP_STACK_LTP_CTP_DEFAULTS['ltp_ctp_n_estimators'], type=int)
+    parser.add_argument('--ltp_ctp_score_min', default=0.02, type=float)
+    parser.add_argument('--ltp_ctp_score_max', default=0.80, type=float)
+    parser.add_argument('--ltp_ctp_score_step', default=0.01, type=float)
     parser.add_argument(
         '--organism_gate',
         default='yes' if TARGETP_STACK_DEFAULTS['organism_gate'] else 'no',
@@ -301,6 +489,7 @@ def main():
         fold_ids=np.asarray(oof['fold_ids']),
         stack_profile_json=json.dumps(oof['profile'], sort_keys=True),
     )
+    rows = read_training_rows(path=args.training_tsv)
     threshold_grid = sorted(set([
         float(v.strip()) for v in str(args.threshold_grid).split(',')
         if v.strip() != ''
@@ -321,6 +510,30 @@ def main():
             threshold_grid=threshold_grid,
         ),
     }
+    if _to_bool(args.ltp_ctp_override):
+        if float(args.ltp_ctp_score_step) <= 0.0:
+            raise ValueError('--ltp_ctp_score_step should be positive.')
+        score_grid = np.arange(
+            float(args.ltp_ctp_score_min),
+            float(args.ltp_ctp_score_max) + (0.5 * float(args.ltp_ctp_score_step)),
+            float(args.ltp_ctp_score_step),
+            dtype=np.float64,
+        )
+        results['stack_foldwise_ltp_ctp_override'] = evaluate_foldwise_ltp_ctp_override(
+            prob_matrix=oof['prob_matrix'],
+            true_idx=oof['true_idx'],
+            fold_ids=oof['fold_ids'],
+            rows=rows,
+            class_names=oof['class_names'],
+            threshold_grid=threshold_grid,
+            score_grid=score_grid,
+            model_kind=args.ltp_ctp_model_kind,
+            n_estimators=int(args.ltp_ctp_n_estimators),
+            random_state=int(args.random_state) + 90,
+            class_weight=args.class_weight,
+            max_features=args.max_features,
+            min_samples_leaf=int(args.min_samples_leaf),
+        )
     out = {
         'training_tsv': str(args.training_tsv),
         'stack_oof_npz': str(args.stack_oof_npz),

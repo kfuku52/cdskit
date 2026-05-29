@@ -224,7 +224,8 @@ selection.
 | cdskit binary feature ensemble + formal ESM blend + thresholds | 0.795 | 0.967 | all-OOF blend/threshold calibration; optimistic for model selection |
 | cdskit binary feature ensemble + formal ESM foldwise blend | 0.765 | 0.963 | fair foldwise blend estimate; still far below TargetP 2.0 |
 | cdskit binary feature + formal ESM foldwise specialist, macro objective | 0.780 | 0.962 | fair foldwise SP/lTP specialist threshold selection |
-| cdskit TargetP OOF stack RF100 foldwise thresholds | 0.785 | 0.964 | fair foldwise stack over binary feature, formal ESM, formal feature, and formal BiLSTM OOFs; best reproducible fair score so far |
+| cdskit TargetP OOF stack RF100 foldwise thresholds | 0.785 | 0.964 | fair foldwise stack over binary feature, formal ESM, formal feature, and formal BiLSTM OOFs |
+| cdskit TargetP OOF stack RF100 + foldwise lTP/cTP override | 0.787 | 0.964 | same stack plus a plant cTP-vs-lTP RandomForest specialist trained and thresholded only on training folds; best reproducible fair score so far |
 
 The command used for the feature/ESM run was:
 
@@ -295,6 +296,9 @@ PYTHONPATH=. python -m cdskit.targetp_stack \
   --min_samples_leaf 1 \
   --include_sequence_features yes \
   --organism_gate no \
+  --ltp_ctp_override yes \
+  --ltp_ctp_model_kind random_forest \
+  --ltp_ctp_n_estimators 300 \
   --out_json data/localize_bench/targetp2_stack_rf100_nogate_eval.json \
   --out_md data/localize_bench/targetp2_stack_rf100_nogate_eval.md
 ```
@@ -310,12 +314,14 @@ foldwise-threshold score to 0.760 macro F1, and replacing the RF meta-model
 with `HistGradientBoostingClassifier(max_iter=200)` scored 0.775 macro F1.
 A multi-start threshold search can raise the all-OOF calibration score on the
 RF100 stack to about 0.795 macro F1, but the fair foldwise version dropped to
-0.777 macro F1, so the simpler foldwise threshold result remains the best
-model-selection estimate.
+0.777 macro F1. A nested plant cTP-vs-lTP RandomForest specialist over the
+RF100 stack improved the fair score slightly from 0.785 to 0.787 macro F1 by
+raising lTP F1 from 0.395 to 0.405; it is now the best reproducible fair
+model-selection estimate, but the gain is small.
 
 lTP remains the limiting class. In the current regenerated OOFs, even an
 all-row oracle threshold on the best lTP binary score reached only about 0.466
-lTP F1, and a nested lTP override over the RF stack reduced macro F1 to 0.781.
+lTP F1. The fair cTP-vs-lTP specialist only moved held-out lTP F1 to 0.405.
 Reaching TargetP-like lTP performance likely requires a stronger sequence
 encoder or additional lTP-specific training data, not only threshold tuning.
 
