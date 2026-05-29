@@ -230,7 +230,10 @@ selection.
 | cdskit TargetP second-level RF/HGB OOF stack + foldwise lTP/cTP override | 0.787 | 0.966 | fair foldwise second-level stack over RF100 and HGB200 stack OOFs plus sequence features; exact macro F1 0.78747 |
 | cdskit TargetP OOF stack RF100 + delayed lTP signal override | 0.796 | 0.963 | fair foldwise lTP/cTP specialist with delayed signal-peptide and RR-after-hydrophobic features; exact macro F1 0.79552 |
 | cdskit TargetP organism-specialized RF100 stack + delayed lTP/noTP specialists | 0.801 | 0.961 | fair foldwise stack trains separate plant and non-plant meta-classifiers, then applies nested noTP-to-cTP and plant cTP-to-lTP specialists; exact macro F1 0.80074 |
-| cdskit TargetP organism-specialized RF100 stack + tuned lTP specialist | 0.803 | 0.962 | same stack with the lTP/cTP specialist tuned independently as RF50, `balanced_subsample`, leaf2; exact macro F1 0.80274, best reproducible fair score so far |
+| cdskit TargetP organism-specialized RF100 stack + tuned lTP specialist | 0.803 | 0.962 | same stack with the lTP/cTP specialist tuned independently as RF50, `balanced_subsample`, leaf2; exact macro F1 0.80274 |
+| cdskit TargetP2-style Torch h256 seed100 val-threshold OOF | 0.777 | 0.949 | fair paired OOF, CPU-capable at inference but trained on MPS locally; exact macro F1 0.77660 |
+| cdskit TargetP stack + h256 seed100 foldwise blend | 0.819 | 0.966 | foldwise classwise alpha and thresholds selected only on training folds; exact macro F1 0.81945 |
+| cdskit TargetP stack + h256 seed100 foldwise blend + lTP specialist | 0.828 | 0.965 | same foldwise blend followed by a plant cTP-to-lTP specialist trained and thresholded only on training folds; exact macro F1 0.82779, best reproducible fair score so far |
 
 The command used for the feature/ESM run was:
 
@@ -319,6 +322,44 @@ PYTHONPATH=. python -m cdskit.targetp_stack \
   --out_md data/localize_bench/targetp2_stack_rf100_orgsplit_ltp_signal_rs123_leaf2subsample_nogate_eval.md
 ```
 
+The current post-blend best uses the same stack OOF plus the fully regenerated
+h256 seed100 TargetP2-style Torch val-threshold OOF. The Torch model is used as
+an additional CPU-inference-capable signal; foldwise alpha, class thresholds,
+and the lTP specialist threshold are all selected on the training-fold
+complement:
+
+```
+PYTHONPATH=. python -m cdskit.targetp_stack \
+  --training_tsv data/localize_bench/targetp2_benchmark.tsv \
+  --base_oof_npzs data/localize_bench/targetp2_oof_feature_binary_et600_leaf2_formal.npz,data/localize_bench/targetp2_oof_esm_formal_mps_b128.npz,data/localize_bench/targetp2_oof_feature_ensemble_formal_et300.npz,data/localize_bench/targetp2_oof_bilstm_formal_mps_b2048.npz \
+  --stack_oof_npz data/localize_bench/targetp2_oof_stack_rf100_orgsplit_postblend_h256_seed100.npz \
+  --model_kind random_forest \
+  --n_estimators 100 \
+  --random_state 11 \
+  --class_weight balanced \
+  --max_features sqrt \
+  --min_samples_leaf 1 \
+  --include_sequence_features yes \
+  --organism_gate no \
+  --organism_specialized_stack yes \
+  --ltp_ctp_override no \
+  --ltp_ctp_model_kind random_forest \
+  --ltp_ctp_n_estimators 100 \
+  --ltp_ctp_random_state 123 \
+  --ltp_ctp_class_weight balanced_subsample \
+  --ltp_ctp_min_samples_leaf 2 \
+  --ltp_ctp_score_min 0.01 \
+  --ltp_ctp_score_max 0.90 \
+  --ltp_ctp_score_step 0.01 \
+  --notp_ctp_ltp_override no \
+  --post_blend_oof_npz data/localize_bench/targetp2_oof_targetp_torch_torchlstm_h256_e12_balbatch_typeonly_pair_seed100_valthrnorm.npz \
+  --post_blend_label h256_seed100 \
+  --post_blend_grid_step 0.1 \
+  --post_blend_ltp_ctp_override yes \
+  --out_json data/localize_bench/targetp2_stack_rf100_orgsplit_postblend_h256_seed100_eval.json \
+  --out_md data/localize_bench/targetp2_stack_rf100_orgsplit_postblend_h256_seed100_eval.md
+```
+
 Do not apply the stack input organism gate when selecting this model: on the
 same regenerated OOF inputs, gating the cTP/lTP columns before the meta-model
 reduced the fair foldwise score from 0.785 to 0.750 macro F1. A post-prediction
@@ -358,7 +399,14 @@ additional gain: RF50 with `class_weight=balanced_subsample` and leaf2 reaches
 exact macro F1 0.80274 (`noTP` 0.978, `SP` 0.956, `mTP` 0.819, `cTP` 0.760,
 `lTP` 0.500). This improves rare-class lTP but still trades away cTP, so it is
 not TargetP-like overall.
-Follow-up probes did not close the gap: averaging multiple lTP specialist
+Adding a fully regenerated h256 seed100 TargetP2-style Torch OOF as a direct
+fifth stack input did not help, but foldwise classwise blending between the
+RF100 stack and that Torch OOF did. The blend reaches exact macro F1 0.81945
+(`noTP` 0.979, `SP` 0.962, `mTP` 0.824, `cTP` 0.813, `lTP` 0.519); adding the
+same delayed lTP/cTP specialist raises this to 0.82779 (`cTP` 0.803, `lTP`
+0.571). A validation-selected seed0/seed100 h256 OOF was fair but less useful
+as a stack signal, reaching 0.757 standalone and 0.793 after stack blending.
+Other follow-up probes did not close the gap: averaging multiple lTP specialist
 random seeds reduced macro F1 to 0.785 or lower, two-way cTP/lTP
 reclassification peaked at 0.79498, appending the delayed lTP signal features
 to the main stack feature matrix reduced the RF100+specialist score to 0.76860,
@@ -368,24 +416,24 @@ specialist-only signal, not as a general stack input. A foldwise PSSM over
 N-terminal amino acid positions also did not help as an added stack input: the
 best RF100+PSSM stack score was 0.784 macro F1.
 
-lTP remains the limiting class. The organism-specialized stack moves held-out
-lTP F1 to 0.500, but that is still far below the TargetP 2.0 reference of
-0.750 and it lowers cTP F1 to 0.760. Reaching TargetP-like lTP/cTP performance
-likely requires a stronger sequence encoder or additional lTP-specific training
-data, not only threshold tuning.
+lTP remains the limiting class. The best post-blend run moves held-out lTP F1
+to 0.571, but that is still far below the TargetP 2.0 reference of 0.750, and
+cTP F1 is still 0.803 versus the TargetP reference of 0.880. Reaching
+TargetP-like lTP/cTP performance likely requires a stronger sequence encoder or
+additional lTP-specific training data, not only threshold tuning.
 
 The TargetP2-style PyTorch path is available through
 `scripts/targetp_torch_eval.py`. It reproduces the official input encoding and
 architecture family (BLOSUM62 probability rows, organism-conditioned BiLSTM
-initial state, 13 attention heads, and cleavage-site auxiliary losses), but the
-short local probes are not yet competitive: a 3-epoch lightweight one-model
-probe reached only 0.242 macro F1 on its covered outer fold. It should be
-treated as the next training path to fix, not as a production model. The
-PyTorch trainer now defaults to `--initializer targetp_tf`, which uses
+initial state, 13 attention heads, and cleavage-site auxiliary losses). Early
+short probes were poor, but the h256 seed100 paired OOF now reaches 0.77660
+macro F1 after validation-threshold scoring and provides a useful signal for
+the post-blend stack. It is still not TargetP-like on its own. The PyTorch
+trainer now defaults to `--initializer targetp_tf`, which uses
 Glorot-style conv/linear initialization and LSTM forget-gate biasing to better
 match the original TensorFlow 1 TargetP implementation. This improves
-implementation fidelity, but short one-model probes remain far below TargetP
-and should not be treated as production-quality scores. The runtime encoder now
+implementation fidelity, but the Torch path still needs more work before it can
+replace the CPU tree stack. The runtime encoder now
 uses the same BLOSUM62 probability rows as the official TargetP NPZ data; a
 FASTA-to-NPZ check on the first ten TargetP rows matched to within `5.96e-08`
 maximum absolute difference. Earlier cdskit runtime exports used a `2^BLOSUM62`
