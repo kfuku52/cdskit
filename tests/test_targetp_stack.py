@@ -6,6 +6,7 @@ import pytest
 from cdskit.localize_learn import LOCALIZATION_CLASSES
 from cdskit.targetp_stack import (
     evaluate_foldwise_ltp_ctp_override,
+    evaluate_foldwise_notp_ctp_ltp_override,
     run_targetp_stack_oof,
     stack_feature_matrix,
 )
@@ -132,3 +133,29 @@ def test_ltp_ctp_override_is_foldwise(temp_dir):
     assert result['metrics']['macro_f1'] >= 0.0
     assert [fold['fold_id'] for fold in result['folds']] == ['fold1', 'fold2']
     assert all(fold['n_specialist_train'] == 2 for fold in result['folds'])
+
+
+def test_notp_ctp_ltp_override_is_foldwise(temp_dir):
+    training_tsv = temp_dir / 'targetp.tsv'
+    rows = _write_targetp_fixture(training_tsv)
+    true_idx = np.asarray([i for _ in ['fold1', 'fold2'] for i in range(len(LOCALIZATION_CLASSES))])
+    base_prob = _write_base_oof_npz(temp_dir / 'base.npz', true_idx)
+    fold_ids = np.asarray([row['fold_id'] for row in rows])
+
+    result = evaluate_foldwise_notp_ctp_ltp_override(
+        prob_matrix=base_prob,
+        true_idx=true_idx,
+        fold_ids=fold_ids,
+        rows=rows,
+        class_names=list(LOCALIZATION_CLASSES),
+        threshold_grid=[0.5, 1.0, 2.0],
+        score_grid=[0.1, 0.5, 0.9],
+        notp_ctp_n_estimators=5,
+        ltp_ctp_n_estimators=5,
+        notp_ctp_random_state=3,
+        ltp_ctp_random_state=4,
+    )
+
+    assert result['metrics']['macro_f1'] >= 0.0
+    assert [fold['fold_id'] for fold in result['folds']] == ['fold1', 'fold2']
+    assert all(fold['n_ltp_ctp_specialist_train'] == 2 for fold in result['folds'])

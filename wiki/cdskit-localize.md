@@ -225,7 +225,8 @@ selection.
 | cdskit binary feature ensemble + formal ESM foldwise blend | 0.765 | 0.963 | fair foldwise blend estimate; still far below TargetP 2.0 |
 | cdskit binary feature + formal ESM foldwise specialist, macro objective | 0.780 | 0.962 | fair foldwise SP/lTP specialist threshold selection |
 | cdskit TargetP OOF stack RF100 foldwise thresholds | 0.785 | 0.964 | fair foldwise stack over binary feature, formal ESM, formal feature, and formal BiLSTM OOFs |
-| cdskit TargetP OOF stack RF100 + foldwise lTP/cTP override | 0.787 | 0.964 | same stack plus a plant cTP-vs-lTP RandomForest specialist trained and thresholded only on training folds; best reproducible fair score so far |
+| cdskit TargetP OOF stack RF100 + foldwise lTP/cTP override | 0.787 | 0.964 | same stack plus a plant cTP-vs-lTP RandomForest specialist trained and thresholded only on training folds |
+| cdskit TargetP OOF stack RF100 + foldwise noTP/cTP/lTP override | 0.787 | 0.963 | same stack plus nested noTP-to-cTP then plant cTP-to-lTP RandomForest specialists; exact macro F1 0.78738, best reproducible fair score so far |
 
 The command used for the feature/ESM run was:
 
@@ -299,6 +300,9 @@ PYTHONPATH=. python -m cdskit.targetp_stack \
   --ltp_ctp_override yes \
   --ltp_ctp_model_kind random_forest \
   --ltp_ctp_n_estimators 300 \
+  --notp_ctp_ltp_override yes \
+  --notp_ctp_model_kind random_forest \
+  --notp_ctp_n_estimators 200 \
   --out_json data/localize_bench/targetp2_stack_rf100_nogate_eval.json \
   --out_md data/localize_bench/targetp2_stack_rf100_nogate_eval.md
 ```
@@ -316,8 +320,9 @@ A multi-start threshold search can raise the all-OOF calibration score on the
 RF100 stack to about 0.795 macro F1, but the fair foldwise version dropped to
 0.777 macro F1. A nested plant cTP-vs-lTP RandomForest specialist over the
 RF100 stack improved the fair score slightly from 0.785 to 0.787 macro F1 by
-raising lTP F1 from 0.395 to 0.405; it is now the best reproducible fair
-model-selection estimate, but the gain is small.
+raising lTP F1 from 0.395 to 0.405. Adding a prior noTP-to-cTP specialist raised
+the exact fair macro F1 only from 0.78698 to 0.78738, with lTP F1 0.409 and
+cTP F1 0.776, so the current best is real but very small.
 
 lTP remains the limiting class. In the current regenerated OOFs, even an
 all-row oracle threshold on the best lTP binary score reached only about 0.466
