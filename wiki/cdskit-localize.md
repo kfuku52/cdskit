@@ -340,7 +340,10 @@ Gradient clipping is also optional through `--grad_clip_norm`; the default is
 defaults to `--rnn_impl targetp_tf_cell`, an unrolled `LSTMCell` path that more
 closely mirrors TensorFlow's `DropoutWrapper` state/output dropout than
 PyTorch's fused `nn.LSTM`; legacy checkpoints with `encoder.*` weights are still
-loaded through `--rnn_impl torch_lstm` automatically. TargetP torch training now
+loaded through `--rnn_impl torch_lstm` automatically. This path now leaves the
+LSTM memory state `c` undropped, matching TensorFlow 1.7's default
+`DropoutWrapper` state filter for `LSTMStateTuple.c`, while still dropping the
+hidden state/output. TargetP torch training now
 writes resumable per-model checkpoints to `--model_dir`; rerunning the same
 command with a larger `--epochs` and `--reuse_cache yes` continues an incomplete
 or shorter completed checkpoint instead of starting from scratch. New
@@ -356,8 +359,9 @@ best checkpoint was still epoch 4. Epochs 6-10 deteriorated sharply with
 path is not the next best route unless restarted from a coherent fresh
 checkpoint or retuned. A fresh one-epoch `targetp_tf_cell` smoke run with
 h16/n_filters8 completed on `outer0_val1` and wrote
-`targetp2_torch_tfcell_h16_e1_smoke_v2_eval.json`; it verified the new path but
-scored only 0.169 covered-fold macro F1, so it is not yet a competitive model.
+`targetp2_torch_tfcell_h16_e1_smoke_v3_eval.json`; it verified the corrected
+state/dropout path but scored only 0.169 covered-fold macro F1, so it is not yet
+a competitive model.
 
 An official-ish long probe can be continued with:
 

@@ -272,11 +272,10 @@ def _build_targetp2_torch_module(
                 for pos_i in time_indices:
                     active = (lengths > int(pos_i)).to(dtype=conv.dtype).unsqueeze(1)
                     next_h, next_c = cell(conv[:, int(pos_i), :], (h, c))
-                    dropped_c = self._dropout_keep(next_c, rnn_keep_prob)
                     dropped_h = self._dropout_keep(next_h, rnn_keep_prob)
                     dropped_output = self._dropout_keep(next_h, rnn_keep_prob)
                     h = (active * dropped_h) + ((1.0 - active) * h)
-                    c = (active * dropped_c) + ((1.0 - active) * c)
+                    c = (active * next_c) + ((1.0 - active) * c)
                     outputs[int(pos_i)] = active * dropped_output
                 return torch.stack(outputs, dim=1)
 
