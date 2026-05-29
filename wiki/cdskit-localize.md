@@ -304,6 +304,15 @@ same regenerated OOF inputs, gating the cTP/lTP columns before the meta-model
 reduced the fair foldwise score from 0.785 to 0.750 macro F1. A post-prediction
 organism constraint can still be applied by runtime prediction code.
 
+Follow-up fair probes did not beat the RF100 stack. Adding the untracked
+`targetp2_oof_feature_binHGB.npz` as a fifth base OOF reduced the RF100
+foldwise-threshold score to 0.760 macro F1, and replacing the RF meta-model
+with `HistGradientBoostingClassifier(max_iter=200)` scored 0.775 macro F1.
+A multi-start threshold search can raise the all-OOF calibration score on the
+RF100 stack to about 0.795 macro F1, but the fair foldwise version dropped to
+0.777 macro F1, so the simpler foldwise threshold result remains the best
+model-selection estimate.
+
 lTP remains the limiting class. In the current regenerated OOFs, even an
 all-row oracle threshold on the best lTP binary score reached only about 0.466
 lTP F1, and a nested lTP override over the RF stack reduced macro F1 to 0.781.
@@ -330,7 +339,18 @@ Gradient clipping is also optional through `--grad_clip_norm`; the default is
 `0.0` to match the official TargetP training script. TargetP torch training
 now writes resumable per-model checkpoints to `--model_dir`; rerunning the same
 command with a larger `--epochs` and `--reuse_cache yes` continues an incomplete
-or shorter completed checkpoint instead of starting from scratch.
+or shorter completed checkpoint instead of starting from scratch. New
+checkpoints include a `latest_epoch` marker so resume only restores optimizer
+state when it matches the latest weights; legacy completed checkpoints without
+that marker resume weights conservatively and skip the potentially stale
+optimizer state.
+
+The h64 official-ish one-model probe was resumed to 10 epochs on
+`outer0_val1`; the covered-fold macro F1 remained 0.386 because the selected
+best checkpoint was still epoch 4. Epochs 6-10 deteriorated sharply with
+`val_macro_f1` between 0.169 and 0.303, which suggests this resumed h64/lr=0.001
+path is not the next best route unless restarted from a coherent fresh
+checkpoint or retuned.
 
 An official-ish long probe can be continued with:
 

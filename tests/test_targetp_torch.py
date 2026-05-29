@@ -15,6 +15,7 @@ from cdskit.targetp_torch import (
     fit_targetp2_torch_model,
     initialize_targetp2_torch_module,
     _build_targetp2_torch_module,
+    _can_resume_optimizer_state,
     load_torch_payload,
     organism_group_to_targetp_org,
     targetp_blosum62_probability_table,
@@ -203,3 +204,21 @@ def test_targetp_torch_training_can_resume_epoch_checkpoint(temp_dir):
     assert resumed['training_complete'] is True
     assert len(first['history']) == 1
     assert len(resumed['history']) == 2
+    assert resumed['latest_epoch'] == 2
+    assert _can_resume_optimizer_state(resumed) is True
+
+
+def test_targetp_torch_skips_legacy_completed_optimizer_state():
+    payload = {
+        'training_complete': True,
+        'history': [{'epoch': 1}],
+        'optimizer_state': {'state': {}, 'param_groups': []},
+    }
+    assert _can_resume_optimizer_state(payload) is False
+    payload['training_complete'] = False
+    assert _can_resume_optimizer_state(payload) is True
+    payload['training_complete'] = True
+    payload['latest_epoch'] = 1
+    assert _can_resume_optimizer_state(payload) is True
+    payload['latest_epoch'] = 0
+    assert _can_resume_optimizer_state(payload) is False

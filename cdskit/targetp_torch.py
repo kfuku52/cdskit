@@ -472,6 +472,7 @@ def _targetp_torch_payload(
         'seed': int(seed),
         'state_dict': best_state,
         'latest_state_dict': latest_state if latest_state is not None else _state_dict_to_cpu(module),
+        'latest_epoch': int(len(history)),
         'history': list(history),
         'best_metrics': best_metrics,
         'final_val_metrics': final_val_metrics,
@@ -501,6 +502,17 @@ def _load_optimizer_state(optimizer, payload, device):
         for state_key, state_value in value.items():
             if hasattr(state_value, 'to'):
                 value[state_key] = state_value.to(device)
+
+
+def _can_resume_optimizer_state(payload):
+    if not isinstance(payload, dict):
+        return False
+    if payload.get('optimizer_state') is None:
+        return False
+    history_len = len(payload.get('history', []))
+    if 'latest_epoch' in payload:
+        return int(payload.get('latest_epoch', -1)) == int(history_len)
+    return not bool(payload.get('training_complete', False))
 
 
 def fit_targetp2_torch_model(
@@ -596,11 +608,12 @@ def fit_targetp2_torch_model(
         current_lr = float(resume_payload.get('current_lr', current_lr))
         for group in optimizer.param_groups:
             group['lr'] = current_lr
-        _load_optimizer_state(
-            optimizer=optimizer,
-            payload=resume_payload,
-            device=resolved_device,
-        )
+        if _can_resume_optimizer_state(resume_payload):
+            _load_optimizer_state(
+                optimizer=optimizer,
+                payload=resume_payload,
+                device=resolved_device,
+            )
         if resume_payload.get('rng_state') is not None:
             rng.bit_generator.state = resume_payload['rng_state']
         if resume_payload.get('torch_rng_state') is not None:
