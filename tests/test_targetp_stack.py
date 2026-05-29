@@ -5,6 +5,7 @@ import pytest
 
 from cdskit.localize_learn import LOCALIZATION_CLASSES
 from cdskit.targetp_stack import (
+    build_ltp_ctp_specialist_feature_matrix,
     evaluate_foldwise_ltp_ctp_override,
     evaluate_foldwise_notp_ctp_ltp_override,
     run_targetp_stack_oof,
@@ -87,6 +88,17 @@ def test_stack_feature_matrix_combines_base_probabilities_and_sequence_features(
     assert with_sequence.shape[0] == len(rows)
     assert without_sequence.shape == (len(rows), len(LOCALIZATION_CLASSES) + 3)
     assert with_sequence.shape[1] > without_sequence.shape[1]
+
+
+def test_ltp_ctp_specialist_features_extend_base_features(temp_dir):
+    training_tsv = temp_dir / 'targetp.tsv'
+    rows = _write_targetp_fixture(training_tsv)
+
+    specialist_features = build_ltp_ctp_specialist_feature_matrix(rows=rows)
+
+    assert specialist_features.shape[0] == len(rows)
+    assert specialist_features.shape[1] > 0
+    assert np.all(np.isfinite(specialist_features))
 
 
 def test_targetp_stack_oof_is_foldwise_and_normalized(temp_dir):

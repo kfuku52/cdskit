@@ -227,7 +227,8 @@ selection.
 | cdskit TargetP OOF stack RF100 foldwise thresholds | 0.785 | 0.964 | fair foldwise stack over binary feature, formal ESM, formal feature, and formal BiLSTM OOFs |
 | cdskit TargetP OOF stack RF100 + foldwise lTP/cTP override | 0.787 | 0.964 | same stack plus a plant cTP-vs-lTP RandomForest specialist trained and thresholded only on training folds |
 | cdskit TargetP OOF stack RF100 + foldwise noTP/cTP/lTP override | 0.787 | 0.963 | same stack plus nested noTP-to-cTP then plant cTP-to-lTP RandomForest specialists; exact macro F1 0.78738 |
-| cdskit TargetP second-level RF/HGB OOF stack + foldwise lTP/cTP override | 0.787 | 0.966 | fair foldwise second-level stack over RF100 and HGB200 stack OOFs plus sequence features; exact macro F1 0.78747, best reproducible fair score so far |
+| cdskit TargetP second-level RF/HGB OOF stack + foldwise lTP/cTP override | 0.787 | 0.966 | fair foldwise second-level stack over RF100 and HGB200 stack OOFs plus sequence features; exact macro F1 0.78747 |
+| cdskit TargetP OOF stack RF100 + delayed lTP signal override | 0.796 | 0.963 | fair foldwise lTP/cTP specialist with delayed signal-peptide and RR-after-hydrophobic features; exact macro F1 0.79552, best reproducible fair score so far |
 
 The command used for the feature/ESM run was:
 
@@ -330,6 +331,13 @@ exact fair macro F1 to 0.78747 (`noTP` 0.981, `SP` 0.967, `mTP` 0.811,
 `cTP` 0.784, `lTP` 0.395). This is a reproducible improvement, but the
 increase is only 0.00009 macro F1 over the prior best and does not change the
 main conclusion.
+Adding delayed thylakoid-signal features to the foldwise lTP/cTP specialist is a
+more meaningful improvement. The added features scan later N-terminal windows
+for signal-peptide-like hydrophobic segments and summarize RR motif placement
+and downstream hydrophobicity. With `ltp_ctp_n_estimators=100` and
+`ltp_ctp_random_state=123`, the RF100 stack reaches exact fair macro F1 0.79552,
+with `lTP` F1 0.457 and `cTP` F1 0.769. This is still far below TargetP 2.0,
+but it is the first fair regenerated run above 0.79 macro F1.
 
 lTP remains the limiting class. In the current regenerated OOFs, even an
 all-row oracle threshold on the best lTP binary score reached only about 0.466
