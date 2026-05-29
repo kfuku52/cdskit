@@ -45,6 +45,7 @@ TARGETP_STACK_DEFAULTS = {
     'max_features': 'sqrt',
     'min_samples_leaf': 1,
     'organism_gate': False,
+    'organism_specialized_stack': False,
 }
 
 TARGETP_STACK_LTP_CTP_DEFAULTS = {
@@ -256,6 +257,7 @@ def run_targetp_stack_oof(
     min_samples_leaf=1,
     include_sequence_features=True,
     organism_gate=False,
+    organism_specialized_stack=False,
 ):
     rows = read_training_rows(path=training_tsv)
     class_names = list(LOCALIZATION_CLASSES)
@@ -291,28 +293,72 @@ def run_targetp_stack_oof(
     )
     prob_matrix = np.zeros((features.shape[0], len(class_names)), dtype=np.float64)
     fold_rows = list()
-    for fold_id in sorted(set(fold_ids.tolist())):
+    organism_specialized_stack = bool(organism_specialized_stack)
+    plant_mask = plant_mask_from_rows(rows=rows) if organism_specialized_stack else None
+    for fold_i, fold_id in enumerate(sorted(set(fold_ids.tolist()))):
         valid_mask = fold_ids == fold_id
         train_mask = ~valid_mask
-        classifier = make_targetp_stack_classifier(
-            model_kind=model_kind,
-            n_estimators=n_estimators,
-            random_state=random_state,
-            class_weight=class_weight,
-            max_features=max_features,
-            min_samples_leaf=min_samples_leaf,
-        )
-        classifier.fit(features[train_mask, :], true_idx[train_mask])
-        prob_matrix[valid_mask, :] = predict_stack_classifier_prob_matrix(
-            classifier=classifier,
-            feature_matrix=features[valid_mask, :],
-            class_names=class_names,
-        )
-        fold_rows.append({
+        fold_row = {
             'fold_id': str(fold_id),
             'n_train': int(np.sum(train_mask)),
             'n_valid': int(np.sum(valid_mask)),
-        })
+        }
+        if organism_specialized_stack:
+            group_rows = list()
+            for group_name, group_mask in [
+                ('plant', plant_mask),
+                ('non_plant', ~plant_mask),
+            ]:
+                valid_group_mask = valid_mask & group_mask
+                if int(np.sum(valid_group_mask)) == 0:
+                    continue
+                train_group_mask = train_mask & group_mask
+                fit_mask = train_group_mask
+                used_fallback = False
+                if (
+                    int(np.sum(fit_mask)) < 2
+                    or len(set(true_idx[fit_mask].tolist())) < 2
+                ):
+                    fit_mask = train_mask
+                    used_fallback = True
+                classifier = make_targetp_stack_classifier(
+                    model_kind=model_kind,
+                    n_estimators=n_estimators,
+                    random_state=int(random_state) + int(fold_i),
+                    class_weight=class_weight,
+                    max_features=max_features,
+                    min_samples_leaf=min_samples_leaf,
+                )
+                classifier.fit(features[fit_mask, :], true_idx[fit_mask])
+                prob_matrix[valid_group_mask, :] = predict_stack_classifier_prob_matrix(
+                    classifier=classifier,
+                    feature_matrix=features[valid_group_mask, :],
+                    class_names=class_names,
+                )
+                group_rows.append({
+                    'organism_group': group_name,
+                    'n_train': int(np.sum(train_group_mask)),
+                    'n_fit': int(np.sum(fit_mask)),
+                    'n_valid': int(np.sum(valid_group_mask)),
+                    'used_global_fallback': bool(used_fallback),
+                })
+            fold_row['organism_groups'] = group_rows
+        else:
+            classifier = make_targetp_stack_classifier(
+                model_kind=model_kind,
+                n_estimators=n_estimators,
+                random_state=random_state,
+                class_weight=class_weight,
+                max_features=max_features,
+                min_samples_leaf=min_samples_leaf,
+            )
+            classifier.fit(features[train_mask, :], true_idx[train_mask])
+            prob_matrix[valid_mask, :] = predict_stack_classifier_prob_matrix(
+                classifier=classifier,
+                feature_matrix=features[valid_mask, :],
+                class_names=class_names,
+            )
+        fold_rows.append(fold_row)
     return {
         'prob_matrix': prob_matrix,
         'true_idx': true_idx,
@@ -329,6 +375,7 @@ def run_targetp_stack_oof(
             'min_samples_leaf': int(min_samples_leaf),
             'include_sequence_features': bool(include_sequence_features),
             'organism_gate': bool(organism_gate),
+            'organism_specialized_stack': bool(organism_specialized_stack),
             'base_oof_npzs': [str(path) for path in base_oof_npzs],
         }),
     }
@@ -786,6 +833,12 @@ def build_parser():
         choices=['yes', 'no'],
         type=str,
     )
+    parser.add_argument(
+        '--organism_specialized_stack',
+        default='yes' if TARGETP_STACK_DEFAULTS['organism_specialized_stack'] else 'no',
+        choices=['yes', 'no'],
+        type=str,
+    )
     parser.add_argument('--threshold_grid', default='0.05,0.075,0.1,0.15,0.2,0.3,0.4,0.5,0.65,0.8,1.0,1.25,1.5,2.0,3.0,5.0', type=str)
     parser.add_argument('--out_json', default='data/localize_bench/targetp2_stack_eval.json', type=str)
     parser.add_argument('--out_md', default='data/localize_bench/targetp2_stack_eval.md', type=str)
@@ -815,6 +868,7 @@ def main():
         min_samples_leaf=int(args.min_samples_leaf),
         include_sequence_features=_to_bool(args.include_sequence_features),
         organism_gate=_to_bool(args.organism_gate),
+        organism_specialized_stack=_to_bool(args.organism_specialized_stack),
     )
     out_dir = os.path.dirname(str(args.stack_oof_npz))
     if out_dir != '':

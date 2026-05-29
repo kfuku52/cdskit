@@ -123,6 +123,34 @@ def test_targetp_stack_oof_is_foldwise_and_normalized(temp_dir):
     assert oof['feature_dim'] == len(LOCALIZATION_CLASSES) + 3
 
 
+def test_targetp_stack_can_train_organism_specialized_models(temp_dir):
+    training_tsv = temp_dir / 'targetp.tsv'
+    _write_targetp_fixture(training_tsv)
+    true_idx = np.asarray([i for _ in ['fold1', 'fold2'] for i in range(len(LOCALIZATION_CLASSES))])
+    base_path = temp_dir / 'base.npz'
+    _write_base_oof_npz(base_path, true_idx)
+
+    oof = run_targetp_stack_oof(
+        training_tsv=str(training_tsv),
+        base_oof_npzs=[str(base_path)],
+        n_estimators=5,
+        random_state=3,
+        include_sequence_features=False,
+        organism_specialized_stack=True,
+    )
+
+    assert oof['prob_matrix'].shape == (10, len(LOCALIZATION_CLASSES))
+    np.testing.assert_allclose(oof['prob_matrix'].sum(axis=1), np.ones((10,)))
+    assert oof['profile']['organism_specialized_stack'] is True
+    assert [fold['fold_id'] for fold in oof['folds']] == ['fold1', 'fold2']
+    assert all(len(fold['organism_groups']) == 2 for fold in oof['folds'])
+    assert all(
+        group['used_global_fallback'] is False
+        for fold in oof['folds']
+        for group in fold['organism_groups']
+    )
+
+
 def test_ltp_ctp_override_is_foldwise(temp_dir):
     training_tsv = temp_dir / 'targetp.tsv'
     rows = _write_targetp_fixture(training_tsv)
