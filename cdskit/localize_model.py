@@ -936,7 +936,7 @@ def _predict_constant_localization(localization_model):
     return class_label, probs
 
 
-def _predict_localization_from_model(aa_seq, feature_vec, localization_model, model_type):
+def _predict_localization_from_model(aa_seq, feature_vec, localization_model, model_type, organism_group=''):
     if str(localization_model.get('mode', '')).strip().lower() == 'constant':
         return _predict_constant_localization(localization_model=localization_model)
     if model_type == 'nearest_centroid_v1':
@@ -959,11 +959,18 @@ def _predict_localization_from_model(aa_seq, feature_vec, localization_model, mo
             localization_model=localization_model,
             device='cpu',
         )
+    if model_type == 'targetp_feature_ensemble_v1':
+        return predict_targetp_feature_ensemble_localization(
+            aa_seq=aa_seq,
+            localization_model=localization_model,
+            organism_group=organism_group,
+        )
     if model_type == 'targetp_blend_v1':
         return predict_targetp_blend_localization(
             aa_seq=aa_seq,
             feature_vec=feature_vec,
             localization_model=localization_model,
+            organism_group=organism_group,
         )
     raise ValueError('Unsupported model_type: {}'.format(model_type))
 
@@ -1217,6 +1224,103 @@ def _targetp_ctp_ltp_specialist_feature_vector(aa_seq, base_probs, prob_a, prob_
     ])
 
 
+TARGETP_FEATURE_ENSEMBLE_PROFILE = {
+    'name': 'targetp_feature_ensemble_v1',
+    'n_terminal_group_len': 100,
+}
+
+
+def _targetp_feature_window_features(seq):
+    seq = str(seq or '')
+    windows = [
+        seq[:10],
+        seq[:15],
+        seq[:20],
+        seq[:25],
+        seq[:30],
+        seq[:35],
+        seq[:40],
+        seq[:45],
+        seq[:50],
+        seq[:60],
+        seq[:70],
+        seq[:80],
+        seq[:100],
+        seq[:120],
+        seq[5:35],
+        seq[10:50],
+        seq[20:80],
+        seq[40:120],
+        seq[-20:],
+        seq[-40:],
+    ]
+    groups = [
+        AA_BASIC,
+        AA_ACIDIC,
+        AA_HYDROPHOBIC,
+        AA_SMALL,
+        AA_SER_THR,
+        AA_AROMATIC,
+        frozenset('A'),
+        frozenset('G'),
+        frozenset('P'),
+        frozenset('R'),
+        frozenset('K'),
+        frozenset('LIV'),
+        frozenset('DE'),
+        frozenset('STNQ'),
+    ]
+    out = list()
+    for window in windows:
+        out.extend([
+            float(len(window)),
+            mean_hydropathy(window),
+            longest_hydrophobic_run(window),
+        ])
+        out.extend([fraction_in_set(window, group) for group in groups])
+        out.extend([
+            fraction_in_set(window, frozenset(aa))
+            for aa in 'ACDEFGHIKLMNPQRSTVWY'
+        ])
+    return out
+
+
+def _targetp_feature_positional_group_features(seq, n_terminal_len=100):
+    seq = str(seq or '')[:int(n_terminal_len)]
+    out = list()
+    for i in range(int(n_terminal_len)):
+        aa = seq[i] if i < len(seq) else 'X'
+        out.extend([
+            1.0 if aa in AA_HYDROPHOBIC else 0.0,
+            1.0 if aa in AA_BASIC else 0.0,
+            1.0 if aa in AA_ACIDIC else 0.0,
+            1.0 if aa in AA_SMALL else 0.0,
+            1.0 if aa in AA_SER_THR else 0.0,
+            1.0 if aa == 'P' else 0.0,
+            1.0 if aa == 'R' else 0.0,
+            1.0 if aa == 'K' else 0.0,
+            1.0 if aa == 'A' else 0.0,
+            1.0 if aa == 'G' else 0.0,
+        ])
+    return out
+
+
+def extract_targetp_feature_ensemble_features(aa_seq, organism_group=''):
+    seq = to_canonical_aa_sequence(aa_seq)
+    group = normalize_organism_group(organism_group)
+    plant_flag = 1.0 if group == 'plant' else 0.0
+    out = list(extract_broad_localize_features(seq, group)[0])
+    out.extend(_targetp_sp_scan_features(seq))
+    out.extend(_targetp_ctp_ltp_sequence_features(seq, group))
+    out.append(plant_flag)
+    out.extend(_targetp_feature_window_features(seq))
+    out.extend(_targetp_feature_positional_group_features(
+        seq=seq,
+        n_terminal_len=TARGETP_FEATURE_ENSEMBLE_PROFILE['n_terminal_group_len'],
+    ))
+    return np.asarray(out, dtype=np.float64)
+
+
 @contextmanager
 def _targetp_sklearn_single_thread_context():
     try:
@@ -1237,6 +1341,39 @@ def _targetp_sklearn_single_thread_context():
 def _targetp_predict_sklearn_proba(model, features):
     with _targetp_sklearn_single_thread_context():
         return model.predict_proba(features)
+
+
+def predict_targetp_feature_ensemble_localization(aa_seq, localization_model, organism_group=''):
+    classifier = localization_model.get('classifier', None)
+    if classifier is None or not hasattr(classifier, 'predict_proba'):
+        raise ValueError('targetp_feature_ensemble_v1 requires a sklearn classifier.')
+    class_order = list(localization_model.get('class_order', LOCALIZATION_CLASSES))
+    if class_order != list(LOCALIZATION_CLASSES):
+        raise ValueError('targetp_feature_ensemble_v1 class_order should match LOCALIZATION_CLASSES.')
+    feature_vec = extract_targetp_feature_ensemble_features(
+        aa_seq=aa_seq,
+        organism_group=organism_group,
+    )
+    expected_dim = int(localization_model.get('feature_dim', feature_vec.shape[0]))
+    if feature_vec.shape[0] != expected_dim:
+        txt = 'TargetP feature count mismatch: expected {}, got {}.'
+        raise ValueError(txt.format(expected_dim, int(feature_vec.shape[0])))
+    proba = np.asarray(
+        _targetp_predict_sklearn_proba(
+            classifier,
+            feature_vec.reshape((1, -1)),
+        ),
+        dtype=np.float64,
+    )
+    classes = getattr(classifier, 'classes_', list(range(len(class_order))))
+    class_to_col = {int(cls): i for i, cls in enumerate(list(classes))}
+    prob_vec = np.zeros((len(class_order),), dtype=np.float64)
+    for class_i in range(len(class_order)):
+        if class_i in class_to_col:
+            prob_vec[class_i] = float(proba[0, class_to_col[class_i]])
+    probs = _vector_to_class_probs(prob_vec)
+    pred_idx = int(np.argmax([probs[class_name] for class_name in LOCALIZATION_CLASSES]))
+    return LOCALIZATION_CLASSES[pred_idx], probs
 
 
 def _predict_binary_ensemble_score(feature_vec, models, weights=None):
@@ -1400,6 +1537,7 @@ def predict_targetp_blend_localization(
             feature_vec=feature_vec,
             localization_model=submodel,
             model_type=base_model_type,
+            organism_group=organism_group,
         )
         base_probs.append(apply_organism_group_constraints(
             class_probs=probs,
@@ -1621,6 +1759,7 @@ def predict_localization_and_peroxisome(aa_seq, model, organism_group=''):
             feature_vec=feats,
             localization_model=localization_model,
             model_type=model_type,
+            organism_group=organism_group,
         )
     if model_type != 'targetp_blend_v1':
         class_probs = apply_organism_group_constraints(
@@ -1671,7 +1810,13 @@ def save_localize_model(model, path):
         with open(path, 'w', encoding='utf-8') as out:
             json.dump(model, out, indent=2, sort_keys=True)
         return
-    if model_type in ['bilstm_attention_v1', 'esm_head_v1', 'multilabel_cnn_v1', 'targetp_blend_v1']:
+    if model_type in [
+        'bilstm_attention_v1',
+        'esm_head_v1',
+        'multilabel_cnn_v1',
+        'targetp_blend_v1',
+        'targetp_feature_ensemble_v1',
+    ]:
         from cdskit.localize_bilstm import require_torch
         torch, _ = require_torch()
         to_save = _strip_runtime_caches(dict(model))
@@ -1716,6 +1861,7 @@ def load_localize_model(path):
         'bilstm_attention_v1',
         'esm_head_v1',
         'targetp_blend_v1',
+        'targetp_feature_ensemble_v1',
         'multilabel_centroid_v1',
         'multilabel_cnn_v1',
     ]

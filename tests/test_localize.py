@@ -19,6 +19,7 @@ from cdskit.localize import localize_main
 import cdskit.localize_learn as localize_learn_module
 from cdskit.localize_learn import localize_learn_main
 from cdskit.localize_model import (
+    extract_targetp_feature_ensemble_features,
     infer_labels_from_uniprot_cc,
     load_localize_model,
     postprocess_localization_probabilities,
@@ -68,6 +69,17 @@ class ConstantBinaryScore:
         n_rows = int(np.asarray(x).shape[0])
         row = np.asarray([1.0 - self.score, self.score], dtype=np.float64)
         return np.tile(row.reshape((1, 2)), (n_rows, 1))
+
+
+class ConstantMulticlassScore:
+    classes_ = np.asarray([0, 1, 2, 3, 4], dtype=np.int64)
+
+    def __init__(self, probs):
+        self.probs = np.asarray(probs, dtype=np.float64)
+
+    def predict_proba(self, x):
+        n_rows = int(np.asarray(x).shape[0])
+        return np.tile(self.probs.reshape((1, -1)), (n_rows, 1))
 
 
 def aa_to_cds(aa_seq):
@@ -1036,6 +1048,50 @@ def test_predict_targetp_blend_specialist_can_override_class_prediction():
 
     assert pred['predicted_class'] == 'SP'
     assert pred['targetp_blend_details']['specialist_postprocess']['sp_positive'] is True
+
+
+def test_predict_targetp_feature_ensemble_uses_cpu_sklearn_classifier_and_organism_gate():
+    aa_seq = 'MASTSTSTSTSSRRRGGGGG'
+    feature_dim = int(extract_targetp_feature_ensemble_features(
+        aa_seq=aa_seq,
+        organism_group='plant',
+    ).shape[0])
+    model = {
+        'model_type': 'targetp_feature_ensemble_v1',
+        'feature_names': [],
+        'localization_model': {
+            'mode': 'targetp_feature_ensemble',
+            'class_order': ['noTP', 'SP', 'mTP', 'cTP', 'lTP'],
+            'classifier': ConstantMulticlassScore([0.05, 0.05, 0.05, 0.80, 0.05]),
+            'feature_dim': feature_dim,
+            'class_thresholds': {
+                'noTP': 1.0,
+                'SP': 1.0,
+                'mTP': 1.0,
+                'cTP': 1.0,
+                'lTP': 1.0,
+            },
+        },
+        'perox_model': {
+            'mode': 'constant',
+            'yes_probability': 0.0,
+        },
+    }
+
+    plant_pred = predict_localization_and_peroxisome(
+        aa_seq=aa_seq,
+        model=model,
+        organism_group='plant',
+    )
+    non_plant_pred = predict_localization_and_peroxisome(
+        aa_seq=aa_seq,
+        model=model,
+        organism_group='non_plant',
+    )
+
+    assert plant_pred['predicted_class'] == 'cTP'
+    assert non_plant_pred['predicted_class'] == 'noTP'
+    assert non_plant_pred['class_probabilities']['cTP'] == pytest.approx(0.0)
 
 
 def test_localize_learn_predefined_cv_fold_col(temp_dir, mock_args):
