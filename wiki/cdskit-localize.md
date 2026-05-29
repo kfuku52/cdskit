@@ -316,7 +316,12 @@ architecture family (BLOSUM62 probability rows, organism-conditioned BiLSTM
 initial state, 13 attention heads, and cleavage-site auxiliary losses), but the
 short local probes are not yet competitive: a 3-epoch lightweight one-model
 probe reached only 0.242 macro F1 on its covered outer fold. It should be
-treated as the next training path to fix, not as a production model.
+treated as the next training path to fix, not as a production model. The
+PyTorch trainer now defaults to `--initializer targetp_tf`, which uses
+Glorot-style conv/linear initialization and LSTM forget-gate biasing to better
+match the original TensorFlow 1 TargetP implementation. This improves
+implementation fidelity, but short one-model probes remain far below TargetP
+and should not be treated as production-quality scores.
 
 The blend helper writes per-model TargetP margin summaries to JSON and Markdown,
 including an `All classes > TargetP` row. To save the foldwise fixed specialist

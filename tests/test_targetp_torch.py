@@ -13,6 +13,8 @@ from cdskit.targetp_torch import (
     encode_targetp_blosum_sequences,
     export_targetp2_torch_localize_model,
     fit_targetp2_torch_model,
+    initialize_targetp2_torch_module,
+    _build_targetp2_torch_module,
     organism_group_to_targetp_org,
     targetp_blosum62_probability_table,
 )
@@ -99,3 +101,31 @@ def test_targetp_torch_payload_can_predict_and_roundtrip(temp_dir):
     assert set(result['class_probabilities']) == set(LOCALIZATION_CLASSES)
     assert organism_group_to_targetp_org('plant') == 1
     assert organism_group_to_targetp_org('non_plant') == 0
+
+
+def test_targetp_tf_initializer_sets_lstm_forget_bias():
+    torch = pytest.importorskip('torch')
+    import torch.nn as nn
+
+    module = _build_targetp2_torch_module(
+        torch=torch,
+        nn=nn,
+        seq_len=12,
+        hidden_rnn=4,
+        n_filters=3,
+        hidden_fc=5,
+        n_attention=4,
+        attention_size=4,
+    )
+    initialize_targetp2_torch_module(
+        torch=torch,
+        nn=nn,
+        module=module,
+        initializer='targetp_tf',
+    )
+
+    for name, param in module.encoder.named_parameters():
+        if 'bias' in name:
+            hidden = int(param.shape[0] // 4)
+            expected = np.ones((hidden,), dtype=np.float32) if 'bias_ih' in name else np.zeros((hidden,), dtype=np.float32)
+            np.testing.assert_allclose(param.detach().cpu().numpy()[hidden:2 * hidden], expected)

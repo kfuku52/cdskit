@@ -43,6 +43,7 @@ TARGETP_TORCH_DEFAULTS = {
     'type_class_weight': 'none',
     'selection_metric': 'val_loss',
     'balanced_batch': 'no',
+    'initializer': 'targetp_tf',
 }
 
 
@@ -271,6 +272,34 @@ def _build_targetp2_torch_module(
     return TargetP2TorchNet()
 
 
+def initialize_targetp2_torch_module(torch, nn, module, initializer='targetp_tf'):
+    initializer = str(initializer or 'targetp_tf').strip().lower()
+    if initializer == 'pytorch':
+        return module
+    if initializer != 'targetp_tf':
+        raise ValueError('Unsupported TargetP torch initializer: {}'.format(initializer))
+    for child in module.modules():
+        if isinstance(child, nn.Conv1d) or isinstance(child, nn.Linear):
+            nn.init.xavier_uniform_(child.weight)
+            if child.bias is not None:
+                nn.init.zeros_(child.bias)
+        elif isinstance(child, nn.LSTM):
+            for name, param in child.named_parameters():
+                if 'weight_ih' in name:
+                    nn.init.xavier_uniform_(param)
+                elif 'weight_hh' in name:
+                    hidden = int(param.shape[1])
+                    for start in range(0, int(param.shape[0]), hidden):
+                        nn.init.orthogonal_(param[start:start + hidden])
+                elif 'bias' in name:
+                    nn.init.zeros_(param)
+                    if 'bias_ih' in name:
+                        hidden = int(param.shape[0] // 4)
+                        with torch.no_grad():
+                            param[hidden:2 * hidden].fill_(1.0)
+    return module
+
+
 def _targetp2_loss(torch, outputs, y_type, y_cs, type_weight=None):
     import torch.nn.functional as F
 
@@ -433,6 +462,12 @@ def fit_targetp2_torch_model(
         attention_size=int(config['attention_size']),
         input_keep_prob=float(config['input_keep_prob']),
         encoder_keep_prob=float(config['encoder_keep_prob']),
+    )
+    initialize_targetp2_torch_module(
+        torch=torch,
+        nn=nn,
+        module=module,
+        initializer=config.get('initializer', 'targetp_tf'),
     )
     module.to(resolved_device)
     optimizer = torch.optim.Adam(module.parameters(), lr=float(config['learning_rate']))
