@@ -215,3 +215,113 @@ F1 improved from 0.743 to 0.752 over the threshold blend. For DeepLoc sorting
 signals, `--rare_label_threshold_objective f2` raised `TH` recall from 0.762 to
 0.810, but lowered `TH` F1 from 0.325 to 0.288, so it is a recall-oriented option
 rather than a better default.
+
+## TargetP external overfitting checks
+
+`python -m cdskit.targetp_external_eval` evaluates a TargetP-trained
+`targetp_blend_v1` runtime model on public data that were not used as TargetP
+folds. It removes exact TargetP accession/sequence overlaps and can run MMseqs2
+against the TargetP training set before scoring a UniProt holdout.
+
+The TargetP comparison and TargetP-specialized runtime exports use
+`data/localize_bench/targetp2_benchmark.tsv`, the official TargetP 2.0
+13,005-sequence nested cross-validation dataset. The runtime model is trained
+from that table; cached OOF probabilities from the same table are used to tune
+blend weights, thresholds, and the optional cdskit specialist postprocess. The
+external checks below do not train or retune the runtime model.
+
+External evaluation datasets:
+
+- `data/localize_bench/deeploc21/deeploc21_sorting_signals.tsv`: public
+  DeepLoc 2.1 sorting-signal labels mapped from `SP`, `MT`, `CH`, `TH` to
+  cdskit `SP`, `mTP`, `cTP`, `lTP`; exact TargetP accession or sequence
+  overlaps are removed.
+- `data/localize_bench/deeploc21/deeploc21_hpa_test.tsv`: public DeepLoc 2.1
+  HPA localization test, used as a broad proxy where `extracellular`,
+  `mitochondrion`, and `chloroplast` map to `SP`, `mTP`, and `cTP`; all other
+  unambiguous locations map to `noTP`.
+- `data/localize_bench/eukaryota_full_with_lineage.tsv`: UniProt CC
+  `SUBCELLULAR LOCATION` weak labels inferred by the cdskit localization rules.
+  Ambiguous CC rows are skipped, exact TargetP overlaps are removed, and the
+  sampled holdout can be filtered against TargetP training sequences with
+  MMseqs2.
+
+```
+python -m cdskit.targetp_external_eval \
+  --model data/localize_bench/targetp2_blend_runtime_specialist_cached_e15.pt \
+  --targetp_tsv data/localize_bench/targetp2_benchmark.tsv \
+  --deeploc_dir data/localize_bench/deeploc21 \
+  --uniprot_tsv data/localize_bench/eukaryota_full_with_lineage.tsv \
+  --out_dir data/localize_bench/targetp_external_eval_cached_e15 \
+  --max_uniprot_per_class 200 \
+  --mmseqs yes \
+  --mmseqs_min_seq_id 0.30 \
+  --mmseqs_min_coverage 0.80 \
+  --threads 4 \
+  --seed 1
+```
+
+Current cached 15-epoch runtime snapshot. This model trains the final base
+predictors on the full TargetP table, but still uses the older cached OOF
+probabilities for blend and threshold calibration; it is therefore an external
+generalization check, not the final formal regenerated-OOF score.
+
+| Dataset | Rows | Accuracy | Macro F1 | Observed macro F1 | Notes |
+| --- | ---: | ---: | ---: | ---: | --- |
+| DeepLoc sorting signals | 239 | 0.845 | 0.183 | 0.916 | TargetP exact overlaps removed; only `SP` remains after overlap filtering |
+| DeepLoc HPA broad | 1,708 | 0.850 | 0.267 | 0.668 | mature-localization proxy; mostly `noTP` plus `mTP` |
+| UniProt CC holdout | 776 | 0.361 | 0.363 | 0.363 | weak labels from cdskit UniProt CC rules; MMseqs2 30% identity / 80% coverage removed 224 of 1,000 sampled rows |
+
+UniProt CC holdout per-class F1 for the cached 15-epoch runtime:
+
+| Class | Support | Precision | Recall | F1 |
+| --- | ---: | ---: | ---: | ---: |
+| noTP | 115 | 0.191 | 0.861 | 0.313 |
+| SP | 142 | 0.821 | 0.676 | 0.741 |
+| mTP | 176 | 0.636 | 0.239 | 0.347 |
+| cTP | 170 | 0.657 | 0.135 | 0.224 |
+| lTP | 173 | 0.500 | 0.116 | 0.188 |
+
+The UniProt holdout is the useful five-class overfitting check. Before sampling
+it contains 146,509 non-overlapping, unambiguous TargetP-like rows
+(`noTP` 90,143, `SP` 24,151, `mTP` 16,570, `cTP` 8,477, `lTP` 7,168); 13,577
+exact TargetP overlaps, 609 ambiguous CC rows, and 32,385 rows without usable
+localization text were skipped. The low organelle recall on this holdout
+suggests either TargetP-dataset overfitting, domain shift, weak-label noise, or
+a combination of these. DeepLoc sorting and HPA are useful sanity checks but are
+not sufficient five-class overfitting tests after overlap filtering because they
+lack support for several TargetP classes.
+
+An earlier short 3-epoch runtime export with the same cached OOF blend
+parameters produced similar UniProt holdout performance: accuracy 0.353,
+macro F1 0.352, `SP` F1 0.749, `mTP` F1 0.336, `cTP` F1 0.240, and `lTP`
+F1 0.136. The cached 15-epoch export therefore does not remove the external
+generalization gap.
+
+A full 15-epoch export with regenerated OOF caches should still be run as a
+long job before treating the external numbers as the final TargetP-specialist
+model's generalization estimate.
+
+The long full export can be resumed manually with a larger BiLSTM batch size:
+
+```
+PYTHONPATH=. TOKENIZERS_PARALLELISM=false \
+OMP_NUM_THREADS=8 MKL_NUM_THREADS=8 VECLIB_MAXIMUM_THREADS=8 \
+python -m cdskit.targetp_blend \
+  --training_tsv data/localize_bench/targetp2_benchmark.tsv \
+  --reuse_oof_cache no \
+  --organism_gate yes \
+  --bilstm_oof_npz data/localize_bench/targetp2_oof_bilstm_formal_cpu_b2048.npz \
+  --esm_oof_npz data/localize_bench/targetp2_oof_esm_formal_cpu_b128.npz \
+  --bilstm_dl_batch_size 2048 \
+  --bilstm_dl_device cpu \
+  --esm_dl_batch_size 128 \
+  --esm_dl_device cpu \
+  --threshold_grid 0.05,0.075,0.1,0.15,0.2,0.3,0.4,0.5,0.65,0.8,0.9,1.0,1.25,1.35,1.5,1.6,2.0,3.0,5.0 \
+  --foldwise_blend_eval yes \
+  --foldwise_specialist_eval yes \
+  --foldwise_specialist_fixed_eval yes \
+  --model_out data/localize_bench/targetp2_blend_runtime_specialist_formal_cpu_b2048.pt \
+  --out_json data/localize_bench/targetp2_bilstm_esm_blend_formal_cpu_b2048.json \
+  --out_md data/localize_bench/targetp2_bilstm_esm_blend_formal_cpu_b2048.md
+```
