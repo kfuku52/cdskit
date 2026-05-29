@@ -185,16 +185,28 @@ Per-class F1 for the same snapshot:
 | lTP | 0.750 | 0.563 | 0.000 | 0.563 | 0.595 | 0.743 | 0.731 | 0.759 | 0.752 | 0.766 |
 
 This means `cdskit localize` is usable as a CPU-first local predictor and can be
-benchmarked reproducibly on the TargetP dataset. The benchmark-only specialist
-postprocess exceeds the TargetP 2.0 Table 1 F1 reference for all five classes in
-the current OOF snapshot, including `SP` and rare `lTP`. The foldwise specialist
-evaluation also exceeds the TargetP reference for all five classes while
-excluding each held-out fold from specialist model fitting. It uses the same
-cdskit-side SP gate plus cTP/lTP reranker as the runtime profile, trained from
-sequence-derived features and cached OOF probabilities; it does not use TargetP
-parameters. Thresholds are selected on the training-fold complement when that
-complement can clear all TargetP class margins, otherwise the calibrated runtime
-profile is used as a stability fallback.
+benchmarked reproducibly on the TargetP dataset. In the cached OOF snapshot, the
+benchmark-only specialist postprocess exceeds the TargetP 2.0 Table 1 F1
+reference for all five classes, including `SP` and rare `lTP`. The foldwise
+specialist evaluation also exceeds the TargetP reference for all five classes
+while excluding each held-out fold from specialist model fitting. It uses the
+same cdskit-side SP gate plus cTP/lTP reranker as the runtime profile, trained
+from sequence-derived features and cached OOF probabilities; it does not use
+TargetP parameters. Thresholds are selected on the training-fold complement when
+that complement can clear all TargetP class margins, otherwise the calibrated
+runtime profile is used as a stability fallback.
+
+That cached high-margin snapshot is not reproduced by the regenerated formal
+OOF run below. Treat the cached numbers as a development snapshot until the
+training recipe is corrected or a new regenerated run recovers the margins.
+
+| Regenerated formal run | Macro F1 | Overall acc. | Min class dF1 vs TargetP | All classes > TargetP | Notes |
+| --- | ---: | ---: | ---: | :---: | --- |
+| cdskit BiLSTM, MPS b2048 OOF | 0.557 | 0.811 | -0.5796 | no | 15 epochs, regenerated fold caches |
+| cdskit ESM2 t6 head, MPS b128 OOF | 0.656 | 0.957 | -0.7500 | no | 1 epoch, regenerated fold caches |
+| cdskit BiLSTM/ESM blend + thresholds, regenerated OOF | 0.732 | 0.957 | -0.4500 | no | classwise blend, regenerated OOF |
+| cdskit BiLSTM/ESM foldwise blend + thresholds, regenerated OOF | 0.714 | 0.955 | -0.5086 | no | alpha and thresholds selected on training folds |
+| cdskit TargetP specialist foldwise fixed, regenerated OOF | 0.705 | 0.953 | -0.5682 | no | formal runtime export `targetp2_blend_runtime_specialist_formal_mps_b2048.pt` |
 
 The blend helper writes per-model TargetP margin summaries to JSON and Markdown,
 including an `All classes > TargetP` row. To save the foldwise fixed specialist
@@ -272,6 +284,14 @@ generalization check, not the final formal regenerated-OOF score.
 | DeepLoc HPA broad | 1,708 | 0.850 | 0.267 | 0.668 | mature-localization proxy; mostly `noTP` plus `mTP` |
 | UniProt CC holdout | 776 | 0.361 | 0.363 | 0.363 | weak labels from cdskit UniProt CC rules; MMseqs2 30% identity / 80% coverage removed 224 of 1,000 sampled rows |
 
+Formal regenerated-OOF runtime snapshot (`targetp2_blend_runtime_specialist_formal_mps_b2048.pt`):
+
+| Dataset | Rows | Accuracy | Macro F1 | Observed macro F1 | Notes |
+| --- | ---: | ---: | ---: | ---: | --- |
+| DeepLoc sorting signals | 239 | 0.925 | 0.192 | 0.961 | TargetP exact overlaps removed; only `SP` remains after overlap filtering |
+| DeepLoc HPA broad | 1,708 | 0.845 | 0.280 | 0.701 | mature-localization proxy; mostly `noTP` plus `mTP` |
+| UniProt CC holdout | 776 | 0.372 | 0.373 | 0.373 | weak labels from cdskit UniProt CC rules; MMseqs2 30% identity / 80% coverage removed 224 of 1,000 sampled rows |
+
 UniProt CC holdout per-class F1 for the cached 15-epoch runtime:
 
 | Class | Support | Precision | Recall | F1 |
@@ -281,6 +301,16 @@ UniProt CC holdout per-class F1 for the cached 15-epoch runtime:
 | mTP | 176 | 0.636 | 0.239 | 0.347 |
 | cTP | 170 | 0.657 | 0.135 | 0.224 |
 | lTP | 173 | 0.500 | 0.116 | 0.188 |
+
+UniProt CC holdout per-class F1 for the formal regenerated-OOF runtime:
+
+| Class | Support | Precision | Recall | F1 |
+| --- | ---: | ---: | ---: | ---: |
+| noTP | 115 | 0.191 | 0.843 | 0.311 |
+| SP | 142 | 0.787 | 0.704 | 0.743 |
+| mTP | 176 | 0.620 | 0.278 | 0.384 |
+| cTP | 170 | 0.714 | 0.147 | 0.244 |
+| lTP | 173 | 0.667 | 0.104 | 0.180 |
 
 The UniProt holdout is the useful five-class overfitting check. Before sampling
 it contains 146,509 non-overlapping, unambiguous TargetP-like rows
@@ -292,39 +322,50 @@ a combination of these. DeepLoc sorting and HPA are useful sanity checks but are
 not sufficient five-class overfitting tests after overlap filtering because they
 lack support for several TargetP classes.
 
+The formal regenerated-OOF runtime slightly improves the UniProt weak-label
+holdout over the cached 15-epoch runtime (macro F1 0.373 vs 0.363), but its
+TargetP internal regenerated-OOF score is much worse (best formal macro F1
+0.732 for the threshold blend and 0.705 for the foldwise fixed specialist). This
+points away from a simple overfitting-only explanation: the current reproducible
+training recipe itself is underperforming on TargetP, especially `lTP`, and
+should be fixed before treating cdskit as TargetP-competitive.
+
 An earlier short 3-epoch runtime export with the same cached OOF blend
 parameters produced similar UniProt holdout performance: accuracy 0.353,
 macro F1 0.352, `SP` F1 0.749, `mTP` F1 0.336, `cTP` F1 0.240, and `lTP`
 F1 0.136. The cached 15-epoch export therefore does not remove the external
 generalization gap.
 
-A full 15-epoch export with regenerated OOF caches should still be run as a
-long job before treating the external numbers as the final TargetP-specialist
-model's generalization estimate. Use `--oof_fold_cache_dir` with a fresh
-directory for the chosen hyperparameters so interrupted OOF regeneration can
-resume from already completed folds.
+A full 15-epoch export with regenerated OOF caches has been run with MPS
+training and CPU-loadable runtime export artifacts. Use `--oof_fold_cache_dir`
+with a fresh directory for the chosen hyperparameters so interrupted OOF
+regeneration can resume from already completed folds.
 
-The long full export can be resumed manually with a larger BiLSTM batch size:
+The completed MPS formal export command was:
 
 ```
 PYTHONPATH=. TOKENIZERS_PARALLELISM=false \
-OMP_NUM_THREADS=8 MKL_NUM_THREADS=8 VECLIB_MAXIMUM_THREADS=8 \
+PYTORCH_ENABLE_MPS_FALLBACK=1 \
+OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 \
 python -m cdskit.targetp_blend \
   --training_tsv data/localize_bench/targetp2_benchmark.tsv \
   --reuse_oof_cache no \
   --organism_gate yes \
-  --bilstm_oof_npz data/localize_bench/targetp2_oof_bilstm_formal_cpu_b2048.npz \
-  --esm_oof_npz data/localize_bench/targetp2_oof_esm_formal_cpu_b128.npz \
-  --oof_fold_cache_dir data/localize_bench/targetp2_oof_formal_cpu_b2048_folds \
+  --bilstm_oof_npz data/localize_bench/targetp2_oof_bilstm_formal_mps_b2048.npz \
+  --esm_oof_npz data/localize_bench/targetp2_oof_esm_formal_mps_b128.npz \
+  --oof_fold_cache_dir data/localize_bench/targetp2_oof_formal_mps_b2048_folds \
+  --bilstm_dl_epochs 15 \
   --bilstm_dl_batch_size 2048 \
-  --bilstm_dl_device cpu \
+  --bilstm_dl_device mps \
+  --esm_dl_epochs 1 \
   --esm_dl_batch_size 128 \
-  --esm_dl_device cpu \
+  --esm_dl_device mps \
   --threshold_grid 0.05,0.075,0.1,0.15,0.2,0.3,0.4,0.5,0.65,0.8,0.9,1.0,1.25,1.35,1.5,1.6,2.0,3.0,5.0 \
   --foldwise_blend_eval yes \
   --foldwise_specialist_eval yes \
   --foldwise_specialist_fixed_eval yes \
-  --model_out data/localize_bench/targetp2_blend_runtime_specialist_formal_cpu_b2048.pt \
-  --out_json data/localize_bench/targetp2_bilstm_esm_blend_formal_cpu_b2048.json \
-  --out_md data/localize_bench/targetp2_bilstm_esm_blend_formal_cpu_b2048.md
+  --foldwise_specialist_fixed_score_npz data/localize_bench/targetp2_specialist_foldwise_fixed_formal_mps_b2048_scores.npz \
+  --model_out data/localize_bench/targetp2_blend_runtime_specialist_formal_mps_b2048.pt \
+  --out_json data/localize_bench/targetp2_bilstm_esm_blend_formal_mps_b2048.json \
+  --out_md data/localize_bench/targetp2_bilstm_esm_blend_formal_mps_b2048.md
 ```

@@ -3,6 +3,7 @@ from contextlib import contextmanager
 import csv
 import json
 import os
+import sys
 import warnings
 
 import numpy as np
@@ -1766,6 +1767,11 @@ def _run_model_oof_with_fold_cache(
             fold_label=fold_label,
         )
         if os.path.exists(cache_path):
+            print(
+                '[OOF] {} {} cache hit: {}'.format(model_arch, fold_label, cache_path),
+                file=sys.stderr,
+                flush=True,
+            )
             row_index, prob_matrix, true_idx = _load_oof_fold_npz(
                 path=cache_path,
                 class_names=list(LOCALIZATION_CLASSES),
@@ -1778,6 +1784,15 @@ def _run_model_oof_with_fold_cache(
                 raise ValueError('OOF fold cache row indices do not match current fold: {}'.format(cache_path))
             cache_used += 1
         else:
+            print(
+                '[OOF] {} {} start (n_test={})'.format(
+                    model_arch,
+                    fold_label,
+                    int(test_idx.shape[0]),
+                ),
+                file=sys.stderr,
+                flush=True,
+            )
             train_mask = np.ones(n_sample, dtype=bool)
             train_mask[test_idx] = False
             train_idx = np.where(train_mask)[0]
@@ -1805,6 +1820,11 @@ def _run_model_oof_with_fold_cache(
                 cache_key=cache_key,
             )
             cache_written += 1
+            print(
+                '[OOF] {} {} wrote cache: {}'.format(model_arch, fold_label, cache_path),
+                file=sys.stderr,
+                flush=True,
+            )
         cache_files.append(cache_path)
         all_row_index.append(np.asarray(row_index, dtype=np.int64))
         all_prob.append(np.asarray(prob_matrix, dtype=np.float64))
