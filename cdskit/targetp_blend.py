@@ -395,6 +395,34 @@ def _targetp_margin_rank(pred_idx, true_idx, class_names):
     )
 
 
+def _specialist_threshold_rank(pred_idx, true_idx, class_names, objective='targetp_margin'):
+    objective = str(objective or 'targetp_margin').strip().lower()
+    if objective == 'targetp_margin':
+        return _targetp_margin_rank(
+            pred_idx=pred_idx,
+            true_idx=true_idx,
+            class_names=class_names,
+        )
+    if objective == 'macro_f1':
+        f1 = _fast_f1_vector(
+            pred_idx=pred_idx,
+            true_idx=true_idx,
+            n_class=len(class_names),
+        )
+        overall = float(np.mean(
+            np.asarray(pred_idx, dtype=np.int64) == np.asarray(true_idx, dtype=np.int64)
+        ))
+        return (
+            float(np.mean(f1)),
+            float(f1[class_names.index('lTP')] if 'lTP' in class_names else 0.0),
+            float(f1[class_names.index('SP')] if 'SP' in class_names else 0.0),
+            float(f1[class_names.index('mTP')] if 'mTP' in class_names else 0.0),
+            float(f1[class_names.index('cTP')] if 'cTP' in class_names else 0.0),
+            overall,
+        )
+    raise ValueError('Unsupported specialist threshold objective: {}'.format(objective))
+
+
 def _targetp_margin_summary(metrics, targetp_ref, class_names):
     margins = dict()
     beats = dict()
@@ -1019,6 +1047,7 @@ def _optimize_specialist_threshold_pair(
     fallback_sp_threshold=None,
     fallback_ltp_threshold=None,
     fallback_if_best_min_margin_below=None,
+    threshold_objective='targetp_margin',
 ):
     class_to_idx = {name: i for i, name in enumerate(class_names)}
     sp_candidates = _top_binary_f1_thresholds(
@@ -1070,10 +1099,11 @@ def _optimize_specialist_threshold_pair(
                 class_names=class_names,
                 ltp_mass_threshold=ltp_mass_threshold,
             )
-            rank = _targetp_margin_rank(
+            rank = _specialist_threshold_rank(
                 pred_idx=pred_idx,
                 true_idx=true_idx,
                 class_names=class_names,
+                objective=threshold_objective,
             )
             candidate = (
                 rank,
@@ -1244,6 +1274,7 @@ def _evaluate_foldwise_targetp_specialist_postprocess(
     alpha_grid,
     threshold_grid,
     ltp_mass_threshold=0.20,
+    threshold_objective='targetp_margin',
 ):
     try:
         from sklearn.ensemble import ExtraTreesClassifier, HistGradientBoostingClassifier
@@ -1376,7 +1407,10 @@ def _evaluate_foldwise_targetp_specialist_postprocess(
             extra_ltp_thresholds=[profile['ltp_threshold']],
             fallback_sp_threshold=profile['sp_threshold'],
             fallback_ltp_threshold=profile['ltp_threshold'],
-            fallback_if_best_min_margin_below=0.0,
+            fallback_if_best_min_margin_below=(
+                0.0 if str(threshold_objective).strip().lower() == 'targetp_margin' else None
+            ),
+            threshold_objective=threshold_objective,
         )
         sp_threshold = threshold_selection['sp_threshold']
         ltp_threshold = threshold_selection['ltp_threshold']
@@ -1423,7 +1457,7 @@ def _evaluate_foldwise_targetp_specialist_postprocess(
             'sp_binary_f1_on_train_oof': float(sp_f1),
             'sp_binary_counts_on_train_oof': sp_counts,
             'ltp_threshold': float(ltp_threshold),
-            'train_targetp_margin_rank': [float(v) for v in train_rank],
+            'train_threshold_rank': [float(v) for v in train_rank],
             'threshold_selection_source': str(threshold_selection['selection_source']),
         })
 
@@ -1435,9 +1469,7 @@ def _evaluate_foldwise_targetp_specialist_postprocess(
     return {
         'description': (
             'Each held-out fold is predicted using blend, specialist ensembles, '
-            'and specialist thresholds selected on the other folds, with a '
-            'calibrated-profile fallback when the training-fold complement has '
-            'no all-class TargetP-margin pass.'
+            'and specialist thresholds selected on the other folds.'
         ),
         'calibration_profile': str(profile['name']),
         'sp_model': 'weighted HistGradientBoostingClassifier scores with random_state {}'.format(sp_seeds),
@@ -1445,6 +1477,7 @@ def _evaluate_foldwise_targetp_specialist_postprocess(
         'sp_random_states': list(sp_seeds),
         'sp_weights': [float(v) for v in sp_weights],
         'ltp_random_states': list(ltp_seeds),
+        'threshold_objective': str(threshold_objective),
         'metrics': metrics,
         'folds': fold_rows,
     }
@@ -2456,11 +2489,18 @@ def _render_markdown(out):
         md.append('specialist SP threshold: {:.6f}'.format(out['specialist_postprocess']['sp_threshold']))
         md.append('specialist lTP threshold: {:.6f}'.format(out['specialist_postprocess']['ltp_threshold']))
     if has_specialist_foldwise:
-        md.append(
-            'specialist(foldwise): thresholds selected on each training-fold '
-            'complement with calibrated-profile fallback when no all-class '
-            'TargetP-margin pass is available'
-        )
+        objective = str(out['specialist_foldwise'].get('threshold_objective', 'targetp_margin'))
+        if objective == 'targetp_margin':
+            md.append(
+                'specialist(foldwise): thresholds selected on each training-fold '
+                'complement with calibrated-profile fallback when no all-class '
+                'TargetP-margin pass is available'
+            )
+        else:
+            md.append(
+                'specialist(foldwise): thresholds selected on each training-fold '
+                'complement with {} objective'.format(objective)
+            )
     if has_specialist_foldwise_fixed:
         md.append(
             'specialist(foldwise fixed): fixed calibrated specialist thresholds '
@@ -2523,6 +2563,7 @@ def build_parser():
     parser.add_argument('--foldwise_specialist_fixed_eval', default='no', choices=['yes', 'no'], type=str)
     parser.add_argument('--foldwise_specialist_fixed_score_npz', default='', type=str)
     parser.add_argument('--specialist_ltp_mass_threshold', default=0.20, type=float)
+    parser.add_argument('--specialist_threshold_objective', default='targetp_margin', choices=['targetp_margin', 'macro_f1'], type=str)
     parser.add_argument('--model_out', default='', type=str)
     parser.add_argument('--model_out_specialist_postprocess', default='yes', choices=['yes', 'no'], type=str)
     parser.add_argument('--out_json', default='data/localize_bench/targetp2_bilstm_esm_blend.json', type=str)
@@ -2796,6 +2837,7 @@ def main():
             alpha_grid=grid,
             threshold_grid=threshold_grid,
             ltp_mass_threshold=float(args.specialist_ltp_mass_threshold),
+            threshold_objective=args.specialist_threshold_objective,
         )
         out['specialist_foldwise'] = specialist_foldwise
     specialist_foldwise_fixed = None

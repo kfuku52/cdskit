@@ -22,6 +22,7 @@ from cdskit.targetp_blend import (
     _optimize_specialist_threshold_pair,
     _run_model_oof,
     _save_oof_npz,
+    _specialist_threshold_rank,
     _targetp_margin_summary,
     main,
 )
@@ -505,6 +506,29 @@ def test_specialist_threshold_pair_uses_calibration_fallback():
     assert result['selection_source'] == 'calibration_profile_fallback'
     assert result['sp_threshold'] == pytest.approx(0.95)
     assert result['ltp_threshold'] == pytest.approx(0.95)
+
+
+def test_specialist_threshold_rank_supports_macro_objective():
+    class_names = list(LOCALIZATION_CLASSES)
+    true_idx = np.asarray([0, 1, 2, 3, 4], dtype=np.int64)
+    pred_idx = np.asarray([0, 1, 2, 3, 3], dtype=np.int64)
+
+    targetp_rank = _specialist_threshold_rank(
+        pred_idx=pred_idx,
+        true_idx=true_idx,
+        class_names=class_names,
+        objective='targetp_margin',
+    )
+    macro_rank = _specialist_threshold_rank(
+        pred_idx=pred_idx,
+        true_idx=true_idx,
+        class_names=class_names,
+        objective='macro_f1',
+    )
+
+    assert targetp_rank[0] < 0.0
+    assert macro_rank[0] == pytest.approx(0.7333333333333333)
+    assert macro_rank[1] == pytest.approx(0.0)
 
 
 def test_main_runs_with_cached_oof_only(temp_dir, monkeypatch):

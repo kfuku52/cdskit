@@ -223,6 +223,7 @@ selection.
 | cdskit binary TargetP feature ensemble foldwise thresholds | 0.761 | 0.950 | best reproducible CPU-only feature path so far |
 | cdskit binary feature ensemble + formal ESM blend + thresholds | 0.795 | 0.967 | all-OOF blend/threshold calibration; optimistic for model selection |
 | cdskit binary feature ensemble + formal ESM foldwise blend | 0.765 | 0.963 | fair foldwise blend estimate; still far below TargetP 2.0 |
+| cdskit binary feature + formal ESM foldwise specialist, macro objective | 0.780 | 0.962 | fair foldwise SP/lTP specialist threshold selection; best reproducible fair score so far |
 
 The command used for the feature/ESM run was:
 
@@ -257,6 +258,25 @@ PYTHONPATH=. python scripts/targetp_feature_ensemble_eval.py \
   --model_out data/localize_bench/targetp2_feature_binary_et600_leaf2.pt \
   --out_json data/localize_bench/targetp2_feature_binary_et600_leaf2_eval.json \
   --out_md data/localize_bench/targetp2_feature_binary_et600_leaf2_eval.md
+```
+
+The fair foldwise specialist run above uses the binary feature OOF as the first
+base model and the regenerated formal ESM OOF as the second base model. Its
+specialist thresholds are selected on each training-fold complement using
+`macro_f1`, not on the held-out fold:
+
+```
+PYTHONPATH=. python -m cdskit.targetp_blend \
+  --training_tsv data/localize_bench/targetp2_benchmark.tsv \
+  --reuse_oof_cache yes \
+  --organism_gate yes \
+  --bilstm_oof_npz data/localize_bench/targetp2_oof_feature_binary_et600_leaf2_formal.npz \
+  --esm_oof_npz data/localize_bench/targetp2_oof_esm_formal_mps_b128.npz \
+  --foldwise_blend_eval yes \
+  --foldwise_specialist_eval yes \
+  --specialist_threshold_objective macro_f1 \
+  --out_json data/localize_bench/targetp2_binary_feature_esm_specialist_macro_eval.json \
+  --out_md data/localize_bench/targetp2_binary_feature_esm_specialist_macro_eval.md
 ```
 
 The TargetP2-style PyTorch path is available through
