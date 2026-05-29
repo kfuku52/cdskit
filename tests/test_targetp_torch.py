@@ -16,6 +16,7 @@ from cdskit.targetp_torch import (
     initialize_targetp2_torch_module,
     _build_targetp2_torch_module,
     _can_resume_optimizer_state,
+    _payload_rnn_impl_from_state,
     load_torch_payload,
     organism_group_to_targetp_org,
     targetp_blosum62_probability_table,
@@ -92,6 +93,7 @@ def test_targetp_torch_payload_can_predict_and_roundtrip(temp_dir):
         grad_clip_norm=0.0,
     )
     assert payload['config']['grad_clip_norm'] == 0.0
+    assert payload['config']['rnn_impl'] == 'targetp_tf_cell'
     model = export_targetp2_torch_localize_model(model_payload=payload)
     out_path = temp_dir / 'targetp_torch.pt'
     save_localize_model(model=model, path=str(out_path))
@@ -136,6 +138,80 @@ def test_targetp_tf_initializer_sets_lstm_forget_bias():
             hidden = int(param.shape[0] // 4)
             expected = np.ones((hidden,), dtype=np.float32) if 'bias_ih' in name else np.zeros((hidden,), dtype=np.float32)
             np.testing.assert_allclose(param.detach().cpu().numpy()[hidden:2 * hidden], expected)
+
+
+def test_targetp_tf_cell_impl_has_lstmcell_forget_bias_and_outputs():
+    torch = pytest.importorskip('torch')
+    import torch.nn as nn
+
+    module = _build_targetp2_torch_module(
+        torch=torch,
+        nn=nn,
+        seq_len=12,
+        hidden_rnn=4,
+        n_filters=3,
+        hidden_fc=5,
+        n_attention=4,
+        attention_size=4,
+        rnn_impl='targetp_tf_cell',
+    )
+    initialize_targetp2_torch_module(
+        torch=torch,
+        nn=nn,
+        module=module,
+        initializer='targetp_tf',
+    )
+    assert module.rnn_impl == 'targetp_tf_cell'
+    assert hasattr(module, 'fw_cell')
+    assert hasattr(module, 'bw_cell')
+    for cell in [module.fw_cell, module.bw_cell]:
+        for name, param in cell.named_parameters():
+            if 'bias' in name:
+                hidden = int(param.shape[0] // 4)
+                expected = np.ones((hidden,), dtype=np.float32) if 'bias_ih' in name else np.zeros((hidden,), dtype=np.float32)
+                np.testing.assert_allclose(param.detach().cpu().numpy()[hidden:2 * hidden], expected)
+    x, _, _, lengths, org = _tiny_targetp_arrays(seq_len=12)
+    module.eval()
+    with torch.no_grad():
+        out = module(
+            x=torch.as_tensor(x[:2], dtype=torch.float32),
+            lengths=torch.as_tensor(lengths[:2], dtype=torch.long),
+            organism=torch.as_tensor(org[:2], dtype=torch.long),
+            rnn_keep_prob=0.5,
+        )
+    assert tuple(out['type_logits'].shape) == (2, len(LOCALIZATION_CLASSES))
+    assert tuple(out['attention_logits'].shape) == (2, 12, 4)
+
+
+def test_targetp_torch_detects_rnn_impl_from_state_dict():
+    torch = pytest.importorskip('torch')
+    import torch.nn as nn
+
+    legacy = _build_targetp2_torch_module(
+        torch=torch,
+        nn=nn,
+        seq_len=12,
+        hidden_rnn=4,
+        n_filters=3,
+        hidden_fc=5,
+        n_attention=4,
+        attention_size=4,
+        rnn_impl='torch_lstm',
+    )
+    tf_cell = _build_targetp2_torch_module(
+        torch=torch,
+        nn=nn,
+        seq_len=12,
+        hidden_rnn=4,
+        n_filters=3,
+        hidden_fc=5,
+        n_attention=4,
+        attention_size=4,
+        rnn_impl='targetp_tf_cell',
+    )
+
+    assert _payload_rnn_impl_from_state({'state_dict': legacy.state_dict()}) == 'torch_lstm'
+    assert _payload_rnn_impl_from_state({'state_dict': tf_cell.state_dict()}) == 'targetp_tf_cell'
 
 
 def test_targetp_torch_training_can_resume_epoch_checkpoint(temp_dir):

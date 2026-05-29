@@ -45,6 +45,7 @@ TARGETP_TORCH_DEFAULTS = {
     'balanced_batch': 'no',
     'initializer': 'targetp_tf',
     'grad_clip_norm': 0.0,
+    'rnn_impl': 'targetp_tf_cell',
 }
 
 
@@ -195,9 +196,13 @@ def _build_targetp2_torch_module(
     n_org=2,
     input_keep_prob=0.75,
     encoder_keep_prob=0.6,
+    rnn_impl='torch_lstm',
 ):
     if int(n_attention) < 4:
         raise ValueError('n_attention should be >= 4 for TargetP cleavage-site heads.')
+    rnn_impl = str(rnn_impl or 'torch_lstm').strip().lower()
+    if rnn_impl not in ['torch_lstm', 'targetp_tf_cell']:
+        raise ValueError('Unsupported TargetP torch rnn_impl: {}'.format(rnn_impl))
 
     class TargetP2TorchNet(nn.Module):
         def __init__(self):
@@ -205,6 +210,7 @@ def _build_targetp2_torch_module(
             self.seq_len = int(seq_len)
             self.input_keep_prob = float(input_keep_prob)
             self.encoder_keep_prob = float(encoder_keep_prob)
+            self.rnn_impl = rnn_impl
             self.conv = nn.Conv1d(
                 in_channels=int(n_input),
                 out_channels=int(n_filters),
@@ -213,13 +219,17 @@ def _build_targetp2_torch_module(
             )
             self.conv_dropout = nn.Dropout(p=max(0.0, min(1.0, 1.0 - float(encoder_keep_prob))))
             self.organism_fc = nn.Linear(int(n_org), int(hidden_rnn))
-            self.encoder = nn.LSTM(
-                input_size=int(n_filters),
-                hidden_size=int(hidden_rnn),
-                num_layers=1,
-                batch_first=True,
-                bidirectional=True,
-            )
+            if self.rnn_impl == 'targetp_tf_cell':
+                self.fw_cell = nn.LSTMCell(input_size=int(n_filters), hidden_size=int(hidden_rnn))
+                self.bw_cell = nn.LSTMCell(input_size=int(n_filters), hidden_size=int(hidden_rnn))
+            else:
+                self.encoder = nn.LSTM(
+                    input_size=int(n_filters),
+                    hidden_size=int(hidden_rnn),
+                    num_layers=1,
+                    batch_first=True,
+                    bidirectional=True,
+                )
             self.attention_pre = nn.Conv1d(
                 in_channels=int(hidden_rnn) * 2,
                 out_channels=int(attention_size),
@@ -242,20 +252,48 @@ def _build_targetp2_torch_module(
             mask = mask / keep
             return x * mask
 
-        def forward(self, x, lengths, organism, rnn_keep_prob=1.0):
-            import torch.nn.functional as F
+        def _dropout_keep(self, value, keep):
+            keep = max(1.0e-6, min(1.0, float(keep)))
+            if (not self.training) or keep >= 1.0:
+                return value
+            mask = torch.empty_like(value)
+            mask.bernoulli_(keep)
+            return value * (mask / keep)
 
-            lengths = lengths.long().clamp(min=1, max=self.seq_len)
-            x = self._input_dropout(x)
-            conv_in = x.transpose(1, 2)
-            conv = F.elu(self.conv(conv_in)).transpose(1, 2)
-            conv = self.conv_dropout(conv)
+        def _run_tf_style_lstm_cell(self, conv, lengths, org_state, rnn_keep_prob):
+            batch_size = int(conv.shape[0])
+            hidden_size = int(org_state.shape[1])
+            zero_out = torch.zeros((batch_size, hidden_size), dtype=conv.dtype, device=conv.device)
 
-            org_hot = F.one_hot(organism.long().clamp(min=0, max=1), num_classes=2).to(dtype=x.dtype)
-            org_state = F.relu(self.organism_fc(org_hot))
+            def _run_direction(cell, time_indices):
+                h = org_state
+                c = org_state
+                outputs = [zero_out for _ in range(self.seq_len)]
+                for pos_i in time_indices:
+                    active = (lengths > int(pos_i)).to(dtype=conv.dtype).unsqueeze(1)
+                    next_h, next_c = cell(conv[:, int(pos_i), :], (h, c))
+                    dropped_c = self._dropout_keep(next_c, rnn_keep_prob)
+                    dropped_h = self._dropout_keep(next_h, rnn_keep_prob)
+                    dropped_output = self._dropout_keep(next_h, rnn_keep_prob)
+                    h = (active * dropped_h) + ((1.0 - active) * h)
+                    c = (active * dropped_c) + ((1.0 - active) * c)
+                    outputs[int(pos_i)] = active * dropped_output
+                return torch.stack(outputs, dim=1)
+
+            fw = _run_direction(self.fw_cell, range(self.seq_len))
+            bw = _run_direction(self.bw_cell, range(self.seq_len - 1, -1, -1))
+            return torch.cat([fw, bw], dim=2)
+
+        def _run_encoder(self, conv, lengths, org_state, rnn_keep_prob):
+            if self.rnn_impl == 'targetp_tf_cell':
+                return self._run_tf_style_lstm_cell(
+                    conv=conv,
+                    lengths=lengths,
+                    org_state=org_state,
+                    rnn_keep_prob=rnn_keep_prob,
+                )
             h0 = torch.stack([org_state, org_state], dim=0).contiguous()
             c0 = torch.stack([org_state, org_state], dim=0).contiguous()
-
             packed = nn.utils.rnn.pack_padded_sequence(
                 conv,
                 lengths=lengths.detach().cpu(),
@@ -269,11 +307,32 @@ def _build_targetp2_torch_module(
                 total_length=self.seq_len,
             )
             if self.training and float(rnn_keep_prob) < 1.0:
+                import torch.nn.functional as F
+
                 encoded = F.dropout(
                     encoded,
                     p=max(0.0, min(1.0, 1.0 - float(rnn_keep_prob))),
                     training=True,
                 )
+            return encoded
+
+        def forward(self, x, lengths, organism, rnn_keep_prob=1.0):
+            import torch.nn.functional as F
+
+            lengths = lengths.long().clamp(min=1, max=self.seq_len)
+            x = self._input_dropout(x)
+            conv_in = x.transpose(1, 2)
+            conv = F.elu(self.conv(conv_in)).transpose(1, 2)
+            conv = self.conv_dropout(conv)
+
+            org_hot = F.one_hot(organism.long().clamp(min=0, max=1), num_classes=2).to(dtype=x.dtype)
+            org_state = F.relu(self.organism_fc(org_hot))
+            encoded = self._run_encoder(
+                conv=conv,
+                lengths=lengths,
+                org_state=org_state,
+                rnn_keep_prob=rnn_keep_prob,
+            )
 
             att_in = encoded.transpose(1, 2)
             att_pre = torch.tanh(self.attention_pre(att_in))
@@ -301,25 +360,28 @@ def initialize_targetp2_torch_module(torch, nn, module, initializer='targetp_tf'
         return module
     if initializer != 'targetp_tf':
         raise ValueError('Unsupported TargetP torch initializer: {}'.format(initializer))
+    def _initialize_lstm_param(name, param):
+        if 'weight_ih' in name:
+            nn.init.xavier_uniform_(param)
+        elif 'weight_hh' in name:
+            hidden = int(param.shape[1])
+            for start in range(0, int(param.shape[0]), hidden):
+                nn.init.orthogonal_(param[start:start + hidden])
+        elif 'bias' in name:
+            nn.init.zeros_(param)
+            if 'bias_ih' in name:
+                hidden = int(param.shape[0] // 4)
+                with torch.no_grad():
+                    param[hidden:2 * hidden].fill_(1.0)
+
     for child in module.modules():
         if isinstance(child, nn.Conv1d) or isinstance(child, nn.Linear):
             nn.init.xavier_uniform_(child.weight)
             if child.bias is not None:
                 nn.init.zeros_(child.bias)
-        elif isinstance(child, nn.LSTM):
+        elif isinstance(child, nn.LSTM) or isinstance(child, nn.LSTMCell):
             for name, param in child.named_parameters():
-                if 'weight_ih' in name:
-                    nn.init.xavier_uniform_(param)
-                elif 'weight_hh' in name:
-                    hidden = int(param.shape[1])
-                    for start in range(0, int(param.shape[0]), hidden):
-                        nn.init.orthogonal_(param[start:start + hidden])
-                elif 'bias' in name:
-                    nn.init.zeros_(param)
-                    if 'bias_ih' in name:
-                        hidden = int(param.shape[0] // 4)
-                        with torch.no_grad():
-                            param[hidden:2 * hidden].fill_(1.0)
+                _initialize_lstm_param(name=name, param=param)
     return module
 
 
@@ -447,6 +509,24 @@ def _state_dict_to_cpu(module):
     }
 
 
+def _rnn_impl_from_state_dict(state):
+    if not isinstance(state, dict):
+        return ''
+    keys = [str(key) for key in state.keys()]
+    if any(key.startswith('encoder.') for key in keys):
+        return 'torch_lstm'
+    if any(key.startswith('fw_cell.') or key.startswith('bw_cell.') for key in keys):
+        return 'targetp_tf_cell'
+    return ''
+
+
+def _payload_rnn_impl_from_state(payload):
+    if not isinstance(payload, dict):
+        return ''
+    state = payload.get('latest_state_dict', payload.get('state_dict'))
+    return _rnn_impl_from_state_dict(state=state)
+
+
 def _targetp_torch_payload(
     module,
     config,
@@ -537,6 +617,13 @@ def fit_targetp2_torch_model(
     _limit_torch_threads(torch)
     config = dict(TARGETP_TORCH_DEFAULTS)
     config.update({key: value for key, value in kwargs.items() if value is not None})
+    if isinstance(resume_payload, dict):
+        resume_config = resume_payload.get('config', {})
+        resume_state_impl = _payload_rnn_impl_from_state(resume_payload)
+        if resume_state_impl != '':
+            config['rnn_impl'] = resume_state_impl
+        elif 'rnn_impl' in resume_config and 'rnn_impl' not in kwargs:
+            config['rnn_impl'] = resume_config['rnn_impl']
     np.random.seed(int(seed))
     torch.manual_seed(int(seed))
     if torch.cuda.is_available():
@@ -555,6 +642,7 @@ def fit_targetp2_torch_model(
         attention_size=int(config['attention_size']),
         input_keep_prob=float(config['input_keep_prob']),
         encoder_keep_prob=float(config['encoder_keep_prob']),
+        rnn_impl=str(config.get('rnn_impl', 'torch_lstm')),
     )
     initialize_targetp2_torch_module(
         torch=torch,
@@ -795,7 +883,11 @@ def _get_runtime_targetp2_module(localization_model, device_text='cpu'):
     if cache_key in cache:
         return torch, cache[cache_key], resolved_device
     config = dict(TARGETP_TORCH_DEFAULTS)
-    config.update(localization_model.get('config', {}))
+    model_config = localization_model.get('config', {})
+    config.update(model_config)
+    state_impl = _rnn_impl_from_state_dict(localization_model.get('state_dict', {}))
+    if state_impl != '':
+        config['rnn_impl'] = state_impl
     module = _build_targetp2_torch_module(
         torch=torch,
         nn=nn,
@@ -809,6 +901,7 @@ def _get_runtime_targetp2_module(localization_model, device_text='cpu'):
         attention_size=int(config['attention_size']),
         input_keep_prob=float(config.get('input_keep_prob', 1.0)),
         encoder_keep_prob=float(config.get('encoder_keep_prob', 1.0)),
+        rnn_impl=str(config.get('rnn_impl', 'torch_lstm')),
     )
     module.load_state_dict(localization_model['state_dict'], strict=True)
     module.eval()
