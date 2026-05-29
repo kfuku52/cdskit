@@ -223,7 +223,8 @@ selection.
 | cdskit binary TargetP feature ensemble foldwise thresholds | 0.761 | 0.950 | best reproducible CPU-only feature path so far |
 | cdskit binary feature ensemble + formal ESM blend + thresholds | 0.795 | 0.967 | all-OOF blend/threshold calibration; optimistic for model selection |
 | cdskit binary feature ensemble + formal ESM foldwise blend | 0.765 | 0.963 | fair foldwise blend estimate; still far below TargetP 2.0 |
-| cdskit binary feature + formal ESM foldwise specialist, macro objective | 0.780 | 0.962 | fair foldwise SP/lTP specialist threshold selection; best reproducible fair score so far |
+| cdskit binary feature + formal ESM foldwise specialist, macro objective | 0.780 | 0.962 | fair foldwise SP/lTP specialist threshold selection |
+| cdskit TargetP OOF stack RF100 foldwise thresholds | 0.785 | 0.964 | fair foldwise stack over binary feature, formal ESM, formal feature, and formal BiLSTM OOFs; best reproducible fair score so far |
 
 The command used for the feature/ESM run was:
 
@@ -278,6 +279,36 @@ PYTHONPATH=. python -m cdskit.targetp_blend \
   --out_json data/localize_bench/targetp2_binary_feature_esm_specialist_macro_eval.json \
   --out_md data/localize_bench/targetp2_binary_feature_esm_specialist_macro_eval.md
 ```
+
+The fair RF stack can be regenerated with:
+
+```
+PYTHONPATH=. python -m cdskit.targetp_stack \
+  --training_tsv data/localize_bench/targetp2_benchmark.tsv \
+  --base_oof_npzs data/localize_bench/targetp2_oof_feature_binary_et600_leaf2_formal.npz,data/localize_bench/targetp2_oof_esm_formal_mps_b128.npz,data/localize_bench/targetp2_oof_feature_ensemble_formal_et300.npz,data/localize_bench/targetp2_oof_bilstm_formal_mps_b2048.npz \
+  --stack_oof_npz data/localize_bench/targetp2_oof_stack_rf100_probfeat_seq_nogate.npz \
+  --model_kind random_forest \
+  --n_estimators 100 \
+  --random_state 11 \
+  --class_weight balanced \
+  --max_features sqrt \
+  --min_samples_leaf 1 \
+  --include_sequence_features yes \
+  --organism_gate no \
+  --out_json data/localize_bench/targetp2_stack_rf100_nogate_eval.json \
+  --out_md data/localize_bench/targetp2_stack_rf100_nogate_eval.md
+```
+
+Do not apply the stack input organism gate when selecting this model: on the
+same regenerated OOF inputs, gating the cTP/lTP columns before the meta-model
+reduced the fair foldwise score from 0.785 to 0.750 macro F1. A post-prediction
+organism constraint can still be applied by runtime prediction code.
+
+lTP remains the limiting class. In the current regenerated OOFs, even an
+all-row oracle threshold on the best lTP binary score reached only about 0.466
+lTP F1, and a nested lTP override over the RF stack reduced macro F1 to 0.781.
+Reaching TargetP-like lTP performance likely requires a stronger sequence
+encoder or additional lTP-specific training data, not only threshold tuning.
 
 The TargetP2-style PyTorch path is available through
 `scripts/targetp_torch_eval.py`. It reproduces the official input encoding and
