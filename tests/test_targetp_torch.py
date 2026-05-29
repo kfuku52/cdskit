@@ -15,6 +15,7 @@ from cdskit.targetp_torch import (
     fit_targetp2_torch_model,
     initialize_targetp2_torch_module,
     _build_targetp2_torch_module,
+    load_torch_payload,
     organism_group_to_targetp_org,
     targetp_blosum62_probability_table,
 )
@@ -134,3 +135,71 @@ def test_targetp_tf_initializer_sets_lstm_forget_bias():
             hidden = int(param.shape[0] // 4)
             expected = np.ones((hidden,), dtype=np.float32) if 'bias_ih' in name else np.zeros((hidden,), dtype=np.float32)
             np.testing.assert_allclose(param.detach().cpu().numpy()[hidden:2 * hidden], expected)
+
+
+def test_targetp_torch_training_can_resume_epoch_checkpoint(temp_dir):
+    pytest.importorskip('torch')
+    x, y_type, y_cs, lengths, org = _tiny_targetp_arrays()
+    checkpoint = temp_dir / 'epoch.pt'
+    first = fit_targetp2_torch_model(
+        x_train=x[:6],
+        y_type_train=y_type[:6],
+        y_cs_train=y_cs[:6],
+        len_train=lengths[:6],
+        org_train=org[:6],
+        x_val=x[6:],
+        y_type_val=y_type[6:],
+        y_cs_val=y_cs[6:],
+        len_val=lengths[6:],
+        org_val=org[6:],
+        seed=3,
+        device='cpu',
+        seq_len=12,
+        hidden_rnn=4,
+        n_filters=3,
+        hidden_fc=5,
+        n_attention=4,
+        attention_size=4,
+        input_keep_prob=1.0,
+        encoder_keep_prob=1.0,
+        rnn_keep_prob=1.0,
+        epochs=1,
+        batch_size=3,
+        learning_rate=0.001,
+        epoch_checkpoint_path=str(checkpoint),
+    )
+    saved = load_torch_payload(str(checkpoint))
+    resumed = fit_targetp2_torch_model(
+        x_train=x[:6],
+        y_type_train=y_type[:6],
+        y_cs_train=y_cs[:6],
+        len_train=lengths[:6],
+        org_train=org[:6],
+        x_val=x[6:],
+        y_type_val=y_type[6:],
+        y_cs_val=y_cs[6:],
+        len_val=lengths[6:],
+        org_val=org[6:],
+        seed=3,
+        device='cpu',
+        seq_len=12,
+        hidden_rnn=4,
+        n_filters=3,
+        hidden_fc=5,
+        n_attention=4,
+        attention_size=4,
+        input_keep_prob=1.0,
+        encoder_keep_prob=1.0,
+        rnn_keep_prob=1.0,
+        epochs=2,
+        batch_size=3,
+        learning_rate=0.001,
+        resume_payload=saved,
+        epoch_checkpoint_path=str(checkpoint),
+    )
+
+    assert first['training_complete'] is True
+    assert saved['training_complete'] is True
+    assert resumed['training_complete'] is True
+    assert len(first['history']) == 1
+    assert len(resumed['history']) == 2

@@ -447,6 +447,62 @@ def _state_dict_to_cpu(module):
     }
 
 
+def _targetp_torch_payload(
+    module,
+    config,
+    seed,
+    best_state,
+    history,
+    best_metrics,
+    final_val_metrics,
+    device,
+    training_complete,
+    optimizer=None,
+    best_epoch=0,
+    current_lr=None,
+    lr_reductions=0,
+    rng=None,
+    torch=None,
+    latest_state=None,
+):
+    payload = {
+        'model_type': TARGETP_TORCH_MODEL_TYPE,
+        'class_order': list(LOCALIZATION_CLASSES),
+        'config': dict(config),
+        'seed': int(seed),
+        'state_dict': best_state,
+        'latest_state_dict': latest_state if latest_state is not None else _state_dict_to_cpu(module),
+        'history': list(history),
+        'best_metrics': best_metrics,
+        'final_val_metrics': final_val_metrics,
+        'device': str(device),
+        'training_complete': bool(training_complete),
+        'best_epoch': int(best_epoch),
+        'current_lr': float(current_lr if current_lr is not None else config.get('learning_rate', 0.0)),
+        'lr_reductions': int(lr_reductions),
+    }
+    if optimizer is not None:
+        payload['optimizer_state'] = optimizer.state_dict()
+    if rng is not None:
+        payload['rng_state'] = copy.deepcopy(rng.bit_generator.state)
+    if torch is not None:
+        payload['torch_rng_state'] = torch.get_rng_state()
+        if torch.cuda.is_available():
+            payload['torch_cuda_rng_state_all'] = torch.cuda.get_rng_state_all()
+    return payload
+
+
+def _load_optimizer_state(optimizer, payload, device):
+    state = payload.get('optimizer_state')
+    if state is None:
+        return
+    optimizer.load_state_dict(state)
+    for value in optimizer.state.values():
+        for state_key, state_value in value.items():
+            if hasattr(state_value, 'to'):
+                value[state_key] = state_value.to(device)
+
+
 def fit_targetp2_torch_model(
     x_train,
     y_type_train,
@@ -461,6 +517,8 @@ def fit_targetp2_torch_model(
     seed=1,
     device='auto',
     verbose=False,
+    resume_payload=None,
+    epoch_checkpoint_path='',
     **kwargs
 ):
     torch, nn = require_torch()
@@ -523,9 +581,35 @@ def fit_targetp2_torch_model(
     lr_reductions = 0
     history = list()
     current_lr = float(config['learning_rate'])
+    start_epoch = 0
+    if isinstance(resume_payload, dict):
+        state = resume_payload.get('latest_state_dict', resume_payload.get('state_dict'))
+        if state is not None:
+            module.load_state_dict(state, strict=True)
+        if resume_payload.get('state_dict') is not None:
+            best_state = resume_payload['state_dict']
+        best_metrics = resume_payload.get('best_metrics')
+        best_epoch = int(resume_payload.get('best_epoch', 0) or 0)
+        history = list(resume_payload.get('history', []))
+        start_epoch = len(history)
+        lr_reductions = int(resume_payload.get('lr_reductions', 0) or 0)
+        current_lr = float(resume_payload.get('current_lr', current_lr))
+        for group in optimizer.param_groups:
+            group['lr'] = current_lr
+        _load_optimizer_state(
+            optimizer=optimizer,
+            payload=resume_payload,
+            device=resolved_device,
+        )
+        if resume_payload.get('rng_state') is not None:
+            rng.bit_generator.state = resume_payload['rng_state']
+        if resume_payload.get('torch_rng_state') is not None:
+            torch.set_rng_state(resume_payload['torch_rng_state'])
+        if torch.cuda.is_available() and resume_payload.get('torch_cuda_rng_state_all') is not None:
+            torch.cuda.set_rng_state_all(resume_payload['torch_cuda_rng_state_all'])
     start_time = time.time()
 
-    for epoch in range(epochs):
+    for epoch in range(start_epoch, epochs):
         module.train()
         train_losses = list()
         if balanced_batch:
@@ -623,7 +707,29 @@ def fit_targetp2_torch_model(
             best_epoch = int(epoch + 1)
         if lr_reductions >= int(config['max_lr_reductions']):
             break
+        if str(epoch_checkpoint_path or '').strip() != '':
+            save_torch_payload(
+                path=epoch_checkpoint_path,
+                payload=_targetp_torch_payload(
+                    module=module,
+                    config=config,
+                    seed=seed,
+                    best_state=best_state,
+                    history=history,
+                    best_metrics=best_metrics,
+                    final_val_metrics=None,
+                    device=resolved_device,
+                    training_complete=False,
+                    optimizer=optimizer,
+                    best_epoch=best_epoch,
+                    current_lr=current_lr,
+                    lr_reductions=lr_reductions,
+                    rng=rng,
+                    torch=torch,
+                ),
+            )
 
+    latest_state = copy.deepcopy(_state_dict_to_cpu(module))
     module.load_state_dict(best_state, strict=True)
     final_val = _evaluate_encoded(
         torch=torch,
@@ -637,21 +743,32 @@ def fit_targetp2_torch_model(
         batch_size=batch_size,
         type_weight=type_weight,
     )
-    return {
-        'model_type': TARGETP_TORCH_MODEL_TYPE,
-        'class_order': list(LOCALIZATION_CLASSES),
-        'config': dict(config),
-        'seed': int(seed),
-        'state_dict': best_state,
-        'history': history,
-        'best_metrics': best_metrics,
-        'final_val_metrics': {
-            'loss': float(final_val['loss']),
-            'macro_f1': float(final_val['macro_f1']),
-            'accuracy': float(final_val['accuracy']),
-        },
-        'device': str(resolved_device),
+    final_val_metrics = {
+        'loss': float(final_val['loss']),
+        'macro_f1': float(final_val['macro_f1']),
+        'accuracy': float(final_val['accuracy']),
     }
+    payload = _targetp_torch_payload(
+        module=module,
+        config=config,
+        seed=seed,
+        best_state=best_state,
+        history=history,
+        best_metrics=best_metrics,
+        final_val_metrics=final_val_metrics,
+        device=resolved_device,
+        training_complete=True,
+        optimizer=optimizer,
+        best_epoch=best_epoch,
+        current_lr=current_lr,
+        lr_reductions=lr_reductions,
+        rng=rng,
+        torch=torch,
+        latest_state=latest_state,
+    )
+    if str(epoch_checkpoint_path or '').strip() != '':
+        save_torch_payload(path=epoch_checkpoint_path, payload=payload)
+    return payload
 
 
 def _get_runtime_targetp2_module(localization_model, device_text='cpu'):
@@ -850,9 +967,35 @@ def run_targetp2_torch_nested_oof(
             val_mask = folds == int(val_fold)
             fold_name = _safe_fold_name(outer_fold=outer_fold, val_fold=val_fold)
             checkpoint = os.path.join(model_dir, fold_name + '.pt')
+            resumed_from_checkpoint = False
             if bool(reuse_cache) and os.path.exists(checkpoint):
                 payload = load_torch_payload(path=checkpoint)
-                used_cache = True
+                requested_epochs = int(train_kwargs.get('epochs', TARGETP_TORCH_DEFAULTS['epochs']))
+                cached_epochs = len(payload.get('history', []))
+                if bool(payload.get('training_complete', False)) and cached_epochs >= requested_epochs:
+                    used_cache = True
+                else:
+                    if bool(train_kwargs.get('verbose', False)):
+                        print('resuming {}'.format(fold_name), flush=True)
+                    payload = fit_targetp2_torch_model(
+                        x_train=data['x'][train_mask],
+                        y_type_train=data['y_type'][train_mask],
+                        y_cs_train=data['y_cs'][train_mask],
+                        len_train=data['len_seq'][train_mask],
+                        org_train=data['org'][train_mask],
+                        x_val=data['x'][val_mask],
+                        y_type_val=data['y_type'][val_mask],
+                        y_cs_val=data['y_cs'][val_mask],
+                        len_val=data['len_seq'][val_mask],
+                        org_val=data['org'][val_mask],
+                        seed=int(seed_offset) + int(val_fold),
+                        device=device,
+                        resume_payload=payload,
+                        epoch_checkpoint_path=checkpoint,
+                        **train_kwargs
+                    )
+                    used_cache = False
+                    resumed_from_checkpoint = True
             else:
                 if bool(train_kwargs.get('verbose', False)):
                     print('training {}'.format(fold_name), flush=True)
@@ -869,6 +1012,7 @@ def run_targetp2_torch_nested_oof(
                     org_val=data['org'][val_mask],
                     seed=int(seed_offset) + int(val_fold),
                     device=device,
+                    epoch_checkpoint_path=checkpoint,
                     **train_kwargs
                 )
                 save_torch_payload(path=checkpoint, payload=payload)
@@ -892,6 +1036,7 @@ def run_targetp2_torch_nested_oof(
                 'n_train': int(np.sum(train_mask)),
                 'n_val': int(np.sum(val_mask)),
                 'n_test': int(np.sum(test_mask)),
+                'resumed_from_checkpoint': bool(resumed_from_checkpoint),
                 'best_metrics': payload.get('best_metrics', {}),
                 'final_val_metrics': payload.get('final_val_metrics', {}),
             })

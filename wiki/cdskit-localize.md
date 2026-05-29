@@ -327,7 +327,42 @@ FASTA-to-NPZ check on the first ten TargetP rows matched to within `5.96e-08`
 maximum absolute difference. Earlier cdskit runtime exports used a `2^BLOSUM62`
 normalization instead, which was incompatible with the TargetP training input.
 Gradient clipping is also optional through `--grad_clip_norm`; the default is
-`0.0` to match the official TargetP training script.
+`0.0` to match the official TargetP training script. TargetP torch training
+now writes resumable per-model checkpoints to `--model_dir`; rerunning the same
+command with a larger `--epochs` and `--reuse_cache yes` continues an incomplete
+or shorter completed checkpoint instead of starting from scratch.
+
+An official-ish long probe can be continued with:
+
+```
+PYTHONPATH=. python -u scripts/targetp_torch_eval.py \
+  --targetp_npz data/targetp_raw/targetp_data.npz \
+  --model_dir data/localize_bench/targetp2_torch_officialish_models \
+  --out_npz data/localize_bench/targetp2_oof_targetp_torch_officialish.npz \
+  --out_json data/localize_bench/targetp2_torch_officialish_eval.json \
+  --outer_folds 0 \
+  --val_folds 1 \
+  --max_models 1 \
+  --reuse_cache yes \
+  --device mps \
+  --epochs 40 \
+  --batch_size 64 \
+  --learning_rate 0.001 \
+  --hidden_rnn 64 \
+  --n_filters 16 \
+  --hidden_fc 64 \
+  --n_attention 13 \
+  --attention_size 32 \
+  --input_keep_prob 0.9 \
+  --encoder_keep_prob 0.8 \
+  --rnn_keep_prob 0.8 \
+  --selection_metric val_macro_f1 \
+  --type_class_weight none \
+  --balanced_batch no \
+  --initializer targetp_tf \
+  --grad_clip_norm 0.0 \
+  --verbose yes
+```
 
 The blend helper writes per-model TargetP margin summaries to JSON and Markdown,
 including an `All classes > TargetP` row. To save the foldwise fixed specialist
