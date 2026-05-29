@@ -379,6 +379,13 @@ single-kernel/state-dropout path but scored only 0.169 covered-fold macro F1,
 so it is not yet a competitive model. The previous
 `targetp2_torch_tfcell_h16_e1_smoke_v3_models` checkpoint also loaded through
 the legacy conversion path on CPU and reproduced 0.169 covered-fold macro F1.
+A fresh four-epoch h64/n_filters16 run with the corrected single-kernel cell
+(`targetp2_torch_tflstm_h64_e4_lr1e3_eval.json`) selected epoch 2 and reached
+only 0.376 covered-fold macro F1. Its covered-fold per-class F1 was dominated
+by `noTP` and `SP` (`noTP` 0.945, `SP` 0.934, `mTP`/`cTP`/`lTP` all 0.000),
+so the current blocker is no longer just TensorFlow-cell fidelity; the torch
+training recipe needs a better way to make the rare TargetP classes learn
+without breaking the fair fold protocol.
 
 An official-ish long probe can be continued with:
 
