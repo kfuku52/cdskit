@@ -290,7 +290,7 @@ The fair RF stack can be regenerated with:
 PYTHONPATH=. python -m cdskit.targetp_stack \
   --training_tsv data/localize_bench/targetp2_benchmark.tsv \
   --base_oof_npzs data/localize_bench/targetp2_oof_feature_binary_et600_leaf2_formal.npz,data/localize_bench/targetp2_oof_esm_formal_mps_b128.npz,data/localize_bench/targetp2_oof_feature_ensemble_formal_et300.npz,data/localize_bench/targetp2_oof_bilstm_formal_mps_b2048.npz \
-  --stack_oof_npz data/localize_bench/targetp2_oof_stack_rf100_probfeat_seq_nogate.npz \
+  --stack_oof_npz data/localize_bench/targetp2_oof_stack_rf100_ltp_signal_rs123_nogate.npz \
   --model_kind random_forest \
   --n_estimators 100 \
   --random_state 11 \
@@ -301,12 +301,13 @@ PYTHONPATH=. python -m cdskit.targetp_stack \
   --organism_gate no \
   --ltp_ctp_override yes \
   --ltp_ctp_model_kind random_forest \
-  --ltp_ctp_n_estimators 300 \
+  --ltp_ctp_n_estimators 100 \
+  --ltp_ctp_random_state 123 \
   --notp_ctp_ltp_override yes \
   --notp_ctp_model_kind random_forest \
   --notp_ctp_n_estimators 200 \
-  --out_json data/localize_bench/targetp2_stack_rf100_nogate_eval.json \
-  --out_md data/localize_bench/targetp2_stack_rf100_nogate_eval.md
+  --out_json data/localize_bench/targetp2_stack_rf100_ltp_signal_rs123_nogate_eval.json \
+  --out_md data/localize_bench/targetp2_stack_rf100_ltp_signal_rs123_nogate_eval.md
 ```
 
 Do not apply the stack input organism gate when selecting this model: on the
@@ -338,6 +339,11 @@ and downstream hydrophobicity. With `ltp_ctp_n_estimators=100` and
 `ltp_ctp_random_state=123`, the RF100 stack reaches exact fair macro F1 0.79552,
 with `lTP` F1 0.457 and `cTP` F1 0.769. This is still far below TargetP 2.0,
 but it is the first fair regenerated run above 0.79 macro F1.
+Follow-up probes did not improve on this: averaging multiple lTP specialist
+random seeds reduced macro F1 to 0.785 or lower, two-way cTP/lTP reclassification
+peaked at 0.79498, and appending the delayed lTP signal features to the main
+stack feature matrix reduced the RF100+specialist score to 0.76860. The features
+therefore help as a specialist-only signal, not as a general stack input.
 
 lTP remains the limiting class. In the current regenerated OOFs, even an
 all-row oracle threshold on the best lTP binary score reached only about 0.466
