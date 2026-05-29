@@ -442,28 +442,35 @@ and reached only 0.624 validation-threshold macro F1 (`noTP` 0.940, `SP` 0.907,
 and the TargetP 2.0 reference macro F1 of 0.890. The torch path is therefore
 useful as a candidate signal for future stacking, but it is not yet a
 replacement for the current fair stack.
+A larger h128/n_filters24 `torch_lstm` balanced-batch type-only probe was run as
+one model per outer fold using validation folds `0:1,1:2,2:3,3:4,4:0`. The
+combined validation-threshold OOF macro F1 was 0.715 (`noTP` 0.964, `SP` 0.939,
+`mTP` 0.688, `cTP` 0.658, `lTP` 0.324). Adding this h128 OOF as a fifth RF stack
+base did not improve the current fair best: the raw torch-probability stack
+peaked at 0.789 macro F1, the validation-threshold-normalized torch stack peaked
+at 0.799, and a second-level stack over the current best stack plus the torch
+stack peaked at 0.796. The h128 encoder is therefore a better torch signal than
+the h64 probe, but still not strong enough to close the TargetP gap.
 
-The h64 balanced-batch type-only probe can be reproduced or continued with:
+The h128 one-model-per-fold probe can be reproduced or continued with:
 
 ```
 PYTHONPATH=. python -u scripts/targetp_torch_eval.py \
   --targetp_npz data/targetp_raw/targetp_data.npz \
-  --model_dir data/localize_bench/targetp2_torch_tflstm_h64_e3_balbatch_typeonly_models \
-  --out_npz data/localize_bench/targetp2_oof_targetp_torch_tflstm_h64_e12_balbatch_typeonly_valthr.npz \
-  --out_json data/localize_bench/targetp2_torch_tflstm_h64_e12_balbatch_typeonly_valthr_eval.json \
-  --outer_folds 0 \
-  --val_folds 1 \
-  --max_models 1 \
+  --model_dir data/localize_bench/targetp2_torch_torchlstm_h128_e12_balbatch_typeonly_pair_models \
+  --out_npz data/localize_bench/targetp2_oof_targetp_torch_torchlstm_h128_e12_balbatch_typeonly_pair_valthr.npz \
+  --out_json data/localize_bench/targetp2_torch_torchlstm_h128_e12_balbatch_typeonly_pair_valthr_eval.json \
+  --fold_pairs 0:1,1:2,2:3,3:4,4:0 \
   --reuse_cache yes \
   --device mps \
   --epochs 12 \
   --batch_size 128 \
   --learning_rate 0.001 \
-  --hidden_rnn 64 \
-  --n_filters 16 \
-  --hidden_fc 64 \
+  --hidden_rnn 128 \
+  --n_filters 24 \
+  --hidden_fc 128 \
   --n_attention 13 \
-  --attention_size 32 \
+  --attention_size 64 \
   --input_keep_prob 0.9 \
   --encoder_keep_prob 0.8 \
   --rnn_keep_prob 0.8 \
@@ -473,7 +480,7 @@ PYTHONPATH=. python -u scripts/targetp_torch_eval.py \
   --balanced_batch yes \
   --initializer targetp_tf \
   --grad_clip_norm 0.0 \
-  --rnn_impl targetp_tf_cell \
+  --rnn_impl torch_lstm \
   --val_threshold_eval yes \
   --verbose yes
 ```

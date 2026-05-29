@@ -1280,6 +1280,33 @@ def _parse_fold_subset(value, available):
     return out
 
 
+def parse_targetp_fold_pairs(value, available=None):
+    text = str(value or '').strip()
+    if text == '':
+        return list()
+    available_set = None
+    if available is not None:
+        available_set = set([int(v) for v in available])
+    pairs = list()
+    for part in text.split(','):
+        part = part.strip()
+        if part == '':
+            continue
+        if ':' not in part:
+            raise ValueError('Fold pair should use outer:val syntax: {}'.format(part))
+        outer_text, val_text = part.split(':', 1)
+        outer = int(outer_text.strip())
+        val = int(val_text.strip())
+        if outer == val:
+            raise ValueError('Outer and validation folds should differ: {}'.format(part))
+        if available_set is not None and (outer not in available_set or val not in available_set):
+            raise ValueError('Fold pair contains unavailable fold: {}'.format(part))
+        pairs.append((outer, val))
+    if len(pairs) == 0:
+        raise ValueError('fold_pairs should contain at least one outer:val pair.')
+    return pairs
+
+
 def run_targetp2_torch_nested_oof(
     targetp_npz,
     model_dir,
@@ -1471,6 +1498,133 @@ def run_targetp2_torch_nested_oof(
         )
         threshold_metrics['covered_rows'] = int(np.sum(threshold_covered))
         threshold_metrics['total_rows'] = int(data['x'].shape[0])
+        result['val_threshold_score_matrix'] = threshold_score_matrix
+        result['val_threshold_count'] = threshold_score_count
+        result['val_threshold_metrics'] = threshold_metrics
+    return result
+
+
+def run_targetp2_torch_paired_oof(
+    targetp_npz,
+    model_dir,
+    fold_pairs,
+    reuse_cache=True,
+    seed_offset=0,
+    device='auto',
+    val_threshold_eval=False,
+    threshold_grid=None,
+    **train_kwargs
+):
+    data = load_targetp_npz(path=targetp_npz)
+    available = sorted(np.unique(data['fold']).astype(int).tolist())
+    pairs = parse_targetp_fold_pairs(fold_pairs, available=available)
+    if len(pairs) == 0:
+        raise ValueError('fold_pairs should contain at least one outer:val pair.')
+    prob_sum = None
+    prob_count = None
+    threshold_score_sum = None
+    threshold_score_count = None
+    true_idx = None
+    fold_ids = None
+    class_names = None
+    model_rows = list()
+
+    for outer_fold, val_fold in pairs:
+        result = run_targetp2_torch_nested_oof(
+            targetp_npz=targetp_npz,
+            model_dir=model_dir,
+            outer_folds=str(outer_fold),
+            val_folds=str(val_fold),
+            reuse_cache=reuse_cache,
+            max_models=1,
+            seed_offset=seed_offset,
+            device=device,
+            val_threshold_eval=val_threshold_eval,
+            threshold_grid=threshold_grid,
+            **train_kwargs
+        )
+        if prob_sum is None:
+            prob_sum = np.zeros_like(result['prob_matrix'], dtype=np.float64)
+            prob_count = np.zeros_like(result['prob_count'], dtype=np.int64)
+            true_idx = np.asarray(result['true_idx'], dtype=np.int64)
+            fold_ids = np.asarray(result['fold_ids'])
+            class_names = list(result['class_names'])
+            if bool(val_threshold_eval):
+                threshold_score_sum = np.zeros_like(
+                    result['val_threshold_score_matrix'],
+                    dtype=np.float64,
+                )
+                threshold_score_count = np.zeros_like(
+                    result['val_threshold_count'],
+                    dtype=np.int64,
+                )
+        covered = np.asarray(result['prob_count'], dtype=np.int64) > 0
+        prob_sum[covered, :] += np.asarray(result['prob_matrix'], dtype=np.float64)[covered, :]
+        prob_count[covered] += np.asarray(result['prob_count'], dtype=np.int64)[covered]
+        if bool(val_threshold_eval):
+            threshold_covered = np.asarray(result['val_threshold_count'], dtype=np.int64) > 0
+            threshold_score_sum[threshold_covered, :] += np.asarray(
+                result['val_threshold_score_matrix'],
+                dtype=np.float64,
+            )[threshold_covered, :]
+            threshold_score_count[threshold_covered] += np.asarray(
+                result['val_threshold_count'],
+                dtype=np.int64,
+            )[threshold_covered]
+        model_rows.extend(result.get('models', []))
+
+    covered = prob_count > 0
+    prob_matrix = np.zeros_like(prob_sum, dtype=np.float64)
+    prob_matrix[covered, :] = prob_sum[covered, :] / prob_count[covered].reshape((-1, 1))
+    if np.any(~covered):
+        prob_matrix[~covered, 0] = 1.0
+    pred = np.argmax(prob_matrix[covered, :], axis=1).astype(np.int64)
+    metrics = _targetp_metrics_from_prediction_indices(
+        true_idx=true_idx[covered],
+        pred_idx=pred,
+        class_names=class_names,
+    ) if np.any(covered) else {
+        'overall_accuracy': 0.0,
+        'macro_f1': 0.0,
+        'by_class': {},
+    }
+    metrics['covered_rows'] = int(np.sum(covered))
+    metrics['total_rows'] = int(prob_matrix.shape[0])
+    result = {
+        'prob_matrix': prob_matrix,
+        'true_idx': true_idx,
+        'class_names': class_names,
+        'fold_ids': fold_ids,
+        'covered_mask': covered,
+        'prob_count': prob_count,
+        'metrics': metrics,
+        'models': model_rows,
+        'fold_pairs': [(int(outer), int(val)) for outer, val in pairs],
+    }
+    if bool(val_threshold_eval):
+        threshold_covered = threshold_score_count > 0
+        threshold_score_matrix = np.zeros_like(threshold_score_sum, dtype=np.float64)
+        threshold_score_matrix[threshold_covered, :] = (
+            threshold_score_sum[threshold_covered, :]
+            / threshold_score_count[threshold_covered].reshape((-1, 1))
+        )
+        if np.any(~threshold_covered):
+            threshold_score_matrix[~threshold_covered, 0] = 1.0
+        threshold_pred = np.argmax(
+            threshold_score_matrix[threshold_covered, :],
+            axis=1,
+        ).astype(np.int64)
+        threshold_metrics = _targetp_metrics_from_prediction_indices(
+            true_idx=true_idx[threshold_covered],
+            pred_idx=threshold_pred,
+            class_names=class_names,
+        ) if np.any(threshold_covered) else {
+            'overall_accuracy': 0.0,
+            'macro_f1': 0.0,
+            'by_class': {},
+        }
+        threshold_metrics['covered_rows'] = int(np.sum(threshold_covered))
+        threshold_metrics['total_rows'] = int(prob_matrix.shape[0])
         result['val_threshold_score_matrix'] = threshold_score_matrix
         result['val_threshold_count'] = threshold_score_count
         result['val_threshold_metrics'] = threshold_metrics

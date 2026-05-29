@@ -24,6 +24,7 @@ from cdskit.targetp_torch import (
     _targetp_type_class_weight_vector,
     load_torch_payload,
     organism_group_to_targetp_org,
+    parse_targetp_fold_pairs,
     targetp_blosum62_probability_table,
 )
 
@@ -337,6 +338,20 @@ def test_targetp_validation_threshold_optimizer_uses_classwise_grid():
     assert tuned_pred.tolist() == true_idx.tolist()
     assert float(thresholds[1]) == 2.0
     assert metrics['macro_f1'] == 1.0
+
+
+def test_targetp_fold_pair_parser_validates_pairs():
+    assert parse_targetp_fold_pairs('0:1, 2:3', available=[0, 1, 2, 3]) == [
+        (0, 1),
+        (2, 3),
+    ]
+
+    with pytest.raises(ValueError):
+        parse_targetp_fold_pairs('1:1', available=[0, 1])
+    with pytest.raises(ValueError):
+        parse_targetp_fold_pairs('1-2', available=[0, 1, 2])
+    with pytest.raises(ValueError):
+        parse_targetp_fold_pairs('1:5', available=[0, 1, 2])
 
 
 def test_targetp_torch_training_can_resume_epoch_checkpoint(temp_dir):

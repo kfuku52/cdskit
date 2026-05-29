@@ -5,6 +5,7 @@ from cdskit.targetp_torch import (
     TARGETP_CLASS_THRESHOLD_GRID,
     TARGETP_TORCH_DEFAULTS,
     run_targetp2_torch_nested_oof,
+    run_targetp2_torch_paired_oof,
     write_targetp2_torch_oof_npz,
     write_targetp2_torch_report,
 )
@@ -30,6 +31,12 @@ def build_parser():
     parser.add_argument('--out_json', default='data/localize_bench/targetp2_torch_eval.json', type=str)
     parser.add_argument('--outer_folds', default='all', type=str)
     parser.add_argument('--val_folds', default='all', type=str)
+    parser.add_argument(
+        '--fold_pairs',
+        default='',
+        type=str,
+        help='Optional comma-separated outer:val pairs, for example 0:1,1:2,2:3.',
+    )
     parser.add_argument('--max_models', default=0, type=int)
     parser.add_argument('--reuse_cache', default='yes', choices=['yes', 'no'], type=str)
     parser.add_argument('--device', default='auto', type=str)
@@ -95,24 +102,38 @@ def main():
         'rnn_impl': args.rnn_impl,
         'verbose': str(args.verbose).strip().lower() == 'yes',
     }
-    result = run_targetp2_torch_nested_oof(
-        targetp_npz=args.targetp_npz,
-        model_dir=args.model_dir,
-        outer_folds=args.outer_folds,
-        val_folds=args.val_folds,
-        reuse_cache=str(args.reuse_cache).strip().lower() == 'yes',
-        max_models=int(args.max_models),
-        seed_offset=int(args.seed_offset),
-        device=args.device,
-        val_threshold_eval=str(args.val_threshold_eval).strip().lower() == 'yes',
-        threshold_grid=threshold_grid,
-        **train_kwargs
-    )
+    if str(args.fold_pairs).strip() != '':
+        result = run_targetp2_torch_paired_oof(
+            targetp_npz=args.targetp_npz,
+            model_dir=args.model_dir,
+            fold_pairs=args.fold_pairs,
+            reuse_cache=str(args.reuse_cache).strip().lower() == 'yes',
+            seed_offset=int(args.seed_offset),
+            device=args.device,
+            val_threshold_eval=str(args.val_threshold_eval).strip().lower() == 'yes',
+            threshold_grid=threshold_grid,
+            **train_kwargs
+        )
+    else:
+        result = run_targetp2_torch_nested_oof(
+            targetp_npz=args.targetp_npz,
+            model_dir=args.model_dir,
+            outer_folds=args.outer_folds,
+            val_folds=args.val_folds,
+            reuse_cache=str(args.reuse_cache).strip().lower() == 'yes',
+            max_models=int(args.max_models),
+            seed_offset=int(args.seed_offset),
+            device=args.device,
+            val_threshold_eval=str(args.val_threshold_eval).strip().lower() == 'yes',
+            threshold_grid=threshold_grid,
+            **train_kwargs
+        )
     profile = {
         'targetp_npz': args.targetp_npz,
         'model_dir': args.model_dir,
         'outer_folds': args.outer_folds,
         'val_folds': args.val_folds,
+        'fold_pairs': args.fold_pairs,
         'max_models': int(args.max_models),
         'reuse_cache': args.reuse_cache,
         'device': args.device,
