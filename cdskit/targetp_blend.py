@@ -20,10 +20,14 @@ from cdskit.localize_model import (
     fraction_in_set,
     longest_hydrophobic_run,
     mean_hydropathy,
+    normalize_class_probabilities,
+    predict_localization_and_peroxisome,
     save_localize_model,
 )
 from cdskit.localize_learn import (
     LOCALIZATION_CLASSES,
+    build_predefined_folds,
+    build_stratified_folds,
     build_training_matrix,
     evaluate_cross_validation,
     fit_localization_model,
@@ -237,6 +241,71 @@ def _load_oof_npz(path, fallback_true_idx=None):
         )
     class_names = [str(v) for v in data['class_names'].tolist()]
     return prob_matrix, true_idx, class_names
+
+
+def _safe_cache_name(value):
+    text = str(value or '').strip()
+    if text == '':
+        text = 'fold'
+    out = list()
+    for ch in text:
+        if ch.isalnum() or ch in ['-', '_', '.']:
+            out.append(ch)
+        else:
+            out.append('_')
+    return ''.join(out)
+
+
+def _oof_fold_cache_path(cache_dir, model_arch, fold_label):
+    return os.path.join(
+        str(cache_dir),
+        '{}_{}.npz'.format(_safe_cache_name(model_arch), _safe_cache_name(fold_label)),
+    )
+
+
+def _oof_fold_cache_key(model_arch, localize_strategy, dl_train_params):
+    payload = {
+        'model_arch': str(model_arch),
+        'localize_strategy': str(localize_strategy),
+        'dl_train_params': dict(sorted(dict(dl_train_params).items())),
+    }
+    return json.dumps(payload, sort_keys=True, default=str)
+
+
+def _save_oof_fold_npz(path, row_index, prob_matrix, true_idx, class_names, fold_label, cache_key=''):
+    out_dir = os.path.dirname(path)
+    if out_dir != '':
+        os.makedirs(out_dir, exist_ok=True)
+    tmp_path = str(path) + '.tmp.npz'
+    np.savez_compressed(
+        tmp_path,
+        row_index=np.asarray(row_index, dtype=np.int64),
+        prob_matrix=np.asarray(prob_matrix, dtype=np.float64),
+        true_idx=np.asarray(true_idx, dtype=np.int64),
+        class_names=np.asarray(list(class_names)),
+        fold_label=str(fold_label),
+        cache_key=str(cache_key),
+    )
+    os.replace(tmp_path, path)
+
+
+def _load_oof_fold_npz(path, class_names, cache_key=''):
+    data = np.load(path, allow_pickle=True)
+    loaded_names = [str(v) for v in np.asarray(data['class_names']).tolist()]
+    if loaded_names != list(class_names):
+        raise ValueError('Class names in OOF fold cache do not match LOCALIZATION_CLASSES.')
+    if str(cache_key or '') != '':
+        if 'cache_key' not in data.files:
+            raise ValueError('OOF fold cache has no cache_key metadata: {}'.format(path))
+        loaded_key = str(np.asarray(data['cache_key']).tolist())
+        if loaded_key != str(cache_key):
+            raise ValueError('OOF fold cache parameters do not match current run: {}'.format(path))
+    row_index = np.asarray(data['row_index'], dtype=np.int64)
+    prob_matrix = np.asarray(data['prob_matrix'], dtype=np.float64)
+    true_idx = np.asarray(data['true_idx'], dtype=np.int64)
+    if prob_matrix.shape[0] != row_index.shape[0] or true_idx.shape[0] != row_index.shape[0]:
+        raise ValueError('Row count mismatch in OOF fold cache: {}'.format(path))
+    return row_index, prob_matrix, true_idx
 
 
 def _read_true_idx_from_training_tsv(training_tsv, class_names):
@@ -1587,12 +1656,187 @@ def _evaluate_foldwise_fixed_targetp_specialist_postprocess(
     return out
 
 
+def _model_type_from_arch(model_arch):
+    if model_arch == 'nearest_centroid':
+        return 'nearest_centroid_v1'
+    if model_arch == 'bilstm_attention':
+        return 'bilstm_attention_v1'
+    if model_arch == 'esm_head':
+        return 'esm_head_v1'
+    raise ValueError('Unsupported model_arch: {}'.format(model_arch))
+
+
+def _predict_oof_fold(
+    x,
+    aa_sequences,
+    class_labels,
+    perox_labels,
+    train_idx,
+    test_idx,
+    model_arch,
+    localize_strategy,
+    dl_train_params,
+):
+    x_train = x[train_idx, :]
+    aa_train = [aa_sequences[i] for i in train_idx.tolist()]
+    aa_test = [aa_sequences[i] for i in test_idx.tolist()]
+    class_train = [class_labels[i] for i in train_idx.tolist()]
+    class_test = [class_labels[i] for i in test_idx.tolist()]
+    perox_train = [perox_labels[i] for i in train_idx.tolist()]
+
+    local_model = fit_localization_model(
+        x=x_train,
+        aa_sequences=aa_train,
+        class_labels=class_train,
+        model_arch=model_arch,
+        dl_train_params=dl_train_params,
+        localize_strategy=localize_strategy,
+    )
+    perox_model = fit_perox_binary_classifier(
+        features=x_train,
+        labels=perox_train,
+    )
+    tmp_model = {
+        'model_type': _model_type_from_arch(model_arch=model_arch),
+        'localization_model': local_model,
+        'perox_model': perox_model,
+    }
+
+    prob_matrix = np.zeros((len(test_idx), len(LOCALIZATION_CLASSES)), dtype=np.float64)
+    true_idx = np.zeros((len(test_idx),), dtype=np.int64)
+    class_to_idx = {name: i for i, name in enumerate(LOCALIZATION_CLASSES)}
+    for row_i in range(len(test_idx)):
+        pred = predict_localization_and_peroxisome(
+            aa_seq=aa_test[row_i],
+            model=tmp_model,
+            organism_group='',
+        )
+        probs = normalize_class_probabilities(
+            class_probs=pred.get('class_probabilities', {}),
+        )
+        for class_i, class_name in enumerate(LOCALIZATION_CLASSES):
+            prob_matrix[row_i, class_i] = float(probs.get(class_name, 0.0))
+        true_idx[row_i] = int(class_to_idx[class_test[row_i]])
+    return prob_matrix, true_idx
+
+
+def _run_model_oof_with_fold_cache(
+    x,
+    aa_sequences,
+    class_labels,
+    perox_labels,
+    fold_ids,
+    n_folds,
+    cv_seed,
+    model_arch,
+    localize_strategy,
+    dl_train_params,
+    fold_cache_dir,
+):
+    if fold_ids is None:
+        folds = build_stratified_folds(
+            class_labels=class_labels,
+            n_folds=n_folds,
+            seed=int(cv_seed),
+        )
+        fold_labels = ['fold{}'.format(i + 1) for i in range(len(folds))]
+    else:
+        folds = build_predefined_folds(
+            class_labels=class_labels,
+            fold_ids=fold_ids,
+        )
+        fold_labels = sorted(set([str(v) for v in list(fold_ids)]))
+    n_sample = int(x.shape[0])
+    all_row_index = list()
+    all_prob = list()
+    all_true_idx = list()
+    cache_used = 0
+    cache_written = 0
+    cache_files = list()
+    cache_key = _oof_fold_cache_key(
+        model_arch=model_arch,
+        localize_strategy=localize_strategy,
+        dl_train_params=dl_train_params,
+    )
+    for fold_i, test_idx in enumerate(folds):
+        fold_label = fold_labels[fold_i]
+        cache_path = _oof_fold_cache_path(
+            cache_dir=fold_cache_dir,
+            model_arch=model_arch,
+            fold_label=fold_label,
+        )
+        if os.path.exists(cache_path):
+            row_index, prob_matrix, true_idx = _load_oof_fold_npz(
+                path=cache_path,
+                class_names=list(LOCALIZATION_CLASSES),
+                cache_key=cache_key,
+            )
+            if (
+                row_index.shape[0] != test_idx.shape[0]
+                or np.any(np.sort(row_index) != np.sort(np.asarray(test_idx, dtype=np.int64)))
+            ):
+                raise ValueError('OOF fold cache row indices do not match current fold: {}'.format(cache_path))
+            cache_used += 1
+        else:
+            train_mask = np.ones(n_sample, dtype=bool)
+            train_mask[test_idx] = False
+            train_idx = np.where(train_mask)[0]
+            if len(train_idx) == 0:
+                raise ValueError('Empty train split detected in cross validation.')
+            row_index = np.asarray(test_idx, dtype=np.int64)
+            prob_matrix, true_idx = _predict_oof_fold(
+                x=x,
+                aa_sequences=aa_sequences,
+                class_labels=class_labels,
+                perox_labels=perox_labels,
+                train_idx=train_idx,
+                test_idx=test_idx,
+                model_arch=model_arch,
+                localize_strategy=localize_strategy,
+                dl_train_params=dl_train_params,
+            )
+            _save_oof_fold_npz(
+                path=cache_path,
+                row_index=row_index,
+                prob_matrix=prob_matrix,
+                true_idx=true_idx,
+                class_names=list(LOCALIZATION_CLASSES),
+                fold_label=fold_label,
+                cache_key=cache_key,
+            )
+            cache_written += 1
+        cache_files.append(cache_path)
+        all_row_index.append(np.asarray(row_index, dtype=np.int64))
+        all_prob.append(np.asarray(prob_matrix, dtype=np.float64))
+        all_true_idx.append(np.asarray(true_idx, dtype=np.int64))
+
+    row_index = np.concatenate(all_row_index, axis=0)
+    prob_matrix = np.concatenate(all_prob, axis=0)
+    true_idx = np.concatenate(all_true_idx, axis=0)
+    order = np.argsort(row_index)
+    row_index = row_index[order]
+    prob_matrix = prob_matrix[order, :]
+    true_idx = true_idx[order]
+    expected = np.arange(n_sample, dtype=np.int64)
+    if row_index.shape[0] != n_sample or np.any(row_index != expected):
+        raise ValueError('OOF fold caches are incomplete or have duplicate row indices.')
+    return {
+        'prob_matrix': prob_matrix,
+        'true_idx': true_idx,
+        'fold_cache_dir': str(fold_cache_dir),
+        'fold_cache_files': cache_files,
+        'fold_cache_used': int(cache_used),
+        'fold_cache_written': int(cache_written),
+    }
+
+
 def _run_model_oof(
     training_tsv,
     model_arch,
     localize_strategy,
     dl_train_params,
     cv_seed,
+    fold_cache_dir='',
 ):
     rows = _read_training_rows(path=training_tsv)
     x, aa_sequences, class_labels, perox_labels, skipped, fold_ids = build_training_matrix(
@@ -1606,29 +1850,47 @@ def _run_model_oof(
         skip_ambiguous=True,
         cv_fold_col='fold_id',
     )
-    cv = evaluate_cross_validation(
-        x=x,
-        aa_sequences=aa_sequences,
-        class_labels=class_labels,
-        perox_labels=perox_labels,
-        n_folds=5,
-        seed=int(cv_seed),
-        model_arch=model_arch,
-        dl_train_params=dl_train_params,
-        dl_device=str(dl_train_params.get('device', 'cpu')),
-        localize_strategy=localize_strategy,
-        fold_ids=fold_ids,
-    )
-    prob_matrix, true_idx = _oof_rows_to_prob_and_true(
-        oof_rows=cv['oof_rows'],
-        class_names=list(LOCALIZATION_CLASSES),
-    )
+    cache_info = None
+    if str(fold_cache_dir or '').strip() != '':
+        cache_info = _run_model_oof_with_fold_cache(
+            x=x,
+            aa_sequences=aa_sequences,
+            class_labels=class_labels,
+            perox_labels=perox_labels,
+            fold_ids=fold_ids,
+            n_folds=5,
+            cv_seed=int(cv_seed),
+            model_arch=model_arch,
+            localize_strategy=localize_strategy,
+            dl_train_params=dl_train_params,
+            fold_cache_dir=str(fold_cache_dir),
+        )
+        prob_matrix = cache_info['prob_matrix']
+        true_idx = cache_info['true_idx']
+    else:
+        cv = evaluate_cross_validation(
+            x=x,
+            aa_sequences=aa_sequences,
+            class_labels=class_labels,
+            perox_labels=perox_labels,
+            n_folds=5,
+            seed=int(cv_seed),
+            model_arch=model_arch,
+            dl_train_params=dl_train_params,
+            dl_device=str(dl_train_params.get('device', 'cpu')),
+            localize_strategy=localize_strategy,
+            fold_ids=fold_ids,
+        )
+        prob_matrix, true_idx = _oof_rows_to_prob_and_true(
+            oof_rows=cv['oof_rows'],
+            class_names=list(LOCALIZATION_CLASSES),
+        )
     metrics = _metrics_from_prob_matrix(
         prob_matrix=prob_matrix,
         true_idx=true_idx,
         class_names=list(LOCALIZATION_CLASSES),
     )
-    return {
+    out = {
         'prob_matrix': prob_matrix,
         'true_idx': true_idx,
         'metrics': metrics,
@@ -1636,6 +1898,12 @@ def _run_model_oof(
         'n_rows_used': int(prob_matrix.shape[0]),
         'n_rows_skipped': int(skipped),
     }
+    if cache_info is not None:
+        out['fold_cache_dir'] = cache_info['fold_cache_dir']
+        out['fold_cache_files'] = cache_info['fold_cache_files']
+        out['fold_cache_used'] = cache_info['fold_cache_used']
+        out['fold_cache_written'] = cache_info['fold_cache_written']
+    return out
 
 
 def _bilstm_dl_params_from_args(args):
@@ -2198,6 +2466,7 @@ def build_parser():
     parser.add_argument('--organism_gate', default='no', choices=['yes', 'no'], type=str)
     parser.add_argument('--bilstm_oof_npz', default='data/localize_bench/targetp2_oof_bilstm.npz', type=str)
     parser.add_argument('--esm_oof_npz', default='data/localize_bench/targetp2_oof_esm.npz', type=str)
+    parser.add_argument('--oof_fold_cache_dir', default='', type=str)
     parser.add_argument('--cv_seed', default=1, type=int)
     parser.add_argument('--localize_strategy', default='single_stage', choices=['single_stage', 'two_stage', 'two_stage_ctp_ltp'], type=str)
     parser.add_argument('--bilstm_dl_seq_len', default=200, type=int)
@@ -2285,6 +2554,7 @@ def main():
             localize_strategy=args.localize_strategy,
             dl_train_params=bilstm_dl,
             cv_seed=int(args.cv_seed),
+            fold_cache_dir=str(args.oof_fold_cache_dir),
         )
         bilstm_prob = out['prob_matrix']
         bilstm_true = out['true_idx']
@@ -2302,6 +2572,9 @@ def main():
             'n_rows_used': out['n_rows_used'],
             'n_rows_skipped': out['n_rows_skipped'],
         }
+        for key in ['fold_cache_dir', 'fold_cache_files', 'fold_cache_used', 'fold_cache_written']:
+            if key in out:
+                bilstm_info[key] = out[key]
 
     esm_prob = None
     esm_true = None
@@ -2332,6 +2605,7 @@ def main():
             localize_strategy=args.localize_strategy,
             dl_train_params=esm_dl,
             cv_seed=int(args.cv_seed),
+            fold_cache_dir=str(args.oof_fold_cache_dir),
         )
         esm_prob = out['prob_matrix']
         esm_true = out['true_idx']
@@ -2349,6 +2623,9 @@ def main():
             'n_rows_used': out['n_rows_used'],
             'n_rows_skipped': out['n_rows_skipped'],
         }
+        for key in ['fold_cache_dir', 'fold_cache_files', 'fold_cache_used', 'fold_cache_written']:
+            if key in out:
+                esm_info[key] = out[key]
 
     if bilstm_prob.shape != esm_prob.shape:
         raise ValueError('Shape mismatch between bilstm and esm OOF probabilities.')

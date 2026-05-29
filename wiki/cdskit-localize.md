@@ -300,7 +300,9 @@ generalization gap.
 
 A full 15-epoch export with regenerated OOF caches should still be run as a
 long job before treating the external numbers as the final TargetP-specialist
-model's generalization estimate.
+model's generalization estimate. Use `--oof_fold_cache_dir` with a fresh
+directory for the chosen hyperparameters so interrupted OOF regeneration can
+resume from already completed folds.
 
 The long full export can be resumed manually with a larger BiLSTM batch size:
 
@@ -313,6 +315,7 @@ python -m cdskit.targetp_blend \
   --organism_gate yes \
   --bilstm_oof_npz data/localize_bench/targetp2_oof_bilstm_formal_cpu_b2048.npz \
   --esm_oof_npz data/localize_bench/targetp2_oof_esm_formal_cpu_b128.npz \
+  --oof_fold_cache_dir data/localize_bench/targetp2_oof_formal_cpu_b2048_folds \
   --bilstm_dl_batch_size 2048 \
   --bilstm_dl_device cpu \
   --esm_dl_batch_size 128 \

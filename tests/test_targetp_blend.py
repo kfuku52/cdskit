@@ -20,6 +20,7 @@ from cdskit.targetp_blend import (
     _optimize_classwise_alpha,
     _optimize_global_alpha,
     _optimize_specialist_threshold_pair,
+    _run_model_oof,
     _save_oof_npz,
     _targetp_margin_summary,
     main,
@@ -103,6 +104,61 @@ def test_oof_cache_load_can_use_fallback_true_idx(temp_dir):
     np.testing.assert_allclose(loaded_prob, prob_matrix)
     np.testing.assert_allclose(loaded_true, true_idx)
     assert loaded_names == class_names
+
+
+def test_oof_generation_can_resume_from_fold_cache(temp_dir):
+    training_tsv = temp_dir / 'targetp.tsv'
+    rows = list()
+    seq_by_class = {
+        'noTP': 'MGGGGGGGGGGGGGGGGGGG',
+        'SP': 'MKKLLLLLLLLAAAAAGGGGG',
+        'mTP': 'MARRRRAAASSSLLLGGGGG',
+        'cTP': 'MASTSTSTSTSSRRRGGGGG',
+        'lTP': 'MRRSTSTSTSTSSGGGGGGG',
+    }
+    for fold_id in ['fold1', 'fold2']:
+        for class_name in LOCALIZATION_CLASSES:
+            rows.append({
+                'accession': '{}_{}'.format(fold_id, class_name),
+                'sequence': seq_by_class[class_name],
+                'localization': class_name,
+                'peroxisome': 'no',
+                'fold_id': fold_id,
+            })
+    with open(training_tsv, 'w', encoding='utf-8', newline='') as out:
+        writer = csv.DictWriter(
+            out,
+            delimiter='\t',
+            fieldnames=['accession', 'sequence', 'localization', 'peroxisome', 'fold_id'],
+        )
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+
+    cache_dir = temp_dir / 'fold_cache'
+    first = _run_model_oof(
+        training_tsv=str(training_tsv),
+        model_arch='nearest_centroid',
+        localize_strategy='single_stage',
+        dl_train_params={},
+        cv_seed=1,
+        fold_cache_dir=str(cache_dir),
+    )
+    second = _run_model_oof(
+        training_tsv=str(training_tsv),
+        model_arch='nearest_centroid',
+        localize_strategy='single_stage',
+        dl_train_params={},
+        cv_seed=1,
+        fold_cache_dir=str(cache_dir),
+    )
+
+    assert first['fold_cache_written'] == 2
+    assert first['fold_cache_used'] == 0
+    assert second['fold_cache_written'] == 0
+    assert second['fold_cache_used'] == 2
+    np.testing.assert_allclose(second['prob_matrix'], first['prob_matrix'])
+    np.testing.assert_allclose(second['true_idx'], first['true_idx'])
 
 
 def test_classwise_blend_beats_global_when_models_specialize():
