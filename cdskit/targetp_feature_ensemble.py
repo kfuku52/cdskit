@@ -37,6 +37,11 @@ TARGETP_FEATURE_ENSEMBLE_DEFAULTS = {
     'min_samples_leaf': 1,
 }
 
+TARGETP_FEATURE_BINARY_MODEL_KINDS = frozenset([
+    'binary_extra_trees',
+    'extra_trees_ovr',
+])
+
 
 def read_training_rows(path):
     with open(path, 'r', encoding='utf-8', newline='') as inp:
@@ -100,6 +105,40 @@ def make_targetp_feature_classifier(
     raise ValueError('Unsupported targetp feature model_kind: {}'.format(model_kind))
 
 
+def _is_binary_feature_model_kind(model_kind):
+    return str(model_kind).strip().lower() in TARGETP_FEATURE_BINARY_MODEL_KINDS
+
+
+def make_targetp_binary_feature_classifiers(
+    features,
+    true_idx,
+    class_names,
+    model_kind='binary_extra_trees',
+    n_estimators=300,
+    random_state=1,
+    class_weight='balanced',
+    max_features='sqrt',
+    min_samples_leaf=1,
+):
+    model_kind = str(model_kind).strip().lower()
+    if not _is_binary_feature_model_kind(model_kind):
+        raise ValueError('Unsupported binary targetp feature model_kind: {}'.format(model_kind))
+    classifiers = list()
+    for class_i, _ in enumerate(class_names):
+        classifier = make_targetp_feature_classifier(
+            model_kind='extra_trees',
+            n_estimators=n_estimators,
+            random_state=int(random_state) + int(class_i),
+            class_weight=class_weight,
+            max_features=max_features,
+            min_samples_leaf=min_samples_leaf,
+        )
+        binary_y = (np.asarray(true_idx, dtype=np.int64) == int(class_i)).astype(np.int64)
+        classifier.fit(features, binary_y)
+        classifiers.append(classifier)
+    return classifiers
+
+
 def predict_feature_classifier_prob_matrix(classifier, feature_matrix, class_names):
     prob = np.asarray(classifier.predict_proba(feature_matrix), dtype=np.float64)
     out = np.zeros((feature_matrix.shape[0], len(class_names)), dtype=np.float64)
@@ -107,6 +146,24 @@ def predict_feature_classifier_prob_matrix(classifier, feature_matrix, class_nam
     for class_i in range(len(class_names)):
         if class_i in class_to_col:
             out[:, class_i] = prob[:, class_to_col[class_i]]
+    row_sum = out.sum(axis=1, keepdims=True)
+    row_sum[row_sum <= 0.0] = 1.0
+    return out / row_sum
+
+
+def predict_binary_feature_classifiers_prob_matrix(classifiers, feature_matrix, class_names):
+    if not isinstance(classifiers, list) or len(classifiers) != len(class_names):
+        raise ValueError('binary feature classifiers should be a list matching class_names.')
+    out = np.zeros((feature_matrix.shape[0], len(class_names)), dtype=np.float64)
+    for class_i, classifier in enumerate(classifiers):
+        proba = np.asarray(classifier.predict_proba(feature_matrix), dtype=np.float64)
+        classes = [int(v) for v in list(getattr(classifier, 'classes_', []))]
+        if 1 in classes:
+            out[:, class_i] = proba[:, classes.index(1)]
+        elif len(classes) == 1 and classes[0] == 1:
+            out[:, class_i] = 1.0
+        else:
+            out[:, class_i] = 0.0
     row_sum = out.sum(axis=1, keepdims=True)
     row_sum[row_sum <= 0.0] = 1.0
     return out / row_sum
@@ -133,20 +190,38 @@ def run_targetp_feature_ensemble_oof(
     for fold_id in sorted(set(fold_ids.tolist())):
         valid_mask = fold_ids == fold_id
         train_mask = ~valid_mask
-        classifier = make_targetp_feature_classifier(
-            model_kind=model_kind,
-            n_estimators=n_estimators,
-            random_state=random_state,
-            class_weight=class_weight,
-            max_features=max_features,
-            min_samples_leaf=min_samples_leaf,
-        )
-        classifier.fit(features[train_mask, :], true_idx[train_mask])
-        prob_matrix[valid_mask, :] = predict_feature_classifier_prob_matrix(
-            classifier=classifier,
-            feature_matrix=features[valid_mask, :],
-            class_names=class_names,
-        )
+        if _is_binary_feature_model_kind(model_kind):
+            classifiers = make_targetp_binary_feature_classifiers(
+                features=features[train_mask, :],
+                true_idx=true_idx[train_mask],
+                class_names=class_names,
+                model_kind=model_kind,
+                n_estimators=n_estimators,
+                random_state=random_state,
+                class_weight=class_weight,
+                max_features=max_features,
+                min_samples_leaf=min_samples_leaf,
+            )
+            prob_matrix[valid_mask, :] = predict_binary_feature_classifiers_prob_matrix(
+                classifiers=classifiers,
+                feature_matrix=features[valid_mask, :],
+                class_names=class_names,
+            )
+        else:
+            classifier = make_targetp_feature_classifier(
+                model_kind=model_kind,
+                n_estimators=n_estimators,
+                random_state=random_state,
+                class_weight=class_weight,
+                max_features=max_features,
+                min_samples_leaf=min_samples_leaf,
+            )
+            classifier.fit(features[train_mask, :], true_idx[train_mask])
+            prob_matrix[valid_mask, :] = predict_feature_classifier_prob_matrix(
+                classifier=classifier,
+                feature_matrix=features[valid_mask, :],
+                class_names=class_names,
+            )
         fold_rows.append({
             'fold_id': str(fold_id),
             'n_train': int(np.sum(train_mask)),
@@ -185,15 +260,30 @@ def fit_targetp_feature_runtime_model(
     class_names = list(LOCALIZATION_CLASSES)
     true_idx = _true_idx_from_rows(rows=rows, class_names=class_names)
     features = build_targetp_feature_matrix(rows=rows)
-    classifier = make_targetp_feature_classifier(
-        model_kind=model_kind,
-        n_estimators=n_estimators,
-        random_state=random_state,
-        class_weight=class_weight,
-        max_features=max_features,
-        min_samples_leaf=min_samples_leaf,
-    )
-    classifier.fit(features, true_idx)
+    if _is_binary_feature_model_kind(model_kind):
+        classifier = None
+        binary_classifiers = make_targetp_binary_feature_classifiers(
+            features=features,
+            true_idx=true_idx,
+            class_names=class_names,
+            model_kind=model_kind,
+            n_estimators=n_estimators,
+            random_state=random_state,
+            class_weight=class_weight,
+            max_features=max_features,
+            min_samples_leaf=min_samples_leaf,
+        )
+    else:
+        binary_classifiers = None
+        classifier = make_targetp_feature_classifier(
+            model_kind=model_kind,
+            n_estimators=n_estimators,
+            random_state=random_state,
+            class_weight=class_weight,
+            max_features=max_features,
+            min_samples_leaf=min_samples_leaf,
+        )
+        classifier.fit(features, true_idx)
     broad_features, _, _, perox_labels, skipped, _ = build_training_matrix(
         rows=rows,
         seq_col='sequence',
@@ -216,6 +306,7 @@ def fit_targetp_feature_runtime_model(
             'mode': 'targetp_feature_ensemble',
             'class_order': class_names,
             'classifier': classifier,
+            'binary_classifiers': binary_classifiers,
             'class_thresholds': dict(class_thresholds),
             'feature_dim': int(features.shape[1]),
             'feature_profile': TARGETP_FEATURE_ENSEMBLE_PROFILE['name'],
@@ -563,7 +654,7 @@ def build_parser():
     parser.add_argument('--reuse_oof_cache', default='yes', choices=['yes', 'no'], type=str)
     parser.add_argument('--feature_oof_npz', default='data/localize_bench/targetp2_oof_feature_ensemble.npz', type=str)
     parser.add_argument('--organism_gate', default='yes', choices=['yes', 'no'], type=str)
-    parser.add_argument('--model_kind', default=TARGETP_FEATURE_ENSEMBLE_DEFAULTS['model_kind'], choices=['extra_trees', 'random_forest'], type=str)
+    parser.add_argument('--model_kind', default=TARGETP_FEATURE_ENSEMBLE_DEFAULTS['model_kind'], choices=['extra_trees', 'random_forest', 'binary_extra_trees', 'extra_trees_ovr'], type=str)
     parser.add_argument('--n_estimators', default=TARGETP_FEATURE_ENSEMBLE_DEFAULTS['n_estimators'], type=int)
     parser.add_argument('--random_state', default=TARGETP_FEATURE_ENSEMBLE_DEFAULTS['random_state'], type=int)
     parser.add_argument('--class_weight', default=TARGETP_FEATURE_ENSEMBLE_DEFAULTS['class_weight'], type=str)

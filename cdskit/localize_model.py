@@ -965,6 +965,13 @@ def _predict_localization_from_model(aa_seq, feature_vec, localization_model, mo
             localization_model=localization_model,
             organism_group=organism_group,
         )
+    if model_type == 'targetp_torch_v1':
+        from cdskit.targetp_torch import predict_targetp2_torch_localization
+        return predict_targetp2_torch_localization(
+            aa_seq=aa_seq,
+            localization_model=localization_model,
+            organism_group=organism_group,
+        )
     if model_type == 'targetp_blend_v1':
         return predict_targetp_blend_localization(
             aa_seq=aa_seq,
@@ -1345,7 +1352,10 @@ def _targetp_predict_sklearn_proba(model, features):
 
 def predict_targetp_feature_ensemble_localization(aa_seq, localization_model, organism_group=''):
     classifier = localization_model.get('classifier', None)
-    if classifier is None or not hasattr(classifier, 'predict_proba'):
+    binary_classifiers = localization_model.get('binary_classifiers', None)
+    has_multiclass = classifier is not None and hasattr(classifier, 'predict_proba')
+    has_binary = isinstance(binary_classifiers, list) and len(binary_classifiers) > 0
+    if not has_multiclass and not has_binary:
         raise ValueError('targetp_feature_ensemble_v1 requires a sklearn classifier.')
     class_order = list(localization_model.get('class_order', LOCALIZATION_CLASSES))
     if class_order != list(LOCALIZATION_CLASSES):
@@ -1358,19 +1368,36 @@ def predict_targetp_feature_ensemble_localization(aa_seq, localization_model, or
     if feature_vec.shape[0] != expected_dim:
         txt = 'TargetP feature count mismatch: expected {}, got {}.'
         raise ValueError(txt.format(expected_dim, int(feature_vec.shape[0])))
-    proba = np.asarray(
-        _targetp_predict_sklearn_proba(
-            classifier,
-            feature_vec.reshape((1, -1)),
-        ),
-        dtype=np.float64,
-    )
-    classes = getattr(classifier, 'classes_', list(range(len(class_order))))
-    class_to_col = {int(cls): i for i, cls in enumerate(list(classes))}
     prob_vec = np.zeros((len(class_order),), dtype=np.float64)
-    for class_i in range(len(class_order)):
-        if class_i in class_to_col:
-            prob_vec[class_i] = float(proba[0, class_to_col[class_i]])
+    if has_binary:
+        if len(binary_classifiers) != len(class_order):
+            raise ValueError('targetp_feature_ensemble_v1 binary_classifiers should match class_order.')
+        for class_i, binary_classifier in enumerate(binary_classifiers):
+            if binary_classifier is None or not hasattr(binary_classifier, 'predict_proba'):
+                raise ValueError('targetp_feature_ensemble_v1 binary classifier should support predict_proba.')
+            proba = np.asarray(
+                _targetp_predict_sklearn_proba(
+                    binary_classifier,
+                    feature_vec.reshape((1, -1)),
+                ),
+                dtype=np.float64,
+            )
+            classes = [int(cls) for cls in list(getattr(binary_classifier, 'classes_', []))]
+            if 1 in classes:
+                prob_vec[class_i] = float(proba[0, classes.index(1)])
+    else:
+        proba = np.asarray(
+            _targetp_predict_sklearn_proba(
+                classifier,
+                feature_vec.reshape((1, -1)),
+            ),
+            dtype=np.float64,
+        )
+        classes = getattr(classifier, 'classes_', list(range(len(class_order))))
+        class_to_col = {int(cls): i for i, cls in enumerate(list(classes))}
+        for class_i in range(len(class_order)):
+            if class_i in class_to_col:
+                prob_vec[class_i] = float(proba[0, class_to_col[class_i]])
     probs = _vector_to_class_probs(prob_vec)
     pred_idx = int(np.argmax([probs[class_name] for class_name in LOCALIZATION_CLASSES]))
     return LOCALIZATION_CLASSES[pred_idx], probs
@@ -1816,6 +1843,7 @@ def save_localize_model(model, path):
         'multilabel_cnn_v1',
         'targetp_blend_v1',
         'targetp_feature_ensemble_v1',
+        'targetp_torch_v1',
     ]:
         from cdskit.localize_bilstm import require_torch
         torch, _ = require_torch()
@@ -1862,6 +1890,7 @@ def load_localize_model(path):
         'esm_head_v1',
         'targetp_blend_v1',
         'targetp_feature_ensemble_v1',
+        'targetp_torch_v1',
         'multilabel_centroid_v1',
         'multilabel_cnn_v1',
     ]

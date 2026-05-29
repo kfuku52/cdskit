@@ -3,6 +3,7 @@ import csv
 import numpy as np
 import pytest
 
+from cdskit.localize_model import predict_localization_and_peroxisome
 from cdskit.localize_learn import LOCALIZATION_CLASSES
 from cdskit.targetp_feature_ensemble import (
     build_targetp_feature_matrix,
@@ -87,6 +88,22 @@ def test_targetp_feature_ensemble_oof_and_foldwise_threshold_eval(temp_dir):
     assert len(report['folds']) == 2
 
 
+def test_targetp_feature_binary_ovr_oof(temp_dir):
+    training_tsv = temp_dir / 'targetp.tsv'
+    _write_targetp_fixture(training_tsv)
+
+    oof = run_targetp_feature_ensemble_oof(
+        training_tsv=str(training_tsv),
+        model_kind='binary_extra_trees',
+        n_estimators=5,
+        random_state=3,
+    )
+
+    assert oof['prob_matrix'].shape == (10, len(LOCALIZATION_CLASSES))
+    np.testing.assert_allclose(oof['prob_matrix'].sum(axis=1), np.ones((10,)))
+    assert oof['profile']['model_kind'] == 'binary_extra_trees'
+
+
 def test_fit_targetp_feature_runtime_model_uses_localize_perox_features(temp_dir):
     training_tsv = temp_dir / 'targetp.tsv'
     _write_targetp_fixture(training_tsv)
@@ -100,6 +117,47 @@ def test_fit_targetp_feature_runtime_model_uses_localize_perox_features(temp_dir
     assert model['model_type'] == 'targetp_feature_ensemble_v1'
     assert model['localization_model']['feature_dim'] > 1000
     assert model['perox_model']['mode'] in ['constant', 'centroid']
+
+
+def test_fit_targetp_binary_feature_runtime_model(temp_dir):
+    training_tsv = temp_dir / 'targetp.tsv'
+    _write_targetp_fixture(training_tsv)
+
+    model = fit_targetp_feature_runtime_model(
+        training_tsv=str(training_tsv),
+        model_kind='binary_extra_trees',
+        n_estimators=5,
+        random_state=3,
+    )
+
+    assert model['model_type'] == 'targetp_feature_ensemble_v1'
+    assert model['localization_model']['classifier'] is None
+    assert len(model['localization_model']['binary_classifiers']) == len(LOCALIZATION_CLASSES)
+
+
+def test_targetp_binary_feature_runtime_predicts_with_binary_classifiers(temp_dir):
+    training_tsv = temp_dir / 'targetp.tsv'
+    _write_targetp_fixture(training_tsv)
+    model = fit_targetp_feature_runtime_model(
+        training_tsv=str(training_tsv),
+        model_kind='binary_extra_trees',
+        n_estimators=5,
+        random_state=3,
+    )
+
+    result = predict_localization_and_peroxisome(
+        aa_seq='MKKLLLLLLLLAAAAAGGGGG',
+        model=model,
+        organism_group='non_plant',
+    )
+
+    assert result['predicted_class'] in LOCALIZATION_CLASSES
+    np.testing.assert_allclose(
+        sum(result['class_probabilities'].values()),
+        1.0,
+        rtol=1.0e-6,
+        atol=1.0e-7,
+    )
 
 
 def test_build_targetp_feature_blend_runtime_model_extracts_source_base():
