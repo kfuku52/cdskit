@@ -2,11 +2,22 @@
 import argparse
 
 from cdskit.targetp_torch import (
+    TARGETP_CLASS_THRESHOLD_GRID,
     TARGETP_TORCH_DEFAULTS,
     run_targetp2_torch_nested_oof,
     write_targetp2_torch_oof_npz,
     write_targetp2_torch_report,
 )
+
+
+def _parse_threshold_grid(text):
+    values = [
+        float(part.strip()) for part in str(text).split(',')
+        if part.strip() != ''
+    ]
+    if len(values) == 0:
+        raise ValueError('--threshold_grid should contain at least one value.')
+    return sorted(set(values))
 
 
 def build_parser():
@@ -48,12 +59,19 @@ def build_parser():
     parser.add_argument('--initializer', default=TARGETP_TORCH_DEFAULTS['initializer'], choices=['targetp_tf', 'pytorch'], type=str)
     parser.add_argument('--grad_clip_norm', default=TARGETP_TORCH_DEFAULTS['grad_clip_norm'], type=float)
     parser.add_argument('--rnn_impl', default=TARGETP_TORCH_DEFAULTS['rnn_impl'], choices=['torch_lstm', 'targetp_tf_cell'], type=str)
+    parser.add_argument('--val_threshold_eval', default='no', choices=['yes', 'no'], type=str)
+    parser.add_argument(
+        '--threshold_grid',
+        default=','.join(str(value) for value in TARGETP_CLASS_THRESHOLD_GRID),
+        type=str,
+    )
     parser.add_argument('--verbose', default='no', choices=['yes', 'no'], type=str)
     return parser
 
 
 def main():
     args = build_parser().parse_args()
+    threshold_grid = _parse_threshold_grid(args.threshold_grid)
     train_kwargs = {
         'epochs': int(args.epochs),
         'batch_size': int(args.batch_size),
@@ -86,6 +104,8 @@ def main():
         max_models=int(args.max_models),
         seed_offset=int(args.seed_offset),
         device=args.device,
+        val_threshold_eval=str(args.val_threshold_eval).strip().lower() == 'yes',
+        threshold_grid=threshold_grid,
         **train_kwargs
     )
     profile = {
@@ -97,6 +117,8 @@ def main():
         'reuse_cache': args.reuse_cache,
         'device': args.device,
         'seed_offset': int(args.seed_offset),
+        'val_threshold_eval': args.val_threshold_eval,
+        'threshold_grid': threshold_grid,
         'train_kwargs': train_kwargs,
     }
     write_targetp2_torch_oof_npz(path=args.out_npz, result=result)
@@ -107,6 +129,14 @@ def main():
         float(result['metrics']['macro_f1']),
         float(result['metrics']['overall_accuracy']),
     ))
+    if 'val_threshold_metrics' in result:
+        threshold_metrics = result['val_threshold_metrics']
+        print('val_threshold_rows={}/{} macro_f1={:.6f} accuracy={:.6f}'.format(
+            int(threshold_metrics['covered_rows']),
+            int(threshold_metrics['total_rows']),
+            float(threshold_metrics['macro_f1']),
+            float(threshold_metrics['overall_accuracy']),
+        ))
 
 
 if __name__ == '__main__':

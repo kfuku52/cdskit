@@ -17,7 +17,9 @@ from cdskit.targetp_torch import (
     _build_targetp2_torch_module,
     _can_resume_optimizer_state,
     _normalize_targetp_torch_state_dict,
+    _optimize_targetp_class_thresholds,
     _payload_rnn_impl_from_state,
+    _targetp_prediction_indices_with_thresholds,
     _targetp2_loss,
     _targetp_type_class_weight_vector,
     load_torch_payload,
@@ -302,6 +304,39 @@ def test_targetp_loss_can_disable_cleavage_auxiliary_term():
     )
 
     assert float(with_cleavage.detach().cpu().item()) > float(type_only.detach().cpu().item())
+
+
+def test_targetp_validation_threshold_optimizer_uses_classwise_grid():
+    class_names = list(LOCALIZATION_CLASSES)
+    prob = np.asarray([
+        [0.49, 0.51, 0.00, 0.00, 0.00],
+        [0.70, 0.30, 0.00, 0.00, 0.00],
+        [0.10, 0.90, 0.00, 0.00, 0.00],
+        [0.05, 0.05, 0.90, 0.00, 0.00],
+        [0.05, 0.05, 0.00, 0.90, 0.00],
+        [0.05, 0.05, 0.00, 0.00, 0.90],
+    ], dtype=np.float64)
+    true_idx = np.asarray([0, 0, 1, 2, 3, 4], dtype=np.int64)
+
+    base_pred = _targetp_prediction_indices_with_thresholds(
+        prob_matrix=prob,
+        thresholds=np.ones((len(class_names),), dtype=np.float64),
+    )
+    thresholds, metrics = _optimize_targetp_class_thresholds(
+        prob_matrix=prob,
+        true_idx=true_idx,
+        class_names=class_names,
+        grid=[1.0, 2.0],
+    )
+    tuned_pred = _targetp_prediction_indices_with_thresholds(
+        prob_matrix=prob,
+        thresholds=thresholds,
+    )
+
+    assert base_pred.tolist() == [1, 0, 1, 2, 3, 4]
+    assert tuned_pred.tolist() == true_idx.tolist()
+    assert float(thresholds[1]) == 2.0
+    assert metrics['macro_f1'] == 1.0
 
 
 def test_targetp_torch_training_can_resume_epoch_checkpoint(temp_dir):

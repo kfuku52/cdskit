@@ -22,6 +22,24 @@ TARGETP_SIGNAL_CLASS_TO_HEAD = {
     3: 2,  # cTP
     4: 3,  # lTP / thylakoid luminal transit peptide
 }
+TARGETP_CLASS_THRESHOLD_GRID = [
+    0.05,
+    0.075,
+    0.1,
+    0.15,
+    0.2,
+    0.3,
+    0.4,
+    0.5,
+    0.65,
+    0.8,
+    1.0,
+    1.25,
+    1.5,
+    2.0,
+    3.0,
+    5.0,
+]
 TARGETP_TORCH_DEFAULTS = {
     'seq_len': 200,
     'n_input': 20,
@@ -180,6 +198,91 @@ def _macro_f1_from_indices(true_idx, pred_idx, num_class):
         else:
             f1_values.append((2.0 * precision * recall) / (precision + recall))
     return float(np.mean(np.asarray(f1_values, dtype=np.float64)))
+
+
+def _targetp_prediction_indices_with_thresholds(prob_matrix, thresholds):
+    thresholds = np.asarray(thresholds, dtype=np.float64).reshape((1, -1))
+    thresholds[thresholds <= 0.0] = 1.0
+    scores = np.asarray(prob_matrix, dtype=np.float64) / thresholds
+    return np.argmax(scores, axis=1).astype(np.int64)
+
+
+def _targetp_threshold_score_matrix(prob_matrix, thresholds):
+    thresholds = np.asarray(thresholds, dtype=np.float64).reshape((1, -1))
+    thresholds[thresholds <= 0.0] = 1.0
+    return np.asarray(prob_matrix, dtype=np.float64) / thresholds
+
+
+def _targetp_metrics_from_prediction_indices(true_idx, pred_idx, class_names):
+    true_idx = np.asarray(true_idx, dtype=np.int64)
+    pred_idx = np.asarray(pred_idx, dtype=np.int64)
+    by_class = dict()
+    f1_values = list()
+    for class_i, class_name in enumerate(class_names):
+        tp = int(np.sum((true_idx == int(class_i)) & (pred_idx == int(class_i))))
+        fp = int(np.sum((true_idx != int(class_i)) & (pred_idx == int(class_i))))
+        fn = int(np.sum((true_idx == int(class_i)) & (pred_idx != int(class_i))))
+        support = int(np.sum(true_idx == int(class_i)))
+        precision = 0.0 if (tp + fp) <= 0 else float(tp) / float(tp + fp)
+        recall = 0.0 if (tp + fn) <= 0 else float(tp) / float(tp + fn)
+        f1 = 0.0 if (precision + recall) <= 0.0 else (2.0 * precision * recall) / (precision + recall)
+        by_class[str(class_name)] = {
+            'tp': tp,
+            'fp': fp,
+            'fn': fn,
+            'support': support,
+            'precision': float(precision),
+            'recall': float(recall),
+            'f1': float(f1),
+        }
+        f1_values.append(float(f1))
+    return {
+        'overall_accuracy': float(np.mean(pred_idx == true_idx)) if true_idx.shape[0] > 0 else 0.0,
+        'macro_f1': float(np.mean(np.asarray(f1_values, dtype=np.float64))) if len(f1_values) > 0 else 0.0,
+        'by_class': by_class,
+    }
+
+
+def _optimize_targetp_class_thresholds(prob_matrix, true_idx, class_names, grid):
+    thresholds = np.ones((len(class_names),), dtype=np.float64)
+    grid = [float(v) for v in grid]
+    if len(grid) == 0:
+        raise ValueError('threshold grid should contain at least one value.')
+    best_pred = _targetp_prediction_indices_with_thresholds(
+        prob_matrix=prob_matrix,
+        thresholds=thresholds,
+    )
+    best_metrics = _targetp_metrics_from_prediction_indices(
+        true_idx=true_idx,
+        pred_idx=best_pred,
+        class_names=class_names,
+    )
+    improved = True
+    while improved:
+        improved = False
+        for class_i in range(len(class_names)):
+            best_local = float(thresholds[class_i])
+            best_local_metrics = best_metrics
+            for trial in grid:
+                candidate = thresholds.copy()
+                candidate[class_i] = float(trial)
+                pred = _targetp_prediction_indices_with_thresholds(
+                    prob_matrix=prob_matrix,
+                    thresholds=candidate,
+                )
+                metrics = _targetp_metrics_from_prediction_indices(
+                    true_idx=true_idx,
+                    pred_idx=pred,
+                    class_names=class_names,
+                )
+                if metrics['macro_f1'] > best_local_metrics['macro_f1']:
+                    best_local = float(trial)
+                    best_local_metrics = metrics
+            if best_local != float(thresholds[class_i]):
+                thresholds[class_i] = best_local
+                best_metrics = best_local_metrics
+                improved = True
+    return thresholds, best_metrics
 
 
 def _build_targetp2_torch_module(
@@ -1186,6 +1289,8 @@ def run_targetp2_torch_nested_oof(
     max_models=0,
     seed_offset=0,
     device='auto',
+    val_threshold_eval=False,
+    threshold_grid=None,
     **train_kwargs
 ):
     data = load_targetp_npz(path=targetp_npz)
@@ -1194,9 +1299,15 @@ def run_targetp2_torch_nested_oof(
     selected_outer = _parse_fold_subset(outer_folds, available)
     selected_val_all = _parse_fold_subset(val_folds, available)
     os.makedirs(model_dir, exist_ok=True)
+    class_names = list(LOCALIZATION_CLASSES)
+    threshold_grid_values = TARGETP_CLASS_THRESHOLD_GRID if threshold_grid is None else [
+        float(value) for value in threshold_grid
+    ]
 
     prob_sum = np.zeros((data['x'].shape[0], len(LOCALIZATION_CLASSES)), dtype=np.float64)
     prob_count = np.zeros((data['x'].shape[0],), dtype=np.int64)
+    threshold_score_sum = np.zeros_like(prob_sum, dtype=np.float64)
+    threshold_score_count = np.zeros_like(prob_count, dtype=np.int64)
     model_rows = list()
     num_trained_or_loaded = 0
 
@@ -1272,7 +1383,7 @@ def run_targetp2_torch_nested_oof(
             )
             prob_sum[test_mask, :] += prob.astype(np.float64)
             prob_count[test_mask] += 1
-            model_rows.append({
+            model_row = {
                 'outer_fold': int(outer_fold),
                 'val_fold': int(val_fold),
                 'checkpoint': checkpoint,
@@ -1283,7 +1394,40 @@ def run_targetp2_torch_nested_oof(
                 'resumed_from_checkpoint': bool(resumed_from_checkpoint),
                 'best_metrics': payload.get('best_metrics', {}),
                 'final_val_metrics': payload.get('final_val_metrics', {}),
-            })
+            }
+            if bool(val_threshold_eval):
+                val_prob = predict_targetp2_torch_encoded(
+                    x=data['x'][val_mask],
+                    lengths=data['len_seq'][val_mask],
+                    org=data['org'][val_mask],
+                    localization_model=localize_model['localization_model'],
+                    device=device,
+                    batch_size=int(train_kwargs.get('batch_size', TARGETP_TORCH_DEFAULTS['batch_size'])),
+                )
+                thresholds, val_threshold_metrics = _optimize_targetp_class_thresholds(
+                    prob_matrix=val_prob,
+                    true_idx=data['y_type'][val_mask],
+                    class_names=class_names,
+                    grid=threshold_grid_values,
+                )
+                threshold_scores = _targetp_threshold_score_matrix(
+                    prob_matrix=prob,
+                    thresholds=thresholds,
+                )
+                threshold_score_sum[test_mask, :] += threshold_scores.astype(np.float64)
+                threshold_score_count[test_mask] += 1
+                threshold_pred = np.argmax(threshold_scores, axis=1).astype(np.int64)
+                test_threshold_metrics = _targetp_metrics_from_prediction_indices(
+                    true_idx=data['y_type'][test_mask],
+                    pred_idx=threshold_pred,
+                    class_names=class_names,
+                )
+                model_row['val_thresholds'] = {
+                    class_names[i]: float(thresholds[i]) for i in range(len(class_names))
+                }
+                model_row['val_threshold_metrics'] = val_threshold_metrics
+                model_row['test_threshold_metrics'] = test_threshold_metrics
+            model_rows.append(model_row)
             num_trained_or_loaded += 1
         if int(max_models) > 0 and num_trained_or_loaded >= int(max_models):
             break
@@ -1300,31 +1444,58 @@ def run_targetp2_torch_nested_oof(
         'macro_f1': _macro_f1_from_indices(data['y_type'][covered], pred, len(LOCALIZATION_CLASSES)) if np.any(covered) else 0.0,
         'overall_accuracy': float(np.mean(pred == data['y_type'][covered])) if np.any(covered) else 0.0,
     }
-    return {
+    result = {
         'prob_matrix': prob_matrix,
         'true_idx': data['y_type'],
-        'class_names': list(LOCALIZATION_CLASSES),
+        'class_names': class_names,
         'fold_ids': data['fold'],
         'covered_mask': covered,
         'prob_count': prob_count,
         'metrics': metrics,
         'models': model_rows,
     }
+    if bool(val_threshold_eval):
+        threshold_covered = threshold_score_count > 0
+        threshold_score_matrix = np.zeros_like(threshold_score_sum, dtype=np.float64)
+        threshold_score_matrix[threshold_covered, :] = (
+            threshold_score_sum[threshold_covered, :]
+            / threshold_score_count[threshold_covered].reshape((-1, 1))
+        )
+        if np.any(~threshold_covered):
+            threshold_score_matrix[~threshold_covered, 0] = 1.0
+        threshold_pred = np.argmax(threshold_score_matrix[threshold_covered, :], axis=1).astype(np.int64)
+        threshold_metrics = _targetp_metrics_from_prediction_indices(
+            true_idx=data['y_type'][threshold_covered],
+            pred_idx=threshold_pred,
+            class_names=class_names,
+        )
+        threshold_metrics['covered_rows'] = int(np.sum(threshold_covered))
+        threshold_metrics['total_rows'] = int(data['x'].shape[0])
+        result['val_threshold_score_matrix'] = threshold_score_matrix
+        result['val_threshold_count'] = threshold_score_count
+        result['val_threshold_metrics'] = threshold_metrics
+    return result
 
 
 def write_targetp2_torch_oof_npz(path, result):
     out_dir = os.path.dirname(path)
     if out_dir != '':
         os.makedirs(out_dir, exist_ok=True)
-    np.savez_compressed(
-        path,
-        prob_matrix=np.asarray(result['prob_matrix'], dtype=np.float64),
-        true_idx=np.asarray(result['true_idx'], dtype=np.int64),
-        class_names=np.asarray(result['class_names']),
-        fold_ids=np.asarray(result['fold_ids'], dtype=np.int64),
-        covered_mask=np.asarray(result['covered_mask'], dtype=bool),
-        prob_count=np.asarray(result['prob_count'], dtype=np.int64),
-    )
+    arrays = {
+        'prob_matrix': np.asarray(result['prob_matrix'], dtype=np.float64),
+        'true_idx': np.asarray(result['true_idx'], dtype=np.int64),
+        'class_names': np.asarray(result['class_names']),
+        'fold_ids': np.asarray(result['fold_ids'], dtype=np.int64),
+        'covered_mask': np.asarray(result['covered_mask'], dtype=bool),
+        'prob_count': np.asarray(result['prob_count'], dtype=np.int64),
+    }
+    if 'val_threshold_score_matrix' in result:
+        arrays['val_threshold_score_matrix'] = np.asarray(
+            result['val_threshold_score_matrix'],
+            dtype=np.float64,
+        )
+        arrays['val_threshold_count'] = np.asarray(result['val_threshold_count'], dtype=np.int64)
+    np.savez_compressed(path, **arrays)
 
 
 def write_targetp2_torch_report(path, result, profile):
@@ -1336,6 +1507,8 @@ def write_targetp2_torch_report(path, result, profile):
         'metrics': result['metrics'],
         'models': result['models'],
     }
+    if 'val_threshold_metrics' in result:
+        out['val_threshold_metrics'] = result['val_threshold_metrics']
     with open(path, 'w', encoding='utf-8') as handle:
         json.dump(out, handle, indent=2, sort_keys=True)
 

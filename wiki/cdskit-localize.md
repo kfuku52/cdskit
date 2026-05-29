@@ -391,28 +391,37 @@ The torch trainer now exposes two rare-class training levers for experiments:
 `--type_class_weight sqrt_balanced|log_balanced` for milder class weighting than
 the unstable full `balanced` weights, and `--cleavage_loss_weight` to downweight
 or disable the cleavage-site auxiliary loss while testing type-class learning.
+It can also report a fair validation-threshold score with
+`--val_threshold_eval yes`; class thresholds are fitted on the model's validation
+fold and then applied to the held-out outer fold, not optimized on the outer
+fold itself.
 On `outer0_val1`, h16/n_filters8 with `sqrt_balanced` still collapsed to noTP
 only (0.169 covered-fold macro F1). h32/n_filters12 with balanced batches and
 `--cleavage_loss_weight 0.0` reached 0.343 covered-fold macro F1 and produced
 nonzero rare-class F1 (`mTP` 0.045, `cTP` 0.073, `lTP` 0.063), so balanced-batch
-type-only warmup is a plausible next probe, but it is far below TargetP-like
-performance on its own.
+type-only warmup is a plausible next probe. Extending the h64/n_filters16
+balanced-batch type-only run to 12 epochs selected epoch 8 and improved the
+covered outer-fold argmax macro F1 to 0.652. Validation-fitted thresholds raised
+the same held-out fold to 0.705 macro F1 (`noTP` 0.954, `SP` 0.928, `mTP` 0.633,
+`cTP` 0.619, `lTP` 0.389). This is the strongest TargetP torch single-model
+probe so far, but it is still a one-fold probe and remains below the fair RF
+stack score of 0.787 and the TargetP 2.0 reference macro F1 of 0.890.
 
-An official-ish long probe can be continued with:
+The h64 balanced-batch type-only probe can be reproduced or continued with:
 
 ```
 PYTHONPATH=. python -u scripts/targetp_torch_eval.py \
   --targetp_npz data/targetp_raw/targetp_data.npz \
-  --model_dir data/localize_bench/targetp2_torch_officialish_models \
-  --out_npz data/localize_bench/targetp2_oof_targetp_torch_officialish.npz \
-  --out_json data/localize_bench/targetp2_torch_officialish_eval.json \
+  --model_dir data/localize_bench/targetp2_torch_tflstm_h64_e3_balbatch_typeonly_models \
+  --out_npz data/localize_bench/targetp2_oof_targetp_torch_tflstm_h64_e12_balbatch_typeonly_valthr.npz \
+  --out_json data/localize_bench/targetp2_torch_tflstm_h64_e12_balbatch_typeonly_valthr_eval.json \
   --outer_folds 0 \
   --val_folds 1 \
   --max_models 1 \
   --reuse_cache yes \
   --device mps \
-  --epochs 40 \
-  --batch_size 64 \
+  --epochs 12 \
+  --batch_size 128 \
   --learning_rate 0.001 \
   --hidden_rnn 64 \
   --n_filters 16 \
@@ -424,11 +433,12 @@ PYTHONPATH=. python -u scripts/targetp_torch_eval.py \
   --rnn_keep_prob 0.8 \
   --selection_metric val_macro_f1 \
   --type_class_weight none \
-  --cleavage_loss_weight 1.0 \
-  --balanced_batch no \
+  --cleavage_loss_weight 0.0 \
+  --balanced_batch yes \
   --initializer targetp_tf \
   --grad_clip_norm 0.0 \
   --rnn_impl targetp_tf_cell \
+  --val_threshold_eval yes \
   --verbose yes
 ```
 
