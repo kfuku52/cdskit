@@ -7,6 +7,7 @@ from cdskit.localize_learn import LOCALIZATION_CLASSES
 from cdskit.targetp_stack import (
     build_ltp_ctp_specialist_feature_matrix,
     evaluate_foldwise_classwise_multi_blend,
+    evaluate_foldwise_classwise_multi_blend_ltp_ctp_override,
     evaluate_foldwise_classwise_blend_ltp_ctp_override,
     evaluate_foldwise_ltp_ctp_override,
     evaluate_foldwise_notp_ctp_ltp_override,
@@ -175,6 +176,7 @@ def test_ltp_ctp_override_is_foldwise(temp_dir):
     assert result['metrics']['macro_f1'] >= 0.0
     assert [fold['fold_id'] for fold in result['folds']] == ['fold1', 'fold2']
     assert all(fold['n_specialist_train'] == 2 for fold in result['folds'])
+    assert result['profile']['ltp_source_classes'] == ['cTP']
 
 
 def test_notp_ctp_ltp_override_is_foldwise(temp_dir):
@@ -268,3 +270,53 @@ def test_foldwise_classwise_multi_blend_is_foldwise(temp_dir):
     weights = result['folds'][0]['weights_by_class']['lTP']
     assert sorted(weights.keys()) == ['a', 'b', 'c']
     assert sum(weights.values()) == pytest.approx(1.0)
+
+
+def test_foldwise_classwise_multi_blend_ltp_override_is_foldwise(temp_dir):
+    training_tsv = temp_dir / 'targetp.tsv'
+    rows = _write_targetp_fixture(training_tsv)
+    true_idx = np.asarray([i for _ in ['fold1', 'fold2'] for i in range(len(LOCALIZATION_CLASSES))])
+    prob_a = _write_base_oof_npz(temp_dir / 'a.npz', true_idx, confidence=0.65)
+    prob_b = _write_base_oof_npz(temp_dir / 'b.npz', true_idx, confidence=0.75)
+    prob_c = _write_base_oof_npz(temp_dir / 'c.npz', true_idx, confidence=0.85)
+    fold_ids = np.asarray([row['fold_id'] for row in rows])
+    weight_grid = [
+        np.asarray([1.0, 0.0, 0.0]),
+        np.asarray([0.0, 1.0, 0.0]),
+        np.asarray([0.0, 0.0, 1.0]),
+    ]
+    fixed_blend = evaluate_foldwise_classwise_multi_blend(
+        prob_matrices=[prob_a, prob_b, prob_c],
+        true_idx=true_idx,
+        fold_ids=fold_ids,
+        class_names=list(LOCALIZATION_CLASSES),
+        source_labels=['a', 'b', 'c'],
+        weight_grid=weight_grid,
+        threshold_grid=[0.5, 1.0, 2.0],
+    )
+
+    result = evaluate_foldwise_classwise_multi_blend_ltp_ctp_override(
+        prob_matrices=[prob_a, prob_b, prob_c],
+        true_idx=true_idx,
+        fold_ids=fold_ids,
+        rows=rows,
+        class_names=list(LOCALIZATION_CLASSES),
+        source_labels=['a', 'b', 'c'],
+        weight_grid=weight_grid,
+        threshold_grid=[0.5, 1.0, 2.0],
+        score_grid=[0.1, 0.5, 0.9],
+        n_estimators=5,
+        random_state=3,
+        ltp_ctp_min_samples_leaf=2,
+        ltp_source_classes=['cTP', 'noTP'],
+        fixed_fold_rows=fixed_blend['folds'],
+    )
+
+    assert result['metrics']['macro_f1'] >= 0.0
+    assert [fold['fold_id'] for fold in result['folds']] == ['fold1', 'fold2']
+    assert all(fold['n_ltp_ctp_specialist_train'] == 2 for fold in result['folds'])
+    assert result['profile']['n_sources'] == 3
+    assert result['profile']['ltp_source_classes'] == ['cTP', 'noTP']
+    assert result['profile']['fixed_fold_rows'] is True
+    weights = result['folds'][0]['weights_by_class']['lTP']
+    assert sorted(weights.keys()) == ['a', 'b', 'c']

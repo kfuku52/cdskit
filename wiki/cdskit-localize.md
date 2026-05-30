@@ -237,7 +237,8 @@ selection.
 | cdskit TargetP stack + h256 seed100 foldwise blend + lTP specialist | 0.828 | 0.965 | same foldwise blend followed by a plant cTP-to-lTP specialist trained and thresholded only on training folds; exact macro F1 0.82779 |
 | cdskit TargetP stack + h256 seed100 all-outer inner4 foldwise blend | 0.832 | 0.967 | same stack blended with the all-outer inner4 Torch OOF; exact macro F1 0.83183 |
 | cdskit TargetP stack + h256 seed100 all-outer inner4 + strict external weak-label 3-way foldwise blend | 0.837 | 0.966 | foldwise classwise convex blend of the stack, all-outer inner4 Torch OOF, and strict non-overlapping UniProt/DeepLoc external-augmented feature OOF; exact macro F1 0.83683 |
-| cdskit TargetP stack + h256 seed100 all-outer inner4 + strict external + thylakoid-lumen external 4-way foldwise blend | 0.840 | 0.967 | adds a low-weight UniProt SL-0057/SL-0309 thylakoid-lumen weak-label source to improve lTP; exact macro F1 0.84006, best reproducible fair score so far |
+| cdskit TargetP stack + h256 seed100 all-outer inner4 + strict external + thylakoid-lumen external 4-way foldwise blend | 0.840 | 0.967 | adds a low-weight UniProt SL-0057/SL-0309 thylakoid-lumen weak-label source to improve lTP; exact macro F1 0.84006 |
+| cdskit TargetP 4-way foldwise blend + cTP/noTP lTP rescue | 0.842 | 0.967 | same fixed foldwise source blend, followed by a plant lTP specialist that may rescue cTP or noTP calls to lTP using only other-fold labels; exact macro F1 0.84218, best reproducible fair score so far |
 
 The command used for the feature/ESM run was:
 
@@ -485,6 +486,16 @@ PYTHONPATH=. python -m cdskit.targetp_stack \
   --out_md data/localize_bench/targetp2_stack_rf100_orgsplit_4way_extaug_strict_thylum_sl0057_w0p05_h256_seed100_allouter_inner4_eval.md
 ```
 
+A small lTP rescue can be layered onto the fixed 4-way foldwise blend by
+turning on `--post_blend_ltp_ctp_override yes`, setting
+`--ltp_ctp_model_kind extra_trees --ltp_ctp_n_estimators 300
+--ltp_ctp_random_state 5010 --ltp_source_classes cTP,noTP`, and using
+`--ltp_ctp_score_min 0.02 --ltp_ctp_score_max 0.98
+--ltp_ctp_score_step 0.02`. The local fixed-fold verification is stored in
+`data/localize_bench/targetp2_stack_rf100_orgsplit_4way_extaug_strict_thylum_sl0057_w0p05_h256_seed100_allouter_inner4_ltp_rescue_fixed_eval.json`
+and reaches exact macro F1 0.84218 (`noTP` 0.980, `SP` 0.965, `mTP` 0.821,
+`cTP` 0.831, `lTP` 0.613).
+
 Do not apply the stack input organism gate when selecting this model: on the
 same regenerated OOF inputs, gating the cTP/lTP columns before the meta-model
 reduced the fair foldwise score from 0.785 to 0.750 macro F1. A post-prediction
@@ -560,10 +571,10 @@ not as a general stack input. A foldwise PSSM over N-terminal amino acid
 positions also did not help as an added stack input: the best RF100+PSSM stack
 score was 0.784 macro F1.
 
-lTP remains the limiting class. The best post-blend run moves held-out lTP F1
-to 0.575-0.587 depending on the blend, but that is still far below the TargetP
-2.0 reference of 0.750, and cTP F1 is still at most 0.843 versus the TargetP
-reference of 0.880. Reaching
+lTP remains the limiting class. The best post-blend/rescue run moves held-out
+lTP F1 to 0.613, but that is still far below the TargetP 2.0 reference of
+0.750, and cTP F1 is still at most 0.843 versus the TargetP reference of 0.880.
+Reaching
 TargetP-like lTP/cTP performance likely requires a stronger sequence encoder or
 additional lTP-specific training data, not only threshold tuning.
 
