@@ -522,7 +522,9 @@ def infer_labels_from_uniprot_cc(location_text):
     has_sp = ('secreted' in txt) or ('signal peptide' in txt)
     has_mtp = ('mitochond' in txt)
     has_ctp = ('chloroplast' in txt) or ('plastid' in txt)
-    has_ltp = ('thylakoid' in txt) or ('lumen' in txt)
+    has_ltp = ('thylakoid' in txt) and (
+        ('lumen' in txt) or ('lumenal' in txt) or ('luminal' in txt)
+    )
     has_perox = ('peroxisom' in txt)
 
     if has_ltp:

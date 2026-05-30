@@ -235,7 +235,8 @@ selection.
 | cdskit TargetP2-style Torch h256 seed100 all-outer inner4 OOF | 0.798 | 0.960 | fair OOF composed by applying the same four-inner-model validation-threshold average rule to every outer fold; exact macro F1 0.79763 |
 | cdskit TargetP stack + h256 seed100 foldwise blend | 0.819 | 0.966 | foldwise classwise alpha and thresholds selected only on training folds; exact macro F1 0.81945 |
 | cdskit TargetP stack + h256 seed100 foldwise blend + lTP specialist | 0.828 | 0.965 | same foldwise blend followed by a plant cTP-to-lTP specialist trained and thresholded only on training folds; exact macro F1 0.82779 |
-| cdskit TargetP stack + h256 seed100 all-outer inner4 foldwise blend | 0.832 | 0.967 | same stack blended with the all-outer inner4 Torch OOF; exact macro F1 0.83183, best reproducible fair score so far |
+| cdskit TargetP stack + h256 seed100 all-outer inner4 foldwise blend | 0.832 | 0.967 | same stack blended with the all-outer inner4 Torch OOF; exact macro F1 0.83183 |
+| cdskit TargetP stack + h256 seed100 all-outer inner4 + strict external weak-label 3-way foldwise blend | 0.837 | 0.966 | foldwise classwise convex blend of the stack, all-outer inner4 Torch OOF, and strict non-overlapping UniProt/DeepLoc external-augmented feature OOF; exact macro F1 0.83683, best reproducible fair score so far |
 
 The command used for the feature/ESM run was:
 
@@ -443,15 +444,21 @@ Other follow-up probes did not close the gap: averaging multiple lTP specialist
 random seeds reduced macro F1 to 0.785 or lower, two-way cTP/lTP
 reclassification peaked at 0.79498, appending the delayed lTP signal features
 to the main stack feature matrix reduced the RF100+specialist score to 0.76860,
-and external UniProt weak-label augmentation or N-terminal k-mer logistic models
-did not beat the current stack. The delayed lTP features therefore help as a
-specialist-only signal, not as a general stack input. A foldwise PSSM over
-N-terminal amino acid positions also did not help as an added stack input: the
-best RF100+PSSM stack score was 0.784 macro F1.
+and N-terminal k-mer logistic models did not beat the current stack. Strict
+external UniProt/DeepLoc weak-label augmentation did help only as a post-blend
+source: adding it directly to the stack reduced the h256 all-outer inner4
+post-blend score to 0.813, while a foldwise 3-way classwise blend raised macro
+F1 slightly to 0.83683 (`noTP` 0.979, `SP` 0.962, `mTP` 0.825, `cTP` 0.843,
+`lTP` 0.575). The delayed lTP features therefore help as a specialist-only
+signal, and the external weak-label model helps as a weak post-blend source,
+not as a general stack input. A foldwise PSSM over N-terminal amino acid
+positions also did not help as an added stack input: the best RF100+PSSM stack
+score was 0.784 macro F1.
 
 lTP remains the limiting class. The best post-blend run moves held-out lTP F1
-to 0.587, but that is still far below the TargetP 2.0 reference of 0.750, and
-cTP F1 is still 0.815 versus the TargetP reference of 0.880. Reaching
+to 0.575-0.587 depending on the blend, but that is still far below the TargetP
+2.0 reference of 0.750, and cTP F1 is still at most 0.843 versus the TargetP
+reference of 0.880. Reaching
 TargetP-like lTP/cTP performance likely requires a stronger sequence encoder or
 additional lTP-specific training data, not only threshold tuning.
 

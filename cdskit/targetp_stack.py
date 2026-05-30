@@ -253,6 +253,174 @@ def predict_stack_classifier_prob_matrix(classifier, feature_matrix, class_names
     return out / row_sum
 
 
+def _convex_weight_grid(n_sources, step):
+    n_sources = int(n_sources)
+    step = float(step)
+    if n_sources < 2:
+        raise ValueError('At least two probability sources are required.')
+    if step <= 0.0 or step > 1.0:
+        raise ValueError('weight grid step should be in (0, 1].')
+    n_level = int(round(1.0 / step))
+    if n_level <= 0:
+        raise ValueError('weight grid step is too large.')
+
+    def gen(prefix, remaining, slots):
+        if slots == 1:
+            yield tuple(prefix + [remaining])
+            return
+        for value in range(remaining + 1):
+            yield from gen(prefix + [value], remaining - value, slots - 1)
+
+    return [
+        np.asarray(values, dtype=np.float64) / float(n_level)
+        for values in gen([], n_level, n_sources)
+    ]
+
+
+def _blend_classwise_multi(prob_matrices, weights_by_class):
+    matrices = [np.asarray(prob, dtype=np.float64) for prob in prob_matrices]
+    if len(matrices) < 2:
+        raise ValueError('At least two probability matrices are required.')
+    n_rows, n_classes = matrices[0].shape
+    weights = np.asarray(weights_by_class, dtype=np.float64)
+    if weights.shape != (n_classes, len(matrices)):
+        raise ValueError('weights_by_class should have shape (n_classes, n_sources).')
+    out = np.zeros((n_rows, n_classes), dtype=np.float64)
+    for source_i, matrix in enumerate(matrices):
+        if matrix.shape != (n_rows, n_classes):
+            raise ValueError('All probability matrices should have the same shape.')
+        out += matrix * weights[:, source_i].reshape((1, -1))
+    row_sum = out.sum(axis=1, keepdims=True)
+    row_sum[row_sum <= 0.0] = 1.0
+    return out / row_sum
+
+
+def _optimize_classwise_multi_weights(prob_matrices, true_idx, class_names, weight_grid):
+    n_classes = len(class_names)
+    best_weights = np.tile(weight_grid[0].reshape((1, -1)), (n_classes, 1))
+    best_metrics = None
+    for trial in weight_grid:
+        weights = np.tile(np.asarray(trial, dtype=np.float64).reshape((1, -1)), (n_classes, 1))
+        pred_idx = np.argmax(
+            _blend_classwise_multi(prob_matrices=prob_matrices, weights_by_class=weights),
+            axis=1,
+        ).astype(np.int64)
+        metrics = _metrics_from_prediction_indices(
+            pred_idx=pred_idx,
+            true_idx=true_idx,
+            class_names=class_names,
+        )
+        if best_metrics is None or metrics['macro_f1'] > best_metrics['macro_f1']:
+            best_metrics = metrics
+            best_weights = weights
+
+    improved = True
+    while improved:
+        improved = False
+        for class_i in range(n_classes):
+            best_local_weights = best_weights[class_i, :].copy()
+            best_local_metrics = best_metrics
+            for trial in weight_grid:
+                weights = best_weights.copy()
+                weights[class_i, :] = np.asarray(trial, dtype=np.float64)
+                pred_idx = np.argmax(
+                    _blend_classwise_multi(prob_matrices=prob_matrices, weights_by_class=weights),
+                    axis=1,
+                ).astype(np.int64)
+                metrics = _metrics_from_prediction_indices(
+                    pred_idx=pred_idx,
+                    true_idx=true_idx,
+                    class_names=class_names,
+                )
+                if metrics['macro_f1'] > best_local_metrics['macro_f1']:
+                    best_local_weights = np.asarray(trial, dtype=np.float64)
+                    best_local_metrics = metrics
+            if not np.allclose(best_local_weights, best_weights[class_i, :]):
+                best_weights[class_i, :] = best_local_weights
+                best_metrics = best_local_metrics
+                improved = True
+    return best_weights, best_metrics
+
+
+def evaluate_foldwise_classwise_multi_blend(
+    prob_matrices,
+    true_idx,
+    fold_ids,
+    class_names,
+    source_labels,
+    weight_grid,
+    threshold_grid,
+):
+    prob_matrices = [np.asarray(prob, dtype=np.float64) for prob in prob_matrices]
+    class_names = list(class_names)
+    source_labels = list(source_labels)
+    if len(source_labels) != len(prob_matrices):
+        raise ValueError('source_labels should match prob_matrices.')
+    pred_idx = np.zeros((np.asarray(true_idx).shape[0],), dtype=np.int64)
+    fold_rows = list()
+    fold_ids = np.asarray(fold_ids)
+    for fold_id in sorted(set([str(value) for value in fold_ids.tolist()])):
+        valid_mask = np.asarray([str(value) == fold_id for value in fold_ids.tolist()], dtype=bool)
+        train_mask = ~valid_mask
+        train_probs = [prob[train_mask, :] for prob in prob_matrices]
+        valid_probs = [prob[valid_mask, :] for prob in prob_matrices]
+        weights, weight_metrics = _optimize_classwise_multi_weights(
+            prob_matrices=train_probs,
+            true_idx=np.asarray(true_idx)[train_mask],
+            class_names=class_names,
+            weight_grid=weight_grid,
+        )
+        train_blend = _blend_classwise_multi(
+            prob_matrices=train_probs,
+            weights_by_class=weights,
+        )
+        thresholds, threshold_metrics = optimize_class_thresholds(
+            prob_matrix=train_blend,
+            true_idx=np.asarray(true_idx)[train_mask],
+            class_names=class_names,
+            grid=threshold_grid,
+        )
+        valid_blend = _blend_classwise_multi(
+            prob_matrices=valid_probs,
+            weights_by_class=weights,
+        )
+        pred_idx[valid_mask] = _prediction_indices_with_thresholds(
+            prob_matrix=valid_blend,
+            thresholds=thresholds,
+        )
+        fold_rows.append({
+            'fold_id': str(fold_id),
+            'weights_by_class': {
+                class_names[class_i]: {
+                    source_labels[source_i]: float(weights[class_i, source_i])
+                    for source_i in range(len(source_labels))
+                }
+                for class_i in range(len(class_names))
+            },
+            'class_thresholds': {
+                class_names[i]: float(thresholds[i]) for i in range(len(class_names))
+            },
+            'train_weight_macro_f1': float(weight_metrics['macro_f1']),
+            'train_threshold_macro_f1': float(threshold_metrics['macro_f1']),
+            'n_train': int(np.sum(train_mask)),
+            'n_valid': int(np.sum(valid_mask)),
+        })
+    return {
+        'description': 'Each held-out fold is predicted using classwise convex source weights and class thresholds optimized on the other folds.',
+        'metrics': _metrics_from_prediction_indices(
+            pred_idx=pred_idx,
+            true_idx=np.asarray(true_idx, dtype=np.int64),
+            class_names=class_names,
+        ),
+        'folds': fold_rows,
+        'profile': {
+            'source_labels': list(source_labels),
+            'n_sources': int(len(source_labels)),
+            'n_weight_grid': int(len(weight_grid)),
+        },
+    }
+
+
 def run_targetp_stack_oof(
     training_tsv,
     base_oof_npzs,
@@ -1090,6 +1258,7 @@ def build_parser():
         type=str,
     )
     parser.add_argument('--post_blend_oof_npz', default='', type=str)
+    parser.add_argument('--post_blend_oof_npzs', default='', type=str)
     parser.add_argument('--post_blend_label', default='post_blend', type=str)
     parser.add_argument('--post_blend_grid_step', default=0.10, type=float)
     parser.add_argument('--post_blend_ltp_ctp_override', default='yes', choices=['yes', 'no'], type=str)
@@ -1235,15 +1404,24 @@ def main():
                 ltp_ctp_class_weight=ltp_ctp_class_weight,
                 ltp_ctp_min_samples_leaf=ltp_ctp_min_samples_leaf,
             )
-    if str(args.post_blend_oof_npz).strip() != '':
-        post_blend_prob, post_blend_true_idx, post_blend_class_names = _load_oof_npz(
-            path=str(args.post_blend_oof_npz),
-            fallback_true_idx=oof['true_idx'],
-        )
-        if post_blend_class_names != list(oof['class_names']):
-            raise ValueError('Class names in post_blend_oof_npz do not match LOCALIZATION_CLASSES.')
-        if np.any(post_blend_true_idx != oof['true_idx']):
-            raise ValueError('True labels in post_blend_oof_npz do not match training_tsv.')
+    post_blend_paths = [
+        value.strip() for value in str(args.post_blend_oof_npzs).split(',')
+        if value.strip() != ''
+    ]
+    if len(post_blend_paths) == 0 and str(args.post_blend_oof_npz).strip() != '':
+        post_blend_paths = [str(args.post_blend_oof_npz).strip()]
+    if len(post_blend_paths) > 0:
+        post_blend_probs = list()
+        for post_blend_path in post_blend_paths:
+            post_blend_prob, post_blend_true_idx, post_blend_class_names = _load_oof_npz(
+                path=post_blend_path,
+                fallback_true_idx=oof['true_idx'],
+            )
+            if post_blend_class_names != list(oof['class_names']):
+                raise ValueError('Class names in {} do not match LOCALIZATION_CLASSES.'.format(post_blend_path))
+            if np.any(post_blend_true_idx != oof['true_idx']):
+                raise ValueError('True labels in {} do not match training_tsv.'.format(post_blend_path))
+            post_blend_probs.append(post_blend_prob)
         post_blend_step = float(args.post_blend_grid_step)
         if post_blend_step <= 0.0:
             raise ValueError('--post_blend_grid_step should be positive.')
@@ -1253,20 +1431,39 @@ def main():
         ] + [1.0]))
         post_blend_label = str(args.post_blend_label).strip() or 'post_blend'
         post_blend_key = 'stack_{}_foldwise_blend'.format(post_blend_label)
-        results[post_blend_key] = evaluate_foldwise_classwise_blend(
-            prob_a=oof['prob_matrix'],
-            prob_b=post_blend_prob,
-            true_idx=oof['true_idx'],
-            fold_ids=oof['fold_ids'],
-            class_names=oof['class_names'],
-            alpha_grid=alpha_grid,
-            threshold_grid=threshold_grid,
-        )
-        if _to_bool(args.post_blend_ltp_ctp_override):
+        if len(post_blend_probs) == 1:
+            results[post_blend_key] = evaluate_foldwise_classwise_blend(
+                prob_a=oof['prob_matrix'],
+                prob_b=post_blend_probs[0],
+                true_idx=oof['true_idx'],
+                fold_ids=oof['fold_ids'],
+                class_names=oof['class_names'],
+                alpha_grid=alpha_grid,
+                threshold_grid=threshold_grid,
+            )
+        else:
+            source_labels = ['stack'] + [
+                'post_blend_{}'.format(path_i + 1)
+                for path_i in range(len(post_blend_probs))
+            ]
+            results[post_blend_key] = evaluate_foldwise_classwise_multi_blend(
+                prob_matrices=[oof['prob_matrix']] + post_blend_probs,
+                true_idx=oof['true_idx'],
+                fold_ids=oof['fold_ids'],
+                class_names=oof['class_names'],
+                source_labels=source_labels,
+                weight_grid=_convex_weight_grid(
+                    n_sources=1 + len(post_blend_probs),
+                    step=post_blend_step,
+                ),
+                threshold_grid=threshold_grid,
+            )
+            results[post_blend_key]['profile']['post_blend_oof_npzs'] = list(post_blend_paths)
+        if len(post_blend_probs) == 1 and _to_bool(args.post_blend_ltp_ctp_override):
             post_blend_ltp_key = '{}_ltp_ctp_override'.format(post_blend_key)
             results[post_blend_ltp_key] = evaluate_foldwise_classwise_blend_ltp_ctp_override(
                 prob_a=oof['prob_matrix'],
-                prob_b=post_blend_prob,
+                prob_b=post_blend_probs[0],
                 true_idx=oof['true_idx'],
                 fold_ids=oof['fold_ids'],
                 rows=rows,

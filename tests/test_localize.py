@@ -1173,6 +1173,21 @@ def test_uniprot_cc_label_inference():
     assert ambiguous is False
 
 
+def test_uniprot_cc_lumen_without_thylakoid_is_not_ltp():
+    cls, perox, ambiguous = infer_labels_from_uniprot_cc(
+        'SUBCELLULAR LOCATION: Endoplasmic reticulum lumen.'
+    )
+    assert cls == 'noTP'
+    assert perox == 'no'
+    assert ambiguous is False
+
+    cls, _, ambiguous = infer_labels_from_uniprot_cc(
+        'SUBCELLULAR LOCATION: Plastid, chloroplast thylakoid membrane.'
+    )
+    assert cls == 'cTP'
+    assert ambiguous is False
+
+
 def test_postprocess_localization_probabilities_with_temperature_and_thresholds():
     localization_model = {
         'class_order': ['noTP', 'SP', 'mTP', 'cTP', 'lTP'],
