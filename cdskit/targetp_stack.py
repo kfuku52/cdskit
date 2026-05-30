@@ -80,6 +80,19 @@ TARGETP_STACK_SP_SPECIALIST_DEFAULTS = {
     'sp_extra_thresholds': [0.6975, 0.5, 0.9],
 }
 
+TARGETP_STACK_MTP_SPECIALIST_DEFAULTS = {
+    'mtp_override': False,
+    'mtp_model_kind': 'extra_trees',
+    'mtp_n_estimators': 300,
+    'mtp_random_state': 701,
+    'mtp_class_weight': 'balanced',
+    'mtp_max_features': 'sqrt',
+    'mtp_min_samples_leaf': 1,
+    'mtp_score_min': 0.20,
+    'mtp_score_max': 0.40,
+    'mtp_score_steps': 46,
+}
+
 
 def read_training_rows(path):
     with open(path, 'r', encoding='utf-8', newline='') as inp:
@@ -501,6 +514,31 @@ def _make_sp_specialist_classifier(
     )
 
 
+def _binary_specialist_prediction_indices(
+    base_prob,
+    thresholds,
+    base_pred,
+    scores,
+    score_threshold,
+    class_names,
+    positive_idx,
+):
+    class_names = list(class_names)
+    positive_idx = int(positive_idx)
+    base_prob = np.asarray(base_prob, dtype=np.float64)
+    thresholds = np.asarray(thresholds, dtype=np.float64)
+    pred = np.asarray(base_pred, dtype=np.int64).copy()
+    score_matrix = base_prob / thresholds.reshape((1, -1))
+    non_positive_score_matrix = score_matrix.copy()
+    non_positive_score_matrix[:, positive_idx] = -np.inf
+    non_positive_pred = np.argmax(non_positive_score_matrix, axis=1).astype(np.int64)
+    positive = np.asarray(scores, dtype=np.float64) >= float(score_threshold)
+    pred[positive] = positive_idx
+    demote_positive = (~positive) & (pred == positive_idx)
+    pred[demote_positive] = non_positive_pred[demote_positive]
+    return pred
+
+
 def _sp_specialist_prediction_indices(
     base_prob,
     thresholds,
@@ -509,20 +547,15 @@ def _sp_specialist_prediction_indices(
     sp_threshold,
     class_names,
 ):
-    class_names = list(class_names)
-    sp_idx = int(class_names.index('SP'))
-    base_prob = np.asarray(base_prob, dtype=np.float64)
-    thresholds = np.asarray(thresholds, dtype=np.float64)
-    pred = np.asarray(base_pred, dtype=np.int64).copy()
-    score_matrix = base_prob / thresholds.reshape((1, -1))
-    non_sp_score_matrix = score_matrix.copy()
-    non_sp_score_matrix[:, sp_idx] = -np.inf
-    non_sp_pred = np.argmax(non_sp_score_matrix, axis=1).astype(np.int64)
-    sp_positive = np.asarray(sp_scores, dtype=np.float64) >= float(sp_threshold)
-    pred[sp_positive] = sp_idx
-    demote_sp = (~sp_positive) & (pred == sp_idx)
-    pred[demote_sp] = non_sp_pred[demote_sp]
-    return pred
+    return _binary_specialist_prediction_indices(
+        base_prob=base_prob,
+        thresholds=thresholds,
+        base_pred=base_pred,
+        scores=sp_scores,
+        score_threshold=sp_threshold,
+        class_names=class_names,
+        positive_idx=int(list(class_names).index('SP')),
+    )
 
 
 def _optimize_sp_specialist_threshold(
@@ -562,6 +595,61 @@ def _optimize_sp_specialist_threshold(
     return best_threshold, best_metrics
 
 
+def _make_mtp_specialist_classifier(
+    model_kind='extra_trees',
+    n_estimators=300,
+    random_state=701,
+    class_weight='balanced',
+    max_features='sqrt',
+    min_samples_leaf=1,
+):
+    return make_targetp_stack_classifier(
+        model_kind=model_kind,
+        n_estimators=int(n_estimators),
+        random_state=int(random_state),
+        class_weight=class_weight,
+        max_features=max_features,
+        min_samples_leaf=int(min_samples_leaf),
+    )
+
+
+def _optimize_binary_specialist_threshold(
+    base_prob,
+    thresholds,
+    base_pred,
+    scores,
+    true_idx,
+    class_names,
+    positive_idx,
+    threshold_grid,
+):
+    scores = np.asarray(scores, dtype=np.float64)
+    candidates = [float(value) for value in threshold_grid]
+    if len(candidates) == 0:
+        candidates = [0.5]
+    best_threshold = float(candidates[0])
+    best_metrics = None
+    for threshold in sorted(set(candidates)):
+        pred = _binary_specialist_prediction_indices(
+            base_prob=base_prob,
+            thresholds=thresholds,
+            base_pred=base_pred,
+            scores=scores,
+            score_threshold=threshold,
+            class_names=class_names,
+            positive_idx=positive_idx,
+        )
+        metrics = _metrics_from_prediction_indices(
+            pred_idx=pred,
+            true_idx=true_idx,
+            class_names=class_names,
+        )
+        if best_metrics is None or metrics['macro_f1'] > best_metrics['macro_f1']:
+            best_threshold = float(threshold)
+            best_metrics = metrics
+    return best_threshold, best_metrics
+
+
 def evaluate_foldwise_classwise_multi_blend_sp_override(
     prob_matrices,
     true_idx,
@@ -578,6 +666,14 @@ def evaluate_foldwise_classwise_multi_blend_sp_override(
     sp_learning_rate=0.04,
     sp_l2_regularization=0.01,
     sp_extra_thresholds=None,
+    mtp_override=False,
+    mtp_model_kind=None,
+    mtp_n_estimators=None,
+    mtp_random_state=None,
+    mtp_class_weight=None,
+    mtp_max_features=None,
+    mtp_min_samples_leaf=None,
+    mtp_threshold_grid=None,
 ):
     prob_matrices = [np.asarray(prob, dtype=np.float64) for prob in prob_matrices]
     true_idx = np.asarray(true_idx, dtype=np.int64)
@@ -592,6 +688,25 @@ def evaluate_foldwise_classwise_multi_blend_sp_override(
         sp_weights = TARGETP_STACK_SP_SPECIALIST_DEFAULTS['sp_weights']
     if sp_extra_thresholds is None:
         sp_extra_thresholds = TARGETP_STACK_SP_SPECIALIST_DEFAULTS['sp_extra_thresholds']
+    if mtp_model_kind is None:
+        mtp_model_kind = TARGETP_STACK_MTP_SPECIALIST_DEFAULTS['mtp_model_kind']
+    if mtp_n_estimators is None:
+        mtp_n_estimators = TARGETP_STACK_MTP_SPECIALIST_DEFAULTS['mtp_n_estimators']
+    if mtp_random_state is None:
+        mtp_random_state = TARGETP_STACK_MTP_SPECIALIST_DEFAULTS['mtp_random_state']
+    if mtp_class_weight is None:
+        mtp_class_weight = TARGETP_STACK_MTP_SPECIALIST_DEFAULTS['mtp_class_weight']
+    if mtp_max_features is None:
+        mtp_max_features = TARGETP_STACK_MTP_SPECIALIST_DEFAULTS['mtp_max_features']
+    if mtp_min_samples_leaf is None:
+        mtp_min_samples_leaf = TARGETP_STACK_MTP_SPECIALIST_DEFAULTS['mtp_min_samples_leaf']
+    if mtp_threshold_grid is None:
+        mtp_threshold_grid = np.linspace(
+            float(TARGETP_STACK_MTP_SPECIALIST_DEFAULTS['mtp_score_min']),
+            float(TARGETP_STACK_MTP_SPECIALIST_DEFAULTS['mtp_score_max']),
+            int(TARGETP_STACK_MTP_SPECIALIST_DEFAULTS['mtp_score_steps']),
+            dtype=np.float64,
+        )
     fixed_fold_by_id = None
     if fixed_fold_rows is not None:
         fixed_fold_by_id = {
@@ -599,7 +714,7 @@ def evaluate_foldwise_classwise_multi_blend_sp_override(
         }
     pred_idx = np.zeros((true_idx.shape[0],), dtype=np.int64)
     fold_rows = list()
-    for fold_id in sorted(set([str(value) for value in fold_ids.tolist()])):
+    for fold_i, fold_id in enumerate(sorted(set([str(value) for value in fold_ids.tolist()]))):
         valid_mask = np.asarray([str(value) == fold_id for value in fold_ids.tolist()], dtype=bool)
         train_mask = ~valid_mask
         train_probs = [prob[train_mask, :] for prob in prob_matrices]
@@ -707,7 +822,15 @@ def evaluate_foldwise_classwise_multi_blend_sp_override(
             make_models=make_models,
             weights=sp_weights,
         )
-        pred_idx[valid_mask] = _sp_specialist_prediction_indices(
+        train_pred = _sp_specialist_prediction_indices(
+            base_prob=train_blend,
+            thresholds=thresholds,
+            base_pred=train_pred,
+            sp_scores=train_scores[train_mask],
+            sp_threshold=sp_threshold,
+            class_names=class_names,
+        )
+        valid_pred = _sp_specialist_prediction_indices(
             base_prob=valid_blend,
             thresholds=thresholds,
             base_pred=valid_pred,
@@ -715,6 +838,68 @@ def evaluate_foldwise_classwise_multi_blend_sp_override(
             sp_threshold=sp_threshold,
             class_names=class_names,
         )
+        mtp_threshold = None
+        mtp_train_metrics = None
+        mtp_train_positive_count = 0
+        mtp_valid_positive_count = 0
+        mtp_valid_demote_count = 0
+        if bool(mtp_override) and 'mTP' in class_names:
+            mtp_idx = int(class_names.index('mTP'))
+            mtp_make_models = [
+                (
+                    lambda seed=int(mtp_random_state) + int(fold_i): _make_mtp_specialist_classifier(
+                        model_kind=mtp_model_kind,
+                        n_estimators=int(mtp_n_estimators),
+                        random_state=seed,
+                        class_weight=mtp_class_weight,
+                        max_features=mtp_max_features,
+                        min_samples_leaf=int(mtp_min_samples_leaf),
+                    )
+                )
+            ]
+            mtp_train_scores = _binary_crossfit_ensemble_scores(
+                features=features,
+                true_idx=true_idx,
+                fold_ids=fold_ids,
+                fit_mask=train_mask,
+                score_mask=train_mask,
+                positive_idx=mtp_idx,
+                make_models=mtp_make_models,
+                weights=[1.0],
+            )
+            mtp_threshold, mtp_train_metrics = _optimize_binary_specialist_threshold(
+                base_prob=train_blend,
+                thresholds=thresholds,
+                base_pred=train_pred,
+                scores=mtp_train_scores[train_mask],
+                true_idx=true_idx[train_mask],
+                class_names=class_names,
+                positive_idx=mtp_idx,
+                threshold_grid=mtp_threshold_grid,
+            )
+            mtp_valid_scores = _fit_binary_predict_ensemble_scores(
+                features=features,
+                true_idx=true_idx,
+                fit_mask=train_mask,
+                predict_mask=valid_mask,
+                positive_idx=mtp_idx,
+                make_models=mtp_make_models,
+                weights=[1.0],
+            )
+            before_mtp_pred = valid_pred.copy()
+            valid_pred = _binary_specialist_prediction_indices(
+                base_prob=valid_blend,
+                thresholds=thresholds,
+                base_pred=valid_pred,
+                scores=mtp_valid_scores[valid_mask],
+                score_threshold=mtp_threshold,
+                class_names=class_names,
+                positive_idx=mtp_idx,
+            )
+            mtp_train_positive_count = int(np.sum(mtp_train_scores[train_mask] >= float(mtp_threshold)))
+            mtp_valid_positive_count = int(np.sum(valid_pred == mtp_idx))
+            mtp_valid_demote_count = int(np.sum((before_mtp_pred == mtp_idx) & (valid_pred != mtp_idx)))
+        pred_idx[valid_mask] = valid_pred
         fold_rows.append({
             'fold_id': str(fold_id),
             'weights_by_class': {
@@ -731,6 +916,11 @@ def evaluate_foldwise_classwise_multi_blend_sp_override(
             'train_threshold_macro_f1': float(threshold_metrics['macro_f1']),
             'sp_score_threshold': float(sp_threshold),
             'sp_train_macro_f1': float(sp_train_metrics['macro_f1']),
+            'mtp_score_threshold': None if mtp_threshold is None else float(mtp_threshold),
+            'mtp_train_macro_f1': None if mtp_train_metrics is None else float(mtp_train_metrics['macro_f1']),
+            'mtp_train_positive_count': int(mtp_train_positive_count),
+            'mtp_valid_positive_count': int(mtp_valid_positive_count),
+            'mtp_valid_demote_count': int(mtp_valid_demote_count),
             'n_train': int(np.sum(train_mask)),
             'n_valid': int(np.sum(valid_mask)),
         })
@@ -740,6 +930,11 @@ def evaluate_foldwise_classwise_multi_blend_sp_override(
             'weights and class thresholds optimized on the other folds, '
             'followed by an SP specialist trained and thresholded only on the '
             'other folds.'
+            + (
+                ' The SP-adjusted predictions are then refined by an mTP '
+                'specialist trained and thresholded only on the other folds.'
+                if bool(mtp_override) else ''
+            )
         ),
         'metrics': _metrics_from_prediction_indices(
             pred_idx=pred_idx,
@@ -760,6 +955,15 @@ def evaluate_foldwise_classwise_multi_blend_sp_override(
             'sp_random_states': [int(value) for value in sp_random_states],
             'sp_weights': [float(value) for value in sp_weights],
             'sp_extra_thresholds': [float(value) for value in sp_extra_thresholds],
+            'mtp_override': bool(mtp_override),
+            'mtp_feature_profile': 'targetp_sp_signal_plus_sources_v1' if bool(mtp_override) else None,
+            'mtp_model_kind': str(mtp_model_kind),
+            'mtp_n_estimators': int(mtp_n_estimators),
+            'mtp_random_state': int(mtp_random_state),
+            'mtp_class_weight': str(mtp_class_weight),
+            'mtp_max_features': str(mtp_max_features),
+            'mtp_min_samples_leaf': int(mtp_min_samples_leaf),
+            'mtp_threshold_grid': [float(value) for value in mtp_threshold_grid],
         },
     }
 
@@ -1849,6 +2053,12 @@ def build_parser():
         choices=['yes', 'no'],
         type=str,
     )
+    parser.add_argument(
+        '--post_blend_mtp_override',
+        default='yes' if TARGETP_STACK_MTP_SPECIALIST_DEFAULTS['mtp_override'] else 'no',
+        choices=['yes', 'no'],
+        type=str,
+    )
     parser.add_argument('--threshold_grid', default='0.05,0.075,0.1,0.15,0.2,0.3,0.4,0.5,0.65,0.8,1.0,1.25,1.5,2.0,3.0,5.0', type=str)
     parser.add_argument('--out_json', default='data/localize_bench/targetp2_stack_eval.json', type=str)
     parser.add_argument('--out_md', default='data/localize_bench/targetp2_stack_eval.md', type=str)
@@ -2110,6 +2320,23 @@ def main():
                 ),
                 threshold_grid=threshold_grid,
                 fixed_fold_rows=results[post_blend_key]['folds'],
+            )
+        if _to_bool(args.post_blend_mtp_override):
+            post_blend_mtp_key = '{}_sp_mtp_override'.format(post_blend_key)
+            results[post_blend_mtp_key] = evaluate_foldwise_classwise_multi_blend_sp_override(
+                prob_matrices=[oof['prob_matrix']] + post_blend_probs,
+                true_idx=oof['true_idx'],
+                fold_ids=oof['fold_ids'],
+                rows=rows,
+                class_names=oof['class_names'],
+                source_labels=source_labels,
+                weight_grid=_convex_weight_grid(
+                    n_sources=1 + len(post_blend_probs),
+                    step=post_blend_step,
+                ),
+                threshold_grid=threshold_grid,
+                fixed_fold_rows=results[post_blend_key]['folds'],
+                mtp_override=True,
             )
     out = {
         'training_tsv': str(args.training_tsv),

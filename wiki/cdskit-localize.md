@@ -240,7 +240,8 @@ selection.
 | cdskit TargetP stack + h256 seed100 all-outer inner4 + strict external + thylakoid-lumen external 4-way foldwise blend | 0.840 | 0.967 | adds a low-weight UniProt SL-0057/SL-0309 thylakoid-lumen weak-label source to improve lTP; exact macro F1 0.84006 |
 | cdskit TargetP 4-way foldwise blend + cTP/noTP lTP rescue | 0.842 | 0.967 | same fixed foldwise source blend, followed by a plant lTP specialist that may rescue cTP or noTP calls to lTP using only other-fold labels; exact macro F1 0.84218 |
 | cdskit TargetP RF300 meta-stack + 5-source foldwise blend | 0.859 | 0.968 | reproducible second-level RF300 stack over stack/Torch/strict-external OOF probabilities, then foldwise classwise blend with the base stack, Torch, strict external, and thylakoid-lumen external sources; exact macro F1 0.85909 |
-| cdskit TargetP RF300 meta-stack + 5-source blend + SP specialist | 0.861 | 0.971 | same fair 5-source blend followed by an SP specialist trained and thresholded only on the other folds; exact macro F1 0.86082, current best fair score so far |
+| cdskit TargetP RF300 meta-stack + 5-source blend + SP specialist | 0.861 | 0.971 | same fair 5-source blend followed by an SP specialist trained and thresholded only on the other folds; exact macro F1 0.86082 |
+| cdskit TargetP RF300 meta-stack + 5-source blend + SP/mTP specialists | 0.863 | 0.971 | same SP specialist plus a cross-fit mTP specialist trained and thresholded only on the other folds; exact macro F1 0.86293, current best fair score so far |
 
 The command used for the feature/ESM run was:
 
@@ -533,6 +534,11 @@ PYTHONPATH=. python -m cdskit.targetp_stack \
 
 The SP-specialist row in this output improves the fair estimate to exact macro
 F1 0.86082 (`noTP` 0.983, `SP` 0.971, `mTP` 0.838, `cTP` 0.846, `lTP` 0.667).
+Rerunning the same setup with `--post_blend_sp_override no
+--post_blend_mtp_override yes` adds a cross-fit mTP specialist and writes
+`data/localize_bench/targetp2_meta_rf300_stack_torch_ext_repro_5source_thylum_step02_sp_mtp_eval.json`.
+That current best fair row reaches exact macro F1 0.86293 and accuracy 0.97086
+(`noTP` 0.982, `SP` 0.970, `mTP` 0.843, `cTP` 0.853, `lTP` 0.667).
 It is a real improvement over 0.84218 and the non-SP 0.85909 meta-stack, but it
 still does not reach the TargetP 2.0 paper macro F1 0.890; the remaining gap is
 mostly lTP recall, with smaller SP, mTP, and cTP deficits.
