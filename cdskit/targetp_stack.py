@@ -93,6 +93,21 @@ TARGETP_STACK_MTP_SPECIALIST_DEFAULTS = {
     'mtp_score_steps': 46,
 }
 
+TARGETP_STACK_LTP_AFTER_SPECIALIST_DEFAULTS = {
+    'ltp_after_override': False,
+    'ltp_after_model_kind': 'extra_trees',
+    'ltp_after_n_estimators': 120,
+    'ltp_after_random_state': 1000,
+    'ltp_after_class_weight': 'balanced',
+    'ltp_after_max_features': 'sqrt',
+    'ltp_after_min_samples_leaf': 1,
+    'ltp_after_score_min': 0.01,
+    'ltp_after_score_max': 0.99,
+    'ltp_after_score_steps': 99,
+    'ltp_after_source_classes': ['cTP', 'mTP'],
+    'ltp_after_negative_classes': ['cTP', 'mTP'],
+}
+
 
 def read_training_rows(path):
     with open(path, 'r', encoding='utf-8', newline='') as inp:
@@ -539,6 +554,22 @@ def _binary_specialist_prediction_indices(
     return pred
 
 
+def _binary_rescue_prediction_indices(
+    base_pred,
+    scores,
+    score_threshold,
+    source_indices,
+    positive_idx,
+):
+    pred = np.asarray(base_pred, dtype=np.int64).copy()
+    rescue = (
+        np.isin(pred, np.asarray(source_indices, dtype=np.int64))
+        & (np.asarray(scores, dtype=np.float64) >= float(score_threshold))
+    )
+    pred[rescue] = int(positive_idx)
+    return pred
+
+
 def _sp_specialist_prediction_indices(
     base_prob,
     thresholds,
@@ -650,6 +681,41 @@ def _optimize_binary_specialist_threshold(
     return best_threshold, best_metrics
 
 
+def _optimize_binary_rescue_threshold(
+    base_pred,
+    scores,
+    true_idx,
+    class_names,
+    source_indices,
+    positive_idx,
+    threshold_grid,
+):
+    candidates = [float(value) for value in threshold_grid]
+    if len(candidates) == 0:
+        candidates = [0.5]
+    best_threshold = float(candidates[0])
+    best_metrics = None
+    best_override_count = 0
+    for threshold in sorted(set(candidates)):
+        pred = _binary_rescue_prediction_indices(
+            base_pred=base_pred,
+            scores=scores,
+            score_threshold=threshold,
+            source_indices=source_indices,
+            positive_idx=positive_idx,
+        )
+        metrics = _metrics_from_prediction_indices(
+            pred_idx=pred,
+            true_idx=true_idx,
+            class_names=class_names,
+        )
+        if best_metrics is None or metrics['macro_f1'] > best_metrics['macro_f1']:
+            best_threshold = float(threshold)
+            best_metrics = metrics
+            best_override_count = int(np.sum(pred != np.asarray(base_pred, dtype=np.int64)))
+    return best_threshold, best_metrics, best_override_count
+
+
 def evaluate_foldwise_classwise_multi_blend_sp_override(
     prob_matrices,
     true_idx,
@@ -674,6 +740,16 @@ def evaluate_foldwise_classwise_multi_blend_sp_override(
     mtp_max_features=None,
     mtp_min_samples_leaf=None,
     mtp_threshold_grid=None,
+    ltp_after_override=False,
+    ltp_after_model_kind=None,
+    ltp_after_n_estimators=None,
+    ltp_after_random_state=None,
+    ltp_after_class_weight=None,
+    ltp_after_max_features=None,
+    ltp_after_min_samples_leaf=None,
+    ltp_after_threshold_grid=None,
+    ltp_after_source_classes=None,
+    ltp_after_negative_classes=None,
 ):
     prob_matrices = [np.asarray(prob, dtype=np.float64) for prob in prob_matrices]
     true_idx = np.asarray(true_idx, dtype=np.int64)
@@ -707,6 +783,44 @@ def evaluate_foldwise_classwise_multi_blend_sp_override(
             int(TARGETP_STACK_MTP_SPECIALIST_DEFAULTS['mtp_score_steps']),
             dtype=np.float64,
         )
+    if ltp_after_model_kind is None:
+        ltp_after_model_kind = TARGETP_STACK_LTP_AFTER_SPECIALIST_DEFAULTS['ltp_after_model_kind']
+    if ltp_after_n_estimators is None:
+        ltp_after_n_estimators = TARGETP_STACK_LTP_AFTER_SPECIALIST_DEFAULTS['ltp_after_n_estimators']
+    if ltp_after_random_state is None:
+        ltp_after_random_state = TARGETP_STACK_LTP_AFTER_SPECIALIST_DEFAULTS['ltp_after_random_state']
+    if ltp_after_class_weight is None:
+        ltp_after_class_weight = TARGETP_STACK_LTP_AFTER_SPECIALIST_DEFAULTS['ltp_after_class_weight']
+    if ltp_after_max_features is None:
+        ltp_after_max_features = TARGETP_STACK_LTP_AFTER_SPECIALIST_DEFAULTS['ltp_after_max_features']
+    if ltp_after_min_samples_leaf is None:
+        ltp_after_min_samples_leaf = TARGETP_STACK_LTP_AFTER_SPECIALIST_DEFAULTS['ltp_after_min_samples_leaf']
+    if ltp_after_threshold_grid is None:
+        ltp_after_threshold_grid = np.linspace(
+            float(TARGETP_STACK_LTP_AFTER_SPECIALIST_DEFAULTS['ltp_after_score_min']),
+            float(TARGETP_STACK_LTP_AFTER_SPECIALIST_DEFAULTS['ltp_after_score_max']),
+            int(TARGETP_STACK_LTP_AFTER_SPECIALIST_DEFAULTS['ltp_after_score_steps']),
+            dtype=np.float64,
+        )
+    if ltp_after_source_classes is None:
+        ltp_after_source_classes = TARGETP_STACK_LTP_AFTER_SPECIALIST_DEFAULTS['ltp_after_source_classes']
+    if ltp_after_negative_classes is None:
+        ltp_after_negative_classes = TARGETP_STACK_LTP_AFTER_SPECIALIST_DEFAULTS['ltp_after_negative_classes']
+    ltp_after_source_idx = _ltp_source_class_indices(
+        class_names=class_names,
+        source_classes=ltp_after_source_classes,
+    )
+    ltp_after_negative_idx = _ltp_source_class_indices(
+        class_names=class_names,
+        source_classes=ltp_after_negative_classes,
+    )
+    ltp_idx = int(class_names.index('lTP')) if 'lTP' in class_names else None
+    if ltp_idx is not None and ltp_idx in ltp_after_negative_idx:
+        raise ValueError('ltp_after_negative_classes should not include lTP.')
+    plant_mask = plant_mask_from_rows(rows=rows)
+    ltp_after_features = None
+    if bool(ltp_after_override):
+        ltp_after_features = build_ltp_ctp_specialist_feature_matrix(rows=rows).astype(np.float32)
     fixed_fold_by_id = None
     if fixed_fold_rows is not None:
         fixed_fold_by_id = {
@@ -877,6 +991,15 @@ def evaluate_foldwise_classwise_multi_blend_sp_override(
                 positive_idx=mtp_idx,
                 threshold_grid=mtp_threshold_grid,
             )
+            train_pred = _binary_specialist_prediction_indices(
+                base_prob=train_blend,
+                thresholds=thresholds,
+                base_pred=train_pred,
+                scores=mtp_train_scores[train_mask],
+                score_threshold=mtp_threshold,
+                class_names=class_names,
+                positive_idx=mtp_idx,
+            )
             mtp_valid_scores = _fit_binary_predict_ensemble_scores(
                 features=features,
                 true_idx=true_idx,
@@ -899,6 +1022,100 @@ def evaluate_foldwise_classwise_multi_blend_sp_override(
             mtp_train_positive_count = int(np.sum(mtp_train_scores[train_mask] >= float(mtp_threshold)))
             mtp_valid_positive_count = int(np.sum(valid_pred == mtp_idx))
             mtp_valid_demote_count = int(np.sum((before_mtp_pred == mtp_idx) & (valid_pred != mtp_idx)))
+        ltp_after_threshold = None
+        ltp_after_train_metrics = None
+        ltp_after_train_override_count = 0
+        ltp_after_valid_override_count = 0
+        ltp_after_train_count = 0
+        if bool(ltp_after_override) and ltp_idx is not None:
+            ltp_fit_classes = list(ltp_after_negative_idx) + [int(ltp_idx)]
+            specialist_train = (
+                train_mask
+                & plant_mask
+                & np.isin(true_idx, ltp_fit_classes)
+            )
+            ltp_after_train_count = int(np.sum(specialist_train))
+            if len(set(true_idx[specialist_train].tolist())) >= 2:
+                train_score_full = np.zeros((true_idx.shape[0],), dtype=np.float64)
+                for inner_i, inner_fold_id in enumerate(sorted(set([
+                    str(value) for value in fold_ids[train_mask].tolist()
+                ]))):
+                    inner_score_mask = (
+                        train_mask
+                        & np.asarray([
+                            str(value) == inner_fold_id for value in fold_ids.tolist()
+                        ], dtype=bool)
+                    )
+                    inner_fit_mask = specialist_train & (~inner_score_mask)
+                    inner_y = (true_idx[inner_fit_mask] == int(ltp_idx)).astype(np.int64)
+                    if len(set(inner_y.tolist())) < 2:
+                        continue
+                    classifier = make_targetp_stack_classifier(
+                        model_kind=ltp_after_model_kind,
+                        n_estimators=int(ltp_after_n_estimators),
+                        random_state=int(ltp_after_random_state) + (100 * int(fold_i)) + int(inner_i),
+                        class_weight=ltp_after_class_weight,
+                        max_features=ltp_after_max_features,
+                        min_samples_leaf=int(ltp_after_min_samples_leaf),
+                    )
+                    classifier.fit(ltp_after_features[inner_fit_mask, :], inner_y)
+                    classes = [int(value) for value in list(classifier.classes_)]
+                    if 1 in classes:
+                        train_score_full[inner_score_mask] = np.asarray(
+                            classifier.predict_proba(ltp_after_features[inner_score_mask, :]),
+                            dtype=np.float64,
+                        )[:, classes.index(1)]
+                train_rescue_base = train_pred.copy()
+                train_eligible = (
+                    plant_mask[train_mask]
+                    & np.isin(train_rescue_base, ltp_after_source_idx)
+                )
+                train_scores = train_score_full[train_mask].copy()
+                train_scores[~train_eligible] = -np.inf
+                (
+                    ltp_after_threshold,
+                    ltp_after_train_metrics,
+                    ltp_after_train_override_count,
+                ) = _optimize_binary_rescue_threshold(
+                    base_pred=train_rescue_base,
+                    scores=train_scores,
+                    true_idx=true_idx[train_mask],
+                    class_names=class_names,
+                    source_indices=ltp_after_source_idx,
+                    positive_idx=int(ltp_idx),
+                    threshold_grid=ltp_after_threshold_grid,
+                )
+                final_y = (true_idx[specialist_train] == int(ltp_idx)).astype(np.int64)
+                classifier = make_targetp_stack_classifier(
+                    model_kind=ltp_after_model_kind,
+                    n_estimators=int(ltp_after_n_estimators),
+                    random_state=int(ltp_after_random_state) + 1000 + int(fold_i),
+                    class_weight=ltp_after_class_weight,
+                    max_features=ltp_after_max_features,
+                    min_samples_leaf=int(ltp_after_min_samples_leaf),
+                )
+                classifier.fit(ltp_after_features[specialist_train, :], final_y)
+                classes = [int(value) for value in list(classifier.classes_)]
+                if 1 in classes:
+                    valid_scores = np.asarray(
+                        classifier.predict_proba(ltp_after_features[valid_mask, :]),
+                        dtype=np.float64,
+                    )[:, classes.index(1)]
+                    valid_eligible = (
+                        plant_mask[valid_mask]
+                        & np.isin(valid_pred, ltp_after_source_idx)
+                    )
+                    before_ltp_pred = valid_pred.copy()
+                    valid_scores = valid_scores.copy()
+                    valid_scores[~valid_eligible] = -np.inf
+                    valid_pred = _binary_rescue_prediction_indices(
+                        base_pred=valid_pred,
+                        scores=valid_scores,
+                        score_threshold=ltp_after_threshold,
+                        source_indices=ltp_after_source_idx,
+                        positive_idx=int(ltp_idx),
+                    )
+                    ltp_after_valid_override_count = int(np.sum(valid_pred != before_ltp_pred))
         pred_idx[valid_mask] = valid_pred
         fold_rows.append({
             'fold_id': str(fold_id),
@@ -921,6 +1138,11 @@ def evaluate_foldwise_classwise_multi_blend_sp_override(
             'mtp_train_positive_count': int(mtp_train_positive_count),
             'mtp_valid_positive_count': int(mtp_valid_positive_count),
             'mtp_valid_demote_count': int(mtp_valid_demote_count),
+            'ltp_after_score_threshold': None if ltp_after_threshold is None else float(ltp_after_threshold),
+            'ltp_after_train_macro_f1': None if ltp_after_train_metrics is None else float(ltp_after_train_metrics['macro_f1']),
+            'ltp_after_train_override_count': int(ltp_after_train_override_count),
+            'ltp_after_valid_override_count': int(ltp_after_valid_override_count),
+            'n_ltp_after_specialist_train': int(ltp_after_train_count),
             'n_train': int(np.sum(train_mask)),
             'n_valid': int(np.sum(valid_mask)),
         })
@@ -934,6 +1156,11 @@ def evaluate_foldwise_classwise_multi_blend_sp_override(
                 ' The SP-adjusted predictions are then refined by an mTP '
                 'specialist trained and thresholded only on the other folds.'
                 if bool(mtp_override) else ''
+            )
+            + (
+                ' Those predictions are finally passed through an lTP rescue '
+                'specialist trained and thresholded only on the other folds.'
+                if bool(ltp_after_override) else ''
             )
         ),
         'metrics': _metrics_from_prediction_indices(
@@ -964,6 +1191,17 @@ def evaluate_foldwise_classwise_multi_blend_sp_override(
             'mtp_max_features': str(mtp_max_features),
             'mtp_min_samples_leaf': int(mtp_min_samples_leaf),
             'mtp_threshold_grid': [float(value) for value in mtp_threshold_grid],
+            'ltp_after_override': bool(ltp_after_override),
+            'ltp_after_feature_profile': 'targetp_ltp_signal_v1' if bool(ltp_after_override) else None,
+            'ltp_after_model_kind': str(ltp_after_model_kind),
+            'ltp_after_n_estimators': int(ltp_after_n_estimators),
+            'ltp_after_random_state': int(ltp_after_random_state),
+            'ltp_after_class_weight': str(ltp_after_class_weight),
+            'ltp_after_max_features': str(ltp_after_max_features),
+            'ltp_after_min_samples_leaf': int(ltp_after_min_samples_leaf),
+            'ltp_after_threshold_grid': [float(value) for value in ltp_after_threshold_grid],
+            'ltp_after_source_classes': [class_names[i] for i in ltp_after_source_idx],
+            'ltp_after_negative_classes': [class_names[i] for i in ltp_after_negative_idx],
         },
     }
 
@@ -2059,6 +2297,28 @@ def build_parser():
         choices=['yes', 'no'],
         type=str,
     )
+    parser.add_argument(
+        '--post_blend_ltp_after_specialists_override',
+        default='yes' if TARGETP_STACK_LTP_AFTER_SPECIALIST_DEFAULTS['ltp_after_override'] else 'no',
+        choices=['yes', 'no'],
+        type=str,
+    )
+    parser.add_argument(
+        '--post_blend_ltp_after_model_kind',
+        default=TARGETP_STACK_LTP_AFTER_SPECIALIST_DEFAULTS['ltp_after_model_kind'],
+        choices=['random_forest', 'extra_trees', 'hist_gradient_boosting'],
+        type=str,
+    )
+    parser.add_argument('--post_blend_ltp_after_n_estimators', default=TARGETP_STACK_LTP_AFTER_SPECIALIST_DEFAULTS['ltp_after_n_estimators'], type=int)
+    parser.add_argument('--post_blend_ltp_after_random_state', default=TARGETP_STACK_LTP_AFTER_SPECIALIST_DEFAULTS['ltp_after_random_state'], type=int)
+    parser.add_argument('--post_blend_ltp_after_class_weight', default=TARGETP_STACK_LTP_AFTER_SPECIALIST_DEFAULTS['ltp_after_class_weight'], type=str)
+    parser.add_argument('--post_blend_ltp_after_max_features', default=TARGETP_STACK_LTP_AFTER_SPECIALIST_DEFAULTS['ltp_after_max_features'], type=str)
+    parser.add_argument('--post_blend_ltp_after_min_samples_leaf', default=TARGETP_STACK_LTP_AFTER_SPECIALIST_DEFAULTS['ltp_after_min_samples_leaf'], type=int)
+    parser.add_argument('--post_blend_ltp_after_score_min', default=TARGETP_STACK_LTP_AFTER_SPECIALIST_DEFAULTS['ltp_after_score_min'], type=float)
+    parser.add_argument('--post_blend_ltp_after_score_max', default=TARGETP_STACK_LTP_AFTER_SPECIALIST_DEFAULTS['ltp_after_score_max'], type=float)
+    parser.add_argument('--post_blend_ltp_after_score_steps', default=TARGETP_STACK_LTP_AFTER_SPECIALIST_DEFAULTS['ltp_after_score_steps'], type=int)
+    parser.add_argument('--post_blend_ltp_after_source_classes', default=','.join(TARGETP_STACK_LTP_AFTER_SPECIALIST_DEFAULTS['ltp_after_source_classes']), type=str)
+    parser.add_argument('--post_blend_ltp_after_negative_classes', default=','.join(TARGETP_STACK_LTP_AFTER_SPECIALIST_DEFAULTS['ltp_after_negative_classes']), type=str)
     parser.add_argument('--threshold_grid', default='0.05,0.075,0.1,0.15,0.2,0.3,0.4,0.5,0.65,0.8,1.0,1.25,1.5,2.0,3.0,5.0', type=str)
     parser.add_argument('--out_json', default='data/localize_bench/targetp2_stack_eval.json', type=str)
     parser.add_argument('--out_md', default='data/localize_bench/targetp2_stack_eval.md', type=str)
@@ -2112,6 +2372,14 @@ def main():
         float(args.ltp_ctp_score_min),
         float(args.ltp_ctp_score_max) + (0.5 * float(args.ltp_ctp_score_step)),
         float(args.ltp_ctp_score_step),
+        dtype=np.float64,
+    )
+    if int(args.post_blend_ltp_after_score_steps) <= 0:
+        raise ValueError('--post_blend_ltp_after_score_steps should be positive.')
+    ltp_after_threshold_grid = np.linspace(
+        float(args.post_blend_ltp_after_score_min),
+        float(args.post_blend_ltp_after_score_max),
+        int(args.post_blend_ltp_after_score_steps),
         dtype=np.float64,
     )
     ltp_ctp_random_state = (
@@ -2306,7 +2574,14 @@ def main():
                 fixed_fold_rows=results[post_blend_key]['folds'],
             )
         if _to_bool(args.post_blend_sp_override):
-            post_blend_sp_key = '{}_sp_override'.format(post_blend_key)
+            post_blend_sp_key = (
+                '{}_sp_ltp_after_override'.format(post_blend_key)
+                if (
+                    _to_bool(args.post_blend_ltp_after_specialists_override)
+                    and not _to_bool(args.post_blend_mtp_override)
+                )
+                else '{}_sp_override'.format(post_blend_key)
+            )
             results[post_blend_sp_key] = evaluate_foldwise_classwise_multi_blend_sp_override(
                 prob_matrices=[oof['prob_matrix']] + post_blend_probs,
                 true_idx=oof['true_idx'],
@@ -2320,9 +2595,26 @@ def main():
                 ),
                 threshold_grid=threshold_grid,
                 fixed_fold_rows=results[post_blend_key]['folds'],
+                ltp_after_override=(
+                    _to_bool(args.post_blend_ltp_after_specialists_override)
+                    and not _to_bool(args.post_blend_mtp_override)
+                ),
+                ltp_after_model_kind=args.post_blend_ltp_after_model_kind,
+                ltp_after_n_estimators=int(args.post_blend_ltp_after_n_estimators),
+                ltp_after_random_state=int(args.post_blend_ltp_after_random_state),
+                ltp_after_class_weight=args.post_blend_ltp_after_class_weight,
+                ltp_after_max_features=args.post_blend_ltp_after_max_features,
+                ltp_after_min_samples_leaf=int(args.post_blend_ltp_after_min_samples_leaf),
+                ltp_after_threshold_grid=ltp_after_threshold_grid,
+                ltp_after_source_classes=args.post_blend_ltp_after_source_classes,
+                ltp_after_negative_classes=args.post_blend_ltp_after_negative_classes,
             )
         if _to_bool(args.post_blend_mtp_override):
-            post_blend_mtp_key = '{}_sp_mtp_override'.format(post_blend_key)
+            post_blend_mtp_key = (
+                '{}_sp_mtp_ltp_after_override'.format(post_blend_key)
+                if _to_bool(args.post_blend_ltp_after_specialists_override)
+                else '{}_sp_mtp_override'.format(post_blend_key)
+            )
             results[post_blend_mtp_key] = evaluate_foldwise_classwise_multi_blend_sp_override(
                 prob_matrices=[oof['prob_matrix']] + post_blend_probs,
                 true_idx=oof['true_idx'],
@@ -2337,6 +2629,16 @@ def main():
                 threshold_grid=threshold_grid,
                 fixed_fold_rows=results[post_blend_key]['folds'],
                 mtp_override=True,
+                ltp_after_override=_to_bool(args.post_blend_ltp_after_specialists_override),
+                ltp_after_model_kind=args.post_blend_ltp_after_model_kind,
+                ltp_after_n_estimators=int(args.post_blend_ltp_after_n_estimators),
+                ltp_after_random_state=int(args.post_blend_ltp_after_random_state),
+                ltp_after_class_weight=args.post_blend_ltp_after_class_weight,
+                ltp_after_max_features=args.post_blend_ltp_after_max_features,
+                ltp_after_min_samples_leaf=int(args.post_blend_ltp_after_min_samples_leaf),
+                ltp_after_threshold_grid=ltp_after_threshold_grid,
+                ltp_after_source_classes=args.post_blend_ltp_after_source_classes,
+                ltp_after_negative_classes=args.post_blend_ltp_after_negative_classes,
             )
     out = {
         'training_tsv': str(args.training_tsv),

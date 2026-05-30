@@ -241,7 +241,8 @@ selection.
 | cdskit TargetP 4-way foldwise blend + cTP/noTP lTP rescue | 0.842 | 0.967 | same fixed foldwise source blend, followed by a plant lTP specialist that may rescue cTP or noTP calls to lTP using only other-fold labels; exact macro F1 0.84218 |
 | cdskit TargetP RF300 meta-stack + 5-source foldwise blend | 0.859 | 0.968 | reproducible second-level RF300 stack over stack/Torch/strict-external OOF probabilities, then foldwise classwise blend with the base stack, Torch, strict external, and thylakoid-lumen external sources; exact macro F1 0.85909 |
 | cdskit TargetP RF300 meta-stack + 5-source blend + SP specialist | 0.861 | 0.971 | same fair 5-source blend followed by an SP specialist trained and thresholded only on the other folds; exact macro F1 0.86082 |
-| cdskit TargetP RF300 meta-stack + 5-source blend + SP/mTP specialists | 0.863 | 0.971 | same SP specialist plus a cross-fit mTP specialist trained and thresholded only on the other folds; exact macro F1 0.86293, current best fair score so far |
+| cdskit TargetP RF300 meta-stack + 5-source blend + SP/mTP specialists | 0.863 | 0.971 | same SP specialist plus a cross-fit mTP specialist trained and thresholded only on the other folds; exact macro F1 0.86293 |
+| cdskit TargetP RF300 meta-stack + 5-source blend + SP/mTP/lTP-after specialists | 0.867 | 0.971 | adds a cross-fit plant lTP rescue after SP/mTP, trained and thresholded only on other folds; exact macro F1 0.86680, current best fair score so far |
 
 The command used for the feature/ESM run was:
 
@@ -537,9 +538,16 @@ F1 0.86082 (`noTP` 0.983, `SP` 0.971, `mTP` 0.838, `cTP` 0.846, `lTP` 0.667).
 Rerunning the same setup with `--post_blend_sp_override no
 --post_blend_mtp_override yes` adds a cross-fit mTP specialist and writes
 `data/localize_bench/targetp2_meta_rf300_stack_torch_ext_repro_5source_thylum_step02_sp_mtp_eval.json`.
-That current best fair row reaches exact macro F1 0.86293 and accuracy 0.97086
+That fair row reaches exact macro F1 0.86293 and accuracy 0.97086
 (`noTP` 0.982, `SP` 0.970, `mTP` 0.843, `cTP` 0.853, `lTP` 0.667).
-It is a real improvement over 0.84218 and the non-SP 0.85909 meta-stack, but it
+Adding `--post_blend_ltp_after_specialists_override yes` applies a final
+cross-fit lTP rescue to plant `cTP`/`mTP` predictions using only other-fold
+`cTP`/`mTP`/`lTP` labels for fitting and other-fold predictions for threshold
+selection. The regenerated output
+`data/localize_bench/targetp2_meta_rf300_stack_torch_ext_repro_5source_thylum_step02_sp_mtp_ltp_eval.json`
+reaches exact macro F1 0.86680 and accuracy 0.97093 (`noTP` 0.982, `SP`
+0.970, `mTP` 0.843, `cTP` 0.855, `lTP` 0.684). It is a real improvement over
+0.84218, the non-SP 0.85909 meta-stack, and the SP/mTP 0.86293 row, but it
 still does not reach the TargetP 2.0 paper macro F1 0.890; the remaining gap is
 mostly lTP recall, with smaller SP, mTP, and cTP deficits.
 
