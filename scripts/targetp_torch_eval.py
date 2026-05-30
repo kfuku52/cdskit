@@ -61,7 +61,12 @@ def build_parser():
         type=str,
     )
     parser.add_argument('--cleavage_loss_weight', default=TARGETP_TORCH_DEFAULTS['cleavage_loss_weight'], type=float)
-    parser.add_argument('--selection_metric', default=TARGETP_TORCH_DEFAULTS['selection_metric'], choices=['val_loss', 'val_macro_f1'], type=str)
+    parser.add_argument(
+        '--selection_metric',
+        default=TARGETP_TORCH_DEFAULTS['selection_metric'],
+        choices=['val_loss', 'val_macro_f1', 'val_threshold_macro_f1'],
+        type=str,
+    )
     parser.add_argument('--balanced_batch', default=TARGETP_TORCH_DEFAULTS['balanced_batch'], choices=['yes', 'no'], type=str)
     parser.add_argument('--initializer', default=TARGETP_TORCH_DEFAULTS['initializer'], choices=['targetp_tf', 'pytorch'], type=str)
     parser.add_argument('--grad_clip_norm', default=TARGETP_TORCH_DEFAULTS['grad_clip_norm'], type=float)
@@ -96,6 +101,7 @@ def main():
         'type_class_weight': args.type_class_weight,
         'cleavage_loss_weight': float(args.cleavage_loss_weight),
         'selection_metric': args.selection_metric,
+        'selection_threshold_grid': threshold_grid,
         'balanced_batch': args.balanced_batch,
         'initializer': args.initializer,
         'grad_clip_norm': float(args.grad_clip_norm),

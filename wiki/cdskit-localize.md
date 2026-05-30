@@ -642,7 +642,16 @@ or disable the cleavage-site auxiliary loss while testing type-class learning.
 It can also report a fair validation-threshold score with
 `--val_threshold_eval yes`; class thresholds are fitted on the model's validation
 fold and then applied to the held-out outer fold, not optimized on the outer
-fold itself.
+fold itself. The trainer can now also select checkpoints with
+`--selection_metric val_threshold_macro_f1`, using the same validation-fold
+threshold objective rather than raw argmax macro F1, and TargetP torch runtime
+exports apply their saved `class_thresholds` when choosing the reported
+localization label.
+For the h256 seed100 type-only recipe on `outer0_val1`,
+`val_threshold_macro_f1` selected the same epoch 6 checkpoint as the previous
+raw-macro run and reproduced the same held-out validation-threshold macro F1
+0.80276. The matching `sqrt_balanced` type-weight probe was weaker, reaching
+only 0.6647 validation-threshold macro F1 by epoch 7 before being stopped.
 On `outer0_val1`, h16/n_filters8 with `sqrt_balanced` still collapsed to noTP
 only (0.169 covered-fold macro F1). h32/n_filters12 with balanced batches and
 `--cleavage_loss_weight 0.0` reached 0.343 covered-fold macro F1 and produced

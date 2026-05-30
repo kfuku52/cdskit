@@ -207,6 +207,23 @@ def _targetp_prediction_indices_with_thresholds(prob_matrix, thresholds):
     return np.argmax(scores, axis=1).astype(np.int64)
 
 
+def _targetp_prediction_index_from_prob_vector(prob_vec, class_thresholds=None):
+    thresholds = np.ones((len(LOCALIZATION_CLASSES),), dtype=np.float64)
+    if isinstance(class_thresholds, dict):
+        for class_i, class_name in enumerate(LOCALIZATION_CLASSES):
+            try:
+                threshold = float(class_thresholds.get(class_name, 1.0))
+            except Exception:
+                threshold = 1.0
+            if (not np.isfinite(threshold)) or threshold <= 0.0:
+                threshold = 1.0
+            thresholds[class_i] = threshold
+    return int(_targetp_prediction_indices_with_thresholds(
+        prob_matrix=np.asarray(prob_vec, dtype=np.float64).reshape((1, -1)),
+        thresholds=thresholds,
+    )[0])
+
+
 def _targetp_threshold_score_matrix(prob_matrix, thresholds):
     thresholds = np.asarray(thresholds, dtype=np.float64).reshape((1, -1))
     thresholds[thresholds <= 0.0] = 1.0
@@ -897,8 +914,16 @@ def fit_targetp2_torch_model(
     epochs = int(config['epochs'])
     balanced_batch = str(config.get('balanced_batch', 'no')).strip().lower() in ['yes', 'true', '1']
     selection_metric = str(config.get('selection_metric', 'val_loss')).strip().lower()
-    if selection_metric not in ['val_loss', 'val_macro_f1']:
-        raise ValueError('selection_metric should be val_loss or val_macro_f1.')
+    if selection_metric not in ['val_loss', 'val_macro_f1', 'val_threshold_macro_f1']:
+        raise ValueError(
+            'selection_metric should be val_loss, val_macro_f1, or val_threshold_macro_f1.'
+        )
+    selection_threshold_grid = config.get('selection_threshold_grid', TARGETP_CLASS_THRESHOLD_GRID)
+    if selection_threshold_grid is None:
+        selection_threshold_grid = TARGETP_CLASS_THRESHOLD_GRID
+    selection_threshold_grid = [
+        float(value) for value in selection_threshold_grid
+    ]
     best_state = copy.deepcopy(_state_dict_to_cpu(module))
     best_metrics = None
     best_epoch = 0
@@ -1016,19 +1041,40 @@ def fit_targetp2_torch_model(
             'learning_rate': float(current_lr),
             'elapsed_sec': float(time.time() - start_time),
         }
+        if selection_metric == 'val_threshold_macro_f1':
+            val_thresholds, val_threshold_metrics = _optimize_targetp_class_thresholds(
+                prob_matrix=val_metrics['prob_matrix'],
+                true_idx=y_type_val,
+                class_names=list(LOCALIZATION_CLASSES),
+                grid=selection_threshold_grid,
+            )
+            row['val_threshold_macro_f1'] = float(val_threshold_metrics['macro_f1'])
+            row['val_threshold_accuracy'] = float(val_threshold_metrics['overall_accuracy'])
+            row['val_thresholds'] = {
+                LOCALIZATION_CLASSES[i]: float(val_thresholds[i])
+                for i in range(len(LOCALIZATION_CLASSES))
+            }
         history.append(row)
         if bool(verbose):
-            print(
+            message = (
                 'epoch={epoch} train_loss={train_loss:.4f} '
                 'val_loss={val_loss:.4f} val_macro_f1={val_macro_f1:.4f} '
-                'val_acc={val_accuracy:.4f} lr={learning_rate:.6g}'.format(**row),
-                flush=True,
+                'val_acc={val_accuracy:.4f}'
             )
+            if selection_metric == 'val_threshold_macro_f1':
+                message += ' val_threshold_macro_f1={val_threshold_macro_f1:.4f}'
+            message += ' lr={learning_rate:.6g}'
+            print(message.format(**row), flush=True)
         is_better = False
         if best_metrics is None:
             is_better = True
         elif selection_metric == 'val_loss':
             is_better = row['val_loss'] < float(best_metrics['val_loss'])
+        elif selection_metric == 'val_threshold_macro_f1':
+            is_better = (
+                row['val_threshold_macro_f1']
+                > float(best_metrics['val_threshold_macro_f1'])
+            )
         else:
             is_better = row['val_macro_f1'] > float(best_metrics['val_macro_f1'])
         if is_better:
@@ -1200,7 +1246,10 @@ def predict_targetp2_torch_localization(aa_seq, localization_model, organism_gro
         LOCALIZATION_CLASSES[i]: float(prob[i])
         for i in range(len(LOCALIZATION_CLASSES))
     }
-    pred_idx = int(np.argmax(prob))
+    pred_idx = _targetp_prediction_index_from_prob_vector(
+        prob_vec=prob,
+        class_thresholds=localization_model.get('class_thresholds', {}),
+    )
     return LOCALIZATION_CLASSES[pred_idx], probs
 
 

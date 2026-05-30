@@ -20,6 +20,7 @@ from cdskit.targetp_torch import (
     _normalize_targetp_torch_state_dict,
     _optimize_targetp_class_thresholds,
     _payload_rnn_impl_from_state,
+    _targetp_prediction_index_from_prob_vector,
     _targetp_prediction_indices_with_thresholds,
     _targetp2_loss,
     _targetp_type_class_weight_vector,
@@ -341,6 +342,16 @@ def test_targetp_validation_threshold_optimizer_uses_classwise_grid():
     assert metrics['macro_f1'] == 1.0
 
 
+def test_targetp_prediction_index_from_prob_vector_applies_thresholds():
+    prob = np.asarray([0.48, 0.52, 0.0, 0.0, 0.0], dtype=np.float64)
+
+    assert _targetp_prediction_index_from_prob_vector(prob) == 1
+    assert _targetp_prediction_index_from_prob_vector(
+        prob,
+        class_thresholds={'SP': 2.0},
+    ) == 0
+
+
 def test_targetp_fold_pair_parser_validates_pairs():
     assert parse_targetp_fold_pairs('0:1, 2:3', available=[0, 1, 2, 3]) == [
         (0, 1),
@@ -406,6 +417,41 @@ def test_targetp_torch_oof_compose_replaces_only_covered_rows(temp_dir):
     }]
     assert result['metrics']['covered_rows'] == 4
     assert result['metrics']['by_class']['mTP']['f1'] == 1.0
+
+
+def test_targetp_torch_training_can_select_validation_threshold_macro(temp_dir):
+    pytest.importorskip('torch')
+    x, y_type, y_cs, lengths, org = _tiny_targetp_arrays()
+    payload = fit_targetp2_torch_model(
+        x_train=x[:6],
+        y_type_train=y_type[:6],
+        y_cs_train=y_cs[:6],
+        len_train=lengths[:6],
+        org_train=org[:6],
+        x_val=x[6:],
+        y_type_val=y_type[6:],
+        y_cs_val=y_cs[6:],
+        len_val=lengths[6:],
+        org_val=org[6:],
+        seed=7,
+        device='cpu',
+        seq_len=12,
+        hidden_rnn=4,
+        n_filters=3,
+        hidden_fc=5,
+        attention_size=4,
+        n_attention=5,
+        batch_size=3,
+        epochs=2,
+        learning_rate=0.01,
+        selection_metric='val_threshold_macro_f1',
+        selection_threshold_grid=[1.0, 2.0],
+        cleavage_loss_weight=0.0,
+        rnn_impl='targetp_tf_cell',
+    )
+
+    assert 'val_threshold_macro_f1' in payload['best_metrics']
+    assert isinstance(payload['best_metrics']['val_thresholds'], dict)
 
 
 def test_targetp_torch_training_can_resume_epoch_checkpoint(temp_dir):
