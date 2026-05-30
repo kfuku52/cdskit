@@ -10,6 +10,7 @@ from cdskit.localize_model import (
 from cdskit.targetp_torch import (
     TARGETP_BLOSUM62_ORDER,
     TARGETP_BLOSUM62_PROBABILITIES,
+    compose_targetp_torch_oof_replacements,
     encode_targetp_blosum_sequences,
     export_targetp2_torch_localize_model,
     fit_targetp2_torch_model,
@@ -352,6 +353,59 @@ def test_targetp_fold_pair_parser_validates_pairs():
         parse_targetp_fold_pairs('1-2', available=[0, 1, 2])
     with pytest.raises(ValueError):
         parse_targetp_fold_pairs('1:5', available=[0, 1, 2])
+
+
+def test_targetp_torch_oof_compose_replaces_only_covered_rows(temp_dir):
+    base_path = temp_dir / 'base.npz'
+    replacement_path = temp_dir / 'replacement.npz'
+    class_names = np.asarray(LOCALIZATION_CLASSES)
+    true_idx = np.asarray([0, 1, 2, 3], dtype=np.int64)
+    fold_ids = np.asarray([0, 0, 1, 1], dtype=np.int64)
+    base_prob = np.asarray([
+        [0.9, 0.1, 0.0, 0.0, 0.0],
+        [0.1, 0.9, 0.0, 0.0, 0.0],
+        [0.9, 0.0, 0.1, 0.0, 0.0],
+        [0.9, 0.0, 0.0, 0.1, 0.0],
+    ], dtype=np.float64)
+    replacement_scores = np.zeros_like(base_prob)
+    replacement_scores[2, :] = [0.0, 0.0, 8.0, 0.0, 0.0]
+    replacement_scores[3, :] = [0.0, 3.0, 0.0, 1.0, 0.0]
+    replacement_count = np.asarray([0, 0, 2, 2], dtype=np.int64)
+
+    np.savez_compressed(
+        base_path,
+        prob_matrix=base_prob,
+        true_idx=true_idx,
+        class_names=class_names,
+        fold_ids=fold_ids,
+    )
+    np.savez_compressed(
+        replacement_path,
+        prob_matrix=base_prob,
+        true_idx=true_idx,
+        class_names=class_names,
+        fold_ids=fold_ids,
+        val_threshold_score_matrix=replacement_scores,
+        val_threshold_count=replacement_count,
+    )
+
+    result = compose_targetp_torch_oof_replacements(
+        base_oof_npz=str(base_path),
+        replacement_oof_npzs=[str(replacement_path)],
+        source='val_threshold',
+    )
+
+    np.testing.assert_allclose(result['prob_matrix'][:2], base_prob[:2])
+    np.testing.assert_allclose(result['prob_matrix'][2], [0.0, 0.0, 1.0, 0.0, 0.0])
+    np.testing.assert_allclose(result['prob_matrix'][3], [0.0, 0.75, 0.0, 0.25, 0.0])
+    assert result['replacements'] == [{
+        'path': str(replacement_path),
+        'source': 'val_threshold',
+        'rows': 2,
+        'folds': [1],
+    }]
+    assert result['metrics']['covered_rows'] == 4
+    assert result['metrics']['by_class']['mTP']['f1'] == 1.0
 
 
 def test_targetp_torch_training_can_resume_epoch_checkpoint(temp_dir):

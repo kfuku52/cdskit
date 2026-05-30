@@ -1667,6 +1667,122 @@ def write_targetp2_torch_report(path, result, profile):
         json.dump(out, handle, indent=2, sort_keys=True)
 
 
+def _normalize_targetp_score_rows(score_matrix):
+    scores = np.clip(np.asarray(score_matrix, dtype=np.float64), 0.0, None)
+    if scores.ndim != 2:
+        raise ValueError('TargetP score matrix should be two-dimensional.')
+    prob_matrix = np.zeros_like(scores, dtype=np.float64)
+    row_sum = np.sum(scores, axis=1)
+    covered = row_sum > 0.0
+    prob_matrix[covered, :] = scores[covered, :] / row_sum[covered].reshape((-1, 1))
+    if np.any(~covered) and scores.shape[1] > 0:
+        prob_matrix[~covered, 0] = 1.0
+    return prob_matrix
+
+
+def _load_targetp_oof_npz(path):
+    with np.load(path, allow_pickle=False) as loaded:
+        return {
+            key: np.asarray(loaded[key])
+            for key in loaded.files
+        }
+
+
+def compose_targetp_torch_oof_replacements(base_oof_npz, replacement_oof_npzs, source='val_threshold'):
+    source = str(source or 'val_threshold').strip().lower()
+    if source not in ['val_threshold', 'prob_matrix']:
+        raise ValueError("source should be 'val_threshold' or 'prob_matrix'.")
+    base = _load_targetp_oof_npz(base_oof_npz)
+    required = ['prob_matrix', 'true_idx', 'class_names', 'fold_ids']
+    for key in required:
+        if key not in base:
+            raise ValueError('Base OOF cache is missing {}: {}'.format(key, base_oof_npz))
+    prob_matrix = np.asarray(base['prob_matrix'], dtype=np.float64).copy()
+    true_idx = np.asarray(base['true_idx'], dtype=np.int64)
+    fold_ids = np.asarray(base['fold_ids'], dtype=np.int64)
+    class_names = np.asarray(base['class_names'])
+    if prob_matrix.shape[0] != true_idx.shape[0] or prob_matrix.shape[0] != fold_ids.shape[0]:
+        raise ValueError('Base OOF cache has inconsistent row counts: {}'.format(base_oof_npz))
+
+    replaced = np.zeros((prob_matrix.shape[0],), dtype=bool)
+    replacement_rows = list()
+    for replacement_path in replacement_oof_npzs:
+        replacement = _load_targetp_oof_npz(replacement_path)
+        for key in required:
+            if key not in replacement:
+                raise ValueError('Replacement OOF cache is missing {}: {}'.format(key, replacement_path))
+        if not np.array_equal(true_idx, np.asarray(replacement['true_idx'], dtype=np.int64)):
+            raise ValueError('Replacement true labels do not match base OOF: {}'.format(replacement_path))
+        if not np.array_equal(fold_ids, np.asarray(replacement['fold_ids'], dtype=np.int64)):
+            raise ValueError('Replacement fold ids do not match base OOF: {}'.format(replacement_path))
+        if not np.array_equal(class_names, np.asarray(replacement['class_names'])):
+            raise ValueError('Replacement class names do not match base OOF: {}'.format(replacement_path))
+        if source == 'val_threshold':
+            if 'val_threshold_score_matrix' not in replacement or 'val_threshold_count' not in replacement:
+                raise ValueError(
+                    'Replacement OOF cache has no val-threshold scores: {}'.format(replacement_path)
+                )
+            replacement_prob = _normalize_targetp_score_rows(replacement['val_threshold_score_matrix'])
+            covered = np.asarray(replacement['val_threshold_count'], dtype=np.int64) > 0
+        else:
+            replacement_prob = np.asarray(replacement['prob_matrix'], dtype=np.float64)
+            if 'prob_count' in replacement:
+                covered = np.asarray(replacement['prob_count'], dtype=np.int64) > 0
+            elif 'covered_mask' in replacement:
+                covered = np.asarray(replacement['covered_mask'], dtype=bool)
+            else:
+                covered = np.ones((replacement_prob.shape[0],), dtype=bool)
+        if replacement_prob.shape != prob_matrix.shape:
+            raise ValueError('Replacement probability matrix shape mismatch: {}'.format(replacement_path))
+        if covered.shape[0] != prob_matrix.shape[0]:
+            raise ValueError('Replacement covered row count mismatch: {}'.format(replacement_path))
+        if np.any(replaced & covered):
+            overlap_folds = sorted(set(fold_ids[replaced & covered].astype(int).tolist()))
+            raise ValueError(
+                'Replacement OOF caches overlap on folds {}: {}'.format(overlap_folds, replacement_path)
+            )
+        prob_matrix[covered, :] = replacement_prob[covered, :]
+        replaced[covered] = True
+        replacement_rows.append({
+            'path': str(replacement_path),
+            'source': source,
+            'rows': int(np.sum(covered)),
+            'folds': sorted(set(fold_ids[covered].astype(int).tolist())),
+        })
+
+    pred_idx = np.argmax(prob_matrix, axis=1).astype(np.int64)
+    metrics = _targetp_metrics_from_prediction_indices(
+        true_idx=true_idx,
+        pred_idx=pred_idx,
+        class_names=list(class_names),
+    )
+    metrics['covered_rows'] = int(prob_matrix.shape[0])
+    metrics['total_rows'] = int(prob_matrix.shape[0])
+    return {
+        'prob_matrix': prob_matrix,
+        'true_idx': true_idx,
+        'class_names': class_names,
+        'fold_ids': fold_ids,
+        'covered_mask': np.ones((prob_matrix.shape[0],), dtype=bool),
+        'prob_count': np.ones((prob_matrix.shape[0],), dtype=np.int64),
+        'metrics': metrics,
+        'replacements': replacement_rows,
+    }
+
+
+def write_targetp2_torch_compose_report(path, result, profile):
+    out_dir = os.path.dirname(path)
+    if out_dir != '':
+        os.makedirs(out_dir, exist_ok=True)
+    out = {
+        'profile': profile,
+        'metrics': result['metrics'],
+        'replacements': result['replacements'],
+    }
+    with open(path, 'w', encoding='utf-8') as handle:
+        json.dump(out, handle, indent=2, sort_keys=True)
+
+
 def class_probabilities_from_vector(prob_vec):
     prob_vec = np.asarray(prob_vec, dtype=np.float64)
     prob_vec = np.clip(prob_vec, 0.0, None)

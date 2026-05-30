@@ -232,8 +232,10 @@ selection.
 | cdskit TargetP organism-specialized RF100 stack + delayed lTP/noTP specialists | 0.801 | 0.961 | fair foldwise stack trains separate plant and non-plant meta-classifiers, then applies nested noTP-to-cTP and plant cTP-to-lTP specialists; exact macro F1 0.80074 |
 | cdskit TargetP organism-specialized RF100 stack + tuned lTP specialist | 0.803 | 0.962 | same stack with the lTP/cTP specialist tuned independently as RF50, `balanced_subsample`, leaf2; exact macro F1 0.80274 |
 | cdskit TargetP2-style Torch h256 seed100 val-threshold OOF | 0.777 | 0.949 | fair paired OOF, CPU-capable at inference but trained on MPS locally; exact macro F1 0.77660 |
+| cdskit TargetP2-style Torch h256 seed100 all-outer inner4 OOF | 0.798 | 0.960 | fair OOF composed by applying the same four-inner-model validation-threshold average rule to every outer fold; exact macro F1 0.79763 |
 | cdskit TargetP stack + h256 seed100 foldwise blend | 0.819 | 0.966 | foldwise classwise alpha and thresholds selected only on training folds; exact macro F1 0.81945 |
-| cdskit TargetP stack + h256 seed100 foldwise blend + lTP specialist | 0.828 | 0.965 | same foldwise blend followed by a plant cTP-to-lTP specialist trained and thresholded only on training folds; exact macro F1 0.82779, best reproducible fair score so far |
+| cdskit TargetP stack + h256 seed100 foldwise blend + lTP specialist | 0.828 | 0.965 | same foldwise blend followed by a plant cTP-to-lTP specialist trained and thresholded only on training folds; exact macro F1 0.82779 |
+| cdskit TargetP stack + h256 seed100 all-outer inner4 foldwise blend | 0.832 | 0.967 | same stack blended with the all-outer inner4 Torch OOF; exact macro F1 0.83183, best reproducible fair score so far |
 
 The command used for the feature/ESM run was:
 
@@ -322,17 +324,34 @@ PYTHONPATH=. python -m cdskit.targetp_stack \
   --out_md data/localize_bench/targetp2_stack_rf100_orgsplit_ltp_signal_rs123_leaf2subsample_nogate_eval.md
 ```
 
-The current post-blend best uses the same stack OOF plus the fully regenerated
-h256 seed100 TargetP2-style Torch val-threshold OOF. The Torch model is used as
-an additional CPU-inference-capable signal; foldwise alpha, class thresholds,
-and the lTP specialist threshold are all selected on the training-fold
-complement:
+The current post-blend best uses the same stack OOF plus a fully regenerated
+h256 seed100 TargetP2-style Torch val-threshold OOF. The Torch OOF is composed
+with the same four-inner-model validation-threshold average rule for every
+outer fold, so no held-out fold gets a special hand-picked inner model. The
+Torch model is used as an additional CPU-inference-capable signal; foldwise
+alpha and class thresholds are selected on the training-fold complement. The
+extra lTP/cTP specialist no longer helps this stronger Torch signal (`0.82823`
+macro F1), so the plain post-blend row is the best fair score.
+
+The composed all-outer Torch OOF can be regenerated from the per-outer nested
+OOF caches with:
+
+```
+PYTHONPATH=. python scripts/targetp_torch_compose_oof.py \
+  --base_oof_npz data/localize_bench/targetp2_oof_targetp_torch_torchlstm_h256_e12_balbatch_typeonly_pair_seed100_valthrnorm.npz \
+  --replacement_oof_npzs data/localize_bench/targetp2_oof_targetp_torch_torchlstm_h256_e12_balbatch_typeonly_outer0_inner4_seed100_valthr.npz,data/localize_bench/targetp2_oof_targetp_torch_torchlstm_h256_e12_balbatch_typeonly_outer1_inner4_seed100_valthr.npz,data/localize_bench/targetp2_oof_targetp_torch_torchlstm_h256_e12_balbatch_typeonly_outer2_inner4_seed100_valthr.npz,data/localize_bench/targetp2_oof_targetp_torch_torchlstm_h256_e12_balbatch_typeonly_outer3_inner4_seed100_valthr.npz,data/localize_bench/targetp2_oof_targetp_torch_torchlstm_h256_e12_balbatch_typeonly_outer4_inner4_seed100_valthr.npz \
+  --source val_threshold \
+  --out_npz data/localize_bench/targetp2_oof_targetp_torch_torchlstm_h256_e12_balbatch_typeonly_allouter_inner4_seed100_valthrnorm.npz \
+  --out_json data/localize_bench/targetp2_torch_torchlstm_h256_e12_balbatch_typeonly_allouter_inner4_seed100_valthrnorm_compose.json
+```
+
+Then run the post-blend stack with:
 
 ```
 PYTHONPATH=. python -m cdskit.targetp_stack \
   --training_tsv data/localize_bench/targetp2_benchmark.tsv \
   --base_oof_npzs data/localize_bench/targetp2_oof_feature_binary_et600_leaf2_formal.npz,data/localize_bench/targetp2_oof_esm_formal_mps_b128.npz,data/localize_bench/targetp2_oof_feature_ensemble_formal_et300.npz,data/localize_bench/targetp2_oof_bilstm_formal_mps_b2048.npz \
-  --stack_oof_npz data/localize_bench/targetp2_oof_stack_rf100_orgsplit_postblend_h256_seed100.npz \
+  --stack_oof_npz data/localize_bench/targetp2_oof_stack_rf100_orgsplit_postblend_h256_seed100_allouter_inner4.npz \
   --model_kind random_forest \
   --n_estimators 100 \
   --random_state 11 \
@@ -352,12 +371,12 @@ PYTHONPATH=. python -m cdskit.targetp_stack \
   --ltp_ctp_score_max 0.90 \
   --ltp_ctp_score_step 0.01 \
   --notp_ctp_ltp_override no \
-  --post_blend_oof_npz data/localize_bench/targetp2_oof_targetp_torch_torchlstm_h256_e12_balbatch_typeonly_pair_seed100_valthrnorm.npz \
-  --post_blend_label h256_seed100 \
+  --post_blend_oof_npz data/localize_bench/targetp2_oof_targetp_torch_torchlstm_h256_e12_balbatch_typeonly_allouter_inner4_seed100_valthrnorm.npz \
+  --post_blend_label h256_seed100_allouter_inner4 \
   --post_blend_grid_step 0.1 \
   --post_blend_ltp_ctp_override yes \
-  --out_json data/localize_bench/targetp2_stack_rf100_orgsplit_postblend_h256_seed100_eval.json \
-  --out_md data/localize_bench/targetp2_stack_rf100_orgsplit_postblend_h256_seed100_eval.md
+  --out_json data/localize_bench/targetp2_stack_rf100_orgsplit_postblend_h256_seed100_allouter_inner4_eval.json \
+  --out_md data/localize_bench/targetp2_stack_rf100_orgsplit_postblend_h256_seed100_allouter_inner4_eval.md
 ```
 
 Do not apply the stack input organism gate when selecting this model: on the
@@ -404,8 +423,13 @@ fifth stack input did not help, but foldwise classwise blending between the
 RF100 stack and that Torch OOF did. The blend reaches exact macro F1 0.81945
 (`noTP` 0.979, `SP` 0.962, `mTP` 0.824, `cTP` 0.813, `lTP` 0.519); adding the
 same delayed lTP/cTP specialist raises this to 0.82779 (`cTP` 0.803, `lTP`
-0.571). A validation-selected seed0/seed100 h256 OOF was fair but less useful
-as a stack signal, reaching 0.757 standalone and 0.793 after stack blending.
+0.571). Replacing the paired Torch OOF with a fully symmetric all-outer inner4
+average raises the plain post-blend score to exact macro F1 0.83183 (`noTP`
+0.980, `SP` 0.965, `mTP` 0.812, `cTP` 0.815, `lTP` 0.587); the lTP/cTP
+specialist drops this stronger signal to 0.82823. Validation-selected h256
+OOFs were fair but less useful as stack signals: seed0/seed100 selection reached
+0.793 after stack blending, and seed100 inner-fold selection by validation
+threshold or validation macro F1 reached only 0.812-0.813.
 Other follow-up probes did not close the gap: averaging multiple lTP specialist
 random seeds reduced macro F1 to 0.785 or lower, two-way cTP/lTP
 reclassification peaked at 0.79498, appending the delayed lTP signal features
@@ -417,8 +441,8 @@ N-terminal amino acid positions also did not help as an added stack input: the
 best RF100+PSSM stack score was 0.784 macro F1.
 
 lTP remains the limiting class. The best post-blend run moves held-out lTP F1
-to 0.571, but that is still far below the TargetP 2.0 reference of 0.750, and
-cTP F1 is still 0.803 versus the TargetP reference of 0.880. Reaching
+to 0.587, but that is still far below the TargetP 2.0 reference of 0.750, and
+cTP F1 is still 0.815 versus the TargetP reference of 0.880. Reaching
 TargetP-like lTP/cTP performance likely requires a stronger sequence encoder or
 additional lTP-specific training data, not only threshold tuning.
 
