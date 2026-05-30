@@ -326,13 +326,15 @@ PYTHONPATH=. python -m cdskit.targetp_stack \
 ```
 
 The current post-blend best uses the same stack OOF plus a fully regenerated
-h256 seed100 TargetP2-style Torch val-threshold OOF. The Torch OOF is composed
-with the same four-inner-model validation-threshold average rule for every
-outer fold, so no held-out fold gets a special hand-picked inner model. The
-Torch model is used as an additional CPU-inference-capable signal; foldwise
-alpha and class thresholds are selected on the training-fold complement. The
-extra lTP/cTP specialist no longer helps this stronger Torch signal (`0.82823`
-macro F1), so the plain post-blend row is the best fair score.
+h256 seed100 TargetP2-style Torch val-threshold OOF and a strict external
+weak-label feature OOF. The Torch OOF is composed with the same
+four-inner-model validation-threshold average rule for every outer fold, so no
+held-out fold gets a special hand-picked inner model. The external OOF is
+trained foldwise from each target training-fold complement plus UniProt/DeepLoc
+rows after TargetP exact overlaps, ambiguous labels, non-plant plastid proxies,
+and conflicting duplicate sequences are removed. These signals are
+CPU-inference-capable; foldwise source weights and class thresholds are
+selected on the training-fold complement.
 
 The composed all-outer Torch OOF can be regenerated from the per-outer nested
 OOF caches with:
@@ -378,6 +380,55 @@ PYTHONPATH=. python -m cdskit.targetp_stack \
   --post_blend_ltp_ctp_override yes \
   --out_json data/localize_bench/targetp2_stack_rf100_orgsplit_postblend_h256_seed100_allouter_inner4_eval.json \
   --out_md data/localize_bench/targetp2_stack_rf100_orgsplit_postblend_h256_seed100_allouter_inner4_eval.md
+```
+
+The strict external weak-label OOF used by the 3-way best can be regenerated
+with:
+
+```
+PYTHONPATH=. python scripts/targetp_external_feature_oof.py \
+  --training_tsv data/localize_bench/targetp2_benchmark.tsv \
+  --uniprot_tsv data/localize_bench/eukaryota_full_with_lineage.tsv \
+  --deeploc_dir data/localize_bench/deeploc21 \
+  --include_deeploc yes \
+  --max_external_per_class 5000 \
+  --external_weight 0.25 \
+  --seed 101 \
+  --model_kind extra_trees \
+  --n_estimators 200 \
+  --random_state 2100 \
+  --class_weight balanced \
+  --max_features sqrt \
+  --min_samples_leaf 1 \
+  --out_npz data/localize_bench/targetp2_oof_feature_extaug_strict_et200_w0p25.npz \
+  --out_json data/localize_bench/targetp2_oof_feature_extaug_strict_et200_w0p25_eval.json
+```
+
+Then run the 3-way foldwise source blend:
+
+```
+PYTHONPATH=. python -m cdskit.targetp_stack \
+  --training_tsv data/localize_bench/targetp2_benchmark.tsv \
+  --base_oof_npzs data/localize_bench/targetp2_oof_feature_binary_et600_leaf2_formal.npz,data/localize_bench/targetp2_oof_esm_formal_mps_b128.npz,data/localize_bench/targetp2_oof_feature_ensemble_formal_et300.npz,data/localize_bench/targetp2_oof_bilstm_formal_mps_b2048.npz \
+  --stack_oof_npz data/localize_bench/targetp2_oof_stack_rf100_orgsplit_3way_extaug_w0p25_h256_seed100_allouter_inner4.npz \
+  --model_kind random_forest \
+  --n_estimators 100 \
+  --random_state 11 \
+  --class_weight balanced \
+  --max_features sqrt \
+  --min_samples_leaf 1 \
+  --include_sequence_features yes \
+  --organism_gate no \
+  --organism_specialized_stack yes \
+  --ltp_ctp_override no \
+  --notp_ctp_ltp_override no \
+  --post_blend_oof_npzs data/localize_bench/targetp2_oof_targetp_torch_torchlstm_h256_e12_balbatch_typeonly_allouter_inner4_seed100_valthrnorm.npz,data/localize_bench/targetp2_oof_feature_extaug_strict_et200_w0p25.npz \
+  --post_blend_label h256_seed100_allouter_inner4_extaug_strict_w0p25 \
+  --post_blend_grid_step 0.1 \
+  --post_blend_ltp_ctp_override no \
+  --threshold_grid 0.05,0.10,0.15,0.20,0.25,0.30,0.35,0.40,0.45,0.50,0.55,0.60,0.65,0.70,0.75,0.80,0.85,0.90,0.95,1.00,1.05,1.10,1.15,1.20,1.25,1.30,1.35,1.40,1.45,1.50,1.55,1.60,1.65,1.70,1.75,1.80,1.85,1.90,1.95,2.00 \
+  --out_json data/localize_bench/targetp2_stack_rf100_orgsplit_3way_extaug_w0p25_h256_seed100_allouter_inner4_eval.json \
+  --out_md data/localize_bench/targetp2_stack_rf100_orgsplit_3way_extaug_w0p25_h256_seed100_allouter_inner4_eval.md
 ```
 
 Do not apply the stack input organism gate when selecting this model: on the
