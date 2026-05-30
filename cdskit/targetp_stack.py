@@ -34,9 +34,12 @@ from cdskit.targetp_feature_ensemble import (
 )
 from cdskit.targetp_blend import (
     _apply_organism_gate,
+    _binary_crossfit_ensemble_scores,
+    _fit_binary_predict_ensemble_scores,
     _load_oof_npz,
     _read_organism_group_mask,
     _read_true_idx_from_training_tsv,
+    _targetp_sp_scan_features,
 )
 
 
@@ -65,6 +68,16 @@ TARGETP_STACK_NOTP_CTP_LTP_DEFAULTS = {
     'notp_ctp_n_estimators': 200,
     'notp_ctp_class_weight': '',
     'notp_ctp_min_samples_leaf': 0,
+}
+
+TARGETP_STACK_SP_SPECIALIST_DEFAULTS = {
+    'sp_override': False,
+    'sp_max_iter': 350,
+    'sp_learning_rate': 0.04,
+    'sp_l2_regularization': 0.01,
+    'sp_random_states': [2, 13, 31],
+    'sp_weights': [0.22251605108894593, 0.24685472258402566, 0.5306292263270285],
+    'sp_extra_thresholds': [0.6975, 0.5, 0.9],
 }
 
 
@@ -438,6 +451,315 @@ def evaluate_foldwise_classwise_multi_blend(
             'source_labels': list(source_labels),
             'n_sources': int(len(source_labels)),
             'n_weight_grid': int(len(weight_grid)),
+        },
+    }
+
+
+def _sp_specialist_feature_matrix(rows, base_prob, prob_matrices, class_names):
+    base_prob = np.asarray(base_prob, dtype=np.float64)
+    prob_matrices = [np.asarray(prob, dtype=np.float64) for prob in prob_matrices]
+    if len(prob_matrices) == 0:
+        raise ValueError('At least one probability matrix is required.')
+    if len(rows) != base_prob.shape[0]:
+        raise ValueError('Training rows and base probabilities have different row counts.')
+    ctp_idx = int(list(class_names).index('cTP'))
+    ltp_idx = int(list(class_names).index('lTP'))
+    ltp_ratio = base_prob[:, ltp_idx] / np.clip(
+        base_prob[:, ctp_idx] + base_prob[:, ltp_idx],
+        a_min=1.0e-12,
+        a_max=None,
+    )
+    ctp_ltp_mass = base_prob[:, ctp_idx] + base_prob[:, ltp_idx]
+    sp_features = np.asarray([
+        _targetp_sp_scan_features(row.get('sequence', ''))
+        for row in rows
+    ], dtype=np.float64)
+    plant_flag = plant_mask_from_rows(rows=rows).astype(np.float64).reshape((-1, 1))
+    return np.hstack([
+        sp_features,
+        base_prob,
+        np.hstack(prob_matrices),
+        ltp_ratio.reshape((-1, 1)),
+        ctp_ltp_mass.reshape((-1, 1)),
+        plant_flag,
+    ])
+
+
+def _make_sp_specialist_classifier(
+    random_state,
+    max_iter=350,
+    learning_rate=0.04,
+    l2_regularization=0.01,
+):
+    from sklearn.ensemble import HistGradientBoostingClassifier
+    return HistGradientBoostingClassifier(
+        max_iter=int(max_iter),
+        learning_rate=float(learning_rate),
+        l2_regularization=float(l2_regularization),
+        random_state=int(random_state),
+        class_weight='balanced',
+    )
+
+
+def _sp_specialist_prediction_indices(
+    base_prob,
+    thresholds,
+    base_pred,
+    sp_scores,
+    sp_threshold,
+    class_names,
+):
+    class_names = list(class_names)
+    sp_idx = int(class_names.index('SP'))
+    base_prob = np.asarray(base_prob, dtype=np.float64)
+    thresholds = np.asarray(thresholds, dtype=np.float64)
+    pred = np.asarray(base_pred, dtype=np.int64).copy()
+    score_matrix = base_prob / thresholds.reshape((1, -1))
+    non_sp_score_matrix = score_matrix.copy()
+    non_sp_score_matrix[:, sp_idx] = -np.inf
+    non_sp_pred = np.argmax(non_sp_score_matrix, axis=1).astype(np.int64)
+    sp_positive = np.asarray(sp_scores, dtype=np.float64) >= float(sp_threshold)
+    pred[sp_positive] = sp_idx
+    demote_sp = (~sp_positive) & (pred == sp_idx)
+    pred[demote_sp] = non_sp_pred[demote_sp]
+    return pred
+
+
+def _optimize_sp_specialist_threshold(
+    base_prob,
+    thresholds,
+    base_pred,
+    sp_scores,
+    true_idx,
+    class_names,
+    extra_thresholds=None,
+):
+    sp_scores = np.asarray(sp_scores, dtype=np.float64)
+    candidates = list(np.unique(sp_scores).tolist())
+    if extra_thresholds is not None:
+        candidates.extend([float(value) for value in extra_thresholds])
+    if len(candidates) == 0:
+        candidates = [0.5]
+    best_threshold = float(candidates[0])
+    best_metrics = None
+    for threshold in sorted(set([float(value) for value in candidates])):
+        pred = _sp_specialist_prediction_indices(
+            base_prob=base_prob,
+            thresholds=thresholds,
+            base_pred=base_pred,
+            sp_scores=sp_scores,
+            sp_threshold=threshold,
+            class_names=class_names,
+        )
+        metrics = _metrics_from_prediction_indices(
+            pred_idx=pred,
+            true_idx=true_idx,
+            class_names=class_names,
+        )
+        if best_metrics is None or metrics['macro_f1'] > best_metrics['macro_f1']:
+            best_threshold = float(threshold)
+            best_metrics = metrics
+    return best_threshold, best_metrics
+
+
+def evaluate_foldwise_classwise_multi_blend_sp_override(
+    prob_matrices,
+    true_idx,
+    fold_ids,
+    rows,
+    class_names,
+    source_labels,
+    weight_grid,
+    threshold_grid,
+    fixed_fold_rows=None,
+    sp_random_states=None,
+    sp_weights=None,
+    sp_max_iter=350,
+    sp_learning_rate=0.04,
+    sp_l2_regularization=0.01,
+    sp_extra_thresholds=None,
+):
+    prob_matrices = [np.asarray(prob, dtype=np.float64) for prob in prob_matrices]
+    true_idx = np.asarray(true_idx, dtype=np.int64)
+    fold_ids = np.asarray(fold_ids)
+    class_names = list(class_names)
+    source_labels = list(source_labels)
+    if len(source_labels) != len(prob_matrices):
+        raise ValueError('source_labels should match prob_matrices.')
+    if sp_random_states is None:
+        sp_random_states = TARGETP_STACK_SP_SPECIALIST_DEFAULTS['sp_random_states']
+    if sp_weights is None:
+        sp_weights = TARGETP_STACK_SP_SPECIALIST_DEFAULTS['sp_weights']
+    if sp_extra_thresholds is None:
+        sp_extra_thresholds = TARGETP_STACK_SP_SPECIALIST_DEFAULTS['sp_extra_thresholds']
+    fixed_fold_by_id = None
+    if fixed_fold_rows is not None:
+        fixed_fold_by_id = {
+            str(row['fold_id']): row for row in fixed_fold_rows
+        }
+    pred_idx = np.zeros((true_idx.shape[0],), dtype=np.int64)
+    fold_rows = list()
+    for fold_id in sorted(set([str(value) for value in fold_ids.tolist()])):
+        valid_mask = np.asarray([str(value) == fold_id for value in fold_ids.tolist()], dtype=bool)
+        train_mask = ~valid_mask
+        train_probs = [prob[train_mask, :] for prob in prob_matrices]
+        valid_probs = [prob[valid_mask, :] for prob in prob_matrices]
+        if fixed_fold_by_id is None:
+            weights, weight_metrics = _optimize_classwise_multi_weights(
+                prob_matrices=train_probs,
+                true_idx=true_idx[train_mask],
+                class_names=class_names,
+                weight_grid=weight_grid,
+            )
+            thresholds, threshold_metrics = None, None
+        else:
+            fixed_fold = fixed_fold_by_id.get(str(fold_id))
+            if fixed_fold is None:
+                raise ValueError('Missing fixed fold row for fold {}'.format(fold_id))
+            weights = np.asarray([
+                [
+                    fixed_fold['weights_by_class'][class_name][source_label]
+                    for source_label in source_labels
+                ]
+                for class_name in class_names
+            ], dtype=np.float64)
+            weight_metrics = {
+                'macro_f1': float(fixed_fold.get('train_weight_macro_f1', 0.0))
+            }
+            thresholds = np.asarray([
+                fixed_fold['class_thresholds'][class_name]
+                for class_name in class_names
+            ], dtype=np.float64)
+            threshold_metrics = {
+                'macro_f1': float(fixed_fold.get('train_threshold_macro_f1', 0.0))
+            }
+
+        train_blend = _blend_classwise_multi(
+            prob_matrices=train_probs,
+            weights_by_class=weights,
+        )
+        valid_blend = _blend_classwise_multi(
+            prob_matrices=valid_probs,
+            weights_by_class=weights,
+        )
+        if thresholds is None:
+            thresholds, threshold_metrics = optimize_class_thresholds(
+                prob_matrix=train_blend,
+                true_idx=true_idx[train_mask],
+                class_names=class_names,
+                grid=threshold_grid,
+            )
+        train_pred = _prediction_indices_with_thresholds(
+            prob_matrix=train_blend,
+            thresholds=thresholds,
+        )
+        valid_pred = _prediction_indices_with_thresholds(
+            prob_matrix=valid_blend,
+            thresholds=thresholds,
+        )
+        fold_base_prob = _blend_classwise_multi(
+            prob_matrices=prob_matrices,
+            weights_by_class=weights,
+        )
+        features = _sp_specialist_feature_matrix(
+            rows=rows,
+            base_prob=fold_base_prob,
+            prob_matrices=prob_matrices,
+            class_names=class_names,
+        )
+        sp_idx = int(class_names.index('SP'))
+        make_models = [
+            (
+                lambda seed=seed: _make_sp_specialist_classifier(
+                    random_state=seed,
+                    max_iter=sp_max_iter,
+                    learning_rate=sp_learning_rate,
+                    l2_regularization=sp_l2_regularization,
+                )
+            )
+            for seed in sp_random_states
+        ]
+        train_scores = _binary_crossfit_ensemble_scores(
+            features=features,
+            true_idx=true_idx,
+            fold_ids=fold_ids,
+            fit_mask=train_mask,
+            score_mask=train_mask,
+            positive_idx=sp_idx,
+            make_models=make_models,
+            weights=sp_weights,
+        )
+        sp_threshold, sp_train_metrics = _optimize_sp_specialist_threshold(
+            base_prob=train_blend,
+            thresholds=thresholds,
+            base_pred=train_pred,
+            sp_scores=train_scores[train_mask],
+            true_idx=true_idx[train_mask],
+            class_names=class_names,
+            extra_thresholds=sp_extra_thresholds,
+        )
+        valid_scores = _fit_binary_predict_ensemble_scores(
+            features=features,
+            true_idx=true_idx,
+            fit_mask=train_mask,
+            predict_mask=valid_mask,
+            positive_idx=sp_idx,
+            make_models=make_models,
+            weights=sp_weights,
+        )
+        pred_idx[valid_mask] = _sp_specialist_prediction_indices(
+            base_prob=valid_blend,
+            thresholds=thresholds,
+            base_pred=valid_pred,
+            sp_scores=valid_scores[valid_mask],
+            sp_threshold=sp_threshold,
+            class_names=class_names,
+        )
+        fold_rows.append({
+            'fold_id': str(fold_id),
+            'weights_by_class': {
+                class_names[class_i]: {
+                    source_labels[source_i]: float(weights[class_i, source_i])
+                    for source_i in range(len(source_labels))
+                }
+                for class_i in range(len(class_names))
+            },
+            'class_thresholds': {
+                class_names[i]: float(thresholds[i]) for i in range(len(class_names))
+            },
+            'train_weight_macro_f1': float(weight_metrics['macro_f1']),
+            'train_threshold_macro_f1': float(threshold_metrics['macro_f1']),
+            'sp_score_threshold': float(sp_threshold),
+            'sp_train_macro_f1': float(sp_train_metrics['macro_f1']),
+            'n_train': int(np.sum(train_mask)),
+            'n_valid': int(np.sum(valid_mask)),
+        })
+    return {
+        'description': (
+            'Each held-out fold is predicted using classwise convex source '
+            'weights and class thresholds optimized on the other folds, '
+            'followed by an SP specialist trained and thresholded only on the '
+            'other folds.'
+        ),
+        'metrics': _metrics_from_prediction_indices(
+            pred_idx=pred_idx,
+            true_idx=true_idx,
+            class_names=class_names,
+        ),
+        'folds': fold_rows,
+        'profile': {
+            'source_labels': list(source_labels),
+            'n_sources': int(len(source_labels)),
+            'n_weight_grid': int(len(weight_grid)),
+            'fixed_fold_rows': fixed_fold_rows is not None,
+            'sp_feature_profile': 'targetp_sp_signal_plus_sources_v1',
+            'sp_model_kind': 'hist_gradient_boosting',
+            'sp_max_iter': int(sp_max_iter),
+            'sp_learning_rate': float(sp_learning_rate),
+            'sp_l2_regularization': float(sp_l2_regularization),
+            'sp_random_states': [int(value) for value in sp_random_states],
+            'sp_weights': [float(value) for value in sp_weights],
+            'sp_extra_thresholds': [float(value) for value in sp_extra_thresholds],
         },
     }
 
@@ -1521,6 +1843,12 @@ def build_parser():
     parser.add_argument('--post_blend_label', default='post_blend', type=str)
     parser.add_argument('--post_blend_grid_step', default=0.10, type=float)
     parser.add_argument('--post_blend_ltp_ctp_override', default='yes', choices=['yes', 'no'], type=str)
+    parser.add_argument(
+        '--post_blend_sp_override',
+        default='yes' if TARGETP_STACK_SP_SPECIALIST_DEFAULTS['sp_override'] else 'no',
+        choices=['yes', 'no'],
+        type=str,
+    )
     parser.add_argument('--threshold_grid', default='0.05,0.075,0.1,0.15,0.2,0.3,0.4,0.5,0.65,0.8,1.0,1.25,1.5,2.0,3.0,5.0', type=str)
     parser.add_argument('--out_json', default='data/localize_bench/targetp2_stack_eval.json', type=str)
     parser.add_argument('--out_md', default='data/localize_bench/targetp2_stack_eval.md', type=str)
@@ -1691,6 +2019,10 @@ def main():
         ] + [1.0]))
         post_blend_label = str(args.post_blend_label).strip() or 'post_blend'
         post_blend_key = 'stack_{}_foldwise_blend'.format(post_blend_label)
+        source_labels = ['stack'] + [
+            'post_blend_{}'.format(path_i + 1)
+            for path_i in range(len(post_blend_probs))
+        ]
         if len(post_blend_probs) == 1:
             results[post_blend_key] = evaluate_foldwise_classwise_blend(
                 prob_a=oof['prob_matrix'],
@@ -1702,10 +2034,6 @@ def main():
                 threshold_grid=threshold_grid,
             )
         else:
-            source_labels = ['stack'] + [
-                'post_blend_{}'.format(path_i + 1)
-                for path_i in range(len(post_blend_probs))
-            ]
             results[post_blend_key] = evaluate_foldwise_classwise_multi_blend(
                 prob_matrices=[oof['prob_matrix']] + post_blend_probs,
                 true_idx=oof['true_idx'],
@@ -1765,6 +2093,22 @@ def main():
                 ltp_ctp_class_weight=ltp_ctp_class_weight,
                 ltp_ctp_min_samples_leaf=ltp_ctp_min_samples_leaf,
                 ltp_source_classes=args.ltp_source_classes,
+                fixed_fold_rows=results[post_blend_key]['folds'],
+            )
+        if _to_bool(args.post_blend_sp_override):
+            post_blend_sp_key = '{}_sp_override'.format(post_blend_key)
+            results[post_blend_sp_key] = evaluate_foldwise_classwise_multi_blend_sp_override(
+                prob_matrices=[oof['prob_matrix']] + post_blend_probs,
+                true_idx=oof['true_idx'],
+                fold_ids=oof['fold_ids'],
+                rows=rows,
+                class_names=oof['class_names'],
+                source_labels=source_labels,
+                weight_grid=_convex_weight_grid(
+                    n_sources=1 + len(post_blend_probs),
+                    step=post_blend_step,
+                ),
+                threshold_grid=threshold_grid,
                 fixed_fold_rows=results[post_blend_key]['folds'],
             )
     out = {

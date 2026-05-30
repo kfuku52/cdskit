@@ -239,7 +239,8 @@ selection.
 | cdskit TargetP stack + h256 seed100 all-outer inner4 + strict external weak-label 3-way foldwise blend | 0.837 | 0.966 | foldwise classwise convex blend of the stack, all-outer inner4 Torch OOF, and strict non-overlapping UniProt/DeepLoc external-augmented feature OOF; exact macro F1 0.83683 |
 | cdskit TargetP stack + h256 seed100 all-outer inner4 + strict external + thylakoid-lumen external 4-way foldwise blend | 0.840 | 0.967 | adds a low-weight UniProt SL-0057/SL-0309 thylakoid-lumen weak-label source to improve lTP; exact macro F1 0.84006 |
 | cdskit TargetP 4-way foldwise blend + cTP/noTP lTP rescue | 0.842 | 0.967 | same fixed foldwise source blend, followed by a plant lTP specialist that may rescue cTP or noTP calls to lTP using only other-fold labels; exact macro F1 0.84218 |
-| cdskit TargetP RF300 meta-stack + 5-source foldwise blend | 0.859 | 0.968 | reproducible second-level RF300 stack over stack/Torch/strict-external OOF probabilities, then foldwise classwise blend with the base stack, Torch, strict external, and thylakoid-lumen external sources; exact macro F1 0.85909, current best fair score so far |
+| cdskit TargetP RF300 meta-stack + 5-source foldwise blend | 0.859 | 0.968 | reproducible second-level RF300 stack over stack/Torch/strict-external OOF probabilities, then foldwise classwise blend with the base stack, Torch, strict external, and thylakoid-lumen external sources; exact macro F1 0.85909 |
+| cdskit TargetP RF300 meta-stack + 5-source blend + SP specialist | 0.861 | 0.971 | same fair 5-source blend followed by an SP specialist trained and thresholded only on the other folds; exact macro F1 0.86082, current best fair score so far |
 
 The command used for the feature/ESM run was:
 
@@ -508,7 +509,7 @@ only on the other folds:
 PYTHONPATH=. python -m cdskit.targetp_stack \
   --training_tsv data/localize_bench/targetp2_benchmark.tsv \
   --base_oof_npzs data/localize_bench/targetp2_oof_stack_rf100_orgsplit_4way_extaug_strict_thylum_sl0057_w0p05_h256_seed100_allouter_inner4.npz,data/localize_bench/targetp2_oof_targetp_torch_torchlstm_h256_e12_balbatch_typeonly_allouter_inner4_seed100_valthrnorm.npz,data/localize_bench/targetp2_oof_feature_extaug_strict_et200_w0p25.npz \
-  --stack_oof_npz data/localize_bench/targetp2_oof_meta_rf300_leaf2_stack_torch_ext_repro.npz \
+  --stack_oof_npz data/localize_bench/targetp2_oof_meta_rf300_leaf2_stack_torch_ext_repro_sp.npz \
   --model_kind random_forest \
   --n_estimators 300 \
   --random_state 11 \
@@ -521,28 +522,20 @@ PYTHONPATH=. python -m cdskit.targetp_stack \
   --ltp_ctp_override no \
   --notp_ctp_ltp_override no \
   --post_blend_oof_npzs data/localize_bench/targetp2_oof_stack_rf100_orgsplit_4way_extaug_strict_thylum_sl0057_w0p05_h256_seed100_allouter_inner4.npz,data/localize_bench/targetp2_oof_targetp_torch_torchlstm_h256_e12_balbatch_typeonly_allouter_inner4_seed100_valthrnorm.npz,data/localize_bench/targetp2_oof_feature_extaug_strict_et200_w0p25.npz,data/localize_bench/targetp2_oof_feature_extaug_thylum_sl0057_et200_w0p05.npz \
-  --post_blend_label meta_rf300_stack_torch_ext_plus_sources_thylum_step02 \
+  --post_blend_label meta_rf300_stack_torch_ext_plus_sources_thylum_step02_sp \
   --post_blend_grid_step 0.2 \
-  --post_blend_ltp_ctp_override yes \
-  --ltp_ctp_model_kind extra_trees \
-  --ltp_ctp_n_estimators 300 \
-  --ltp_ctp_random_state 6100 \
-  --ltp_ctp_class_weight balanced \
-  --ltp_ctp_min_samples_leaf 1 \
-  --ltp_source_classes cTP,noTP \
-  --ltp_ctp_score_min 0.02 \
-  --ltp_ctp_score_max 0.98 \
-  --ltp_ctp_score_step 0.02 \
+  --post_blend_ltp_ctp_override no \
+  --post_blend_sp_override yes \
   --threshold_grid 0.05,0.10,0.15,0.20,0.25,0.30,0.35,0.40,0.45,0.50,0.55,0.60,0.65,0.70,0.75,0.80,0.85,0.90,0.95,1.00,1.05,1.10,1.15,1.20,1.25,1.30,1.35,1.40,1.45,1.50,1.55,1.60,1.65,1.70,1.75,1.80,1.85,1.90,1.95,2.00 \
-  --out_json data/localize_bench/targetp2_meta_rf300_stack_torch_ext_repro_5source_thylum_step02_eval.json \
-  --out_md data/localize_bench/targetp2_meta_rf300_stack_torch_ext_repro_5source_thylum_step02_eval.md
+  --out_json data/localize_bench/targetp2_meta_rf300_stack_torch_ext_repro_5source_thylum_step02_sp_eval.json \
+  --out_md data/localize_bench/targetp2_meta_rf300_stack_torch_ext_repro_5source_thylum_step02_sp_eval.md
 ```
 
-The non-rescue foldwise blend in this output improves the fair estimate to
-exact macro F1 0.85909 (`noTP` 0.981, `SP` 0.964, `mTP` 0.837, `cTP` 0.846,
-`lTP` 0.667). It is a real improvement over 0.84218, but it still does not
-reach the TargetP 2.0 paper macro F1 0.890; the remaining gap is mostly lTP
-recall, with smaller SP, mTP, and cTP deficits.
+The SP-specialist row in this output improves the fair estimate to exact macro
+F1 0.86082 (`noTP` 0.983, `SP` 0.971, `mTP` 0.838, `cTP` 0.846, `lTP` 0.667).
+It is a real improvement over 0.84218 and the non-SP 0.85909 meta-stack, but it
+still does not reach the TargetP 2.0 paper macro F1 0.890; the remaining gap is
+mostly lTP recall, with smaller SP, mTP, and cTP deficits.
 
 Do not apply the stack input organism gate when selecting this model: on the
 same regenerated OOF inputs, gating the cTP/lTP columns before the meta-model
