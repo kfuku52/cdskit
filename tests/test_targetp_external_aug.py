@@ -61,6 +61,7 @@ def test_strict_uniprot_targetp_label_skips_lumen_noise():
 def test_build_external_augmented_rows_filters_overlaps_and_conflicts(temp_dir):
     targetp = temp_dir / 'targetp.tsv'
     uniprot = temp_dir / 'uniprot.tsv'
+    extra_uniprot = temp_dir / 'extra_uniprot.tsv'
     _write_tsv(
         targetp,
         ['accession', 'sequence', 'localization', 'peroxisome', 'organism_group', 'fold_id'],
@@ -102,19 +103,33 @@ def test_build_external_augmented_rows_filters_overlaps_and_conflicts(temp_dir):
             },
         ],
     )
+    _write_tsv(
+        extra_uniprot,
+        ['accession', 'sequence', 'cc_subcellular_location', 'lineage_ids'],
+        [
+            {
+                'accession': 'U5',
+                'sequence': 'MEXTRALTP',
+                'cc_subcellular_location': 'SUBCELLULAR LOCATION: Plastid, chloroplast thylakoid lumen.',
+                'lineage_ids': '2759,33090',
+            },
+        ],
+    )
 
     rows, report = build_external_augmented_training_rows(
         targetp_tsv=str(targetp),
         uniprot_tsv=str(uniprot),
+        extra_uniprot_tsvs=[str(extra_uniprot)],
         include_deeploc=False,
         max_per_class=10,
         seed=1,
     )
 
-    assert sorted(row['localization'] for row in rows) == ['cTP', 'lTP']
+    assert sorted(row['localization'] for row in rows) == ['cTP', 'lTP', 'lTP']
     assert report['skipped']['uniprot_targetp_exact_overlap'] == 1
+    assert 'extra_uniprot1_missing_location_text' not in report['skipped']
     assert report['skipped']['conflicting_duplicate_sequence'] == 1
-    assert report['sampled_counts'] == {'cTP': 1, 'lTP': 1}
+    assert report['sampled_counts'] == {'cTP': 1, 'lTP': 2}
 
 
 def test_external_augmented_feature_oof_is_foldwise(temp_dir):

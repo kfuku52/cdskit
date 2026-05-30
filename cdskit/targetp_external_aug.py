@@ -185,6 +185,7 @@ def _sample_external_rows(rows, max_per_class, seed):
 def build_external_augmented_training_rows(
     targetp_tsv,
     uniprot_tsv,
+    extra_uniprot_tsvs=None,
     deeploc_dir='',
     include_deeploc=True,
     max_per_class=5000,
@@ -193,13 +194,24 @@ def build_external_augmented_training_rows(
     targetp_keys = load_targetp_exclusion_keys(targetp_tsv=targetp_tsv)
     rows = list()
     skipped = Counter()
-    uniprot_rows, uniprot_skipped = build_strict_uniprot_external_rows(
-        path=uniprot_tsv,
-        targetp_keys=targetp_keys,
-        exclude_exact=True,
-    )
-    rows.extend(uniprot_rows)
-    skipped.update({'uniprot_{}'.format(key): value for key, value in uniprot_skipped.items()})
+    uniprot_paths = [str(uniprot_tsv)]
+    if extra_uniprot_tsvs is not None:
+        uniprot_paths.extend([
+            str(path) for path in extra_uniprot_tsvs
+            if str(path).strip() != ''
+        ])
+    for path_i, path in enumerate(uniprot_paths):
+        uniprot_rows, uniprot_skipped = build_strict_uniprot_external_rows(
+            path=path,
+            targetp_keys=targetp_keys,
+            exclude_exact=True,
+        )
+        rows.extend(uniprot_rows)
+        prefix = 'uniprot' if path_i == 0 else 'extra_uniprot{}'.format(path_i)
+        skipped.update({
+            '{}_{}'.format(prefix, key): value
+            for key, value in uniprot_skipped.items()
+        })
 
     if bool(include_deeploc) and str(deeploc_dir).strip() != '':
         localization_rows, localization_skipped = build_deeploc_localization_external_rows(
@@ -256,6 +268,7 @@ def _fold_ids_from_rows(rows):
 def run_external_augmented_feature_oof(
     training_tsv,
     uniprot_tsv,
+    extra_uniprot_tsvs=None,
     deeploc_dir='',
     include_deeploc=True,
     max_external_per_class=5000,
@@ -278,6 +291,7 @@ def run_external_augmented_feature_oof(
     external_rows, external_report = build_external_augmented_training_rows(
         targetp_tsv=training_tsv,
         uniprot_tsv=uniprot_tsv,
+        extra_uniprot_tsvs=extra_uniprot_tsvs,
         deeploc_dir=deeploc_dir,
         include_deeploc=include_deeploc,
         max_per_class=int(max_external_per_class),
@@ -347,6 +361,9 @@ def run_external_augmented_feature_oof(
         'profile': {
             'training_tsv': str(training_tsv),
             'uniprot_tsv': str(uniprot_tsv),
+            'extra_uniprot_tsvs': [
+                str(path) for path in (extra_uniprot_tsvs or [])
+            ],
             'deeploc_dir': str(deeploc_dir),
             'include_deeploc': bool(include_deeploc),
             'max_external_per_class': int(max_external_per_class),
@@ -398,6 +415,7 @@ def build_parser():
     )
     parser.add_argument('--training_tsv', default='data/localize_bench/targetp2_benchmark.tsv', type=str)
     parser.add_argument('--uniprot_tsv', default='data/localize_bench/eukaryota_full_with_lineage.tsv', type=str)
+    parser.add_argument('--extra_uniprot_tsvs', default='', type=str)
     parser.add_argument('--deeploc_dir', default='data/localize_bench/deeploc21', type=str)
     parser.add_argument('--include_deeploc', default='yes', choices=['yes', 'no'], type=str)
     parser.add_argument('--max_external_per_class', default=TARGETP_EXTERNAL_AUG_DEFAULTS['max_external_per_class'], type=int)
@@ -427,11 +445,20 @@ def _parse_grid(text):
     ]))
 
 
+def _parse_paths(text):
+    return [
+        value.strip() for value in str(text or '').split(',')
+        if value.strip() != ''
+    ]
+
+
 def main():
     args = build_parser().parse_args()
+    extra_uniprot_tsvs = _parse_paths(args.extra_uniprot_tsvs)
     result = run_external_augmented_feature_oof(
         training_tsv=args.training_tsv,
         uniprot_tsv=args.uniprot_tsv,
+        extra_uniprot_tsvs=extra_uniprot_tsvs,
         deeploc_dir=args.deeploc_dir,
         include_deeploc=_yes_no(args.include_deeploc),
         max_external_per_class=int(args.max_external_per_class),
@@ -450,6 +477,7 @@ def main():
         external_rows, _ = build_external_augmented_training_rows(
             targetp_tsv=args.training_tsv,
             uniprot_tsv=args.uniprot_tsv,
+            extra_uniprot_tsvs=extra_uniprot_tsvs,
             deeploc_dir=args.deeploc_dir,
             include_deeploc=_yes_no(args.include_deeploc),
             max_per_class=int(args.max_external_per_class),
