@@ -430,6 +430,15 @@ specialist drops this stronger signal to 0.82823. Validation-selected h256
 OOFs were fair but less useful as stack signals: seed0/seed100 selection reached
 0.793 after stack blending, and seed100 inner-fold selection by validation
 threshold or validation macro F1 reached only 0.812-0.813.
+Post-blend-only follow-up probes also failed to beat the all-outer inner4 row:
+using a finer classwise alpha grid reduced macro F1 to 0.82491 (`0.05`) or
+0.82142 (`0.025`), denser class-threshold grids reached at most 0.82862, and a
+plant cTP/lTP two-way reranker screened on the same foldwise training
+complements peaked at 0.80601 in the tested settings.
+Increasing the Torch encoder size did not improve the pilot held-out fold:
+on `outer4:val2`, h512 with learning rate 0.001 reached 0.76277
+validation-threshold macro F1 and h512 with learning rate 0.0003 reached
+0.74146, both below the h256 result of 0.83702 for the same fold pair.
 Other follow-up probes did not close the gap: averaging multiple lTP specialist
 random seeds reduced macro F1 to 0.785 or lower, two-way cTP/lTP
 reclassification peaked at 0.79498, appending the delayed lTP signal features
