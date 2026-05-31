@@ -130,6 +130,61 @@ def test_build_external_augmented_rows_filters_overlaps_and_conflicts(temp_dir):
     assert 'extra_uniprot1_missing_location_text' not in report['skipped']
     assert report['skipped']['conflicting_duplicate_sequence'] == 1
     assert report['sampled_counts'] == {'cTP': 1, 'lTP': 2}
+    assert report['mmseqs_similarity_filter']['status'] == 'disabled'
+
+
+def test_build_external_augmented_rows_can_filter_mmseqs_similarity(temp_dir, monkeypatch):
+    bin_dir = temp_dir / 'bin'
+    bin_dir.mkdir()
+    mmseqs = bin_dir / 'mmseqs'
+    mmseqs.write_text(
+        '#!/bin/sh\n'
+        'printf "q0\\tt0\\t100\\t20\\t20\\t20\\t0\\t80\\n" > "$4"\n',
+        encoding='utf-8',
+    )
+    mmseqs.chmod(0o755)
+    monkeypatch.setenv('PATH', str(bin_dir))
+
+    targetp = temp_dir / 'targetp.tsv'
+    uniprot = temp_dir / 'uniprot.tsv'
+    _write_tsv(
+        targetp,
+        ['accession', 'sequence', 'localization', 'peroxisome', 'organism_group', 'fold_id'],
+        _targetp_rows(),
+    )
+    _write_tsv(
+        uniprot,
+        ['accession', 'sequence', 'cc_subcellular_location', 'lineage_ids'],
+        [
+            {
+                'accession': 'U1',
+                'sequence': 'MSTRICTCTP',
+                'cc_subcellular_location': 'SUBCELLULAR LOCATION: Chloroplast.',
+                'lineage_ids': '2759,33090',
+            },
+            {
+                'accession': 'U2',
+                'sequence': 'MSTRICTLTP',
+                'cc_subcellular_location': 'SUBCELLULAR LOCATION: Chloroplast thylakoid lumen.',
+                'lineage_ids': '2759,33090',
+            },
+        ],
+    )
+
+    rows, report = build_external_augmented_training_rows(
+        targetp_tsv=str(targetp),
+        uniprot_tsv=str(uniprot),
+        include_deeploc=False,
+        max_per_class=10,
+        seed=1,
+        use_mmseqs=True,
+        threads=2,
+    )
+
+    assert [row['accession'] for row in rows] == ['U2']
+    assert report['mmseqs_similarity_filter']['status'] == 'ok'
+    assert report['mmseqs_similarity_filter']['removed'] == 1
+    assert report['filtered_rows'] == 1
 
 
 def test_external_augmented_feature_oof_is_foldwise(temp_dir):

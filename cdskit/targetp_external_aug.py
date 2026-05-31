@@ -10,6 +10,7 @@ from cdskit.localize_learn import LOCALIZATION_CLASSES
 from cdskit.targetp_external_eval import (
     _targetp_class_from_deeploc_localization_labels,
     build_deeploc_sorting_rows,
+    filter_rows_by_mmseqs_similarity,
     is_exact_targetp_overlap,
     load_targetp_exclusion_keys,
     organism_group_from_row,
@@ -190,8 +191,13 @@ def build_external_augmented_training_rows(
     include_deeploc=True,
     max_per_class=5000,
     seed=101,
+    use_mmseqs=False,
+    mmseqs_min_seq_id=0.30,
+    mmseqs_min_coverage=0.80,
+    threads=1,
 ):
     targetp_keys = load_targetp_exclusion_keys(targetp_tsv=targetp_tsv)
+    targetp_rows = list(targetp_keys['rows'])
     rows = list()
     skipped = Counter()
     uniprot_paths = [str(uniprot_tsv)]
@@ -238,16 +244,26 @@ def build_external_augmented_training_rows(
 
     deduped, dedup_skipped = _deduplicate_external_rows(rows=rows)
     skipped.update(dedup_skipped)
-    sampled, sample_report = _sample_external_rows(
+    filtered, mmseqs_report = filter_rows_by_mmseqs_similarity(
         rows=deduped,
+        targetp_rows=targetp_rows,
+        min_seq_id=float(mmseqs_min_seq_id),
+        min_coverage=float(mmseqs_min_coverage),
+        threads=int(threads),
+        enabled=bool(use_mmseqs),
+    )
+    sampled, sample_report = _sample_external_rows(
+        rows=filtered,
         max_per_class=max_per_class,
         seed=seed,
     )
     return sampled, {
         'candidate_rows': int(len(rows)),
         'deduplicated_rows': int(len(deduped)),
+        'filtered_rows': int(len(filtered)),
         'sampled_rows': int(len(sampled)),
         'sample_report': sample_report,
+        'mmseqs_similarity_filter': mmseqs_report,
         'skipped': dict(skipped),
         'sampled_counts': dict(Counter(row.get('localization', '') for row in sampled)),
     }
@@ -274,6 +290,10 @@ def run_external_augmented_feature_oof(
     max_external_per_class=5000,
     external_weight=0.25,
     seed=101,
+    use_mmseqs=False,
+    mmseqs_min_seq_id=0.30,
+    mmseqs_min_coverage=0.80,
+    threads=1,
     model_kind='extra_trees',
     n_estimators=200,
     random_state=2100,
@@ -296,6 +316,10 @@ def run_external_augmented_feature_oof(
         include_deeploc=include_deeploc,
         max_per_class=int(max_external_per_class),
         seed=int(seed),
+        use_mmseqs=bool(use_mmseqs),
+        mmseqs_min_seq_id=float(mmseqs_min_seq_id),
+        mmseqs_min_coverage=float(mmseqs_min_coverage),
+        threads=int(threads),
     )
     if len(external_rows) == 0:
         raise ValueError('No external rows were available after filtering.')
@@ -369,6 +393,10 @@ def run_external_augmented_feature_oof(
             'max_external_per_class': int(max_external_per_class),
             'external_weight': float(external_weight),
             'seed': int(seed),
+            'use_mmseqs': bool(use_mmseqs),
+            'mmseqs_min_seq_id': float(mmseqs_min_seq_id),
+            'mmseqs_min_coverage': float(mmseqs_min_coverage),
+            'threads': int(threads),
             'model_kind': str(model_kind),
             'n_estimators': int(n_estimators),
             'random_state': int(random_state),
@@ -421,6 +449,10 @@ def build_parser():
     parser.add_argument('--max_external_per_class', default=TARGETP_EXTERNAL_AUG_DEFAULTS['max_external_per_class'], type=int)
     parser.add_argument('--external_weight', default=TARGETP_EXTERNAL_AUG_DEFAULTS['external_weight'], type=float)
     parser.add_argument('--seed', default=TARGETP_EXTERNAL_AUG_DEFAULTS['seed'], type=int)
+    parser.add_argument('--mmseqs', default='no', choices=['yes', 'no'], type=str)
+    parser.add_argument('--mmseqs_min_seq_id', default=0.30, type=float)
+    parser.add_argument('--mmseqs_min_coverage', default=0.80, type=float)
+    parser.add_argument('--threads', default=1, type=int)
     parser.add_argument('--model_kind', default=TARGETP_EXTERNAL_AUG_DEFAULTS['model_kind'], choices=['extra_trees', 'random_forest'], type=str)
     parser.add_argument('--n_estimators', default=TARGETP_EXTERNAL_AUG_DEFAULTS['n_estimators'], type=int)
     parser.add_argument('--random_state', default=TARGETP_EXTERNAL_AUG_DEFAULTS['random_state'], type=int)
@@ -464,6 +496,10 @@ def main():
         max_external_per_class=int(args.max_external_per_class),
         external_weight=float(args.external_weight),
         seed=int(args.seed),
+        use_mmseqs=_yes_no(args.mmseqs),
+        mmseqs_min_seq_id=float(args.mmseqs_min_seq_id),
+        mmseqs_min_coverage=float(args.mmseqs_min_coverage),
+        threads=int(args.threads),
         model_kind=args.model_kind,
         n_estimators=int(args.n_estimators),
         random_state=int(args.random_state),
@@ -482,6 +518,10 @@ def main():
             include_deeploc=_yes_no(args.include_deeploc),
             max_per_class=int(args.max_external_per_class),
             seed=int(args.seed),
+            use_mmseqs=_yes_no(args.mmseqs),
+            mmseqs_min_seq_id=float(args.mmseqs_min_seq_id),
+            mmseqs_min_coverage=float(args.mmseqs_min_coverage),
+            threads=int(args.threads),
         )
         write_tsv(
             path=args.external_tsv_out,
