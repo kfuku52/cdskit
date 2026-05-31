@@ -1233,6 +1233,64 @@ def _targetp_ctp_ltp_specialist_feature_vector(aa_seq, base_probs, prob_a, prob_
     ])
 
 
+def _targetp_threshold_vector(class_thresholds):
+    thresholds = np.ones((len(LOCALIZATION_CLASSES),), dtype=np.float64)
+    if isinstance(class_thresholds, dict):
+        for i, class_name in enumerate(LOCALIZATION_CLASSES):
+            try:
+                thresholds[i] = float(class_thresholds.get(class_name, 1.0))
+            except Exception:
+                thresholds[i] = 1.0
+            if (not np.isfinite(thresholds[i])) or thresholds[i] <= 0.0:
+                thresholds[i] = 1.0
+    return thresholds
+
+
+def _targetp_notp_specialist_feature_vector(
+    aa_seq,
+    base_probs,
+    prob_a,
+    prob_b,
+    organism_group,
+    class_thresholds,
+):
+    del prob_a, prob_b
+    base_vec = _class_probs_to_vector(base_probs)
+    thresholds = _targetp_threshold_vector(class_thresholds)
+    score_vec = base_vec / thresholds
+    sorted_scores = np.sort(score_vec)
+    top_score = float(sorted_scores[-1]) if sorted_scores.shape[0] > 0 else 0.0
+    second_score = float(sorted_scores[-2]) if sorted_scores.shape[0] > 1 else 0.0
+    notp_idx = LOCALIZATION_CLASSES.index('noTP')
+    sp_idx = LOCALIZATION_CLASSES.index('SP')
+    mtp_idx = LOCALIZATION_CLASSES.index('mTP')
+    ctp_idx = LOCALIZATION_CLASSES.index('cTP')
+    ltp_idx = LOCALIZATION_CLASSES.index('lTP')
+    notp_score = float(score_vec[notp_idx])
+    notp_top_ratio = 0.0 if top_score <= 0.0 else float(notp_score / top_score)
+    pred_is_notp = 1.0 if int(np.argmax(score_vec)) == notp_idx else 0.0
+    summary = np.asarray([
+        top_score,
+        float(top_score - notp_score),
+        notp_top_ratio,
+        float(base_vec[notp_idx]),
+        float(base_vec[mtp_idx]),
+        float(base_vec[sp_idx]),
+        float(base_vec[ctp_idx] + base_vec[ltp_idx]),
+        pred_is_notp,
+        float(top_score - second_score),
+    ], dtype=np.float64)
+    return np.concatenate([
+        base_vec,
+        score_vec,
+        summary,
+        extract_targetp_feature_ensemble_features(
+            aa_seq=aa_seq,
+            organism_group=organism_group,
+        ),
+    ])
+
+
 def _targetp_feature_ltp_specialist_feature_vector(aa_seq, base_probs, organism_group):
     plant_flag = 1.0 if normalize_organism_group(organism_group) == 'plant' else 0.0
     base_vec = _class_probs_to_vector(base_probs)
@@ -1447,6 +1505,18 @@ def _predict_binary_ensemble_score(feature_vec, models, weights=None):
     return float(np.average(np.asarray(scores, dtype=np.float64), weights=weights / total))
 
 
+def _targetp_specialist_model_list(specialist, plural_key, singular_key):
+    models = specialist.get(plural_key, [])
+    if models is None:
+        models = []
+    if not isinstance(models, list):
+        models = [models]
+    single_model = specialist.get(singular_key, None)
+    if single_model is not None:
+        models = [single_model] + list(models)
+    return [model for model in models if model is not None]
+
+
 def _prediction_index_with_thresholds(class_probs, class_thresholds):
     probs = normalize_class_probabilities(class_probs=class_probs)
     scores = list()
@@ -1482,50 +1552,48 @@ def _apply_targetp_specialist_postprocess(
         class_thresholds=class_thresholds,
     )
     scores = _class_probs_to_vector(base_probs)
-    thresholds = np.ones((len(LOCALIZATION_CLASSES),), dtype=np.float64)
-    if isinstance(class_thresholds, dict):
-        for i, class_name in enumerate(LOCALIZATION_CLASSES):
-            try:
-                thresholds[i] = float(class_thresholds.get(class_name, 1.0))
-            except Exception:
-                thresholds[i] = 1.0
-            if (not np.isfinite(thresholds[i])) or thresholds[i] <= 0.0:
-                thresholds[i] = 1.0
-    scores = scores / thresholds
+    scores = scores / _targetp_threshold_vector(class_thresholds)
     sp_idx = LOCALIZATION_CLASSES.index('SP')
     ctp_idx = LOCALIZATION_CLASSES.index('cTP')
     ltp_idx = LOCALIZATION_CLASSES.index('lTP')
+    notp_idx = LOCALIZATION_CLASSES.index('noTP')
     non_sp_scores = scores.copy()
     non_sp_scores[sp_idx] = -np.inf
     non_sp_pred_idx = int(np.argmax(non_sp_scores))
 
-    sp_feature_vec = _targetp_sp_specialist_feature_vector(
-        aa_seq=aa_seq,
-        base_probs=base_probs,
-        prob_a=prob_a,
-        prob_b=prob_b,
-        organism_group=organism_group,
-    )
-    sp_score = _predict_binary_ensemble_score(
-        feature_vec=sp_feature_vec,
-        models=specialist.get('sp_models', []),
-        weights=specialist.get('sp_weights', None),
-    )
+    sp_models = _targetp_specialist_model_list(specialist, 'sp_models', 'sp_model')
     sp_threshold = float(specialist.get('sp_threshold', 0.5))
-    sp_positive = sp_score >= sp_threshold
-    if sp_positive:
-        pred_idx = sp_idx
-    elif pred_idx == sp_idx:
-        pred_idx = non_sp_pred_idx
+    sp_score = 0.0
+    sp_positive = False
+    if len(sp_models) > 0:
+        sp_feature_vec = _targetp_sp_specialist_feature_vector(
+            aa_seq=aa_seq,
+            base_probs=base_probs,
+            prob_a=prob_a,
+            prob_b=prob_b,
+            organism_group=organism_group,
+        )
+        sp_score = _predict_binary_ensemble_score(
+            feature_vec=sp_feature_vec,
+            models=sp_models,
+            weights=specialist.get('sp_weights', None),
+        )
+        sp_positive = sp_score >= sp_threshold
+        if sp_positive:
+            pred_idx = sp_idx
+        elif pred_idx == sp_idx:
+            pred_idx = non_sp_pred_idx
 
     group = normalize_organism_group(organism_group)
     ctp_ltp_mass = float(base_probs.get('cTP', 0.0) + base_probs.get('lTP', 0.0))
     ltp_mass_threshold = float(specialist.get('ltp_mass_threshold', 0.20))
+    ltp_models = _targetp_specialist_model_list(specialist, 'ltp_models', 'ltp_model')
     ltp_score = 0.0
     ltp_candidate = (
         group == 'plant'
         and (not sp_positive)
         and (ctp_ltp_mass > ltp_mass_threshold)
+        and len(ltp_models) > 0
     )
     if ltp_candidate:
         ltp_feature_vec = _targetp_ctp_ltp_specialist_feature_vector(
@@ -1537,7 +1605,7 @@ def _apply_targetp_specialist_postprocess(
         )
         ltp_score = _predict_binary_ensemble_score(
             feature_vec=ltp_feature_vec,
-            models=specialist.get('ltp_models', []),
+            models=ltp_models,
             weights=specialist.get('ltp_weights', None),
         )
         ltp_threshold = float(specialist.get('ltp_threshold', 0.5))
@@ -1545,6 +1613,30 @@ def _apply_targetp_specialist_postprocess(
             pred_idx = ltp_idx
         elif pred_idx in [ctp_idx, ltp_idx]:
             pred_idx = ctp_idx
+
+    notp_models = _targetp_specialist_model_list(specialist, 'notp_models', 'notp_model')
+    notp_threshold = float(specialist.get('notp_threshold', 0.5))
+    notp_score = 0.0
+    notp_positive = False
+    notp_applied = False
+    if len(notp_models) > 0:
+        notp_feature_vec = _targetp_notp_specialist_feature_vector(
+            aa_seq=aa_seq,
+            base_probs=base_probs,
+            prob_a=prob_a,
+            prob_b=prob_b,
+            organism_group=organism_group,
+            class_thresholds=class_thresholds,
+        )
+        notp_score = _predict_binary_ensemble_score(
+            feature_vec=notp_feature_vec,
+            models=notp_models,
+            weights=specialist.get('notp_weights', None),
+        )
+        notp_positive = notp_score >= notp_threshold
+        if pred_idx != notp_idx and notp_positive:
+            pred_idx = notp_idx
+            notp_applied = True
 
     details = {
         'sp_score': float(sp_score),
@@ -1555,6 +1647,10 @@ def _apply_targetp_specialist_postprocess(
         'ltp_mass_threshold': float(ltp_mass_threshold),
         'ltp_candidate': bool(ltp_candidate),
         'ctp_ltp_mass': float(ctp_ltp_mass),
+        'notp_score': float(notp_score),
+        'notp_threshold': float(notp_threshold),
+        'notp_positive': bool(notp_positive),
+        'notp_applied': bool(notp_applied),
     }
     return LOCALIZATION_CLASSES[pred_idx], details
 

@@ -1050,6 +1050,108 @@ def test_predict_targetp_blend_specialist_can_override_class_prediction():
     assert pred['targetp_blend_details']['specialist_postprocess']['sp_positive'] is True
 
 
+def test_predict_targetp_blend_notp_specialist_can_rescue_non_notp_prediction():
+    class_order = ['noTP', 'SP', 'mTP', 'cTP', 'lTP']
+    model = {
+        'model_type': 'targetp_blend_v1',
+        'feature_names': [],
+        'localization_model': {
+            'class_order': class_order,
+            'base_models': [
+                {
+                    'model_type': 'nearest_centroid_v1',
+                    'localization_model': {
+                        'mode': 'constant',
+                        'class_label': 'SP',
+                        'class_order': class_order,
+                    },
+                },
+                {
+                    'model_type': 'nearest_centroid_v1',
+                    'localization_model': {
+                        'mode': 'constant',
+                        'class_label': 'SP',
+                        'class_order': class_order,
+                    },
+                },
+            ],
+            'alpha_by_class': 0.5,
+            'targetp_specialist_postprocess': {
+                'enabled': True,
+                'notp_models': [ConstantBinaryScore(0.95)],
+                'notp_threshold': 0.90,
+            },
+        },
+        'perox_model': {
+            'mode': 'constant',
+            'yes_probability': 0.0,
+        },
+    }
+
+    pred = predict_localization_and_peroxisome(
+        aa_seq='MAGPVNQDEGPVNQDEGATNVQDE',
+        model=model,
+        organism_group='non_plant',
+    )
+
+    details = pred['targetp_blend_details']['specialist_postprocess']
+    assert pred['predicted_class'] == 'noTP'
+    assert details['notp_positive'] is True
+    assert details['notp_applied'] is True
+    assert details['sp_positive'] is False
+    assert details['ltp_candidate'] is False
+
+
+def test_predict_targetp_blend_notp_only_specialist_preserves_low_score_prediction():
+    class_order = ['noTP', 'SP', 'mTP', 'cTP', 'lTP']
+    model = {
+        'model_type': 'targetp_blend_v1',
+        'feature_names': [],
+        'localization_model': {
+            'class_order': class_order,
+            'base_models': [
+                {
+                    'model_type': 'nearest_centroid_v1',
+                    'localization_model': {
+                        'mode': 'constant',
+                        'class_label': 'SP',
+                        'class_order': class_order,
+                    },
+                },
+                {
+                    'model_type': 'nearest_centroid_v1',
+                    'localization_model': {
+                        'mode': 'constant',
+                        'class_label': 'SP',
+                        'class_order': class_order,
+                    },
+                },
+            ],
+            'alpha_by_class': 0.5,
+            'targetp_specialist_postprocess': {
+                'enabled': True,
+                'notp_models': [ConstantBinaryScore(0.10)],
+                'notp_threshold': 0.90,
+            },
+        },
+        'perox_model': {
+            'mode': 'constant',
+            'yes_probability': 0.0,
+        },
+    }
+
+    pred = predict_localization_and_peroxisome(
+        aa_seq='MKKLLLLLLLLLLAVAVAASAASA',
+        model=model,
+        organism_group='non_plant',
+    )
+
+    details = pred['targetp_blend_details']['specialist_postprocess']
+    assert pred['predicted_class'] == 'SP'
+    assert details['notp_positive'] is False
+    assert details['notp_applied'] is False
+
+
 def test_predict_targetp_feature_ensemble_uses_cpu_sklearn_classifier_and_organism_gate():
     aa_seq = 'MASTSTSTSTSSRRRGGGGG'
     feature_dim = int(extract_targetp_feature_ensemble_features(
