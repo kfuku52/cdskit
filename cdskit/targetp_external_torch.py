@@ -75,6 +75,7 @@ def _torch_train_kwargs(seq_len, train_kwargs):
 def fit_external_augmented_torch_runtime_model(
     training_tsv,
     uniprot_tsv,
+    external_tsv='',
     extra_uniprot_tsvs=None,
     exclusion_tsvs=None,
     deeploc_dir='data/localize_bench/deeploc21',
@@ -99,21 +100,30 @@ def fit_external_augmented_torch_runtime_model(
 ):
     seq_len = int(train_kwargs.get('seq_len', TARGETP_EXTERNAL_TORCH_DEFAULTS['seq_len']))
     target_rows = read_tsv(training_tsv)
-    external_rows, external_report = build_external_augmented_training_rows(
-        targetp_tsv=training_tsv,
-        uniprot_tsv=uniprot_tsv,
-        extra_uniprot_tsvs=extra_uniprot_tsvs,
-        exclusion_tsvs=exclusion_tsvs,
-        deeploc_dir=deeploc_dir,
-        include_deeploc=include_deeploc,
-        max_per_class=int(max_external_per_class),
-        seed=int(external_seed),
-        use_mmseqs=bool(use_mmseqs),
-        exclusion_mmseqs=exclusion_mmseqs,
-        mmseqs_min_seq_id=float(mmseqs_min_seq_id),
-        mmseqs_min_coverage=float(mmseqs_min_coverage),
-        threads=int(threads),
-    )
+    if str(external_tsv or '').strip() != '':
+        external_rows = read_tsv(str(external_tsv))
+        external_report = {
+            'source': 'external_tsv',
+            'external_tsv': str(external_tsv),
+            'sampled_rows': int(len(external_rows)),
+            'sampled_counts': _class_counts(external_rows),
+        }
+    else:
+        external_rows, external_report = build_external_augmented_training_rows(
+            targetp_tsv=training_tsv,
+            uniprot_tsv=uniprot_tsv,
+            extra_uniprot_tsvs=extra_uniprot_tsvs,
+            exclusion_tsvs=exclusion_tsvs,
+            deeploc_dir=deeploc_dir,
+            include_deeploc=include_deeploc,
+            max_per_class=int(max_external_per_class),
+            seed=int(external_seed),
+            use_mmseqs=bool(use_mmseqs),
+            exclusion_mmseqs=exclusion_mmseqs,
+            mmseqs_min_seq_id=float(mmseqs_min_seq_id),
+            mmseqs_min_coverage=float(mmseqs_min_coverage),
+            threads=int(threads),
+        )
     if len(external_rows) == 0:
         raise ValueError('No external rows were available after filtering.')
     calibration_seed = int(external_seed) + 791 if calibration_seed is None else int(calibration_seed)
@@ -171,6 +181,7 @@ def fit_external_augmented_torch_runtime_model(
     report = {
         'training_tsv': str(training_tsv),
         'uniprot_tsv': str(uniprot_tsv),
+        'external_tsv': str(external_tsv or ''),
         'extra_uniprot_tsvs': [str(path) for path in (extra_uniprot_tsvs or [])],
         'exclusion_tsvs': [str(path) for path in (exclusion_tsvs or [])],
         'external_tsv_out': str(external_tsv_out or ''),
@@ -191,6 +202,7 @@ def fit_external_augmented_torch_runtime_model(
     }
     model['metadata'].update({
         'uniprot_tsv': str(uniprot_tsv),
+        'precomputed_external_tsv': str(external_tsv or ''),
         'extra_uniprot_tsvs': [str(path) for path in (extra_uniprot_tsvs or [])],
         'exclusion_tsvs': [str(path) for path in (exclusion_tsvs or [])],
         'external_tsv': str(external_tsv_out or ''),
@@ -269,6 +281,12 @@ def build_parser():
     )
     parser.add_argument('--training_tsv', default='data/localize_bench/targetp2_benchmark.tsv', type=str)
     parser.add_argument(
+        '--external_tsv',
+        default='',
+        type=str,
+        help='Optional precomputed strict external TSV. When set, UniProt/DeepLoc external row building is skipped.',
+    )
+    parser.add_argument(
         '--uniprot_tsv',
         default='data/localize_bench/eukaryota_full_with_lineage_plus_thylakoid_lumen_20260530.tsv',
         type=str,
@@ -322,6 +340,7 @@ def main():
     result = fit_external_augmented_torch_runtime_model(
         training_tsv=args.training_tsv,
         uniprot_tsv=args.uniprot_tsv,
+        external_tsv=args.external_tsv,
         extra_uniprot_tsvs=_parse_paths(args.extra_uniprot_tsvs),
         exclusion_tsvs=_parse_paths(args.exclusion_tsvs),
         deeploc_dir=args.deeploc_dir,
