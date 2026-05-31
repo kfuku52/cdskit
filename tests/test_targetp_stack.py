@@ -26,6 +26,10 @@ def test_targetp_stack_parser_exposes_mtp_threshold_grid_defaults():
     parser = build_parser()
     args = parser.parse_args(['--base_oof_npzs', 'base.npz'])
 
+    assert args.post_blend_sp_max_iter == 350
+    assert args.post_blend_sp_random_states == '2,13,31'
+    assert args.post_blend_mtp_model_kind == 'extra_trees'
+    assert args.post_blend_mtp_n_estimators == 300
     assert args.post_blend_mtp_score_min == pytest.approx(
         TARGETP_STACK_MTP_SPECIALIST_DEFAULTS['mtp_score_min']
     )
@@ -428,6 +432,7 @@ def test_foldwise_classwise_multi_blend_sp_mtp_override_is_foldwise(temp_dir):
     assert result['metrics']['macro_f1'] >= 0.0
     assert [fold['fold_id'] for fold in result['folds']] == ['fold1', 'fold2']
     assert result['profile']['mtp_override'] is True
+    assert result['profile']['mtp_feature_profile'] == 'targetp_sp_signal_plus_sources_v1'
     assert result['profile']['mtp_n_estimators'] == 5
     assert 'mtp_score_threshold' in result['folds'][0]
 

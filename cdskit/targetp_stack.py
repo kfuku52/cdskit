@@ -2291,12 +2291,29 @@ def build_parser():
         choices=['yes', 'no'],
         type=str,
     )
+    parser.add_argument('--post_blend_sp_max_iter', default=TARGETP_STACK_SP_SPECIALIST_DEFAULTS['sp_max_iter'], type=int)
+    parser.add_argument('--post_blend_sp_learning_rate', default=TARGETP_STACK_SP_SPECIALIST_DEFAULTS['sp_learning_rate'], type=float)
+    parser.add_argument('--post_blend_sp_l2_regularization', default=TARGETP_STACK_SP_SPECIALIST_DEFAULTS['sp_l2_regularization'], type=float)
+    parser.add_argument('--post_blend_sp_random_states', default=','.join(str(value) for value in TARGETP_STACK_SP_SPECIALIST_DEFAULTS['sp_random_states']), type=str)
+    parser.add_argument('--post_blend_sp_weights', default=','.join(str(value) for value in TARGETP_STACK_SP_SPECIALIST_DEFAULTS['sp_weights']), type=str)
+    parser.add_argument('--post_blend_sp_extra_thresholds', default=','.join(str(value) for value in TARGETP_STACK_SP_SPECIALIST_DEFAULTS['sp_extra_thresholds']), type=str)
     parser.add_argument(
         '--post_blend_mtp_override',
         default='yes' if TARGETP_STACK_MTP_SPECIALIST_DEFAULTS['mtp_override'] else 'no',
         choices=['yes', 'no'],
         type=str,
     )
+    parser.add_argument(
+        '--post_blend_mtp_model_kind',
+        default=TARGETP_STACK_MTP_SPECIALIST_DEFAULTS['mtp_model_kind'],
+        choices=['random_forest', 'extra_trees', 'hist_gradient_boosting'],
+        type=str,
+    )
+    parser.add_argument('--post_blend_mtp_n_estimators', default=TARGETP_STACK_MTP_SPECIALIST_DEFAULTS['mtp_n_estimators'], type=int)
+    parser.add_argument('--post_blend_mtp_random_state', default=TARGETP_STACK_MTP_SPECIALIST_DEFAULTS['mtp_random_state'], type=int)
+    parser.add_argument('--post_blend_mtp_class_weight', default=TARGETP_STACK_MTP_SPECIALIST_DEFAULTS['mtp_class_weight'], type=str)
+    parser.add_argument('--post_blend_mtp_max_features', default=TARGETP_STACK_MTP_SPECIALIST_DEFAULTS['mtp_max_features'], type=str)
+    parser.add_argument('--post_blend_mtp_min_samples_leaf', default=TARGETP_STACK_MTP_SPECIALIST_DEFAULTS['mtp_min_samples_leaf'], type=int)
     parser.add_argument('--post_blend_mtp_score_min', default=TARGETP_STACK_MTP_SPECIALIST_DEFAULTS['mtp_score_min'], type=float)
     parser.add_argument('--post_blend_mtp_score_max', default=TARGETP_STACK_MTP_SPECIALIST_DEFAULTS['mtp_score_max'], type=float)
     parser.add_argument('--post_blend_mtp_score_steps', default=TARGETP_STACK_MTP_SPECIALIST_DEFAULTS['mtp_score_steps'], type=int)
@@ -2330,6 +2347,22 @@ def build_parser():
 
 def _to_bool(value):
     return str(value).strip().lower() in ['yes', 'y', 'true', '1']
+
+
+def _parse_int_list(value):
+    return [
+        int(part.strip())
+        for part in str(value).split(',')
+        if part.strip() != ''
+    ]
+
+
+def _parse_float_list(value):
+    return [
+        float(part.strip())
+        for part in str(value).split(',')
+        if part.strip() != ''
+    ]
 
 
 def main():
@@ -2393,6 +2426,17 @@ def main():
         int(args.post_blend_ltp_after_score_steps),
         dtype=np.float64,
     )
+    sp_random_states = _parse_int_list(args.post_blend_sp_random_states)
+    sp_weights = _parse_float_list(args.post_blend_sp_weights)
+    sp_extra_thresholds = _parse_float_list(args.post_blend_sp_extra_thresholds)
+    if len(sp_random_states) == 0:
+        raise ValueError('--post_blend_sp_random_states should contain at least one seed.')
+    if len(sp_weights) != len(sp_random_states):
+        raise ValueError('--post_blend_sp_weights should match --post_blend_sp_random_states.')
+    if int(args.post_blend_sp_max_iter) <= 0:
+        raise ValueError('--post_blend_sp_max_iter should be positive.')
+    if int(args.post_blend_mtp_n_estimators) <= 0:
+        raise ValueError('--post_blend_mtp_n_estimators should be positive.')
     ltp_ctp_random_state = (
         int(args.ltp_ctp_random_state)
         if str(args.ltp_ctp_random_state).strip() != ''
@@ -2606,6 +2650,12 @@ def main():
                 ),
                 threshold_grid=threshold_grid,
                 fixed_fold_rows=results[post_blend_key]['folds'],
+                sp_random_states=sp_random_states,
+                sp_weights=sp_weights,
+                sp_max_iter=int(args.post_blend_sp_max_iter),
+                sp_learning_rate=float(args.post_blend_sp_learning_rate),
+                sp_l2_regularization=float(args.post_blend_sp_l2_regularization),
+                sp_extra_thresholds=sp_extra_thresholds,
                 ltp_after_override=(
                     _to_bool(args.post_blend_ltp_after_specialists_override)
                     and not _to_bool(args.post_blend_mtp_override)
@@ -2639,7 +2689,19 @@ def main():
                 ),
                 threshold_grid=threshold_grid,
                 fixed_fold_rows=results[post_blend_key]['folds'],
+                sp_random_states=sp_random_states,
+                sp_weights=sp_weights,
+                sp_max_iter=int(args.post_blend_sp_max_iter),
+                sp_learning_rate=float(args.post_blend_sp_learning_rate),
+                sp_l2_regularization=float(args.post_blend_sp_l2_regularization),
+                sp_extra_thresholds=sp_extra_thresholds,
                 mtp_override=True,
+                mtp_model_kind=args.post_blend_mtp_model_kind,
+                mtp_n_estimators=int(args.post_blend_mtp_n_estimators),
+                mtp_random_state=int(args.post_blend_mtp_random_state),
+                mtp_class_weight=args.post_blend_mtp_class_weight,
+                mtp_max_features=args.post_blend_mtp_max_features,
+                mtp_min_samples_leaf=int(args.post_blend_mtp_min_samples_leaf),
                 mtp_threshold_grid=mtp_threshold_grid,
                 ltp_after_override=_to_bool(args.post_blend_ltp_after_specialists_override),
                 ltp_after_model_kind=args.post_blend_ltp_after_model_kind,
