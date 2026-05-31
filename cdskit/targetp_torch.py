@@ -924,6 +924,13 @@ def fit_targetp2_torch_model(
     selection_threshold_grid = [
         float(value) for value in selection_threshold_grid
     ]
+    resume_state = str(config.get('resume_state', 'latest')).strip().lower()
+    if resume_state not in ['latest', 'best']:
+        raise ValueError('resume_state should be latest or best.')
+    resume_learning_rate = config.get('resume_learning_rate')
+    resume_reset_optimizer = str(config.get('resume_reset_optimizer', 'no')).strip().lower() in ['yes', 'true', '1']
+    resume_reset_scheduler = str(config.get('resume_reset_scheduler', 'no')).strip().lower() in ['yes', 'true', '1']
+    resume_reset_best_metrics = str(config.get('resume_reset_best_metrics', 'no')).strip().lower() in ['yes', 'true', '1']
     best_state = copy.deepcopy(_state_dict_to_cpu(module))
     best_metrics = None
     best_epoch = 0
@@ -932,7 +939,10 @@ def fit_targetp2_torch_model(
     current_lr = float(config['learning_rate'])
     start_epoch = 0
     if isinstance(resume_payload, dict):
-        state = resume_payload.get('latest_state_dict', resume_payload.get('state_dict'))
+        if resume_state == 'best':
+            state = resume_payload.get('state_dict', resume_payload.get('latest_state_dict'))
+        else:
+            state = resume_payload.get('latest_state_dict', resume_payload.get('state_dict'))
         state = _normalize_targetp_torch_state_dict(
             torch=torch,
             state=state,
@@ -952,14 +962,27 @@ def fit_targetp2_torch_model(
         start_epoch = len(history)
         lr_reductions = int(resume_payload.get('lr_reductions', 0) or 0)
         current_lr = float(resume_payload.get('current_lr', current_lr))
+        if resume_learning_rate is not None:
+            current_lr = float(resume_learning_rate)
         for group in optimizer.param_groups:
             group['lr'] = current_lr
-        if _can_resume_optimizer_state(resume_payload):
+        if (
+            (not resume_reset_optimizer)
+            and resume_state == 'latest'
+            and _can_resume_optimizer_state(resume_payload)
+        ):
             _load_optimizer_state(
                 optimizer=optimizer,
                 payload=resume_payload,
                 device=resolved_device,
             )
+        if resume_state == 'best' or resume_reset_scheduler:
+            best_epoch = int(start_epoch)
+            lr_reductions = 0
+        if resume_reset_best_metrics:
+            best_state = copy.deepcopy(_state_dict_to_cpu(module))
+            best_metrics = None
+            best_epoch = int(start_epoch)
         if resume_payload.get('rng_state') is not None:
             rng.bit_generator.state = resume_payload['rng_state']
         if resume_payload.get('torch_rng_state') is not None:

@@ -41,6 +41,11 @@ def build_parser():
     parser.add_argument('--reuse_cache', default='yes', choices=['yes', 'no'], type=str)
     parser.add_argument('--device', default='auto', type=str)
     parser.add_argument('--seed_offset', default=0, type=int)
+    parser.add_argument('--resume_state', default='latest', choices=['latest', 'best'], type=str)
+    parser.add_argument('--resume_learning_rate', default=None, type=float)
+    parser.add_argument('--resume_reset_optimizer', default='no', choices=['yes', 'no'], type=str)
+    parser.add_argument('--resume_reset_scheduler', default='no', choices=['yes', 'no'], type=str)
+    parser.add_argument('--resume_reset_best_metrics', default='no', choices=['yes', 'no'], type=str)
     parser.add_argument('--epochs', default=TARGETP_TORCH_DEFAULTS['epochs'], type=int)
     parser.add_argument('--batch_size', default=TARGETP_TORCH_DEFAULTS['batch_size'], type=int)
     parser.add_argument('--learning_rate', default=TARGETP_TORCH_DEFAULTS['learning_rate'], type=float)
@@ -106,6 +111,11 @@ def main():
         'initializer': args.initializer,
         'grad_clip_norm': float(args.grad_clip_norm),
         'rnn_impl': args.rnn_impl,
+        'resume_state': args.resume_state,
+        'resume_learning_rate': args.resume_learning_rate,
+        'resume_reset_optimizer': args.resume_reset_optimizer,
+        'resume_reset_scheduler': args.resume_reset_scheduler,
+        'resume_reset_best_metrics': args.resume_reset_best_metrics,
         'verbose': str(args.verbose).strip().lower() == 'yes',
     }
     if str(args.fold_pairs).strip() != '':

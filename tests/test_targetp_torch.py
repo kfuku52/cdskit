@@ -524,6 +524,75 @@ def test_targetp_torch_training_can_resume_epoch_checkpoint(temp_dir):
     assert _can_resume_optimizer_state(resumed) is True
 
 
+def test_targetp_torch_can_resume_from_best_with_reset_lr(temp_dir):
+    pytest.importorskip('torch')
+    x, y_type, y_cs, lengths, org = _tiny_targetp_arrays()
+    checkpoint = temp_dir / 'targetp_torch_best_resume.pt'
+    first = fit_targetp2_torch_model(
+        x_train=x[:6],
+        y_type_train=y_type[:6],
+        y_cs_train=y_cs[:6],
+        len_train=lengths[:6],
+        org_train=org[:6],
+        x_val=x[6:],
+        y_type_val=y_type[6:],
+        y_cs_val=y_cs[6:],
+        len_val=lengths[6:],
+        org_val=org[6:],
+        seed=4,
+        device='cpu',
+        seq_len=12,
+        hidden_rnn=4,
+        n_filters=3,
+        hidden_fc=5,
+        n_attention=4,
+        attention_size=4,
+        input_keep_prob=1.0,
+        encoder_keep_prob=1.0,
+        rnn_keep_prob=1.0,
+        epochs=1,
+        batch_size=3,
+        learning_rate=0.001,
+        epoch_checkpoint_path=str(checkpoint),
+    )
+    resumed = fit_targetp2_torch_model(
+        x_train=x[:6],
+        y_type_train=y_type[:6],
+        y_cs_train=y_cs[:6],
+        len_train=lengths[:6],
+        org_train=org[:6],
+        x_val=x[6:],
+        y_type_val=y_type[6:],
+        y_cs_val=y_cs[6:],
+        len_val=lengths[6:],
+        org_val=org[6:],
+        seed=4,
+        device='cpu',
+        seq_len=12,
+        hidden_rnn=4,
+        n_filters=3,
+        hidden_fc=5,
+        n_attention=4,
+        attention_size=4,
+        input_keep_prob=1.0,
+        encoder_keep_prob=1.0,
+        rnn_keep_prob=1.0,
+        epochs=2,
+        batch_size=3,
+        learning_rate=0.001,
+        resume_payload=first,
+        resume_state='best',
+        resume_learning_rate=0.0005,
+        resume_reset_scheduler='yes',
+        epoch_checkpoint_path=str(checkpoint),
+    )
+
+    assert len(resumed['history']) == 2
+    assert resumed['history'][1]['learning_rate'] == pytest.approx(0.0005)
+    assert resumed['current_lr'] == pytest.approx(0.0005)
+    assert resumed['lr_reductions'] == 0
+
+
 def test_targetp_torch_skips_legacy_completed_optimizer_state():
     payload = {
         'training_complete': True,
