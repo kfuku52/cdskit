@@ -9,6 +9,7 @@ from cdskit.targetp_external_eval import (
     compute_single_label_metrics,
     evaluate_prediction_threshold_calibration,
     filter_rows_by_mmseqs_similarity,
+    load_fixed_uniprot_holdout_rows,
     load_targetp_exclusion_keys,
     stratified_sample_rows,
 )
@@ -178,6 +179,49 @@ def test_uniprot_holdout_can_skip_nonplant_plastid_labels(temp_dir):
 
     assert [row['accession'] for row in rows] == ['P1']
     assert skipped['inconsistent_targetp_organism_label'] == 1
+
+
+def test_fixed_uniprot_holdout_rows_are_normalized_and_can_be_strict(temp_dir):
+    holdout = temp_dir / 'holdout.tsv'
+    _write_tsv(
+        holdout,
+        ['source', 'accession', 'sequence', 'organism_group', 'true_class', 'external_labels'],
+        [
+            {
+                'source': 'fixed',
+                'accession': 'H1',
+                'sequence': 'MAAA',
+                'organism_group': 'plant',
+                'true_class': 'cTP',
+                'external_labels': 'cTP',
+            },
+            {
+                'source': 'fixed',
+                'accession': 'H2',
+                'sequence': 'MBBB',
+                'organism_group': 'non_plant',
+                'true_class': 'lTP',
+                'external_labels': 'lTP',
+            },
+            {
+                'source': 'fixed',
+                'accession': 'H3',
+                'sequence': 'MCCC',
+                'organism_group': 'non_plant',
+                'true_class': 'other',
+                'external_labels': 'other',
+            },
+        ],
+    )
+
+    rows, skipped = load_fixed_uniprot_holdout_rows(
+        path=str(holdout),
+        strict_targetp_organism_labels=True,
+    )
+
+    assert [row['accession'] for row in rows] == ['H1']
+    assert skipped['inconsistent_targetp_organism_label'] == 1
+    assert skipped['unknown_true_class'] == 1
 
 
 def test_external_eval_metrics_and_stratified_sampling_are_deterministic():

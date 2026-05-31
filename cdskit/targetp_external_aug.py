@@ -6,7 +6,12 @@ from collections import Counter, defaultdict
 
 import numpy as np
 
-from cdskit.localize_learn import LOCALIZATION_CLASSES
+from cdskit.localize_learn import LOCALIZATION_CLASSES, build_training_matrix
+from cdskit.localize_model import (
+    FEATURE_NAMES,
+    fit_perox_binary_classifier,
+    save_localize_model,
+)
 from cdskit.targetp_external_eval import (
     _targetp_class_from_deeploc_localization_labels,
     build_deeploc_sorting_rows,
@@ -37,6 +42,47 @@ TARGETP_EXTERNAL_AUG_DEFAULTS = {
     'max_external_per_class': 5000,
     'seed': 101,
 }
+
+
+def _blank_exclusion_keys():
+    return {
+        'accessions': set(),
+        'sequences': set(),
+    }
+
+
+def _row_key(value):
+    return str(value or '').strip().split('.')[0]
+
+
+def _sequence_key(value):
+    return str(value or '').strip().upper()
+
+
+def load_external_exclusion_keys(paths):
+    keys = _blank_exclusion_keys()
+    for path in paths or []:
+        if str(path).strip() == '':
+            continue
+        for row in read_tsv(str(path)):
+            accession = _row_key(row.get('accession', ''))
+            sequence = _sequence_key(row.get('sequence', ''))
+            if accession != '':
+                keys['accessions'].add(accession)
+            if sequence != '':
+                keys['sequences'].add(sequence)
+    return keys
+
+
+def is_external_excluded_row(row, exclusion_keys):
+    if not isinstance(exclusion_keys, dict):
+        return False
+    accession = _row_key(row.get('accession', ''))
+    sequence = _sequence_key(row.get('sequence', ''))
+    return (
+        (accession != '' and accession in exclusion_keys.get('accessions', set()))
+        or (sequence != '' and sequence in exclusion_keys.get('sequences', set()))
+    )
 
 
 def strict_uniprot_targetp_label(location_text, organism_group):
@@ -87,12 +133,15 @@ def _external_training_row(source, accession, sequence, organism_group, localiza
     }
 
 
-def build_strict_uniprot_external_rows(path, targetp_keys, exclude_exact=True):
+def build_strict_uniprot_external_rows(path, targetp_keys, exclude_exact=True, exclusion_keys=None):
     out = list()
     skipped = Counter()
     for row in read_tsv(path):
         if exclude_exact and is_exact_targetp_overlap(row=row, targetp_keys=targetp_keys):
             skipped['targetp_exact_overlap'] += 1
+            continue
+        if is_external_excluded_row(row=row, exclusion_keys=exclusion_keys):
+            skipped['external_exclusion_overlap'] += 1
             continue
         organism_group = organism_group_from_row(row)
         class_name, reason = strict_uniprot_targetp_label(
@@ -112,12 +161,15 @@ def build_strict_uniprot_external_rows(path, targetp_keys, exclude_exact=True):
     return out, dict(skipped)
 
 
-def build_deeploc_localization_external_rows(path, targetp_keys, exclude_exact=True):
+def build_deeploc_localization_external_rows(path, targetp_keys, exclude_exact=True, exclusion_keys=None):
     out = list()
     skipped = Counter()
     for row in read_tsv(path):
         if exclude_exact and is_exact_targetp_overlap(row=row, targetp_keys=targetp_keys):
             skipped['targetp_exact_overlap'] += 1
+            continue
+        if is_external_excluded_row(row=row, exclusion_keys=exclusion_keys):
+            skipped['external_exclusion_overlap'] += 1
             continue
         class_name, _, ambiguous = _targetp_class_from_deeploc_localization_labels(
             row.get('localization_labels', '')
@@ -187,6 +239,7 @@ def build_external_augmented_training_rows(
     targetp_tsv,
     uniprot_tsv,
     extra_uniprot_tsvs=None,
+    exclusion_tsvs=None,
     deeploc_dir='',
     include_deeploc=True,
     max_per_class=5000,
@@ -198,6 +251,7 @@ def build_external_augmented_training_rows(
 ):
     targetp_keys = load_targetp_exclusion_keys(targetp_tsv=targetp_tsv)
     targetp_rows = list(targetp_keys['rows'])
+    exclusion_keys = load_external_exclusion_keys(exclusion_tsvs or [])
     rows = list()
     skipped = Counter()
     uniprot_paths = [str(uniprot_tsv)]
@@ -211,6 +265,7 @@ def build_external_augmented_training_rows(
             path=path,
             targetp_keys=targetp_keys,
             exclude_exact=True,
+            exclusion_keys=exclusion_keys,
         )
         rows.extend(uniprot_rows)
         prefix = 'uniprot' if path_i == 0 else 'extra_uniprot{}'.format(path_i)
@@ -224,6 +279,7 @@ def build_external_augmented_training_rows(
             path=os.path.join(deeploc_dir, 'deeploc21_localization_train_validation.tsv'),
             targetp_keys=targetp_keys,
             exclude_exact=True,
+            exclusion_keys=exclusion_keys,
         )
         rows.extend(localization_rows)
         skipped.update({'deeploc_localization_{}'.format(key): value for key, value in localization_skipped.items()})
@@ -233,6 +289,9 @@ def build_external_augmented_training_rows(
             exclude_exact=True,
         )
         for row in sorting_rows:
+            if is_external_excluded_row(row=row, exclusion_keys=exclusion_keys):
+                skipped['deeploc_sorting_external_exclusion_overlap'] += 1
+                continue
             rows.append(_external_training_row(
                 source='deeploc21_sorting_signals',
                 accession=row.get('accession', ''),
@@ -266,6 +325,9 @@ def build_external_augmented_training_rows(
         'mmseqs_similarity_filter': mmseqs_report,
         'skipped': dict(skipped),
         'sampled_counts': dict(Counter(row.get('localization', '') for row in sampled)),
+        'external_exclusion_tsvs': [str(path) for path in (exclusion_tsvs or [])],
+        'external_exclusion_accessions': int(len(exclusion_keys['accessions'])),
+        'external_exclusion_sequences': int(len(exclusion_keys['sequences'])),
     }
 
 
@@ -285,6 +347,7 @@ def run_external_augmented_feature_oof(
     training_tsv,
     uniprot_tsv,
     extra_uniprot_tsvs=None,
+    exclusion_tsvs=None,
     deeploc_dir='',
     include_deeploc=True,
     max_external_per_class=5000,
@@ -312,6 +375,7 @@ def run_external_augmented_feature_oof(
         targetp_tsv=training_tsv,
         uniprot_tsv=uniprot_tsv,
         extra_uniprot_tsvs=extra_uniprot_tsvs,
+        exclusion_tsvs=exclusion_tsvs,
         deeploc_dir=deeploc_dir,
         include_deeploc=include_deeploc,
         max_per_class=int(max_external_per_class),
@@ -388,6 +452,9 @@ def run_external_augmented_feature_oof(
             'extra_uniprot_tsvs': [
                 str(path) for path in (extra_uniprot_tsvs or [])
             ],
+            'exclusion_tsvs': [
+                str(path) for path in (exclusion_tsvs or [])
+            ],
             'deeploc_dir': str(deeploc_dir),
             'include_deeploc': bool(include_deeploc),
             'max_external_per_class': int(max_external_per_class),
@@ -405,6 +472,122 @@ def run_external_augmented_feature_oof(
             'min_samples_leaf': int(min_samples_leaf),
         },
     }
+
+
+def fit_external_augmented_feature_runtime_model(
+    training_tsv,
+    uniprot_tsv,
+    extra_uniprot_tsvs=None,
+    exclusion_tsvs=None,
+    deeploc_dir='',
+    include_deeploc=True,
+    max_external_per_class=5000,
+    external_weight=0.25,
+    seed=101,
+    use_mmseqs=False,
+    mmseqs_min_seq_id=0.30,
+    mmseqs_min_coverage=0.80,
+    threads=1,
+    class_thresholds=None,
+    model_kind='extra_trees',
+    n_estimators=200,
+    random_state=2100,
+    class_weight='balanced',
+    max_features='sqrt',
+    min_samples_leaf=1,
+):
+    class_names = list(LOCALIZATION_CLASSES)
+    target_rows = read_tsv(training_tsv)
+    external_rows, external_report = build_external_augmented_training_rows(
+        targetp_tsv=training_tsv,
+        uniprot_tsv=uniprot_tsv,
+        extra_uniprot_tsvs=extra_uniprot_tsvs,
+        exclusion_tsvs=exclusion_tsvs,
+        deeploc_dir=deeploc_dir,
+        include_deeploc=include_deeploc,
+        max_per_class=int(max_external_per_class),
+        seed=int(seed),
+        use_mmseqs=bool(use_mmseqs),
+        mmseqs_min_seq_id=float(mmseqs_min_seq_id),
+        mmseqs_min_coverage=float(mmseqs_min_coverage),
+        threads=int(threads),
+    )
+    if len(external_rows) == 0:
+        raise ValueError('No external rows were available after filtering.')
+
+    target_features = build_targetp_feature_matrix(rows=target_rows).astype(np.float32)
+    external_features = build_targetp_feature_matrix(rows=external_rows).astype(np.float32)
+    target_idx = _true_idx_from_rows(rows=target_rows, class_names=class_names)
+    external_idx = _true_idx_from_rows(rows=external_rows, class_names=class_names)
+    features = np.vstack([target_features, external_features])
+    labels = np.concatenate([target_idx, external_idx])
+    sample_weight = np.concatenate([
+        np.ones((len(target_idx),), dtype=np.float64),
+        np.full((len(external_idx),), float(external_weight), dtype=np.float64),
+    ])
+    classifier = make_targetp_feature_classifier(
+        model_kind=model_kind,
+        n_estimators=int(n_estimators),
+        random_state=int(random_state),
+        class_weight=class_weight,
+        max_features=max_features,
+        min_samples_leaf=int(min_samples_leaf),
+    )
+    classifier.fit(features, labels, sample_weight=sample_weight)
+
+    broad_features, _, _, perox_labels, skipped, _ = build_training_matrix(
+        rows=target_rows,
+        seq_col='sequence',
+        seqtype='protein',
+        codontable=1,
+        label_mode='explicit',
+        localization_col='localization',
+        perox_col='peroxisome',
+        skip_ambiguous=True,
+        cv_fold_col='',
+    )
+    if int(skipped) != 0:
+        raise ValueError('External-augmented feature runtime export requires no skipped target rows.')
+    if class_thresholds is None:
+        class_thresholds = {class_name: 1.0 for class_name in class_names}
+    model = {
+        'model_type': 'targetp_feature_ensemble_v1',
+        'feature_names': list(FEATURE_NAMES),
+        'localization_model': {
+            'mode': 'targetp_feature_ensemble',
+            'class_order': class_names,
+            'classifier': classifier,
+            'binary_classifiers': None,
+            'class_thresholds': dict(class_thresholds),
+            'feature_dim': int(features.shape[1]),
+            'feature_profile': 'targetp_feature_ensemble_v1',
+            'classifier_profile': {
+                'model_kind': str(model_kind),
+                'n_estimators': int(n_estimators),
+                'random_state': int(random_state),
+                'class_weight': str(class_weight),
+                'max_features': str(max_features),
+                'min_samples_leaf': int(min_samples_leaf),
+                'external_augmented': True,
+                'external_weight': float(external_weight),
+            },
+        },
+        'perox_model': fit_perox_binary_classifier(
+            features=broad_features,
+            labels=perox_labels,
+        ),
+        'metadata': {
+            'training_tsv': str(training_tsv),
+            'uniprot_tsv': str(uniprot_tsv),
+            'extra_uniprot_tsvs': [str(path) for path in (extra_uniprot_tsvs or [])],
+            'exclusion_tsvs': [str(path) for path in (exclusion_tsvs or [])],
+            'num_target_rows': int(len(target_rows)),
+            'num_external_rows': int(len(external_rows)),
+            'model_arch': 'targetp_feature_ensemble_v1_external_augmented',
+            'external_report': external_report,
+        },
+    }
+    return model
 
 
 def write_external_augmented_feature_oof_npz(path, result):
@@ -444,6 +627,7 @@ def build_parser():
     parser.add_argument('--training_tsv', default='data/localize_bench/targetp2_benchmark.tsv', type=str)
     parser.add_argument('--uniprot_tsv', default='data/localize_bench/eukaryota_full_with_lineage.tsv', type=str)
     parser.add_argument('--extra_uniprot_tsvs', default='', type=str)
+    parser.add_argument('--exclusion_tsvs', default='', type=str)
     parser.add_argument('--deeploc_dir', default='data/localize_bench/deeploc21', type=str)
     parser.add_argument('--include_deeploc', default='yes', choices=['yes', 'no'], type=str)
     parser.add_argument('--max_external_per_class', default=TARGETP_EXTERNAL_AUG_DEFAULTS['max_external_per_class'], type=int)
@@ -463,6 +647,7 @@ def build_parser():
     parser.add_argument('--out_npz', required=True, type=str)
     parser.add_argument('--out_json', required=True, type=str)
     parser.add_argument('--external_tsv_out', default='', type=str)
+    parser.add_argument('--model_out', default='', type=str)
     return parser
 
 
@@ -487,10 +672,12 @@ def _parse_paths(text):
 def main():
     args = build_parser().parse_args()
     extra_uniprot_tsvs = _parse_paths(args.extra_uniprot_tsvs)
+    exclusion_tsvs = _parse_paths(args.exclusion_tsvs)
     result = run_external_augmented_feature_oof(
         training_tsv=args.training_tsv,
         uniprot_tsv=args.uniprot_tsv,
         extra_uniprot_tsvs=extra_uniprot_tsvs,
+        exclusion_tsvs=exclusion_tsvs,
         deeploc_dir=args.deeploc_dir,
         include_deeploc=_yes_no(args.include_deeploc),
         max_external_per_class=int(args.max_external_per_class),
@@ -514,6 +701,7 @@ def main():
             targetp_tsv=args.training_tsv,
             uniprot_tsv=args.uniprot_tsv,
             extra_uniprot_tsvs=extra_uniprot_tsvs,
+            exclusion_tsvs=exclusion_tsvs,
             deeploc_dir=args.deeploc_dir,
             include_deeploc=_yes_no(args.include_deeploc),
             max_per_class=int(args.max_external_per_class),
@@ -533,6 +721,29 @@ def main():
         result=result,
         external_tsv=args.external_tsv_out,
     )
+    if str(args.model_out).strip() != '':
+        model = fit_external_augmented_feature_runtime_model(
+            training_tsv=args.training_tsv,
+            uniprot_tsv=args.uniprot_tsv,
+            extra_uniprot_tsvs=extra_uniprot_tsvs,
+            exclusion_tsvs=exclusion_tsvs,
+            deeploc_dir=args.deeploc_dir,
+            include_deeploc=_yes_no(args.include_deeploc),
+            max_external_per_class=int(args.max_external_per_class),
+            external_weight=float(args.external_weight),
+            seed=int(args.seed),
+            use_mmseqs=_yes_no(args.mmseqs),
+            mmseqs_min_seq_id=float(args.mmseqs_min_seq_id),
+            mmseqs_min_coverage=float(args.mmseqs_min_coverage),
+            threads=int(args.threads),
+            model_kind=args.model_kind,
+            n_estimators=int(args.n_estimators),
+            random_state=int(args.random_state),
+            class_weight=args.class_weight,
+            max_features=args.max_features,
+            min_samples_leaf=int(args.min_samples_leaf),
+        )
+        save_localize_model(model=model, path=str(args.model_out))
     print('external_rows={} argmax_macro_f1={:.6f} foldwise_threshold_macro_f1={:.6f}'.format(
         int(result['external_report']['sampled_rows']),
         float(result['argmax']['macro_f1']),

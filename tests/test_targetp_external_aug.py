@@ -5,6 +5,7 @@ import pytest
 
 from cdskit.targetp_external_aug import (
     build_external_augmented_training_rows,
+    fit_external_augmented_feature_runtime_model,
     run_external_augmented_feature_oof,
     strict_uniprot_targetp_label,
 )
@@ -187,6 +188,53 @@ def test_build_external_augmented_rows_can_filter_mmseqs_similarity(temp_dir, mo
     assert report['filtered_rows'] == 1
 
 
+def test_build_external_augmented_rows_can_exclude_holdout_rows(temp_dir):
+    targetp = temp_dir / 'targetp.tsv'
+    uniprot = temp_dir / 'uniprot.tsv'
+    holdout = temp_dir / 'holdout.tsv'
+    _write_tsv(
+        targetp,
+        ['accession', 'sequence', 'localization', 'peroxisome', 'organism_group', 'fold_id'],
+        _targetp_rows(),
+    )
+    _write_tsv(
+        uniprot,
+        ['accession', 'sequence', 'cc_subcellular_location', 'lineage_ids'],
+        [
+            {
+                'accession': 'U1',
+                'sequence': 'MSTRICTSP',
+                'cc_subcellular_location': 'SUBCELLULAR LOCATION: Secreted.',
+                'lineage_ids': '2759',
+            },
+            {
+                'accession': 'U2',
+                'sequence': 'MSTRICTMTP',
+                'cc_subcellular_location': 'SUBCELLULAR LOCATION: Mitochondrion.',
+                'lineage_ids': '2759',
+            },
+        ],
+    )
+    _write_tsv(
+        holdout,
+        ['accession', 'sequence'],
+        [{'accession': 'U2', 'sequence': 'MOTHER'}],
+    )
+
+    rows, report = build_external_augmented_training_rows(
+        targetp_tsv=str(targetp),
+        uniprot_tsv=str(uniprot),
+        exclusion_tsvs=[str(holdout)],
+        include_deeploc=False,
+        max_per_class=10,
+        seed=1,
+    )
+
+    assert [row['accession'] for row in rows] == ['U1']
+    assert report['skipped']['uniprot_external_exclusion_overlap'] == 1
+    assert report['external_exclusion_accessions'] == 1
+
+
 def test_external_augmented_feature_oof_is_foldwise(temp_dir):
     targetp = temp_dir / 'targetp.tsv'
     uniprot = temp_dir / 'uniprot.tsv'
@@ -242,3 +290,46 @@ def test_external_augmented_feature_oof_is_foldwise(temp_dir):
     assert [fold['fold_id'] for fold in result['folds']] == ['fold1', 'fold2']
     assert all(fold['n_external_train'] == 4 for fold in result['folds'])
     assert result['foldwise_threshold']['metrics']['macro_f1'] >= 0.0
+
+
+def test_fit_external_augmented_feature_runtime_model_records_external_training(temp_dir):
+    targetp = temp_dir / 'targetp.tsv'
+    uniprot = temp_dir / 'uniprot.tsv'
+    _write_tsv(
+        targetp,
+        ['accession', 'sequence', 'localization', 'peroxisome', 'organism_group', 'fold_id'],
+        _targetp_rows(),
+    )
+    _write_tsv(
+        uniprot,
+        ['accession', 'sequence', 'cc_subcellular_location', 'lineage_ids'],
+        [
+            {
+                'accession': 'U1',
+                'sequence': 'MKKLLLLLLLLAAAAAX',
+                'cc_subcellular_location': 'SUBCELLULAR LOCATION: Secreted.',
+                'lineage_ids': '2759',
+            },
+            {
+                'accession': 'U2',
+                'sequence': 'MARRRRAAASSSLLLQ',
+                'cc_subcellular_location': 'SUBCELLULAR LOCATION: Mitochondrion.',
+                'lineage_ids': '2759',
+            },
+        ],
+    )
+
+    model = fit_external_augmented_feature_runtime_model(
+        training_tsv=str(targetp),
+        uniprot_tsv=str(uniprot),
+        include_deeploc=False,
+        max_external_per_class=10,
+        external_weight=0.25,
+        n_estimators=5,
+        random_state=3,
+    )
+
+    assert model['model_type'] == 'targetp_feature_ensemble_v1'
+    assert model['metadata']['num_target_rows'] == 10
+    assert model['metadata']['num_external_rows'] == 2
+    assert model['localization_model']['classifier_profile']['external_augmented'] is True

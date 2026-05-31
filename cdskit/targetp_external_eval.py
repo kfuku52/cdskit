@@ -235,6 +235,37 @@ def build_uniprot_holdout_rows(
     return out, dict(skipped)
 
 
+def load_fixed_uniprot_holdout_rows(path, strict_targetp_organism_labels=False):
+    out = list()
+    skipped = Counter()
+    for row in read_tsv(path):
+        true_class = str(row.get('true_class', row.get('localization', '')) or '').strip()
+        if true_class not in LOCALIZATION_CLASSES:
+            skipped['unknown_true_class'] += 1
+            continue
+        sequence = row.get('sequence', '')
+        if to_canonical_aa_sequence(sequence) == '':
+            skipped['missing_sequence'] += 1
+            continue
+        organism_group = organism_group_from_row(row)
+        if (
+            bool(strict_targetp_organism_labels)
+            and true_class in ['cTP', 'lTP']
+            and organism_group != 'plant'
+        ):
+            skipped['inconsistent_targetp_organism_label'] += 1
+            continue
+        out.append({
+            'source': row.get('source', 'fixed_uniprot_holdout'),
+            'accession': row.get('accession', ''),
+            'sequence': sequence,
+            'organism_group': organism_group,
+            'true_class': true_class,
+            'external_labels': row.get('external_labels', true_class),
+        })
+    return out, dict(skipped)
+
+
 def stratified_sample_rows(rows, max_per_class=0, seed=1):
     if int(max_per_class) <= 0:
         return list(rows)
@@ -647,6 +678,7 @@ def run_external_evaluation(
     deeploc_dir,
     uniprot_tsv,
     out_dir,
+    fixed_uniprot_holdout_tsv='',
     max_uniprot_per_class=500,
     use_mmseqs=True,
     mmseqs_min_seq_id=0.30,
@@ -665,6 +697,7 @@ def run_external_evaluation(
         'targetp_tsv': targetp_tsv,
         'deeploc_dir': deeploc_dir,
         'uniprot_tsv': uniprot_tsv,
+        'fixed_uniprot_holdout_tsv': str(fixed_uniprot_holdout_tsv),
         'class_names': list(LOCALIZATION_CLASSES),
         'exact_overlap_filter': True,
         'strict_targetp_organism_labels': bool(strict_targetp_organism_labels),
@@ -738,26 +771,41 @@ def run_external_evaluation(
         'notes': 'Broad mature-localization proxy: mitochondrion/chloroplast/extracellular map to mTP/cTP/SP, others to noTP.',
     }
 
-    uniprot_rows, uniprot_skipped = build_uniprot_holdout_rows(
-        path=uniprot_tsv,
-        targetp_keys=targetp_keys,
-        exclude_exact=True,
-        skip_ambiguous=True,
-        strict_targetp_organism_labels=bool(strict_targetp_organism_labels),
-    )
-    sampled = stratified_sample_rows(
-        rows=uniprot_rows,
-        max_per_class=int(max_uniprot_per_class),
-        seed=int(seed),
-    )
-    filtered, mmseqs_report = filter_rows_by_mmseqs_similarity(
-        rows=sampled,
-        targetp_rows=targetp_keys['rows'],
-        min_seq_id=float(mmseqs_min_seq_id),
-        min_coverage=float(mmseqs_min_coverage),
-        threads=int(threads),
-        enabled=bool(use_mmseqs),
-    )
+    if str(fixed_uniprot_holdout_tsv).strip() != '':
+        uniprot_rows, uniprot_skipped = load_fixed_uniprot_holdout_rows(
+            path=str(fixed_uniprot_holdout_tsv),
+            strict_targetp_organism_labels=bool(strict_targetp_organism_labels),
+        )
+        sampled = list(uniprot_rows)
+        filtered = list(uniprot_rows)
+        mmseqs_report = {
+            'requested': False,
+            'available': False,
+            'removed': 0,
+            'kept': int(len(filtered)),
+            'status': 'fixed_holdout',
+        }
+    else:
+        uniprot_rows, uniprot_skipped = build_uniprot_holdout_rows(
+            path=uniprot_tsv,
+            targetp_keys=targetp_keys,
+            exclude_exact=True,
+            skip_ambiguous=True,
+            strict_targetp_organism_labels=bool(strict_targetp_organism_labels),
+        )
+        sampled = stratified_sample_rows(
+            rows=uniprot_rows,
+            max_per_class=int(max_uniprot_per_class),
+            seed=int(seed),
+        )
+        filtered, mmseqs_report = filter_rows_by_mmseqs_similarity(
+            rows=sampled,
+            targetp_rows=targetp_keys['rows'],
+            min_seq_id=float(mmseqs_min_seq_id),
+            min_coverage=float(mmseqs_min_coverage),
+            threads=int(threads),
+            enabled=bool(use_mmseqs),
+        )
     holdout_path = os.path.join(out_dir, 'uniprot_targetp_holdout.tsv')
     write_tsv(
         path=holdout_path,
@@ -794,6 +842,7 @@ def run_external_evaluation(
     )
     result['uniprot_holdout'] = {
         'dataset': uniprot_tsv,
+        'fixed_holdout_tsv': str(fixed_uniprot_holdout_tsv),
         'holdout_tsv': holdout_path,
         'predictions_tsv': uniprot_pred_path,
         'candidate_report': _dataset_report(uniprot_rows, uniprot_skipped),
@@ -837,6 +886,7 @@ def build_parser():
     parser.add_argument('--targetp_tsv', default='data/localize_bench/targetp2_benchmark.tsv', type=str)
     parser.add_argument('--deeploc_dir', default='data/localize_bench/deeploc21', type=str)
     parser.add_argument('--uniprot_tsv', default='data/localize_bench/eukaryota_full_with_lineage.tsv', type=str)
+    parser.add_argument('--fixed_uniprot_holdout_tsv', default='', type=str)
     parser.add_argument('--out_dir', default='data/localize_bench/targetp_external_eval', type=str)
     parser.add_argument('--max_uniprot_per_class', default=500, type=int)
     parser.add_argument('--mmseqs', default='yes', choices=['yes', 'no'], type=str)
@@ -878,6 +928,7 @@ def main():
         deeploc_dir=args.deeploc_dir,
         uniprot_tsv=args.uniprot_tsv,
         out_dir=args.out_dir,
+        fixed_uniprot_holdout_tsv=args.fixed_uniprot_holdout_tsv,
         max_uniprot_per_class=int(args.max_uniprot_per_class),
         use_mmseqs=_to_bool_yes_no(args.mmseqs),
         mmseqs_min_seq_id=float(args.mmseqs_min_seq_id),
