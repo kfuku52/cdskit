@@ -1301,6 +1301,60 @@ def test_targetp_reranker_v2_feature_profile_uses_pair_probabilities():
     assert not np.allclose(v2, v2_swapped)
 
 
+def test_predict_targetp_blend_mtp_notp_specialist_uses_reranker_candidate():
+    class_order = ['noTP', 'SP', 'mTP', 'cTP', 'lTP']
+    model = {
+        'model_type': 'targetp_blend_v1',
+        'feature_names': [],
+        'localization_model': {
+            'class_order': class_order,
+            'base_models': [
+                {
+                    'model_type': 'nearest_centroid_v1',
+                    'localization_model': {
+                        'mode': 'constant',
+                        'class_label': 'SP',
+                        'class_order': class_order,
+                    },
+                },
+                {
+                    'model_type': 'nearest_centroid_v1',
+                    'localization_model': {
+                        'mode': 'constant',
+                        'class_label': 'SP',
+                        'class_order': class_order,
+                    },
+                },
+            ],
+            'alpha_by_class': 0.5,
+            'targetp_specialist_postprocess': {
+                'enabled': True,
+                'reranker_models': [ConstantMulticlassScore([0.05, 0.05, 0.70, 0.10, 0.10])],
+                'reranker_threshold': 0.95,
+                'mtp_notp_models': [ConstantBinaryScore(0.20)],
+                'mtp_notp_threshold': 0.60,
+            },
+        },
+        'perox_model': {
+            'mode': 'constant',
+            'yes_probability': 0.0,
+        },
+    }
+
+    pred = predict_localization_and_peroxisome(
+        aa_seq='MASTSTSTSTSSRRRGGGGG',
+        model=model,
+        organism_group='plant',
+    )
+
+    details = pred['targetp_blend_details']['specialist_postprocess']
+    assert details['reranker_positive'] is False
+    assert details['reranker_class'] == 'mTP'
+    assert details['mtp_notp_candidate'] is True
+    assert details['mtp_notp_positive'] is False
+    assert pred['predicted_class'] == 'noTP'
+
+
 def test_predict_targetp_feature_ensemble_uses_cpu_sklearn_classifier_and_organism_gate():
     aa_seq = 'MASTSTSTSTSSRRRGGGGG'
     feature_dim = int(extract_targetp_feature_ensemble_features(

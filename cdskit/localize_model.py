@@ -1690,6 +1690,7 @@ def _apply_targetp_specialist_postprocess(
     scores = _class_probs_to_vector(base_probs)
     scores = scores / _targetp_threshold_vector(class_thresholds)
     sp_idx = LOCALIZATION_CLASSES.index('SP')
+    mtp_idx = LOCALIZATION_CLASSES.index('mTP')
     ctp_idx = LOCALIZATION_CLASSES.index('cTP')
     ltp_idx = LOCALIZATION_CLASSES.index('lTP')
     notp_idx = LOCALIZATION_CLASSES.index('noTP')
@@ -1751,6 +1752,42 @@ def _apply_targetp_specialist_postprocess(
             pred_idx = reranker_idx
     else:
         reranker_class_threshold = reranker_threshold
+
+    mtp_notp_models = _targetp_specialist_model_list(
+        specialist,
+        'mtp_notp_models',
+        'mtp_notp_model',
+    )
+    mtp_notp_threshold = float(specialist.get('mtp_notp_threshold', 0.5))
+    mtp_notp_score = 0.0
+    mtp_notp_positive = False
+    mtp_notp_candidate = (
+        len(mtp_notp_models) > 0
+        and (
+            pred_idx in [notp_idx, mtp_idx]
+            or reranker_class in ['noTP', 'mTP']
+        )
+    )
+    if mtp_notp_candidate:
+        mtp_notp_feature_vec = _targetp_reranker_feature_vector(
+            aa_seq=aa_seq,
+            base_probs=base_probs,
+            prob_a=prob_a,
+            prob_b=prob_b,
+            organism_group=organism_group,
+            class_thresholds=class_thresholds,
+            feature_profile=specialist.get(
+                'mtp_notp_feature_profile',
+                specialist.get('reranker_feature_profile', ''),
+            ),
+        )
+        mtp_notp_score = _predict_binary_ensemble_score(
+            feature_vec=mtp_notp_feature_vec,
+            models=mtp_notp_models,
+            weights=specialist.get('mtp_notp_weights', None),
+        )
+        mtp_notp_positive = mtp_notp_score >= mtp_notp_threshold
+        pred_idx = mtp_idx if mtp_notp_positive else notp_idx
 
     sp_models = _targetp_specialist_model_list(specialist, 'sp_models', 'sp_model')
     sp_threshold = float(specialist.get('sp_threshold', 0.5))
@@ -1843,6 +1880,10 @@ def _apply_targetp_specialist_postprocess(
         'reranker_class_threshold': float(reranker_class_threshold),
         'reranker_positive': bool(reranker_positive),
         'reranker_class': str(reranker_class),
+        'mtp_notp_score': float(mtp_notp_score),
+        'mtp_notp_threshold': float(mtp_notp_threshold),
+        'mtp_notp_positive': bool(mtp_notp_positive),
+        'mtp_notp_candidate': bool(mtp_notp_candidate),
         'notp_score': float(notp_score),
         'notp_threshold': float(notp_threshold),
         'notp_positive': bool(notp_positive),
