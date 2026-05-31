@@ -6,7 +6,10 @@ import pytest
 from cdskit.targetp_external_aug import (
     build_external_augmented_training_rows,
     fit_external_augmented_feature_runtime_model,
+    _parse_class_thresholds,
+    _parse_external_class_weights,
     run_external_augmented_feature_oof,
+    split_external_train_calibration_rows,
     strict_uniprot_targetp_label,
 )
 
@@ -235,6 +238,134 @@ def test_build_external_augmented_rows_can_exclude_holdout_rows(temp_dir):
     assert report['external_exclusion_accessions'] == 1
 
 
+def test_build_external_augmented_rows_filters_holdout_similarity(temp_dir, monkeypatch):
+    calls = list()
+
+    def fake_filter_rows_by_mmseqs_similarity(
+        rows,
+        targetp_rows,
+        min_seq_id=0.30,
+        min_coverage=0.80,
+        threads=1,
+        enabled=True,
+    ):
+        calls.append([row.get('accession', '') for row in targetp_rows])
+        remove_u2 = any(row.get('accession', '') == 'HOLDOUT' for row in targetp_rows)
+        kept = [
+            row for row in rows
+            if not (remove_u2 and row.get('accession', '') == 'U2')
+        ]
+        return kept, {
+            'requested': bool(enabled),
+            'available': True,
+            'min_seq_id': float(min_seq_id),
+            'min_coverage': float(min_coverage),
+            'removed': int(len(rows) - len(kept)),
+            'kept': int(len(kept)),
+            'status': 'ok',
+        }
+
+    monkeypatch.setattr(
+        'cdskit.targetp_external_aug.filter_rows_by_mmseqs_similarity',
+        fake_filter_rows_by_mmseqs_similarity,
+    )
+    targetp = temp_dir / 'targetp.tsv'
+    uniprot = temp_dir / 'uniprot.tsv'
+    holdout = temp_dir / 'holdout.tsv'
+    _write_tsv(
+        targetp,
+        ['accession', 'sequence', 'localization', 'peroxisome', 'organism_group', 'fold_id'],
+        _targetp_rows(),
+    )
+    _write_tsv(
+        uniprot,
+        ['accession', 'sequence', 'cc_subcellular_location', 'lineage_ids'],
+        [
+            {
+                'accession': 'U1',
+                'sequence': 'MSTRICTSP',
+                'cc_subcellular_location': 'SUBCELLULAR LOCATION: Secreted.',
+                'lineage_ids': '2759',
+            },
+            {
+                'accession': 'U2',
+                'sequence': 'MSTRICTMTP',
+                'cc_subcellular_location': 'SUBCELLULAR LOCATION: Mitochondrion.',
+                'lineage_ids': '2759',
+            },
+        ],
+    )
+    _write_tsv(
+        holdout,
+        ['accession', 'sequence'],
+        [{'accession': 'HOLDOUT', 'sequence': 'MNEARHOLDOUT'}],
+    )
+
+    rows, report = build_external_augmented_training_rows(
+        targetp_tsv=str(targetp),
+        uniprot_tsv=str(uniprot),
+        exclusion_tsvs=[str(holdout)],
+        include_deeploc=False,
+        max_per_class=10,
+        seed=1,
+        use_mmseqs=False,
+        exclusion_mmseqs=True,
+    )
+
+    assert [row['accession'] for row in rows] == ['U1']
+    assert len(calls) == 1
+    assert calls[0] == ['HOLDOUT']
+    assert report['external_exclusion_similarity_filter']['status'] == 'ok'
+    assert report['external_exclusion_similarity_filter']['removed'] == 1
+
+
+def test_split_external_train_calibration_rows_is_stratified():
+    rows = [
+        {'accession': '{}{}'.format(class_name, row_i), 'localization': class_name}
+        for class_name in ['noTP', 'SP', 'mTP', 'cTP', 'lTP']
+        for row_i in range(4)
+    ]
+
+    train_rows, calibration_rows, report = split_external_train_calibration_rows(
+        rows=rows,
+        calibration_fraction=0.25,
+        seed=9,
+    )
+
+    assert len(train_rows) == 15
+    assert len(calibration_rows) == 5
+    assert report['enabled'] is True
+    assert report['calibration_counts'] == {
+        'noTP': 1,
+        'SP': 1,
+        'mTP': 1,
+        'cTP': 1,
+        'lTP': 1,
+    }
+
+
+def test_parse_class_thresholds_accepts_partial_overrides():
+    assert _parse_class_thresholds('') is None
+
+    thresholds = _parse_class_thresholds('noTP=0.6,SP=0.65,lTP=0.1')
+
+    assert thresholds['noTP'] == pytest.approx(0.6)
+    assert thresholds['SP'] == pytest.approx(0.65)
+    assert thresholds['lTP'] == pytest.approx(0.1)
+    assert thresholds['mTP'] == pytest.approx(1.0)
+    assert thresholds['cTP'] == pytest.approx(1.0)
+
+
+def test_parse_external_class_weights_accepts_partial_overrides():
+    assert _parse_external_class_weights('') is None
+
+    weights = _parse_external_class_weights('cTP=2.5,lTP=0.75')
+
+    assert set(weights.keys()) == {'cTP', 'lTP'}
+    assert weights['cTP'] == pytest.approx(2.5)
+    assert weights['lTP'] == pytest.approx(0.75)
+
+
 def test_external_augmented_feature_oof_is_foldwise(temp_dir):
     targetp = temp_dir / 'targetp.tsv'
     uniprot = temp_dir / 'uniprot.tsv'
@@ -316,6 +447,54 @@ def test_fit_external_augmented_feature_runtime_model_records_external_training(
                 'cc_subcellular_location': 'SUBCELLULAR LOCATION: Mitochondrion.',
                 'lineage_ids': '2759',
             },
+            {
+                'accession': 'U3',
+                'sequence': 'MASTSTSTSTSSRRRQ',
+                'cc_subcellular_location': 'SUBCELLULAR LOCATION: Chloroplast.',
+                'lineage_ids': '2759,33090',
+            },
+            {
+                'accession': 'U4',
+                'sequence': 'MRRSTSTSTSTSSQ',
+                'cc_subcellular_location': 'SUBCELLULAR LOCATION: Chloroplast thylakoid lumen.',
+                'lineage_ids': '2759,33090',
+            },
+            {
+                'accession': 'U5',
+                'sequence': 'MGGGGGGGGGGGGGX',
+                'cc_subcellular_location': 'SUBCELLULAR LOCATION: Cytoplasm.',
+                'lineage_ids': '2759',
+            },
+            {
+                'accession': 'U6',
+                'sequence': 'MKKLLLLLLLLAAAAB',
+                'cc_subcellular_location': 'SUBCELLULAR LOCATION: Secreted.',
+                'lineage_ids': '2759',
+            },
+            {
+                'accession': 'U7',
+                'sequence': 'MARRRRAAASSSLLLB',
+                'cc_subcellular_location': 'SUBCELLULAR LOCATION: Mitochondrion.',
+                'lineage_ids': '2759',
+            },
+            {
+                'accession': 'U8',
+                'sequence': 'MASTSTSTSTSSRRRB',
+                'cc_subcellular_location': 'SUBCELLULAR LOCATION: Chloroplast.',
+                'lineage_ids': '2759,33090',
+            },
+            {
+                'accession': 'U9',
+                'sequence': 'MRRSTSTSTSTSSB',
+                'cc_subcellular_location': 'SUBCELLULAR LOCATION: Chloroplast thylakoid lumen.',
+                'lineage_ids': '2759,33090',
+            },
+            {
+                'accession': 'U10',
+                'sequence': 'MGGGGGGGGGGGGGB',
+                'cc_subcellular_location': 'SUBCELLULAR LOCATION: Cytoplasm.',
+                'lineage_ids': '2759',
+            },
         ],
     )
 
@@ -325,11 +504,22 @@ def test_fit_external_augmented_feature_runtime_model_records_external_training(
         include_deeploc=False,
         max_external_per_class=10,
         external_weight=0.25,
+        calibration_fraction=0.5,
         n_estimators=5,
         random_state=3,
     )
 
     assert model['model_type'] == 'targetp_feature_ensemble_v1'
     assert model['metadata']['num_target_rows'] == 10
-    assert model['metadata']['num_external_rows'] == 2
+    assert model['metadata']['num_external_rows'] == 10
+    assert model['metadata']['num_external_train_rows'] == 5
+    assert model['metadata']['num_external_calibration_rows'] == 5
+    assert model['metadata']['external_calibration']['threshold_tuning']['enabled'] is True
     assert model['localization_model']['classifier_profile']['external_augmented'] is True
+    assert set(model['localization_model']['class_thresholds'].keys()) == {
+        'noTP',
+        'SP',
+        'mTP',
+        'cTP',
+        'lTP',
+    }
