@@ -192,6 +192,43 @@ def test_targetp_tf_cell_impl_has_single_kernel_bias_and_outputs():
     assert tuple(out['attention_logits'].shape) == (2, 12, 4)
 
 
+def test_targetp_tf_cell_state_dropout_preserves_cell_state():
+    torch = pytest.importorskip('torch')
+    import torch.nn as nn
+
+    module = _build_targetp2_torch_module(
+        torch=torch,
+        nn=nn,
+        seq_len=3,
+        hidden_rnn=2,
+        n_filters=2,
+        hidden_fc=5,
+        n_attention=4,
+        attention_size=4,
+        rnn_impl='targetp_tf_cell',
+    )
+    module.train()
+    calls = []
+
+    def fake_dropout(value, keep):
+        calls.append(tuple(value.shape))
+        return value
+
+    module._dropout_keep = fake_dropout
+    conv = torch.ones((1, 3, 2), dtype=torch.float32)
+    lengths = torch.asarray([3], dtype=torch.long)
+    org_state = torch.zeros((1, 2), dtype=torch.float32)
+
+    module._run_tf_style_lstm_cell(
+        conv=conv,
+        lengths=lengths,
+        org_state=org_state,
+        rnn_keep_prob=0.5,
+    )
+
+    assert calls == [(1, 2)] * (3 * 2 * 2)
+
+
 def test_targetp_torch_detects_rnn_impl_from_state_dict():
     torch = pytest.importorskip('torch')
     import torch.nn as nn
