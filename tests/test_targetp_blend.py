@@ -24,9 +24,11 @@ from cdskit.targetp_blend import (
     _save_oof_npz,
     _specialist_threshold_rank,
     _targetp_margin_summary,
+    build_targetp_pair_blend_runtime_model,
     main,
 )
-from cdskit.localize_model import predict_localization_and_peroxisome
+from cdskit.localize_model import FEATURE_NAMES, predict_localization_and_peroxisome
+from cdskit.targetp_pair_blend import main as targetp_pair_blend_main
 
 
 def test_oof_rows_to_prob_and_true_sorts_and_normalizes():
@@ -322,6 +324,95 @@ def test_build_targetp_blend_runtime_model_predicts_with_wrapped_base_models():
     assert model['model_type'] == 'targetp_blend_v1'
     assert model['metadata']['source'] == 'unit-test'
     assert pred['predicted_class'] == 'lTP'
+
+
+def test_build_targetp_pair_blend_runtime_model_accepts_scalar_alpha():
+    class_names = list(LOCALIZATION_CLASSES)
+    base_model_a = {
+        'model_type': 'nearest_centroid_v1',
+        'localization_model': {
+            'mode': 'constant',
+            'class_label': 'noTP',
+            'class_order': class_names,
+        },
+        'perox_model': {'mode': 'constant', 'yes_probability': 0.25},
+    }
+    base_model_b = {
+        'model_type': 'nearest_centroid_v1',
+        'localization_model': {
+            'mode': 'constant',
+            'class_label': 'SP',
+            'class_order': class_names,
+        },
+        'perox_model': {'mode': 'constant', 'yes_probability': 0.75},
+    }
+
+    model = build_targetp_pair_blend_runtime_model(
+        base_model_a=base_model_a,
+        base_model_b=base_model_b,
+        alpha_by_class=0.0,
+        perox_source='b',
+        metadata={'source': 'pair-test'},
+    )
+    pred = predict_localization_and_peroxisome(
+        aa_seq='MKKLLLLLLLLAAAAAGGGGG',
+        model=model,
+    )
+
+    assert model['model_type'] == 'targetp_blend_v1'
+    assert model['metadata']['source'] == 'pair-test'
+    assert model['metadata']['perox_source'] == 'b'
+    assert pred['predicted_class'] == 'SP'
+    assert pred['perox_probability_yes'] == pytest.approx(0.75)
+
+
+def test_targetp_pair_blend_cli_writes_model(temp_dir):
+    class_names = list(LOCALIZATION_CLASSES)
+    model_a = {
+        'model_type': 'nearest_centroid_v1',
+        'feature_names': list(FEATURE_NAMES),
+        'localization_model': {
+            'mode': 'constant',
+            'class_label': 'noTP',
+            'class_order': class_names,
+        },
+        'perox_model': {'mode': 'constant', 'yes_probability': 0.0},
+        'metadata': {},
+    }
+    model_b = {
+        'model_type': 'nearest_centroid_v1',
+        'feature_names': list(FEATURE_NAMES),
+        'localization_model': {
+            'mode': 'constant',
+            'class_label': 'mTP',
+            'class_order': class_names,
+        },
+        'perox_model': {'mode': 'constant', 'yes_probability': 0.0},
+        'metadata': {},
+    }
+    from cdskit.localize_model import load_localize_model, save_localize_model
+
+    model_a_path = temp_dir / 'a.pt'
+    model_b_path = temp_dir / 'b.pt'
+    out_path = temp_dir / 'blend.pt'
+    save_localize_model(model=model_a, path=str(model_a_path))
+    save_localize_model(model=model_b, path=str(model_b_path))
+
+    targetp_pair_blend_main([
+        '--model_a', str(model_a_path),
+        '--model_b', str(model_b_path),
+        '--alpha', '0.0',
+        '--model_out', str(out_path),
+    ])
+    saved = load_localize_model(str(out_path))
+    pred = predict_localization_and_peroxisome(
+        aa_seq='MARRRRAAASSSLLLGGGGG',
+        model=saved,
+    )
+
+    assert saved['model_type'] == 'targetp_blend_v1'
+    assert saved['metadata']['base_model_a'] == str(model_a_path)
+    assert pred['predicted_class'] == 'mTP'
 
 
 def test_export_targetp_blend_runtime_model_uses_full_training_table(temp_dir, monkeypatch):

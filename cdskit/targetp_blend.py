@@ -2049,6 +2049,63 @@ def _build_targetp_blend_runtime_model(
     }
 
 
+def _class_value_dict(value, default=1.0):
+    if isinstance(value, dict):
+        out = dict()
+        for class_name in LOCALIZATION_CLASSES:
+            out[class_name] = float(value.get(class_name, default))
+        return out
+    return {class_name: float(value) for class_name in LOCALIZATION_CLASSES}
+
+
+def build_targetp_pair_blend_runtime_model(
+    base_model_a,
+    base_model_b,
+    alpha_by_class,
+    class_thresholds=None,
+    perox_source='a',
+    metadata=None,
+):
+    """Build a CPU-runtime TargetP blend from two already-trained models."""
+    if not isinstance(base_model_a, dict) or not isinstance(base_model_b, dict):
+        raise ValueError('base_model_a and base_model_b should be model dictionaries.')
+    for label, model in [('base_model_a', base_model_a), ('base_model_b', base_model_b)]:
+        if str(model.get('model_type', '')).strip() == '':
+            raise ValueError('{} is missing model_type.'.format(label))
+        if not isinstance(model.get('localization_model', None), dict):
+            raise ValueError('{} is missing localization_model.'.format(label))
+        if not isinstance(model.get('perox_model', None), dict):
+            raise ValueError('{} is missing perox_model.'.format(label))
+    perox_source = str(perox_source or 'a').strip().lower()
+    if perox_source not in ['a', 'b']:
+        raise ValueError("perox_source should be 'a' or 'b'.")
+    thresholds = (
+        {class_name: 1.0 for class_name in LOCALIZATION_CLASSES}
+        if class_thresholds is None
+        else _class_value_dict(class_thresholds, default=1.0)
+    )
+    model_metadata = {} if metadata is None else dict(metadata)
+    model_metadata.update({
+        'model_arch': str(model_metadata.get('model_arch', 'targetp_pair_blend_v1')),
+        'base_model_types': [
+            str(base_model_a.get('model_type', '')),
+            str(base_model_b.get('model_type', '')),
+        ],
+        'perox_source': perox_source,
+    })
+    return _build_targetp_blend_runtime_model(
+        base_model_a=base_model_a,
+        base_model_b=base_model_b,
+        perox_model=(
+            base_model_a['perox_model']
+            if perox_source == 'a' else base_model_b['perox_model']
+        ),
+        alpha_by_class=_class_value_dict(alpha_by_class, default=1.0),
+        class_thresholds=thresholds,
+        metadata=model_metadata,
+    )
+
+
 def _fit_full_targetp_specialist_postprocess(
     rows,
     prob_a,
