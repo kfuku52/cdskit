@@ -6,7 +6,7 @@ import numpy as np
 from cdskit.localize_model import (
     LOCALIZATION_CLASSES,
     _targetp_notp_specialist_feature_vector,
-    _targetp_probability_sequence_feature_vector,
+    _targetp_reranker_feature_vector,
     load_localize_model,
     predict_localization_and_peroxisome,
     save_localize_model,
@@ -28,7 +28,7 @@ TARGETP_NOTP_SPECIALIST_PROFILE = {
 
 
 TARGETP_RERANKER_PROFILE = {
-    'name': 'targetp_probability_sequence_reranker_v1',
+    'name': 'targetp_probability_pair_sequence_reranker_v2',
     'model_kind': 'HistGradientBoostingClassifier',
     'max_iter': 120,
     'learning_rate': 0.04,
@@ -72,6 +72,19 @@ def _targetp_notp_specialist_training_matrix(model, rows):
 def _probabilities_from_prediction_row(row):
     return {
         class_name: float(row.get('p_{}'.format(class_name), 0.0))
+        for class_name in LOCALIZATION_CLASSES
+    }
+
+
+def _base_probabilities_from_prediction_row(row, prefix):
+    prefix = str(prefix or '').strip()
+    if prefix == '':
+        return _probabilities_from_prediction_row(row)
+    keys = ['p_{}_{}'.format(prefix, class_name) for class_name in LOCALIZATION_CLASSES]
+    if not all(key in row for key in keys):
+        return _probabilities_from_prediction_row(row)
+    return {
+        class_name: float(row.get('p_{}_{}'.format(prefix, class_name), 0.0))
         for class_name in LOCALIZATION_CLASSES
     }
 
@@ -167,15 +180,16 @@ def _targetp_reranker_training_matrix_from_predictions(model, rows, prediction_r
             if pred_acc != '' and row_acc != '' and pred_acc != row_acc:
                 raise ValueError('TargetP reranker prediction row accession mismatch.')
             base_probs = _probabilities_from_prediction_row(pred_row)
-            prob_a = base_probs
-            prob_b = base_probs
-        features.append(_targetp_probability_sequence_feature_vector(
+            prob_a = _base_probabilities_from_prediction_row(pred_row, 'a')
+            prob_b = _base_probabilities_from_prediction_row(pred_row, 'b')
+        features.append(_targetp_reranker_feature_vector(
             aa_seq=sequence,
             base_probs=base_probs,
             prob_a=prob_a,
             prob_b=prob_b,
             organism_group=organism_group,
             class_thresholds=localization_model.get('class_thresholds', {}),
+            feature_profile=TARGETP_RERANKER_PROFILE['name'],
         ))
         labels.append(class_to_idx[true_class])
     if len(features) == 0:

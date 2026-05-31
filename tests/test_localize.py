@@ -19,6 +19,8 @@ from cdskit.localize import localize_main
 import cdskit.localize_learn as localize_learn_module
 from cdskit.localize_learn import localize_learn_main
 from cdskit.localize_model import (
+    _targetp_probability_sequence_feature_vector,
+    _targetp_reranker_feature_vector,
     extract_targetp_feature_ensemble_features,
     infer_labels_from_uniprot_cc,
     load_localize_model,
@@ -1258,6 +1260,45 @@ def test_predict_targetp_blend_reranker_uses_class_specific_threshold():
     assert details['reranker_positive'] is False
     assert details['reranker_class'] == 'cTP'
     assert details['reranker_class_threshold'] == pytest.approx(0.90)
+
+
+def test_targetp_reranker_v2_feature_profile_uses_pair_probabilities():
+    aa_seq = 'MASTSTSTSTSSRRRGGGGG'
+    base_probs = {'noTP': 0.2, 'SP': 0.3, 'mTP': 0.4, 'cTP': 0.1, 'lTP': 0.0}
+    prob_a = {'noTP': 0.1, 'SP': 0.2, 'mTP': 0.6, 'cTP': 0.1, 'lTP': 0.0}
+    prob_b = {'noTP': 0.5, 'SP': 0.2, 'mTP': 0.2, 'cTP': 0.1, 'lTP': 0.0}
+    thresholds = {'noTP': 1.0, 'SP': 0.65, 'mTP': 1.0, 'cTP': 0.8, 'lTP': 1.0}
+
+    v1 = _targetp_probability_sequence_feature_vector(
+        aa_seq=aa_seq,
+        base_probs=base_probs,
+        prob_a=prob_a,
+        prob_b=prob_b,
+        organism_group='plant',
+        class_thresholds=thresholds,
+    )
+    v2 = _targetp_reranker_feature_vector(
+        aa_seq=aa_seq,
+        base_probs=base_probs,
+        prob_a=prob_a,
+        prob_b=prob_b,
+        organism_group='plant',
+        class_thresholds=thresholds,
+        feature_profile='targetp_probability_pair_sequence_reranker_v2',
+    )
+    v2_swapped = _targetp_reranker_feature_vector(
+        aa_seq=aa_seq,
+        base_probs=base_probs,
+        prob_a=prob_b,
+        prob_b=prob_a,
+        organism_group='plant',
+        class_thresholds=thresholds,
+        feature_profile='targetp_probability_pair_sequence_reranker_v2',
+    )
+
+    assert v2.shape[0] == v1.shape[0] + 36
+    assert np.allclose(v2[:v1.shape[0]], v1)
+    assert not np.allclose(v2, v2_swapped)
 
 
 def test_predict_targetp_feature_ensemble_uses_cpu_sklearn_classifier_and_organism_gate():

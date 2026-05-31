@@ -1291,6 +1291,83 @@ def _targetp_probability_sequence_feature_vector(
     ])
 
 
+def _targetp_probability_sequence_pair_feature_vector(
+    aa_seq,
+    base_probs,
+    prob_a,
+    prob_b,
+    organism_group,
+    class_thresholds,
+):
+    base_features = _targetp_probability_sequence_feature_vector(
+        aa_seq=aa_seq,
+        base_probs=base_probs,
+        prob_a=prob_a,
+        prob_b=prob_b,
+        organism_group=organism_group,
+        class_thresholds=class_thresholds,
+    )
+    base_vec = _class_probs_to_vector(base_probs)
+    vec_a = _class_probs_to_vector(prob_a)
+    vec_b = _class_probs_to_vector(prob_b)
+    sorted_base = np.sort(base_vec)
+    sorted_a = np.sort(vec_a)
+    sorted_b = np.sort(vec_b)
+    base_margin = (
+        float(sorted_base[-1] - sorted_base[-2])
+        if sorted_base.shape[0] > 1 else 0.0
+    )
+    margin_a = float(sorted_a[-1] - sorted_a[-2]) if sorted_a.shape[0] > 1 else 0.0
+    margin_b = float(sorted_b[-1] - sorted_b[-2]) if sorted_b.shape[0] > 1 else 0.0
+    abs_diff = np.abs(vec_a - vec_b)
+    disagreement = np.asarray([
+        1.0 if int(np.argmax(vec_a)) != int(np.argmax(vec_b)) else 0.0,
+        margin_a,
+        margin_b,
+        base_margin,
+        float(np.max(abs_diff)) if abs_diff.shape[0] > 0 else 0.0,
+        float(np.mean(abs_diff)) if abs_diff.shape[0] > 0 else 0.0,
+    ], dtype=np.float64)
+    return np.concatenate([
+        base_features,
+        vec_a,
+        vec_b,
+        vec_a - vec_b,
+        abs_diff,
+        np.minimum(vec_a, vec_b),
+        np.maximum(vec_a, vec_b),
+        disagreement,
+    ])
+
+
+def _targetp_reranker_feature_vector(
+    aa_seq,
+    base_probs,
+    prob_a,
+    prob_b,
+    organism_group,
+    class_thresholds,
+    feature_profile,
+):
+    if str(feature_profile or '') == 'targetp_probability_pair_sequence_reranker_v2':
+        return _targetp_probability_sequence_pair_feature_vector(
+            aa_seq=aa_seq,
+            base_probs=base_probs,
+            prob_a=prob_a,
+            prob_b=prob_b,
+            organism_group=organism_group,
+            class_thresholds=class_thresholds,
+        )
+    return _targetp_probability_sequence_feature_vector(
+        aa_seq=aa_seq,
+        base_probs=base_probs,
+        prob_a=prob_a,
+        prob_b=prob_b,
+        organism_group=organism_group,
+        class_thresholds=class_thresholds,
+    )
+
+
 def _targetp_notp_specialist_feature_vector(
     aa_seq,
     base_probs,
@@ -1630,13 +1707,14 @@ def _apply_targetp_specialist_postprocess(
     reranker_positive = False
     reranker_class = ''
     if len(reranker_models) > 0:
-        reranker_feature_vec = _targetp_probability_sequence_feature_vector(
+        reranker_feature_vec = _targetp_reranker_feature_vector(
             aa_seq=aa_seq,
             base_probs=base_probs,
             prob_a=prob_a,
             prob_b=prob_b,
             organism_group=organism_group,
             class_thresholds=class_thresholds,
+            feature_profile=specialist.get('reranker_feature_profile', ''),
         )
         reranker_probs = _predict_multiclass_ensemble_probabilities(
             feature_vec=reranker_feature_vec,
