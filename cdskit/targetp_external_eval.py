@@ -17,7 +17,32 @@ from cdskit.localize_model import (
     predict_localization_and_peroxisome,
     to_canonical_aa_sequence,
 )
+from cdskit.targetp_feature_ensemble import (
+    _metrics_from_prediction_indices,
+    _prediction_indices_with_thresholds,
+    optimize_class_thresholds,
+)
 from cdskit.uniprot_preset_split import classify_lineage_ids, parse_taxon_ids
+
+
+DEFAULT_CLASS_THRESHOLD_GRID = [
+    0.05,
+    0.075,
+    0.1,
+    0.15,
+    0.2,
+    0.3,
+    0.4,
+    0.5,
+    0.65,
+    0.8,
+    1.0,
+    1.25,
+    1.5,
+    2.0,
+    3.0,
+    5.0,
+]
 
 
 DEEPLOC_SORTING_TO_TARGETP = {
@@ -174,6 +199,7 @@ def build_uniprot_holdout_rows(
     targetp_keys,
     exclude_exact=True,
     skip_ambiguous=True,
+    strict_targetp_organism_labels=False,
 ):
     rows = read_tsv(path=path)
     out = list()
@@ -190,11 +216,19 @@ def build_uniprot_holdout_rows(
         if ambiguous and skip_ambiguous:
             skipped['ambiguous_uniprot_cc'] += 1
             continue
+        organism_group = organism_group_from_row(row)
+        if (
+            bool(strict_targetp_organism_labels)
+            and true_class in ['cTP', 'lTP']
+            and organism_group != 'plant'
+        ):
+            skipped['inconsistent_targetp_organism_label'] += 1
+            continue
         out.append({
             'source': 'uniprot_cc_holdout',
             'accession': row.get('accession', ''),
             'sequence': row.get('sequence', ''),
-            'organism_group': organism_group_from_row(row),
+            'organism_group': organism_group,
             'true_class': true_class,
             'external_labels': true_class,
         })
@@ -342,6 +376,162 @@ def compute_single_label_metrics(rows, class_names=LOCALIZATION_CLASSES):
     }
 
 
+def _prob_matrix_from_prediction_rows(rows, class_names=LOCALIZATION_CLASSES):
+    class_names = list(class_names)
+    out = list()
+    for row in rows:
+        values = list()
+        for class_name in class_names:
+            value = row.get('p_{}'.format(class_name), 0.0)
+            try:
+                value = float(value)
+            except Exception:
+                value = 0.0
+            values.append(float(value))
+        out.append(values)
+    if len(out) == 0:
+        return np.zeros((0, len(class_names)), dtype=np.float64)
+    return np.asarray(out, dtype=np.float64)
+
+
+def _true_indices_from_prediction_rows(rows, class_names=LOCALIZATION_CLASSES):
+    class_names = list(class_names)
+    class_to_idx = {class_name: i for i, class_name in enumerate(class_names)}
+    out = list()
+    for row in rows:
+        class_name = str(row.get('true_class', '')).strip()
+        if class_name not in class_to_idx:
+            raise ValueError('Unknown true_class in prediction rows: {}'.format(class_name))
+        out.append(int(class_to_idx[class_name]))
+    return np.asarray(out, dtype=np.int64)
+
+
+def _stratified_fold_indices(true_idx, n_folds=5, seed=1):
+    true_idx = np.asarray(true_idx, dtype=np.int64)
+    if true_idx.shape[0] == 0:
+        return []
+    if true_idx.shape[0] == 1:
+        return [np.arange(1, dtype=np.int64)]
+    n_folds = int(max(2, min(int(n_folds), int(true_idx.shape[0]))))
+    rng = random.Random(int(seed))
+    by_class = dict()
+    for row_i, class_i in enumerate(true_idx.tolist()):
+        by_class.setdefault(int(class_i), []).append(int(row_i))
+    folds = [[] for _ in range(n_folds)]
+    for class_i in sorted(by_class.keys()):
+        indices = list(by_class[class_i])
+        rng.shuffle(indices)
+        for pos, row_i in enumerate(indices):
+            folds[pos % n_folds].append(int(row_i))
+    return [
+        np.asarray(sorted(fold), dtype=np.int64)
+        for fold in folds
+        if len(fold) > 0
+    ]
+
+
+def evaluate_prediction_threshold_calibration(
+    rows,
+    threshold_grid=None,
+    cv_folds=5,
+    seed=1,
+    class_names=LOCALIZATION_CLASSES,
+):
+    class_names = list(class_names)
+    threshold_grid = (
+        list(DEFAULT_CLASS_THRESHOLD_GRID)
+        if threshold_grid is None
+        else sorted(set([float(value) for value in threshold_grid]))
+    )
+    prob_matrix = _prob_matrix_from_prediction_rows(rows=rows, class_names=class_names)
+    true_idx = _true_indices_from_prediction_rows(rows=rows, class_names=class_names)
+    if prob_matrix.shape[0] == 0:
+        return {
+            'n_rows': 0,
+            'threshold_grid': [float(value) for value in threshold_grid],
+        }
+    argmax_metrics = _metrics_from_prediction_indices(
+        pred_idx=np.argmax(prob_matrix, axis=1),
+        true_idx=true_idx,
+        class_names=class_names,
+    )
+    oracle_thresholds, oracle_train_metrics = optimize_class_thresholds(
+        prob_matrix=prob_matrix,
+        true_idx=true_idx,
+        class_names=class_names,
+        grid=threshold_grid,
+    )
+    oracle_pred = _prediction_indices_with_thresholds(
+        prob_matrix=prob_matrix,
+        thresholds=oracle_thresholds,
+    )
+    oracle_metrics = _metrics_from_prediction_indices(
+        pred_idx=oracle_pred,
+        true_idx=true_idx,
+        class_names=class_names,
+    )
+    cv_pred = np.zeros((true_idx.shape[0],), dtype=np.int64)
+    folds_out = list()
+    all_idx = np.arange(true_idx.shape[0], dtype=np.int64)
+    folds = _stratified_fold_indices(true_idx=true_idx, n_folds=cv_folds, seed=seed)
+    for fold_i, valid_idx in enumerate(folds):
+        valid_mask = np.zeros((true_idx.shape[0],), dtype=bool)
+        valid_mask[valid_idx] = True
+        train_idx = all_idx[~valid_mask]
+        if train_idx.shape[0] == 0:
+            cv_pred[valid_idx] = np.argmax(prob_matrix[valid_idx, :], axis=1)
+            folds_out.append({
+                'fold': int(fold_i + 1),
+                'n_train': 0,
+                'n_valid': int(valid_idx.shape[0]),
+                'train_macro_f1': 0.0,
+                'thresholds': {
+                    class_name: 1.0 for class_name in class_names
+                },
+            })
+            continue
+        thresholds, train_metrics = optimize_class_thresholds(
+            prob_matrix=prob_matrix[train_idx, :],
+            true_idx=true_idx[train_idx],
+            class_names=class_names,
+            grid=threshold_grid,
+        )
+        cv_pred[valid_idx] = _prediction_indices_with_thresholds(
+            prob_matrix=prob_matrix[valid_idx, :],
+            thresholds=thresholds,
+        )
+        folds_out.append({
+            'fold': int(fold_i + 1),
+            'n_train': int(train_idx.shape[0]),
+            'n_valid': int(valid_idx.shape[0]),
+            'train_macro_f1': float(train_metrics['macro_f1']),
+            'thresholds': {
+                class_names[class_i]: float(thresholds[class_i])
+                for class_i in range(len(class_names))
+            },
+        })
+    cv_metrics = _metrics_from_prediction_indices(
+        pred_idx=cv_pred,
+        true_idx=true_idx,
+        class_names=class_names,
+    )
+    return {
+        'n_rows': int(true_idx.shape[0]),
+        'threshold_grid': [float(value) for value in threshold_grid],
+        'argmax_metrics': argmax_metrics,
+        'oracle_thresholds': {
+            class_names[class_i]: float(oracle_thresholds[class_i])
+            for class_i in range(len(class_names))
+        },
+        'oracle_train_macro_f1': float(oracle_train_metrics['macro_f1']),
+        'oracle_metrics': oracle_metrics,
+        'cv_folds': int(len(folds)),
+        'cv_seed': int(seed),
+        'cv_metrics': cv_metrics,
+        'folds': folds_out,
+    }
+
+
 def predict_rows(rows, model_path):
     model = load_localize_model(path=model_path)
     out = list()
@@ -422,6 +612,32 @@ def render_markdown(result):
                 float(cls['f1']),
             ))
         lines.append('')
+        calibration = item.get('threshold_calibration', {})
+        if calibration:
+            lines.append('### Class-threshold calibration')
+            lines.append('')
+            lines.append('| Evaluation | Accuracy | Macro F1 | Notes |')
+            lines.append('| --- | ---: | ---: | --- |')
+            argmax = calibration.get('argmax_metrics', {})
+            oracle = calibration.get('oracle_metrics', {})
+            cv = calibration.get('cv_metrics', {})
+            if argmax:
+                lines.append('| Argmax probabilities | {:.3f} | {:.3f} | Raw probability argmax from the model. |'.format(
+                    float(argmax.get('overall_accuracy', 0.0)),
+                    float(argmax.get('macro_f1', 0.0)),
+                ))
+            if oracle:
+                lines.append('| Oracle thresholds | {:.3f} | {:.3f} | Diagnostic upper bound tuned on all rows; not a fair test estimate. |'.format(
+                    float(oracle.get('overall_accuracy', 0.0)),
+                    float(oracle.get('macro_f1', 0.0)),
+                ))
+            if cv:
+                lines.append('| {}-fold thresholds | {:.3f} | {:.3f} | Thresholds selected on other folds only. |'.format(
+                    int(calibration.get('cv_folds', 0)),
+                    float(cv.get('overall_accuracy', 0.0)),
+                    float(cv.get('macro_f1', 0.0)),
+                ))
+            lines.append('')
     return '\n'.join(lines)
 
 
@@ -437,6 +653,10 @@ def run_external_evaluation(
     mmseqs_min_coverage=0.80,
     seed=1,
     threads=1,
+    threshold_calibration=True,
+    threshold_cv_folds=5,
+    threshold_grid=None,
+    strict_targetp_organism_labels=False,
 ):
     os.makedirs(out_dir, exist_ok=True)
     targetp_keys = load_targetp_exclusion_keys(targetp_tsv=targetp_tsv)
@@ -447,6 +667,7 @@ def run_external_evaluation(
         'uniprot_tsv': uniprot_tsv,
         'class_names': list(LOCALIZATION_CLASSES),
         'exact_overlap_filter': True,
+        'strict_targetp_organism_labels': bool(strict_targetp_organism_labels),
     }
 
     sorting_rows, sorting_skipped = build_deeploc_sorting_rows(
@@ -522,6 +743,7 @@ def run_external_evaluation(
         targetp_keys=targetp_keys,
         exclude_exact=True,
         skip_ambiguous=True,
+        strict_targetp_organism_labels=bool(strict_targetp_organism_labels),
     )
     sampled = stratified_sample_rows(
         rows=uniprot_rows,
@@ -578,8 +800,23 @@ def run_external_evaluation(
         'sampled_rows': int(len(sampled)),
         'mmseqs_similarity_filter': mmseqs_report,
         'metrics': compute_single_label_metrics(uniprot_pred),
-        'notes': 'Weak labels from cdskit UniProt CC rules; TargetP exact overlaps and MMseqs similarities removed before scoring.',
+        'notes': (
+            'Weak labels from cdskit UniProt CC rules; TargetP exact overlaps '
+            'and MMseqs similarities removed before scoring.'
+            + (
+                ' cTP/lTP rows outside plant organism groups are also removed.'
+                if bool(strict_targetp_organism_labels) else ''
+            )
+        ),
     }
+    if bool(threshold_calibration):
+        result['uniprot_holdout']['threshold_calibration'] = evaluate_prediction_threshold_calibration(
+            rows=uniprot_pred,
+            threshold_grid=threshold_grid,
+            cv_folds=int(threshold_cv_folds),
+            seed=int(seed),
+            class_names=LOCALIZATION_CLASSES,
+        )
 
     out_json = os.path.join(out_dir, 'targetp_external_eval.json')
     out_md = os.path.join(out_dir, 'targetp_external_eval.md')
@@ -607,11 +844,30 @@ def build_parser():
     parser.add_argument('--mmseqs_min_coverage', default=0.80, type=float)
     parser.add_argument('--seed', default=1, type=int)
     parser.add_argument('--threads', default=1, type=int)
+    parser.add_argument('--threshold_calibration', default='yes', choices=['yes', 'no'], type=str)
+    parser.add_argument('--threshold_cv_folds', default=5, type=int)
+    parser.add_argument(
+        '--threshold_grid',
+        default=','.join(str(value) for value in DEFAULT_CLASS_THRESHOLD_GRID),
+        type=str,
+    )
+    parser.add_argument('--strict_targetp_organism_labels', default='no', choices=['yes', 'no'], type=str)
     return parser
 
 
 def _to_bool_yes_no(value):
     return str(value).strip().lower() in ['yes', 'y', 'true', '1']
+
+
+def _parse_threshold_grid(value):
+    out = [
+        float(part.strip())
+        for part in str(value).split(',')
+        if part.strip() != ''
+    ]
+    if len(out) == 0:
+        raise ValueError('--threshold_grid should contain at least one value.')
+    return sorted(set(out))
 
 
 def main():
@@ -628,6 +884,10 @@ def main():
         mmseqs_min_coverage=float(args.mmseqs_min_coverage),
         seed=int(args.seed),
         threads=int(args.threads),
+        threshold_calibration=_to_bool_yes_no(args.threshold_calibration),
+        threshold_cv_folds=int(args.threshold_cv_folds),
+        threshold_grid=_parse_threshold_grid(args.threshold_grid),
+        strict_targetp_organism_labels=_to_bool_yes_no(args.strict_targetp_organism_labels),
     )
     print(json.dumps(result, indent=2, sort_keys=True))
 

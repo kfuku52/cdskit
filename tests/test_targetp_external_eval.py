@@ -7,6 +7,7 @@ from cdskit.targetp_external_eval import (
     build_deeploc_sorting_rows,
     build_uniprot_holdout_rows,
     compute_single_label_metrics,
+    evaluate_prediction_threshold_calibration,
     filter_rows_by_mmseqs_similarity,
     load_targetp_exclusion_keys,
     stratified_sample_rows,
@@ -146,6 +147,39 @@ def test_uniprot_holdout_uses_cdskit_cc_label_rules_and_skips_ambiguous(temp_dir
     assert skipped['ambiguous_uniprot_cc'] == 1
 
 
+def test_uniprot_holdout_can_skip_nonplant_plastid_labels(temp_dir):
+    targetp = temp_dir / 'targetp.tsv'
+    uniprot = temp_dir / 'uniprot.tsv'
+    _write_tsv(targetp, ['accession', 'sequence'], [])
+    _write_tsv(
+        uniprot,
+        ['accession', 'sequence', 'cc_subcellular_location', 'lineage_ids'],
+        [
+            {
+                'accession': 'P1',
+                'sequence': 'MAAA',
+                'cc_subcellular_location': 'SUBCELLULAR LOCATION: Chloroplast.',
+                'lineage_ids': '2759, 33090',
+            },
+            {
+                'accession': 'P2',
+                'sequence': 'MBBB',
+                'cc_subcellular_location': 'SUBCELLULAR LOCATION: Chloroplast.',
+                'lineage_ids': '2759, 33208',
+            },
+        ],
+    )
+
+    rows, skipped = build_uniprot_holdout_rows(
+        path=str(uniprot),
+        targetp_keys=load_targetp_exclusion_keys(str(targetp)),
+        strict_targetp_organism_labels=True,
+    )
+
+    assert [row['accession'] for row in rows] == ['P1']
+    assert skipped['inconsistent_targetp_organism_label'] == 1
+
+
 def test_external_eval_metrics_and_stratified_sampling_are_deterministic():
     rows = [
         {'true_class': 'SP', 'predicted_class': 'SP'},
@@ -173,6 +207,28 @@ def test_external_eval_metrics_and_stratified_sampling_are_deterministic():
 
     assert [row['true_class'] for row in sample] == ['noTP', 'SP']
     assert len(sample) == 2
+
+
+def test_prediction_threshold_calibration_reports_oracle_and_foldwise_metrics():
+    rows = [
+        {'true_class': 'noTP', 'p_noTP': 0.45, 'p_SP': 0.55, 'p_mTP': 0.0, 'p_cTP': 0.0, 'p_lTP': 0.0},
+        {'true_class': 'noTP', 'p_noTP': 0.46, 'p_SP': 0.54, 'p_mTP': 0.0, 'p_cTP': 0.0, 'p_lTP': 0.0},
+        {'true_class': 'SP', 'p_noTP': 0.10, 'p_SP': 0.90, 'p_mTP': 0.0, 'p_cTP': 0.0, 'p_lTP': 0.0},
+        {'true_class': 'SP', 'p_noTP': 0.11, 'p_SP': 0.89, 'p_mTP': 0.0, 'p_cTP': 0.0, 'p_lTP': 0.0},
+    ]
+
+    result = evaluate_prediction_threshold_calibration(
+        rows=rows,
+        threshold_grid=[1.0, 2.0],
+        cv_folds=2,
+        seed=3,
+    )
+
+    assert result['argmax_metrics']['macro_f1'] < result['oracle_metrics']['macro_f1']
+    assert result['oracle_thresholds']['SP'] == pytest.approx(2.0)
+    assert result['cv_folds'] == 2
+    assert result['cv_metrics']['macro_f1'] == pytest.approx(result['oracle_metrics']['macro_f1'])
+    assert all(fold['thresholds']['SP'] == pytest.approx(2.0) for fold in result['folds'])
 
 
 def test_mmseqs_similarity_filter_removes_hit_queries(temp_dir, monkeypatch):
