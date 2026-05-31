@@ -5,7 +5,9 @@ import pytest
 
 from cdskit.localize_learn import LOCALIZATION_CLASSES
 from cdskit.targetp_stack import (
+    TARGETP_STACK_MTP_SPECIALIST_DEFAULTS,
     build_ltp_ctp_specialist_feature_matrix,
+    build_parser,
     evaluate_foldwise_classwise_multi_blend,
     evaluate_foldwise_classwise_multi_blend_ltp_ctp_override,
     evaluate_foldwise_classwise_multi_blend_sp_override,
@@ -18,6 +20,19 @@ from cdskit.targetp_stack import (
 
 
 pytest.importorskip('sklearn')
+
+
+def test_targetp_stack_parser_exposes_mtp_threshold_grid_defaults():
+    parser = build_parser()
+    args = parser.parse_args(['--base_oof_npzs', 'base.npz'])
+
+    assert args.post_blend_mtp_score_min == pytest.approx(
+        TARGETP_STACK_MTP_SPECIALIST_DEFAULTS['mtp_score_min']
+    )
+    assert args.post_blend_mtp_score_max == pytest.approx(
+        TARGETP_STACK_MTP_SPECIALIST_DEFAULTS['mtp_score_max']
+    )
+    assert args.post_blend_mtp_score_steps == TARGETP_STACK_MTP_SPECIALIST_DEFAULTS['mtp_score_steps']
 
 
 def _write_targetp_fixture(path):

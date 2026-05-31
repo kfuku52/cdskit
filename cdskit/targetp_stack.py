@@ -89,8 +89,8 @@ TARGETP_STACK_MTP_SPECIALIST_DEFAULTS = {
     'mtp_max_features': 'sqrt',
     'mtp_min_samples_leaf': 1,
     'mtp_score_min': 0.20,
-    'mtp_score_max': 0.40,
-    'mtp_score_steps': 46,
+    'mtp_score_max': 0.80,
+    'mtp_score_steps': 61,
 }
 
 TARGETP_STACK_LTP_AFTER_SPECIALIST_DEFAULTS = {
@@ -2297,6 +2297,9 @@ def build_parser():
         choices=['yes', 'no'],
         type=str,
     )
+    parser.add_argument('--post_blend_mtp_score_min', default=TARGETP_STACK_MTP_SPECIALIST_DEFAULTS['mtp_score_min'], type=float)
+    parser.add_argument('--post_blend_mtp_score_max', default=TARGETP_STACK_MTP_SPECIALIST_DEFAULTS['mtp_score_max'], type=float)
+    parser.add_argument('--post_blend_mtp_score_steps', default=TARGETP_STACK_MTP_SPECIALIST_DEFAULTS['mtp_score_steps'], type=int)
     parser.add_argument(
         '--post_blend_ltp_after_specialists_override',
         default='yes' if TARGETP_STACK_LTP_AFTER_SPECIALIST_DEFAULTS['ltp_after_override'] else 'no',
@@ -2376,6 +2379,14 @@ def main():
     )
     if int(args.post_blend_ltp_after_score_steps) <= 0:
         raise ValueError('--post_blend_ltp_after_score_steps should be positive.')
+    if int(args.post_blend_mtp_score_steps) <= 0:
+        raise ValueError('--post_blend_mtp_score_steps should be positive.')
+    mtp_threshold_grid = np.linspace(
+        float(args.post_blend_mtp_score_min),
+        float(args.post_blend_mtp_score_max),
+        int(args.post_blend_mtp_score_steps),
+        dtype=np.float64,
+    )
     ltp_after_threshold_grid = np.linspace(
         float(args.post_blend_ltp_after_score_min),
         float(args.post_blend_ltp_after_score_max),
@@ -2629,6 +2640,7 @@ def main():
                 threshold_grid=threshold_grid,
                 fixed_fold_rows=results[post_blend_key]['folds'],
                 mtp_override=True,
+                mtp_threshold_grid=mtp_threshold_grid,
                 ltp_after_override=_to_bool(args.post_blend_ltp_after_specialists_override),
                 ltp_after_model_kind=args.post_blend_ltp_after_model_kind,
                 ltp_after_n_estimators=int(args.post_blend_ltp_after_n_estimators),
