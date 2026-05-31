@@ -415,9 +415,10 @@ def _build_targetp2_torch_module(
                     active = (lengths > int(pos_i)).to(dtype=conv.dtype).unsqueeze(1)
                     next_h, next_c = cell(conv[:, int(pos_i), :], (h, c))
                     dropped_h = self._dropout_keep(next_h, rnn_keep_prob)
+                    dropped_c = self._dropout_keep(next_c, rnn_keep_prob)
                     dropped_output = self._dropout_keep(next_h, rnn_keep_prob)
                     h = (active * dropped_h) + ((1.0 - active) * h)
-                    c = (active * next_c) + ((1.0 - active) * c)
+                    c = (active * dropped_c) + ((1.0 - active) * c)
                     outputs[int(pos_i)] = active * dropped_output
                 return torch.stack(outputs, dim=1)
 
@@ -788,6 +789,7 @@ def _targetp_torch_payload(
     best_epoch=0,
     current_lr=None,
     lr_reductions=0,
+    lr_reference_epoch=None,
     rng=None,
     torch=None,
     latest_state=None,
@@ -808,6 +810,9 @@ def _targetp_torch_payload(
         'best_epoch': int(best_epoch),
         'current_lr': float(current_lr if current_lr is not None else config.get('learning_rate', 0.0)),
         'lr_reductions': int(lr_reductions),
+        'lr_reference_epoch': int(
+            lr_reference_epoch if lr_reference_epoch is not None else best_epoch
+        ),
     }
     if optimizer is not None:
         payload['optimizer_state'] = optimizer.state_dict()
@@ -934,6 +939,7 @@ def fit_targetp2_torch_model(
     best_state = copy.deepcopy(_state_dict_to_cpu(module))
     best_metrics = None
     best_epoch = 0
+    lr_reference_epoch = 0
     lr_reductions = 0
     history = list()
     current_lr = float(config['learning_rate'])
@@ -958,6 +964,14 @@ def fit_targetp2_torch_model(
             )
         best_metrics = resume_payload.get('best_metrics')
         best_epoch = int(resume_payload.get('best_epoch', 0) or 0)
+        if isinstance(best_metrics, dict) and best_metrics.get('epoch') is not None:
+            best_epoch = int(best_metrics.get('epoch'))
+        lr_reference_epoch = int(
+            resume_payload.get(
+                'lr_reference_epoch',
+                resume_payload.get('best_epoch', best_epoch),
+            ) or 0
+        )
         history = list(resume_payload.get('history', []))
         start_epoch = len(history)
         lr_reductions = int(resume_payload.get('lr_reductions', 0) or 0)
@@ -977,12 +991,13 @@ def fit_targetp2_torch_model(
                 device=resolved_device,
             )
         if resume_state == 'best' or resume_reset_scheduler:
-            best_epoch = int(start_epoch)
+            lr_reference_epoch = int(start_epoch)
             lr_reductions = 0
         if resume_reset_best_metrics:
             best_state = copy.deepcopy(_state_dict_to_cpu(module))
             best_metrics = None
             best_epoch = int(start_epoch)
+            lr_reference_epoch = int(start_epoch)
         if resume_payload.get('rng_state') is not None:
             rng.bit_generator.state = resume_payload['rng_state']
         if resume_payload.get('torch_rng_state') is not None:
@@ -1103,13 +1118,17 @@ def fit_targetp2_torch_model(
         if is_better:
             best_metrics = dict(row)
             best_epoch = int(epoch + 1)
+            lr_reference_epoch = int(epoch + 1)
             best_state = copy.deepcopy(_state_dict_to_cpu(module))
-        if (epoch + 1) > 10 and (int(epoch + 1) - int(best_epoch)) == int(config['patience_epochs']):
+        if (
+            (epoch + 1) > 10
+            and (int(epoch + 1) - int(lr_reference_epoch)) == int(config['patience_epochs'])
+        ):
             current_lr = current_lr * float(config['lr_gamma'])
             for group in optimizer.param_groups:
                 group['lr'] = current_lr
             lr_reductions += 1
-            best_epoch = int(epoch + 1)
+            lr_reference_epoch = int(epoch + 1)
         if lr_reductions >= int(config['max_lr_reductions']):
             break
         if str(epoch_checkpoint_path or '').strip() != '':
@@ -1129,6 +1148,7 @@ def fit_targetp2_torch_model(
                     best_epoch=best_epoch,
                     current_lr=current_lr,
                     lr_reductions=lr_reductions,
+                    lr_reference_epoch=lr_reference_epoch,
                     rng=rng,
                     torch=torch,
                 ),
@@ -1168,6 +1188,7 @@ def fit_targetp2_torch_model(
         best_epoch=best_epoch,
         current_lr=current_lr,
         lr_reductions=lr_reductions,
+        lr_reference_epoch=lr_reference_epoch,
         rng=rng,
         torch=torch,
         latest_state=latest_state,

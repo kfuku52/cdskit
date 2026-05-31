@@ -1,3 +1,5 @@
+import copy
+
 import numpy as np
 import pytest
 
@@ -522,6 +524,72 @@ def test_targetp_torch_training_can_resume_epoch_checkpoint(temp_dir):
     assert len(resumed['history']) == 2
     assert resumed['latest_epoch'] == 2
     assert _can_resume_optimizer_state(resumed) is True
+
+
+def test_targetp_torch_migrates_legacy_lr_epoch_without_relabeling_best(temp_dir):
+    pytest.importorskip('torch')
+    x, y_type, y_cs, lengths, org = _tiny_targetp_arrays()
+    first = fit_targetp2_torch_model(
+        x_train=x[:6],
+        y_type_train=y_type[:6],
+        y_cs_train=y_cs[:6],
+        len_train=lengths[:6],
+        org_train=org[:6],
+        x_val=x[6:],
+        y_type_val=y_type[6:],
+        y_cs_val=y_cs[6:],
+        len_val=lengths[6:],
+        org_val=org[6:],
+        seed=5,
+        device='cpu',
+        seq_len=12,
+        hidden_rnn=4,
+        n_filters=3,
+        hidden_fc=5,
+        n_attention=4,
+        attention_size=4,
+        input_keep_prob=1.0,
+        encoder_keep_prob=1.0,
+        rnn_keep_prob=1.0,
+        epochs=1,
+        batch_size=3,
+        learning_rate=0.001,
+    )
+    legacy = copy.deepcopy(first)
+    legacy['history'] = list(legacy['history']) + [dict(legacy['history'][-1], epoch=2)]
+    legacy['best_epoch'] = 2
+    legacy.pop('lr_reference_epoch', None)
+
+    resumed = fit_targetp2_torch_model(
+        x_train=x[:6],
+        y_type_train=y_type[:6],
+        y_cs_train=y_cs[:6],
+        len_train=lengths[:6],
+        org_train=org[:6],
+        x_val=x[6:],
+        y_type_val=y_type[6:],
+        y_cs_val=y_cs[6:],
+        len_val=lengths[6:],
+        org_val=org[6:],
+        seed=5,
+        device='cpu',
+        seq_len=12,
+        hidden_rnn=4,
+        n_filters=3,
+        hidden_fc=5,
+        n_attention=4,
+        attention_size=4,
+        input_keep_prob=1.0,
+        encoder_keep_prob=1.0,
+        rnn_keep_prob=1.0,
+        epochs=2,
+        batch_size=3,
+        learning_rate=0.001,
+        resume_payload=legacy,
+    )
+
+    assert resumed['best_epoch'] == first['best_metrics']['epoch']
+    assert resumed['lr_reference_epoch'] == 2
 
 
 def test_targetp_torch_can_resume_from_best_with_reset_lr(temp_dir):
