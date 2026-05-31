@@ -183,6 +183,87 @@ def encode_targetp_blosum_sequences(aa_sequences, seq_len=200, blosum_table=None
     return x, lengths
 
 
+def _parse_targetp_cleavage_site(value):
+    text = str(value or '').strip()
+    if text == '':
+        return None
+    try:
+        site = int(float(text))
+    except Exception:
+        return None
+    if site <= 0:
+        return None
+    return int(site)
+
+
+def _parse_targetp_fold_id(value, default_fold=0):
+    text = str(value or '').strip()
+    if text == '':
+        return int(default_fold)
+    try:
+        return int(float(text))
+    except Exception:
+        return int(default_fold)
+
+
+def targetp_rows_to_torch_arrays(
+    rows,
+    seq_col='sequence',
+    label_col='localization',
+    organism_col='organism_group',
+    cleavage_site_col='cleavage_site',
+    id_col='accession',
+    fold_col='fold_id',
+    seq_len=200,
+    default_fold=0,
+):
+    rows = list(rows)
+    class_to_idx = {
+        class_name: class_i
+        for class_i, class_name in enumerate(LOCALIZATION_CLASSES)
+    }
+    sequences = [row.get(seq_col, '') for row in rows]
+    x, lengths = encode_targetp_blosum_sequences(
+        aa_sequences=sequences,
+        seq_len=int(seq_len),
+    )
+    y_type = np.zeros((len(rows),), dtype=np.int64)
+    y_cs = np.zeros((len(rows), int(seq_len)), dtype=np.int64)
+    org = np.zeros((len(rows),), dtype=np.int64)
+    ids = list()
+    folds = np.zeros((len(rows),), dtype=np.int64)
+    for row_i, row in enumerate(rows):
+        class_name = str(row.get(label_col, '')).strip()
+        if class_name not in class_to_idx:
+            raise ValueError('Unknown TargetP localization label: {}'.format(class_name))
+        y_type[row_i] = int(class_to_idx[class_name])
+        site = _parse_targetp_cleavage_site(row.get(cleavage_site_col, ''))
+        if site is not None:
+            pos = int(site) - 1
+            if 0 <= pos < int(seq_len):
+                y_cs[row_i, pos] = 1
+        org[row_i] = organism_group_to_targetp_org(row.get(organism_col, ''))
+        row_id = str(row.get(id_col, '')).strip()
+        if row_id == '':
+            row_id = str(row.get('id', '')).strip()
+        if row_id == '':
+            row_id = 'row{}'.format(row_i)
+        ids.append(row_id)
+        folds[row_i] = _parse_targetp_fold_id(
+            row.get(fold_col, ''),
+            default_fold=default_fold,
+        )
+    return {
+        'x': x.astype(np.float32),
+        'y_type': y_type,
+        'y_cs': y_cs,
+        'len_seq': lengths.astype(np.int64),
+        'org': org,
+        'ids': np.asarray(ids).astype(str),
+        'fold': folds,
+    }
+
+
 def _macro_f1_from_indices(true_idx, pred_idx, num_class):
     true_idx = np.asarray(true_idx, dtype=np.int64)
     pred_idx = np.asarray(pred_idx, dtype=np.int64)
@@ -1300,7 +1381,18 @@ def predict_targetp2_torch_localization(aa_seq, localization_model, organism_gro
 def export_targetp2_torch_localize_model(model_payload, training_tsv='', class_thresholds=None):
     thresholds = class_thresholds
     if thresholds is None:
-        thresholds = {class_name: 1.0 for class_name in LOCALIZATION_CLASSES}
+        best_metrics = model_payload.get('best_metrics', {}) if isinstance(model_payload, dict) else {}
+        best_thresholds = (
+            best_metrics.get('val_thresholds', {})
+            if isinstance(best_metrics, dict) else {}
+        )
+        if isinstance(best_thresholds, dict) and len(best_thresholds) > 0:
+            thresholds = {
+                class_name: float(best_thresholds.get(class_name, 1.0))
+                for class_name in LOCALIZATION_CLASSES
+            }
+        else:
+            thresholds = {class_name: 1.0 for class_name in LOCALIZATION_CLASSES}
     return {
         'model_type': TARGETP_TORCH_MODEL_TYPE,
         'feature_names': list(FEATURE_NAMES),

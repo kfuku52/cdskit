@@ -17,6 +17,7 @@ from cdskit.targetp_torch import (
     export_targetp2_torch_localize_model,
     fit_targetp2_torch_model,
     initialize_targetp2_torch_module,
+    targetp_rows_to_torch_arrays,
     _build_targetp2_torch_module,
     _can_resume_optimizer_state,
     _normalize_targetp_torch_state_dict,
@@ -47,6 +48,48 @@ def test_targetp_blosum_encoder_matches_official_probability_rows():
     np.testing.assert_allclose(x[0, 1, :], table['C'], rtol=1.0e-6, atol=1.0e-7)
     np.testing.assert_allclose(x[0, 2, :], np.full((20,), 0.05), rtol=1.0e-6, atol=1.0e-7)
     np.testing.assert_allclose(x[0, 3, :], np.full((20,), 0.05), rtol=1.0e-6, atol=1.0e-7)
+
+
+def test_targetp_rows_to_torch_arrays_encodes_labels_org_and_cleavage_sites():
+    rows = [
+        {
+            'accession': 'p1',
+            'sequence': 'MABCDEFG',
+            'localization': 'SP',
+            'organism_group': 'plant',
+            'cleavage_site': '3',
+            'fold_id': '2',
+        },
+        {
+            'accession': 'p2',
+            'sequence': 'MKK',
+            'localization': 'noTP',
+            'organism_group': 'animal',
+            'cleavage_site': '',
+            'fold_id': '',
+        },
+    ]
+    arrays = targetp_rows_to_torch_arrays(rows=rows, seq_len=6, default_fold=9)
+
+    assert arrays['x'].shape == (2, 6, 20)
+    assert arrays['len_seq'].tolist() == [6, 3]
+    assert arrays['y_type'].tolist() == [
+        LOCALIZATION_CLASSES.index('SP'),
+        LOCALIZATION_CLASSES.index('noTP'),
+    ]
+    assert arrays['org'].tolist() == [1, 0]
+    assert arrays['fold'].tolist() == [2, 9]
+    assert arrays['ids'].tolist() == ['p1', 'p2']
+    assert arrays['y_cs'][0, 2] == 1
+    assert int(np.sum(arrays['y_cs'][1])) == 0
+
+
+def test_targetp_rows_to_torch_arrays_rejects_unknown_labels():
+    with pytest.raises(ValueError, match='Unknown TargetP localization label'):
+        targetp_rows_to_torch_arrays(
+            rows=[{'sequence': 'M', 'localization': 'nucleus'}],
+            seq_len=4,
+        )
 
 
 def _tiny_targetp_arrays(seq_len=12):
@@ -120,6 +163,37 @@ def test_targetp_torch_payload_can_predict_and_roundtrip(temp_dir):
     assert set(result['class_probabilities']) == set(LOCALIZATION_CLASSES)
     assert organism_group_to_targetp_org('plant') == 1
     assert organism_group_to_targetp_org('non_plant') == 0
+
+
+def test_export_targetp2_torch_localize_model_uses_validation_thresholds():
+    payload = {
+        'config': {'seq_len': 12},
+        'state_dict': {},
+        'best_metrics': {
+            'val_thresholds': {
+                'noTP': 0.4,
+                'SP': 0.65,
+                'mTP': 1.25,
+                'cTP': 1.5,
+                'lTP': 2.0,
+            },
+        },
+        'seed': 7,
+    }
+
+    model = export_targetp2_torch_localize_model(model_payload=payload)
+    assert model['localization_model']['class_thresholds'] == {
+        'noTP': 0.4,
+        'SP': 0.65,
+        'mTP': 1.25,
+        'cTP': 1.5,
+        'lTP': 2.0,
+    }
+    explicit = export_targetp2_torch_localize_model(
+        model_payload=payload,
+        class_thresholds={class_name: 1.0 for class_name in LOCALIZATION_CLASSES},
+    )
+    assert explicit['localization_model']['class_thresholds']['noTP'] == 1.0
 
 
 def test_targetp_tf_initializer_sets_lstm_forget_bias():
