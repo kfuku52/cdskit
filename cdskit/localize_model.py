@@ -1233,6 +1233,20 @@ def _targetp_ctp_ltp_specialist_feature_vector(aa_seq, base_probs, prob_a, prob_
     ])
 
 
+def _targetp_feature_ltp_specialist_feature_vector(aa_seq, base_probs, organism_group):
+    plant_flag = 1.0 if normalize_organism_group(organism_group) == 'plant' else 0.0
+    base_vec = _class_probs_to_vector(base_probs)
+    ctp_idx = LOCALIZATION_CLASSES.index('cTP')
+    ltp_idx = LOCALIZATION_CLASSES.index('lTP')
+    ctp_ltp_mass = float(base_vec[ctp_idx] + base_vec[ltp_idx])
+    ltp_ratio = 0.0 if ctp_ltp_mass <= 0.0 else float(base_vec[ltp_idx]) / ctp_ltp_mass
+    return np.concatenate([
+        np.asarray(_targetp_ctp_ltp_sequence_features(aa_seq, organism_group), dtype=np.float64),
+        base_vec,
+        np.asarray([ctp_ltp_mass, ltp_ratio, plant_flag], dtype=np.float64),
+    ])
+
+
 TARGETP_FEATURE_ENSEMBLE_PROFILE = {
     'name': 'targetp_feature_ensemble_v1',
     'n_terminal_group_len': 100,
@@ -1545,6 +1559,71 @@ def _apply_targetp_specialist_postprocess(
     return LOCALIZATION_CLASSES[pred_idx], details
 
 
+def _apply_targetp_feature_ltp_specialist_postprocess(
+    aa_seq,
+    base_probs,
+    pred_class,
+    localization_model,
+    organism_group,
+):
+    specialist = localization_model.get('targetp_feature_ltp_specialist', None)
+    if not isinstance(specialist, dict) or not bool(specialist.get('enabled', True)):
+        return pred_class, {}
+    group = normalize_organism_group(organism_group)
+    if group != 'plant':
+        return pred_class, {'enabled': True, 'applied': False, 'reason': 'non_plant'}
+
+    source_classes = specialist.get('source_classes', ['cTP'])
+    if isinstance(source_classes, str):
+        source_classes = [
+            value.strip() for value in str(source_classes).split(',')
+            if value.strip() != ''
+        ]
+    source_classes = [class_name for class_name in source_classes if class_name in LOCALIZATION_CLASSES]
+    if len(source_classes) == 0:
+        source_classes = ['cTP']
+    if pred_class not in source_classes:
+        return pred_class, {
+            'enabled': True,
+            'applied': False,
+            'reason': 'not_source_class',
+            'source_classes': list(source_classes),
+        }
+
+    ctp_ltp_mass = float(base_probs.get('cTP', 0.0) + base_probs.get('lTP', 0.0))
+    mass_threshold = float(specialist.get('mass_threshold', 0.0))
+    if ctp_ltp_mass < mass_threshold:
+        return pred_class, {
+            'enabled': True,
+            'applied': False,
+            'reason': 'below_mass_threshold',
+            'ctp_ltp_mass': float(ctp_ltp_mass),
+            'mass_threshold': float(mass_threshold),
+        }
+
+    feature_vec = _targetp_feature_ltp_specialist_feature_vector(
+        aa_seq=aa_seq,
+        base_probs=base_probs,
+        organism_group=organism_group,
+    )
+    score = _predict_binary_ensemble_score(
+        feature_vec=feature_vec,
+        models=specialist.get('models', []),
+        weights=specialist.get('weights', None),
+    )
+    threshold = float(specialist.get('threshold', 0.5))
+    out_class = 'lTP' if score >= threshold else pred_class
+    return out_class, {
+        'enabled': True,
+        'applied': bool(out_class != pred_class),
+        'score': float(score),
+        'threshold': float(threshold),
+        'source_classes': list(source_classes),
+        'ctp_ltp_mass': float(ctp_ltp_mass),
+        'mass_threshold': float(mass_threshold),
+    }
+
+
 def predict_targetp_blend_localization(
     aa_seq,
     feature_vec,
@@ -1799,6 +1878,14 @@ def predict_localization_and_peroxisome(aa_seq, model, organism_group=''):
             class_probs=class_probs,
             localization_model=localization_model,
         )
+        if model_type == 'targetp_feature_ensemble_v1':
+            pred_class, strategy_details = _apply_targetp_feature_ltp_specialist_postprocess(
+                aa_seq=aa_seq,
+                base_probs=class_probs,
+                pred_class=pred_class,
+                localization_model=localization_model,
+                organism_group=organism_group,
+            )
     _, perox_probs = predict_perox(
         feature_vec=feats,
         perox_model=model['perox_model'],

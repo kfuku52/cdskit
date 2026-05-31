@@ -3,7 +3,11 @@ import csv
 import numpy as np
 import pytest
 
-from cdskit.localize_model import predict_localization_and_peroxisome
+from cdskit.localize_model import (
+    FEATURE_NAMES,
+    extract_targetp_feature_ensemble_features,
+    predict_localization_and_peroxisome,
+)
 from cdskit.localize_learn import LOCALIZATION_CLASSES
 from cdskit.targetp_feature_ensemble import (
     build_targetp_feature_matrix,
@@ -15,6 +19,15 @@ from cdskit.targetp_feature_ensemble import (
 
 
 pytest.importorskip('sklearn')
+
+
+class _FixedClassifier:
+    def __init__(self, classes, probabilities):
+        self.classes_ = np.asarray(classes)
+        self.probabilities = np.asarray(probabilities, dtype=np.float64)
+
+    def predict_proba(self, features):
+        return np.tile(self.probabilities.reshape((1, -1)), (features.shape[0], 1))
 
 
 def _write_targetp_fixture(path):
@@ -158,6 +171,43 @@ def test_targetp_binary_feature_runtime_predicts_with_binary_classifiers(temp_di
         rtol=1.0e-6,
         atol=1.0e-7,
     )
+
+
+def test_targetp_feature_ltp_specialist_rescues_plant_ctp_prediction():
+    seq = 'MRRSTSTSTSTSSGGGGGGG'
+    feature_dim = int(extract_targetp_feature_ensemble_features(seq, 'plant').shape[0])
+    model = {
+        'model_type': 'targetp_feature_ensemble_v1',
+        'feature_names': list(FEATURE_NAMES),
+        'localization_model': {
+            'mode': 'targetp_feature_ensemble',
+            'class_order': list(LOCALIZATION_CLASSES),
+            'classifier': _FixedClassifier(
+                classes=[0, 1, 2, 3, 4],
+                probabilities=[0.02, 0.03, 0.03, 0.86, 0.06],
+            ),
+            'binary_classifiers': None,
+            'class_thresholds': {class_name: 1.0 for class_name in LOCALIZATION_CLASSES},
+            'feature_dim': feature_dim,
+            'targetp_feature_ltp_specialist': {
+                'enabled': True,
+                'models': [_FixedClassifier(classes=[0, 1], probabilities=[0.05, 0.95])],
+                'weights': [1.0],
+                'threshold': 0.5,
+                'source_classes': ['cTP'],
+                'mass_threshold': 0.0,
+            },
+        },
+        'perox_model': {'mode': 'constant', 'yes_probability': 0.0},
+    }
+
+    result = predict_localization_and_peroxisome(
+        aa_seq=seq,
+        model=model,
+        organism_group='plant',
+    )
+
+    assert result['predicted_class'] == 'lTP'
 
 
 def test_build_targetp_feature_blend_runtime_model_extracts_source_base():

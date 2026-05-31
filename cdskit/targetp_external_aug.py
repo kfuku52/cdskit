@@ -9,9 +9,11 @@ import numpy as np
 from cdskit.localize_learn import LOCALIZATION_CLASSES, build_training_matrix
 from cdskit.localize_model import (
     FEATURE_NAMES,
+    _targetp_feature_ltp_specialist_feature_vector,
     fit_perox_binary_classifier,
     save_localize_model,
 )
+from cdskit.targetp_labeling import strict_uniprot_targetp_label
 from cdskit.targetp_external_eval import (
     _targetp_class_from_deeploc_localization_labels,
     build_deeploc_sorting_rows,
@@ -24,6 +26,7 @@ from cdskit.targetp_external_eval import (
 )
 from cdskit.targetp_feature_ensemble import (
     _metrics_from_prediction_indices,
+    _prediction_indices_with_thresholds,
     build_targetp_feature_matrix,
     evaluate_foldwise_thresholds,
     make_targetp_feature_classifier,
@@ -101,43 +104,6 @@ def is_external_excluded_row(row, exclusion_keys):
         (accession != '' and accession in exclusion_keys.get('accessions', set()))
         or (sequence != '' and sequence in exclusion_keys.get('sequences', set()))
     )
-
-
-def strict_uniprot_targetp_label(location_text, organism_group):
-    txt = str(location_text or '').lower()
-    organism_group = str(organism_group or '').strip().lower()
-    if txt.strip() == '':
-        return None, 'missing_location_text'
-
-    has_sp = ('secreted' in txt) or ('signal peptide' in txt)
-    has_mtp = 'mitochond' in txt
-    has_ctp = ('chloroplast' in txt) or ('plastid' in txt)
-    has_thylakoid = 'thylakoid' in txt
-    has_lumen = ('lumen' in txt) or ('lumenal' in txt) or ('luminal' in txt)
-
-    if organism_group != 'plant' and (has_ctp or has_thylakoid):
-        return None, 'nonplant_plastid'
-
-    plastid_signal = organism_group == 'plant' and has_ctp
-    ltp_signal = organism_group == 'plant' and has_thylakoid and has_lumen
-    if sum(1 for value in [has_sp, has_mtp, plastid_signal] if value) > 1:
-        return None, 'ambiguous'
-    if ltp_signal and (has_sp or has_mtp):
-        return None, 'ambiguous'
-
-    if ltp_signal:
-        if 'membrane' in txt and 'thylakoid lumen' not in txt:
-            return None, 'ltp_membrane_noise'
-        return 'lTP', ''
-    if plastid_signal:
-        if has_thylakoid:
-            return None, 'thylakoid_not_lumen'
-        return 'cTP', ''
-    if has_mtp:
-        return 'mTP', ''
-    if has_sp:
-        return 'SP', ''
-    return 'noTP', ''
 
 
 def _external_training_row(source, accession, sequence, organism_group, localization):
@@ -486,6 +452,207 @@ def _external_sample_weight_vector(rows, external_weight, external_class_weights
     return np.asarray(values, dtype=np.float64)
 
 
+def _parse_class_list(value, default):
+    if value is None:
+        return list(default)
+    if isinstance(value, str):
+        values = [
+            part.strip() for part in str(value).split(',')
+            if part.strip() != ''
+        ]
+    else:
+        values = [str(part).strip() for part in value if str(part).strip() != '']
+    out = list()
+    for class_name in values:
+        if class_name not in LOCALIZATION_CLASSES:
+            raise ValueError('Unknown localization class: {}'.format(class_name))
+        if class_name not in out:
+            out.append(class_name)
+    if len(out) == 0:
+        return list(default)
+    return out
+
+
+def _feature_ltp_specialist_matrix(rows, prob_matrix, class_names):
+    prob_matrix = np.asarray(prob_matrix, dtype=np.float64)
+    class_names = list(class_names)
+    out = list()
+    for row_i, row in enumerate(rows):
+        probs = {
+            class_name: float(prob_matrix[row_i, class_i])
+            for class_i, class_name in enumerate(class_names)
+        }
+        out.append(_targetp_feature_ltp_specialist_feature_vector(
+            aa_seq=row.get('sequence', ''),
+            base_probs=probs,
+            organism_group=row.get('organism_group', ''),
+        ))
+    if len(out) == 0:
+        return np.zeros((0, 0), dtype=np.float32)
+    return np.vstack(out).astype(np.float32)
+
+
+def _organism_group_is_plant(row):
+    return str(row.get('organism_group', '') or '').strip().lower() == 'plant'
+
+
+def _train_feature_ltp_specialist(
+    classifier,
+    training_rows,
+    training_features,
+    training_labels,
+    training_sample_weight,
+    calibration_rows,
+    class_thresholds,
+    class_names,
+    source_classes=None,
+    negative_classes=None,
+    score_grid=None,
+    model_kind='extra_trees',
+    n_estimators=120,
+    random_state=3100,
+    class_weight='balanced',
+    max_features='sqrt',
+    min_samples_leaf=1,
+    mass_threshold=0.0,
+):
+    class_names = list(class_names)
+    source_classes = _parse_class_list(source_classes, default=['cTP'])
+    negative_classes = _parse_class_list(negative_classes, default=['cTP'])
+    ltp_idx = int(class_names.index('lTP'))
+    fit_classes = set(negative_classes + ['lTP'])
+    train_mask = np.asarray([
+        _organism_group_is_plant(row) and row.get('localization', '') in fit_classes
+        for row in training_rows
+    ], dtype=bool)
+    if len(set(np.asarray(training_labels, dtype=np.int64)[train_mask].tolist())) < 2:
+        return None, {
+            'enabled': False,
+            'reason': 'specialist training split lacks cTP/lTP classes',
+            'n_train': int(np.sum(train_mask)),
+        }
+
+    training_prob = predict_feature_classifier_prob_matrix(
+        classifier=classifier,
+        feature_matrix=training_features,
+        class_names=class_names,
+    )
+    specialist_features = _feature_ltp_specialist_matrix(
+        rows=training_rows,
+        prob_matrix=training_prob,
+        class_names=class_names,
+    )
+    specialist = make_targetp_feature_classifier(
+        model_kind=model_kind,
+        n_estimators=int(n_estimators),
+        random_state=int(random_state),
+        class_weight=class_weight,
+        max_features=max_features,
+        min_samples_leaf=int(min_samples_leaf),
+    )
+    y = (np.asarray(training_labels, dtype=np.int64)[train_mask] == ltp_idx).astype(np.int64)
+    specialist.fit(
+        specialist_features[train_mask, :],
+        y,
+        sample_weight=np.asarray(training_sample_weight, dtype=np.float64)[train_mask],
+    )
+
+    threshold = 0.5
+    threshold_metrics = None
+    threshold_source = 'default'
+    calibration_report = {
+        'n_train': int(np.sum(train_mask)),
+        'train_positive': int(np.sum(y == 1)),
+        'train_negative': int(np.sum(y == 0)),
+    }
+    if len(calibration_rows) > 0:
+        calibration_features = build_targetp_feature_matrix(rows=calibration_rows).astype(np.float32)
+        calibration_prob = predict_feature_classifier_prob_matrix(
+            classifier=classifier,
+            feature_matrix=calibration_features,
+            class_names=class_names,
+        )
+        calibration_idx = _true_idx_from_rows(rows=calibration_rows, class_names=class_names)
+        threshold_vec = np.asarray([
+            float(class_thresholds.get(class_name, 1.0))
+            for class_name in class_names
+        ], dtype=np.float64)
+        base_pred = _prediction_indices_with_thresholds(
+            prob_matrix=calibration_prob,
+            thresholds=threshold_vec,
+        )
+        calibration_specialist_features = _feature_ltp_specialist_matrix(
+            rows=calibration_rows,
+            prob_matrix=calibration_prob,
+            class_names=class_names,
+        )
+        proba = np.asarray(
+            specialist.predict_proba(calibration_specialist_features),
+            dtype=np.float64,
+        )
+        classes = [int(value) for value in list(getattr(specialist, 'classes_', []))]
+        if 1 in classes:
+            scores = proba[:, classes.index(1)]
+            source_idx = np.asarray([
+                int(class_names.index(class_name)) for class_name in source_classes
+            ], dtype=np.int64)
+            plant_mask = np.asarray([
+                _organism_group_is_plant(row) for row in calibration_rows
+            ], dtype=bool)
+            if score_grid is None:
+                score_grid = np.linspace(0.01, 0.99, 99)
+            best_metrics = None
+            best_threshold = float(threshold)
+            best_override_count = 0
+            for trial in score_grid:
+                trial_pred = base_pred.copy()
+                override = (
+                    plant_mask
+                    & np.isin(base_pred, source_idx)
+                    & (scores >= float(trial))
+                )
+                trial_pred[override] = ltp_idx
+                metrics = _metrics_from_prediction_indices(
+                    pred_idx=trial_pred,
+                    true_idx=calibration_idx,
+                    class_names=class_names,
+                )
+                if best_metrics is None or metrics['macro_f1'] > best_metrics['macro_f1']:
+                    best_threshold = float(trial)
+                    best_metrics = metrics
+                    best_override_count = int(np.sum(override))
+            threshold = float(best_threshold)
+            threshold_metrics = best_metrics
+            threshold_source = 'external_calibration'
+            calibration_report.update({
+                'threshold_source': threshold_source,
+                'threshold_macro_f1': float(best_metrics['macro_f1']),
+                'threshold_overall_accuracy': float(best_metrics['overall_accuracy']),
+                'threshold_override_count': int(best_override_count),
+            })
+    payload = {
+        'enabled': True,
+        'models': [specialist],
+        'weights': [1.0],
+        'threshold': float(threshold),
+        'source_classes': list(source_classes),
+        'negative_classes': list(negative_classes),
+        'mass_threshold': float(mass_threshold),
+        'feature_profile': 'targetp_feature_ltp_specialist_v1',
+    }
+    calibration_report.update({
+        'enabled': True,
+        'threshold': float(threshold),
+        'threshold_source': threshold_source,
+        'source_classes': list(source_classes),
+        'negative_classes': list(negative_classes),
+        'mass_threshold': float(mass_threshold),
+    })
+    if threshold_metrics is not None:
+        calibration_report['threshold_metrics'] = threshold_metrics
+    return payload, calibration_report
+
+
 def _fold_ids_from_rows(rows):
     return np.asarray([str(row.get('fold_id', '')) for row in rows])
 
@@ -657,6 +824,11 @@ def fit_external_augmented_feature_runtime_model(
     class_weight='balanced',
     max_features='sqrt',
     min_samples_leaf=1,
+    ltp_specialist=False,
+    ltp_specialist_source_classes=None,
+    ltp_specialist_negative_classes=None,
+    ltp_specialist_score_grid=None,
+    ltp_specialist_mass_threshold=0.0,
 ):
     class_names = list(LOCALIZATION_CLASSES)
     target_rows = read_tsv(training_tsv)
@@ -771,6 +943,30 @@ def fit_external_augmented_feature_runtime_model(
                 'enabled': False,
                 'reason': 'no calibration rows',
             }
+    ltp_specialist_payload = None
+    ltp_specialist_report = {'enabled': False}
+    if bool(ltp_specialist):
+        training_rows = list(target_rows) + list(external_train_rows)
+        ltp_specialist_payload, ltp_specialist_report = _train_feature_ltp_specialist(
+            classifier=classifier,
+            training_rows=training_rows,
+            training_features=features,
+            training_labels=labels,
+            training_sample_weight=sample_weight,
+            calibration_rows=external_calibration_rows,
+            class_thresholds=class_thresholds,
+            class_names=class_names,
+            source_classes=ltp_specialist_source_classes,
+            negative_classes=ltp_specialist_negative_classes,
+            score_grid=ltp_specialist_score_grid,
+            model_kind=model_kind,
+            n_estimators=int(n_estimators),
+            random_state=int(random_state) + 919,
+            class_weight=class_weight,
+            max_features=max_features,
+            min_samples_leaf=int(min_samples_leaf),
+            mass_threshold=float(ltp_specialist_mass_threshold),
+        )
     model = {
         'model_type': 'targetp_feature_ensemble_v1',
         'feature_names': list(FEATURE_NAMES),
@@ -812,10 +1008,13 @@ def fit_external_augmented_feature_runtime_model(
             'num_external_train_rows': int(len(external_train_rows)),
             'num_external_calibration_rows': int(len(external_calibration_rows)),
             'external_calibration': calibration_report,
+            'ltp_specialist': ltp_specialist_report,
             'model_arch': 'targetp_feature_ensemble_v1_external_augmented',
             'external_report': external_report,
         },
     }
+    if ltp_specialist_payload is not None:
+        model['localization_model']['targetp_feature_ltp_specialist'] = ltp_specialist_payload
     return model
 
 
@@ -879,6 +1078,11 @@ def build_parser():
     parser.add_argument('--min_samples_leaf', default=TARGETP_EXTERNAL_AUG_DEFAULTS['min_samples_leaf'], type=int)
     parser.add_argument('--threshold_grid', default='0.05,0.10,0.15,0.20,0.25,0.30,0.35,0.40,0.45,0.50,0.55,0.60,0.65,0.70,0.75,0.80,0.85,0.90,0.95,1.00,1.05,1.10,1.15,1.20,1.25,1.30,1.35,1.40,1.45,1.50,1.55,1.60,1.65,1.70,1.75,1.80,1.85,1.90,1.95,2.00', type=str)
     parser.add_argument('--class_thresholds', default='', type=str)
+    parser.add_argument('--ltp_specialist', default='no', choices=['yes', 'no'], type=str)
+    parser.add_argument('--ltp_specialist_source_classes', default='cTP', type=str)
+    parser.add_argument('--ltp_specialist_negative_classes', default='cTP', type=str)
+    parser.add_argument('--ltp_specialist_score_grid', default='0.01,0.02,0.03,0.04,0.05,0.06,0.07,0.08,0.09,0.10,0.15,0.20,0.25,0.30,0.35,0.40,0.45,0.50,0.55,0.60,0.65,0.70,0.75,0.80,0.85,0.90,0.95,0.99', type=str)
+    parser.add_argument('--ltp_specialist_mass_threshold', default=0.0, type=float)
     parser.add_argument('--out_npz', required=True, type=str)
     parser.add_argument('--out_json', required=True, type=str)
     parser.add_argument('--external_tsv_out', default='', type=str)
@@ -1038,6 +1242,17 @@ def main():
             class_weight=args.class_weight,
             max_features=args.max_features,
             min_samples_leaf=int(args.min_samples_leaf),
+            ltp_specialist=_yes_no(args.ltp_specialist),
+            ltp_specialist_source_classes=_parse_class_list(
+                args.ltp_specialist_source_classes,
+                default=['cTP'],
+            ),
+            ltp_specialist_negative_classes=_parse_class_list(
+                args.ltp_specialist_negative_classes,
+                default=['cTP'],
+            ),
+            ltp_specialist_score_grid=_parse_grid(args.ltp_specialist_score_grid),
+            ltp_specialist_mass_threshold=float(args.ltp_specialist_mass_threshold),
         )
         save_localize_model(model=model, path=str(args.model_out))
     print('external_rows={} argmax_macro_f1={:.6f} foldwise_threshold_macro_f1={:.6f}'.format(

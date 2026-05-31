@@ -22,6 +22,7 @@ from cdskit.targetp_feature_ensemble import (
     _prediction_indices_with_thresholds,
     optimize_class_thresholds,
 )
+from cdskit.targetp_labeling import strict_uniprot_targetp_label
 from cdskit.uniprot_preset_split import classify_lineage_ids, parse_taxon_ids
 
 
@@ -212,18 +213,20 @@ def build_uniprot_holdout_rows(
         if str(cc_text or '').strip() == '':
             skipped['missing_location_text'] += 1
             continue
-        true_class, _, ambiguous = infer_labels_from_uniprot_cc(location_text=cc_text)
-        if ambiguous and skip_ambiguous:
-            skipped['ambiguous_uniprot_cc'] += 1
-            continue
         organism_group = organism_group_from_row(row)
-        if (
-            bool(strict_targetp_organism_labels)
-            and true_class in ['cTP', 'lTP']
-            and organism_group != 'plant'
-        ):
-            skipped['inconsistent_targetp_organism_label'] += 1
-            continue
+        if bool(strict_targetp_organism_labels):
+            true_class, reason = strict_uniprot_targetp_label(
+                location_text=cc_text,
+                organism_group=organism_group,
+            )
+            if true_class is None:
+                skipped[reason] += 1
+                continue
+        else:
+            true_class, _, ambiguous = infer_labels_from_uniprot_cc(location_text=cc_text)
+            if ambiguous and skip_ambiguous:
+                skipped['ambiguous_uniprot_cc'] += 1
+                continue
         out.append({
             'source': 'uniprot_cc_holdout',
             'accession': row.get('accession', ''),
@@ -850,8 +853,13 @@ def run_external_evaluation(
         'mmseqs_similarity_filter': mmseqs_report,
         'metrics': compute_single_label_metrics(uniprot_pred),
         'notes': (
-            'Weak labels from cdskit UniProt CC rules; TargetP exact overlaps '
-            'and MMseqs similarities removed before scoring.'
+            (
+                'Strict TargetP-compatible UniProt CC labels; lTP is limited to '
+                'plant thylakoid lumen annotations.'
+                if bool(strict_targetp_organism_labels)
+                else 'Weak labels from cdskit UniProt CC rules.'
+            )
+            + ' TargetP exact overlaps and MMseqs similarities removed before scoring.'
             + (
                 ' cTP/lTP rows outside plant organism groups are also removed.'
                 if bool(strict_targetp_organism_labels) else ''

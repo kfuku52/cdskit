@@ -178,7 +178,56 @@ def test_uniprot_holdout_can_skip_nonplant_plastid_labels(temp_dir):
     )
 
     assert [row['accession'] for row in rows] == ['P1']
-    assert skipped['inconsistent_targetp_organism_label'] == 1
+    assert skipped['nonplant_plastid'] == 1
+
+
+def test_strict_uniprot_holdout_uses_targetp_compatible_ltp_labels(temp_dir):
+    targetp = temp_dir / 'targetp.tsv'
+    uniprot = temp_dir / 'uniprot.tsv'
+    _write_tsv(targetp, ['accession', 'sequence'], [])
+    _write_tsv(
+        uniprot,
+        ['accession', 'sequence', 'cc_subcellular_location', 'lineage_ids'],
+        [
+            {
+                'accession': 'ER1',
+                'sequence': 'MAAA',
+                'cc_subcellular_location': 'SUBCELLULAR LOCATION: Endoplasmic reticulum lumen.',
+                'lineage_ids': '2759, 33208',
+            },
+            {
+                'accession': 'THM1',
+                'sequence': 'MBBB',
+                'cc_subcellular_location': 'SUBCELLULAR LOCATION: Plastid, chloroplast thylakoid membrane.',
+                'lineage_ids': '2759, 33090',
+            },
+            {
+                'accession': 'THL1',
+                'sequence': 'MCCC',
+                'cc_subcellular_location': 'SUBCELLULAR LOCATION: Plastid, chloroplast thylakoid lumen.',
+                'lineage_ids': '2759, 33090',
+            },
+            {
+                'accession': 'STR1',
+                'sequence': 'MDDD',
+                'cc_subcellular_location': 'SUBCELLULAR LOCATION: Chloroplast stroma.',
+                'lineage_ids': '2759, 33090',
+            },
+        ],
+    )
+
+    rows, skipped = build_uniprot_holdout_rows(
+        path=str(uniprot),
+        targetp_keys=load_targetp_exclusion_keys(str(targetp)),
+        strict_targetp_organism_labels=True,
+    )
+
+    assert [(row['accession'], row['true_class']) for row in rows] == [
+        ('ER1', 'noTP'),
+        ('THL1', 'lTP'),
+        ('STR1', 'cTP'),
+    ]
+    assert skipped['thylakoid_not_lumen'] == 1
 
 
 def test_fixed_uniprot_holdout_rows_are_normalized_and_can_be_strict(temp_dir):
