@@ -64,6 +64,116 @@ def _class_weight_metadata_value(value):
     return 'none' if resolved is None else str(resolved)
 
 
+def _parse_threshold_grid(text, default=None):
+    if default is None:
+        default = [float(value) / 100.0 for value in range(35, 76)]
+    text = str(text or '').strip()
+    if text == '':
+        return list(default)
+    out = list()
+    for part in text.split(','):
+        part = part.strip()
+        if part == '':
+            continue
+        value = float(part)
+        if (not np.isfinite(value)) or value < 0.0 or value > 1.0:
+            raise ValueError('Threshold grid values should be finite values between 0 and 1.')
+        out.append(value)
+    if len(out) == 0:
+        raise ValueError('Threshold grid should contain at least one value.')
+    return sorted(set(out))
+
+
+def _binary_class_metrics(labels, predictions, positive_name='mTP', negative_name='noTP'):
+    labels = np.asarray(labels, dtype=np.int64)
+    predictions = np.asarray(predictions, dtype=np.int64)
+    out = dict()
+    f1_values = list()
+    for label, class_name in [(0, negative_name), (1, positive_name)]:
+        tp = int(np.sum((labels == label) & (predictions == label)))
+        fp = int(np.sum((labels != label) & (predictions == label)))
+        fn = int(np.sum((labels == label) & (predictions != label)))
+        precision = 0.0 if tp + fp == 0 else float(tp) / float(tp + fp)
+        recall = 0.0 if tp + fn == 0 else float(tp) / float(tp + fn)
+        f1 = 0.0 if precision + recall == 0.0 else (
+            2.0 * precision * recall / (precision + recall)
+        )
+        out[class_name] = {
+            'precision': float(precision),
+            'recall': float(recall),
+            'f1': float(f1),
+            'tp': int(tp),
+            'fp': int(fp),
+            'fn': int(fn),
+        }
+        f1_values.append(float(f1))
+    out['macro_f1'] = float(np.mean(np.asarray(f1_values, dtype=np.float64)))
+    return out
+
+
+def _select_mtp_notp_threshold_from_scores(labels, scores, threshold_grid):
+    labels = np.asarray(labels, dtype=np.int64)
+    scores = np.asarray(scores, dtype=np.float64)
+    if labels.shape[0] != scores.shape[0]:
+        raise ValueError('mTP/noTP threshold validation labels and scores differ in length.')
+    if labels.shape[0] == 0:
+        raise ValueError('mTP/noTP threshold validation requires at least one row.')
+    if len(set(labels.tolist())) < 2:
+        raise ValueError('mTP/noTP threshold validation requires both noTP and mTP rows.')
+    best = None
+    for threshold in threshold_grid:
+        predictions = (scores >= float(threshold)).astype(np.int64)
+        metrics = _binary_class_metrics(labels=labels, predictions=predictions)
+        rank = (
+            float(metrics['macro_f1']),
+            min(float(metrics['noTP']['f1']), float(metrics['mTP']['f1'])),
+            -abs(0.5 - float(threshold)),
+        )
+        if best is None or rank > best['rank']:
+            best = {
+                'rank': rank,
+                'threshold': float(threshold),
+                'metrics': metrics,
+            }
+    return {
+        'threshold': float(best['threshold']),
+        'macro_f1': float(best['metrics']['macro_f1']),
+        'by_class': {
+            'noTP': best['metrics']['noTP'],
+            'mTP': best['metrics']['mTP'],
+        },
+        'grid': [float(value) for value in threshold_grid],
+    }
+
+
+def _select_mtp_notp_threshold_from_predictions(
+    model,
+    classifier,
+    rows,
+    prediction_rows,
+    threshold_grid,
+):
+    features, labels = _targetp_mtp_notp_specialist_training_matrix_from_predictions(
+        model=model,
+        rows=rows,
+        prediction_rows=prediction_rows,
+    )
+    proba = np.asarray(classifier.predict_proba(features), dtype=np.float64)
+    classes = [int(cls) for cls in list(getattr(classifier, 'classes_', []))]
+    if 1 not in classes:
+        raise ValueError('mTP/noTP threshold validation classifier is missing class 1.')
+    scores = proba[:, classes.index(1)]
+    report = _select_mtp_notp_threshold_from_scores(
+        labels=labels,
+        scores=scores,
+        threshold_grid=threshold_grid,
+    )
+    report['validation_rows'] = int(features.shape[0])
+    report['positive_rows'] = int(np.sum(labels == 1))
+    report['negative_rows'] = int(np.sum(labels == 0))
+    return report
+
+
 def _parse_class_values(text, default):
     text = str(text or '').strip()
     if text == '':
@@ -360,6 +470,9 @@ def attach_targetp_mtp_notp_specialist(
     l2_regularization=TARGETP_MTP_NOTP_SPECIALIST_PROFILE['l2_regularization'],
     random_state=TARGETP_MTP_NOTP_SPECIALIST_PROFILE['random_state'],
     class_weight=TARGETP_MTP_NOTP_SPECIALIST_PROFILE['class_weight'],
+    threshold_validation_rows=None,
+    threshold_validation_prediction_rows=None,
+    threshold_grid=None,
 ):
     """Attach a CPU-runtime mTP/noTP resolver trained on a development set."""
     try:
@@ -384,6 +497,22 @@ def attach_targetp_mtp_notp_specialist(
         class_weight=resolved_class_weight,
     )
     _fit_sklearn_model(classifier, features, labels)
+    resolved_threshold = float(threshold)
+    threshold_validation_report = None
+    if threshold_validation_rows is not None:
+        threshold_values = (
+            _parse_threshold_grid('', default=None)
+            if threshold_grid is None
+            else list(threshold_grid)
+        )
+        threshold_validation_report = _select_mtp_notp_threshold_from_predictions(
+            model=model,
+            classifier=classifier,
+            rows=threshold_validation_rows,
+            prediction_rows=threshold_validation_prediction_rows,
+            threshold_grid=threshold_values,
+        )
+        resolved_threshold = float(threshold_validation_report['threshold'])
 
     localization_model = model['localization_model']
     specialist = dict(localization_model.get('targetp_specialist_postprocess', {}))
@@ -392,7 +521,7 @@ def attach_targetp_mtp_notp_specialist(
         'mtp_notp_feature_profile': TARGETP_MTP_NOTP_SPECIALIST_PROFILE['feature_profile'],
         'mtp_notp_models': [classifier],
         'mtp_notp_weights': [1.0],
-        'mtp_notp_threshold': float(threshold),
+        'mtp_notp_threshold': float(resolved_threshold),
         'mtp_notp_model_kind': TARGETP_MTP_NOTP_SPECIALIST_PROFILE['model_kind'],
         'mtp_notp_max_iter': int(max_iter),
         'mtp_notp_learning_rate': float(learning_rate),
@@ -407,7 +536,7 @@ def attach_targetp_mtp_notp_specialist(
     model['metadata']['targetp_mtp_notp_specialist'] = {
         'feature_profile': TARGETP_MTP_NOTP_SPECIALIST_PROFILE['feature_profile'],
         'model_kind': TARGETP_MTP_NOTP_SPECIALIST_PROFILE['model_kind'],
-        'threshold': float(threshold),
+        'threshold': float(resolved_threshold),
         'training_rows': int(features.shape[0]),
         'mtp_rows': int(np.sum(labels == 1)),
         'notp_rows': int(np.sum(labels == 0)),
@@ -418,6 +547,10 @@ def attach_targetp_mtp_notp_specialist(
         'random_state': int(random_state),
         'class_weight': class_weight_text,
     }
+    if threshold_validation_report is not None:
+        model['metadata']['targetp_mtp_notp_specialist']['threshold_validation'] = (
+            threshold_validation_report
+        )
     return model
 
 
@@ -519,6 +652,17 @@ def build_parser():
     parser.add_argument('--reranker_predictions_tsv', default='', type=str)
     parser.add_argument('--mtp_notp_specialist_tsv', default='', type=str)
     parser.add_argument('--mtp_notp_specialist_predictions_tsv', default='', type=str)
+    parser.add_argument('--mtp_notp_specialist_threshold_validation_tsv', default='', type=str)
+    parser.add_argument(
+        '--mtp_notp_specialist_threshold_validation_predictions_tsv',
+        default='',
+        type=str,
+    )
+    parser.add_argument(
+        '--mtp_notp_specialist_threshold_grid',
+        default='',
+        type=str,
+    )
     parser.add_argument(
         '--reranker_threshold',
         default=TARGETP_RERANKER_PROFILE['threshold'],
@@ -698,6 +842,30 @@ def main(argv=None):
             mtp_notp_prediction_rows = read_tsv(
                 path=str(args.mtp_notp_specialist_predictions_tsv)
             )
+        mtp_notp_validation_rows = None
+        mtp_notp_validation_prediction_rows = None
+        if str(args.mtp_notp_specialist_threshold_validation_tsv).strip() != '':
+            mtp_notp_validation_rows, mtp_notp_validation_skipped = (
+                load_fixed_uniprot_holdout_rows(
+                    path=str(args.mtp_notp_specialist_threshold_validation_tsv),
+                    strict_targetp_organism_labels=True,
+                )
+            )
+            if str(
+                args.mtp_notp_specialist_threshold_validation_predictions_tsv
+            ).strip() != '':
+                mtp_notp_validation_prediction_rows = read_tsv(
+                    path=str(args.mtp_notp_specialist_threshold_validation_predictions_tsv)
+                )
+        else:
+            mtp_notp_validation_skipped = {}
+            if str(
+                args.mtp_notp_specialist_threshold_validation_predictions_tsv
+            ).strip() != '':
+                raise ValueError(
+                    '--mtp_notp_specialist_threshold_validation_predictions_tsv '
+                    'requires --mtp_notp_specialist_threshold_validation_tsv.'
+                )
         model = attach_targetp_mtp_notp_specialist(
             model=model,
             rows=mtp_notp_rows,
@@ -708,6 +876,12 @@ def main(argv=None):
             l2_regularization=float(args.mtp_notp_specialist_l2),
             random_state=int(args.mtp_notp_specialist_random_state),
             class_weight=args.mtp_notp_specialist_class_weight,
+            threshold_validation_rows=mtp_notp_validation_rows,
+            threshold_validation_prediction_rows=mtp_notp_validation_prediction_rows,
+            threshold_grid=_parse_threshold_grid(
+                args.mtp_notp_specialist_threshold_grid,
+                default=None,
+            ),
         )
         model['metadata']['targetp_mtp_notp_specialist']['training_tsv'] = str(
             args.mtp_notp_specialist_tsv
@@ -718,6 +892,18 @@ def main(argv=None):
         model['metadata']['targetp_mtp_notp_specialist']['skipped_rows'] = dict(
             mtp_notp_skipped
         )
+        if mtp_notp_validation_rows is not None:
+            validation_report = model['metadata']['targetp_mtp_notp_specialist'].setdefault(
+                'threshold_validation',
+                {},
+            )
+            validation_report['validation_tsv'] = str(
+                args.mtp_notp_specialist_threshold_validation_tsv
+            )
+            validation_report['predictions_tsv'] = str(
+                args.mtp_notp_specialist_threshold_validation_predictions_tsv
+            )
+            validation_report['skipped_rows'] = dict(mtp_notp_validation_skipped)
         mtp_notp_report = dict(model['metadata']['targetp_mtp_notp_specialist'])
     save_localize_model(model=model, path=str(args.model_out))
     print(json.dumps({

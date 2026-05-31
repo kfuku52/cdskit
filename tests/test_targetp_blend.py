@@ -30,6 +30,7 @@ from cdskit.targetp_blend import (
 from cdskit.localize_model import FEATURE_NAMES, predict_localization_and_peroxisome
 from cdskit.targetp_pair_blend import (
     attach_targetp_mtp_notp_specialist,
+    _select_mtp_notp_threshold_from_scores,
     main as targetp_pair_blend_main,
 )
 
@@ -495,6 +496,19 @@ def test_targetp_mtp_notp_specialist_accepts_none_class_weight():
     specialist = model['localization_model']['targetp_specialist_postprocess']
     assert specialist['mtp_notp_class_weight'] == 'none'
     assert model['metadata']['targetp_mtp_notp_specialist']['class_weight'] == 'none'
+
+
+def test_mtp_notp_threshold_selection_uses_validation_macro_f1():
+    result = _select_mtp_notp_threshold_from_scores(
+        labels=np.asarray([0, 0, 1, 1], dtype=np.int64),
+        scores=np.asarray([0.10, 0.20, 0.60, 0.90], dtype=np.float64),
+        threshold_grid=[0.30, 0.50, 0.70],
+    )
+
+    assert result['threshold'] == pytest.approx(0.50)
+    assert result['macro_f1'] == pytest.approx(1.0)
+    assert result['by_class']['noTP']['f1'] == pytest.approx(1.0)
+    assert result['by_class']['mTP']['f1'] == pytest.approx(1.0)
 
 
 def test_export_targetp_blend_runtime_model_uses_full_training_table(temp_dir, monkeypatch):
