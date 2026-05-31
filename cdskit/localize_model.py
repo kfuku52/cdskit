@@ -1654,9 +1654,25 @@ def _apply_targetp_specialist_postprocess(
         reranker_idx = int(np.argmax(constrained_vec))
         reranker_score = float(constrained_vec[reranker_idx])
         reranker_class = LOCALIZATION_CLASSES[reranker_idx]
-        reranker_positive = reranker_score >= reranker_threshold
+        reranker_class_threshold = reranker_threshold
+        reranker_thresholds = specialist.get('reranker_thresholds', None)
+        if isinstance(reranker_thresholds, dict):
+            try:
+                reranker_class_threshold = float(
+                    reranker_thresholds.get(reranker_class, reranker_threshold)
+                )
+            except Exception:
+                reranker_class_threshold = reranker_threshold
+            if (
+                (not np.isfinite(reranker_class_threshold))
+                or reranker_class_threshold <= 0.0
+            ):
+                reranker_class_threshold = reranker_threshold
+        reranker_positive = reranker_score >= reranker_class_threshold
         if reranker_positive:
             pred_idx = reranker_idx
+    else:
+        reranker_class_threshold = reranker_threshold
 
     sp_models = _targetp_specialist_model_list(specialist, 'sp_models', 'sp_model')
     sp_threshold = float(specialist.get('sp_threshold', 0.5))
@@ -1746,6 +1762,7 @@ def _apply_targetp_specialist_postprocess(
         'ctp_ltp_mass': float(ctp_ltp_mass),
         'reranker_score': float(reranker_score),
         'reranker_threshold': float(reranker_threshold),
+        'reranker_class_threshold': float(reranker_class_threshold),
         'reranker_positive': bool(reranker_positive),
         'reranker_class': str(reranker_class),
         'notp_score': float(notp_score),

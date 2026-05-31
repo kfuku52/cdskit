@@ -256,6 +256,7 @@ def attach_targetp_reranker(
     rows,
     prediction_rows=None,
     threshold=TARGETP_RERANKER_PROFILE['threshold'],
+    class_thresholds=None,
     max_iter=TARGETP_RERANKER_PROFILE['max_iter'],
     learning_rate=TARGETP_RERANKER_PROFILE['learning_rate'],
     l2_regularization=TARGETP_RERANKER_PROFILE['l2_regularization'],
@@ -300,6 +301,11 @@ def attach_targetp_reranker(
         'reranker_training_rows': int(features.shape[0]),
         'reranker_feature_dim': int(features.shape[1]),
     })
+    if class_thresholds is not None:
+        specialist['reranker_thresholds'] = {
+            class_name: float(class_thresholds[class_name])
+            for class_name in LOCALIZATION_CLASSES
+        }
     localization_model['targetp_specialist_postprocess'] = specialist
     model.setdefault('metadata', {})
     counts = {
@@ -319,6 +325,11 @@ def attach_targetp_reranker(
         'random_state': int(random_state),
         'class_weight': TARGETP_RERANKER_PROFILE['class_weight'],
     }
+    if class_thresholds is not None:
+        model['metadata']['targetp_reranker']['class_thresholds'] = {
+            class_name: float(class_thresholds[class_name])
+            for class_name in LOCALIZATION_CLASSES
+        }
     return model
 
 
@@ -341,6 +352,7 @@ def build_parser():
         default=TARGETP_RERANKER_PROFILE['threshold'],
         type=float,
     )
+    parser.add_argument('--reranker_class_thresholds', default='', type=str)
     parser.add_argument(
         '--reranker_max_iter',
         default=TARGETP_RERANKER_PROFILE['max_iter'],
@@ -454,6 +466,14 @@ def main(argv=None):
             rows=reranker_rows,
             prediction_rows=reranker_prediction_rows,
             threshold=float(args.reranker_threshold),
+            class_thresholds=(
+                None
+                if str(args.reranker_class_thresholds).strip() == ''
+                else _parse_class_values(
+                    args.reranker_class_thresholds,
+                    default=float(args.reranker_threshold),
+                )
+            ),
             max_iter=int(args.reranker_max_iter),
             learning_rate=float(args.reranker_learning_rate),
             l2_regularization=float(args.reranker_l2),
