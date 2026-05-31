@@ -28,7 +28,10 @@ from cdskit.targetp_blend import (
     main,
 )
 from cdskit.localize_model import FEATURE_NAMES, predict_localization_and_peroxisome
-from cdskit.targetp_pair_blend import main as targetp_pair_blend_main
+from cdskit.targetp_pair_blend import (
+    attach_targetp_mtp_notp_specialist,
+    main as targetp_pair_blend_main,
+)
 
 
 def test_oof_rows_to_prob_and_true_sorts_and_normalizes():
@@ -413,6 +416,85 @@ def test_targetp_pair_blend_cli_writes_model(temp_dir):
     assert saved['model_type'] == 'targetp_blend_v1'
     assert saved['metadata']['base_model_a'] == str(model_a_path)
     assert pred['predicted_class'] == 'mTP'
+
+
+def test_targetp_mtp_notp_specialist_accepts_none_class_weight():
+    class_names = list(LOCALIZATION_CLASSES)
+    base_model_a = {
+        'model_type': 'nearest_centroid_v1',
+        'localization_model': {
+            'mode': 'constant',
+            'class_label': 'noTP',
+            'class_order': class_names,
+        },
+        'perox_model': {'mode': 'constant', 'yes_probability': 0.0},
+    }
+    base_model_b = {
+        'model_type': 'nearest_centroid_v1',
+        'localization_model': {
+            'mode': 'constant',
+            'class_label': 'mTP',
+            'class_order': class_names,
+        },
+        'perox_model': {'mode': 'constant', 'yes_probability': 0.0},
+    }
+    model = build_targetp_pair_blend_runtime_model(
+        base_model_a=base_model_a,
+        base_model_b=base_model_b,
+        alpha_by_class=0.5,
+        metadata={'source': 'mtp-notp-class-weight-test'},
+    )
+    rows = [
+        {
+            'accession': 'N1',
+            'sequence': 'MGPVNQDEGPVNQDEGPVNQDE',
+            'organism_group': 'non_plant',
+            'true_class': 'noTP',
+        },
+        {
+            'accession': 'N2',
+            'sequence': 'MGGGGGGGGGGGGGGGGGGGG',
+            'organism_group': 'non_plant',
+            'true_class': 'noTP',
+        },
+        {
+            'accession': 'M1',
+            'sequence': 'MRRKRRAARAKRRNQAAARRRAA',
+            'organism_group': 'non_plant',
+            'true_class': 'mTP',
+        },
+        {
+            'accession': 'M2',
+            'sequence': 'MARRRRAAASSSLLLGGGGG',
+            'organism_group': 'non_plant',
+            'true_class': 'mTP',
+        },
+    ]
+    prediction_rows = list()
+    for row in rows:
+        pred_row = {
+            'accession': row['accession'],
+            'true_class': row['true_class'],
+        }
+        for class_name in LOCALIZATION_CLASSES:
+            value = 0.5 if class_name in ['noTP', 'mTP'] else 0.0
+            pred_row['p_{}'.format(class_name)] = value
+            pred_row['p_a_{}'.format(class_name)] = 1.0 if class_name == 'noTP' else 0.0
+            pred_row['p_b_{}'.format(class_name)] = 1.0 if class_name == 'mTP' else 0.0
+        prediction_rows.append(pred_row)
+
+    model = attach_targetp_mtp_notp_specialist(
+        model=model,
+        rows=rows,
+        prediction_rows=prediction_rows,
+        threshold=0.52,
+        max_iter=2,
+        class_weight='none',
+    )
+
+    specialist = model['localization_model']['targetp_specialist_postprocess']
+    assert specialist['mtp_notp_class_weight'] == 'none'
+    assert model['metadata']['targetp_mtp_notp_specialist']['class_weight'] == 'none'
 
 
 def test_export_targetp_blend_runtime_model_uses_full_training_table(temp_dir, monkeypatch):

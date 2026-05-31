@@ -52,6 +52,18 @@ TARGETP_MTP_NOTP_SPECIALIST_PROFILE = {
 }
 
 
+def _normalize_class_weight(value):
+    text = str(value or '').strip()
+    if text == '' or text.lower() in ['none', 'null']:
+        return None
+    return text
+
+
+def _class_weight_metadata_value(value):
+    resolved = _normalize_class_weight(value)
+    return 'none' if resolved is None else str(resolved)
+
+
 def _parse_class_values(text, default):
     text = str(text or '').strip()
     if text == '':
@@ -347,6 +359,7 @@ def attach_targetp_mtp_notp_specialist(
     learning_rate=TARGETP_MTP_NOTP_SPECIALIST_PROFILE['learning_rate'],
     l2_regularization=TARGETP_MTP_NOTP_SPECIALIST_PROFILE['l2_regularization'],
     random_state=TARGETP_MTP_NOTP_SPECIALIST_PROFILE['random_state'],
+    class_weight=TARGETP_MTP_NOTP_SPECIALIST_PROFILE['class_weight'],
 ):
     """Attach a CPU-runtime mTP/noTP resolver trained on a development set."""
     try:
@@ -361,12 +374,14 @@ def attach_targetp_mtp_notp_specialist(
     )
     if len(set(labels.tolist())) < 2:
         raise ValueError('mTP/noTP specialist training requires both noTP and mTP rows.')
+    resolved_class_weight = _normalize_class_weight(class_weight)
+    class_weight_text = _class_weight_metadata_value(class_weight)
     classifier = HistGradientBoostingClassifier(
         max_iter=int(max_iter),
         learning_rate=float(learning_rate),
         l2_regularization=float(l2_regularization),
         random_state=int(random_state),
-        class_weight=TARGETP_MTP_NOTP_SPECIALIST_PROFILE['class_weight'],
+        class_weight=resolved_class_weight,
     )
     _fit_sklearn_model(classifier, features, labels)
 
@@ -383,7 +398,7 @@ def attach_targetp_mtp_notp_specialist(
         'mtp_notp_learning_rate': float(learning_rate),
         'mtp_notp_l2_regularization': float(l2_regularization),
         'mtp_notp_random_state': int(random_state),
-        'mtp_notp_class_weight': TARGETP_MTP_NOTP_SPECIALIST_PROFILE['class_weight'],
+        'mtp_notp_class_weight': class_weight_text,
         'mtp_notp_training_rows': int(features.shape[0]),
         'mtp_notp_feature_dim': int(features.shape[1]),
     })
@@ -401,7 +416,7 @@ def attach_targetp_mtp_notp_specialist(
         'learning_rate': float(learning_rate),
         'l2_regularization': float(l2_regularization),
         'random_state': int(random_state),
-        'class_weight': TARGETP_MTP_NOTP_SPECIALIST_PROFILE['class_weight'],
+        'class_weight': class_weight_text,
     }
     return model
 
@@ -580,6 +595,11 @@ def build_parser():
         default=TARGETP_MTP_NOTP_SPECIALIST_PROFILE['random_state'],
         type=int,
     )
+    parser.add_argument(
+        '--mtp_notp_specialist_class_weight',
+        default=TARGETP_MTP_NOTP_SPECIALIST_PROFILE['class_weight'],
+        type=str,
+    )
     parser.add_argument('--model_out', required=True, type=str)
     return parser
 
@@ -687,6 +707,7 @@ def main(argv=None):
             learning_rate=float(args.mtp_notp_specialist_learning_rate),
             l2_regularization=float(args.mtp_notp_specialist_l2),
             random_state=int(args.mtp_notp_specialist_random_state),
+            class_weight=args.mtp_notp_specialist_class_weight,
         )
         model['metadata']['targetp_mtp_notp_specialist']['training_tsv'] = str(
             args.mtp_notp_specialist_tsv
