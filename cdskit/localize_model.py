@@ -1246,7 +1246,7 @@ def _targetp_threshold_vector(class_thresholds):
     return thresholds
 
 
-def _targetp_notp_specialist_feature_vector(
+def _targetp_probability_sequence_feature_vector(
     aa_seq,
     base_probs,
     prob_a,
@@ -1289,6 +1289,24 @@ def _targetp_notp_specialist_feature_vector(
             organism_group=organism_group,
         ),
     ])
+
+
+def _targetp_notp_specialist_feature_vector(
+    aa_seq,
+    base_probs,
+    prob_a,
+    prob_b,
+    organism_group,
+    class_thresholds,
+):
+    return _targetp_probability_sequence_feature_vector(
+        aa_seq=aa_seq,
+        base_probs=base_probs,
+        prob_a=prob_a,
+        prob_b=prob_b,
+        organism_group=organism_group,
+        class_thresholds=class_thresholds,
+    )
 
 
 def _targetp_feature_ltp_specialist_feature_vector(aa_seq, base_probs, organism_group):
@@ -1505,6 +1523,47 @@ def _predict_binary_ensemble_score(feature_vec, models, weights=None):
     return float(np.average(np.asarray(scores, dtype=np.float64), weights=weights / total))
 
 
+def _predict_multiclass_ensemble_probabilities(feature_vec, models, weights=None):
+    if not isinstance(models, list) or len(models) == 0:
+        return np.zeros((len(LOCALIZATION_CLASSES),), dtype=np.float64)
+    prob_rows = list()
+    for model in models:
+        if not hasattr(model, 'predict_proba'):
+            raise TypeError('TargetP reranker model should support predict_proba.')
+        proba = np.asarray(
+            _targetp_predict_sklearn_proba(
+                model,
+                np.asarray(feature_vec, dtype=np.float64).reshape((1, -1)),
+            ),
+            dtype=np.float64,
+        )
+        classes = getattr(model, 'classes_', list(range(len(LOCALIZATION_CLASSES))))
+        class_to_col = {int(cls): i for i, cls in enumerate(list(classes))}
+        row = np.zeros((len(LOCALIZATION_CLASSES),), dtype=np.float64)
+        for class_i in range(len(LOCALIZATION_CLASSES)):
+            if class_i in class_to_col:
+                row[class_i] = float(proba[0, class_to_col[class_i]])
+        prob_rows.append(row)
+    if weights is None:
+        probs = np.mean(np.asarray(prob_rows, dtype=np.float64), axis=0)
+    else:
+        weights = np.asarray(weights, dtype=np.float64)
+        if weights.shape[0] != len(prob_rows):
+            raise ValueError('TargetP reranker weights do not match model count.')
+        total = float(np.sum(weights))
+        if total <= 0.0:
+            raise ValueError('TargetP reranker weights should sum to a positive value.')
+        probs = np.average(
+            np.asarray(prob_rows, dtype=np.float64),
+            axis=0,
+            weights=weights / total,
+        )
+    total = float(np.sum(probs))
+    if total <= 0.0:
+        return probs
+    return probs / total
+
+
 def _targetp_specialist_model_list(specialist, plural_key, singular_key):
     models = specialist.get(plural_key, [])
     if models is None:
@@ -1560,6 +1619,44 @@ def _apply_targetp_specialist_postprocess(
     non_sp_scores = scores.copy()
     non_sp_scores[sp_idx] = -np.inf
     non_sp_pred_idx = int(np.argmax(non_sp_scores))
+
+    reranker_models = _targetp_specialist_model_list(
+        specialist,
+        'reranker_models',
+        'reranker_model',
+    )
+    reranker_threshold = float(specialist.get('reranker_threshold', 0.5))
+    reranker_score = 0.0
+    reranker_positive = False
+    reranker_class = ''
+    if len(reranker_models) > 0:
+        reranker_feature_vec = _targetp_probability_sequence_feature_vector(
+            aa_seq=aa_seq,
+            base_probs=base_probs,
+            prob_a=prob_a,
+            prob_b=prob_b,
+            organism_group=organism_group,
+            class_thresholds=class_thresholds,
+        )
+        reranker_probs = _predict_multiclass_ensemble_probabilities(
+            feature_vec=reranker_feature_vec,
+            models=reranker_models,
+            weights=specialist.get('reranker_weights', None),
+        )
+        constrained_reranker_probs = apply_organism_group_constraints(
+            class_probs={
+                LOCALIZATION_CLASSES[i]: float(reranker_probs[i])
+                for i in range(len(LOCALIZATION_CLASSES))
+            },
+            organism_group=organism_group,
+        )
+        constrained_vec = _class_probs_to_vector(constrained_reranker_probs)
+        reranker_idx = int(np.argmax(constrained_vec))
+        reranker_score = float(constrained_vec[reranker_idx])
+        reranker_class = LOCALIZATION_CLASSES[reranker_idx]
+        reranker_positive = reranker_score >= reranker_threshold
+        if reranker_positive:
+            pred_idx = reranker_idx
 
     sp_models = _targetp_specialist_model_list(specialist, 'sp_models', 'sp_model')
     sp_threshold = float(specialist.get('sp_threshold', 0.5))
@@ -1647,6 +1744,10 @@ def _apply_targetp_specialist_postprocess(
         'ltp_mass_threshold': float(ltp_mass_threshold),
         'ltp_candidate': bool(ltp_candidate),
         'ctp_ltp_mass': float(ctp_ltp_mass),
+        'reranker_score': float(reranker_score),
+        'reranker_threshold': float(reranker_threshold),
+        'reranker_positive': bool(reranker_positive),
+        'reranker_class': str(reranker_class),
         'notp_score': float(notp_score),
         'notp_threshold': float(notp_threshold),
         'notp_positive': bool(notp_positive),

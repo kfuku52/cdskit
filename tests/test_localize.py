@@ -1152,6 +1152,56 @@ def test_predict_targetp_blend_notp_only_specialist_preserves_low_score_predicti
     assert details['notp_applied'] is False
 
 
+def test_predict_targetp_blend_reranker_can_override_when_confident():
+    class_order = ['noTP', 'SP', 'mTP', 'cTP', 'lTP']
+    model = {
+        'model_type': 'targetp_blend_v1',
+        'feature_names': [],
+        'localization_model': {
+            'class_order': class_order,
+            'base_models': [
+                {
+                    'model_type': 'nearest_centroid_v1',
+                    'localization_model': {
+                        'mode': 'constant',
+                        'class_label': 'SP',
+                        'class_order': class_order,
+                    },
+                },
+                {
+                    'model_type': 'nearest_centroid_v1',
+                    'localization_model': {
+                        'mode': 'constant',
+                        'class_label': 'SP',
+                        'class_order': class_order,
+                    },
+                },
+            ],
+            'alpha_by_class': 0.5,
+            'targetp_specialist_postprocess': {
+                'enabled': True,
+                'reranker_models': [ConstantMulticlassScore([0.01, 0.01, 0.01, 0.96, 0.01])],
+                'reranker_threshold': 0.90,
+            },
+        },
+        'perox_model': {
+            'mode': 'constant',
+            'yes_probability': 0.0,
+        },
+    }
+
+    pred = predict_localization_and_peroxisome(
+        aa_seq='MASTSTSTSTSSRRRGGGGG',
+        model=model,
+        organism_group='plant',
+    )
+
+    details = pred['targetp_blend_details']['specialist_postprocess']
+    assert pred['predicted_class'] == 'cTP'
+    assert details['reranker_positive'] is True
+    assert details['reranker_class'] == 'cTP'
+
+
 def test_predict_targetp_feature_ensemble_uses_cpu_sklearn_classifier_and_organism_gate():
     aa_seq = 'MASTSTSTSTSSRRRGGGGG'
     feature_dim = int(extract_targetp_feature_ensemble_features(
