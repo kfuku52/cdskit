@@ -42,12 +42,12 @@ DEFAULT_WRAP = 60
 VALID_PLOT_MODES = frozenset(('summary', 'map', 'msa'))
 VALID_PLOT_FORMATS = frozenset(('pdf', 'svg', 'png'))
 
-COL_OCCUPANCY = '#2e7d32'
+COL_CLEAN = '#2e7d32'
 COL_AMBIGUOUS = '#ef6c00'
 COL_THRESHOLD = '#546e7a'
 COL_STOP = '#c62828'
-COL_KEEP = '#c8e6c9'
-COL_REMOVE = '#d7dde5'
+COL_KEEP = '#43a047'
+COL_REMOVE = '#8d99a6'
 COL_BAR = '#ffb74d'
 COL_BAR_EDGE = '#ef6c00'
 COL_COMPLETE = '#4e79a7'
@@ -146,16 +146,13 @@ def _compute_sequence_stats(records, threads):
     return parallel_map_ordered(items=records, worker=worker, threads=threads)
 
 
-def _build_summary_text(num_sequences, num_sites, kept_sites, removed_sites, min_occupancy, max_ambiguous_fraction, drop_stop_codon):
-    stop_txt = 'drop stop codons' if drop_stop_codon else 'keep stop codons'
+def _build_summary_text(num_sequences, num_sites, kept_sites, removed_sites, min_clean_fraction):
     return ' | '.join([
         f'{_fmt_count(num_sequences)} sequences',
         f'{_fmt_count(num_sites)} codon sites',
         f'{_fmt_count(kept_sites)} kept',
         f'{_fmt_count(removed_sites)} removed',
-        f'occupancy >= {min_occupancy:.2f}',
-        f'ambiguous fraction <= {max_ambiguous_fraction:.2f}',
-        stop_txt,
+        f'clean fraction >= {min_clean_fraction:.2f}',
     ])
 
 
@@ -716,12 +713,10 @@ def _build_summary_figure(records, site_summaries, kept_sites, ambiguous_by_seq,
     height = _int_arg('--height', getattr(args, 'height', DEFAULT_HEIGHT), DEFAULT_HEIGHT)
     top_n = _nonnegative_int_arg('--top_n', getattr(args, 'top_n', 0), 0)
     title = getattr(args, 'title', '') or 'cdskit plot'
-    min_occupancy = validate_fraction(name='--min_occupancy', value=getattr(args, 'min_occupancy', 0.5))
-    max_ambiguous_fraction = validate_fraction(
-        name='--max_ambiguous_fraction',
-        value=getattr(args, 'max_ambiguous_fraction', 1.0),
+    min_clean_fraction = validate_fraction(
+        name='--min_clean_fraction',
+        value=getattr(args, 'min_clean_fraction', 0.5),
     )
-    drop_stop_codon = bool(getattr(args, 'drop_stop_codon', False))
 
     num_sequences = len(records)
     num_sites = len(site_summaries)
@@ -731,9 +726,7 @@ def _build_summary_figure(records, site_summaries, kept_sites, ambiguous_by_seq,
         num_sites=num_sites,
         kept_sites=len(kept_sites),
         removed_sites=removed_sites,
-        min_occupancy=min_occupancy,
-        max_ambiguous_fraction=max_ambiguous_fraction,
-        drop_stop_codon=drop_stop_codon,
+        min_clean_fraction=min_clean_fraction,
     )
 
     show_bar_chart = (top_n > 0) and (len(ambiguous_by_seq) > 0)
@@ -760,10 +753,8 @@ def _build_summary_figure(records, site_summaries, kept_sites, ambiguous_by_seq,
     fig.text(0.08, 0.90, summary_text, fontsize=10, ha='left', va='top', color='#607d8b')
 
     legend_handles = [
-        Line2D([0], [0], color=COL_OCCUPANCY, linewidth=2.2, label='occupancy'),
-        Line2D([0], [0], color=COL_AMBIGUOUS, linewidth=2.0, label='ambiguity'),
-        Line2D([0], [0], color=COL_THRESHOLD, linewidth=1.2, linestyle='--', label='occupancy threshold'),
-        Line2D([0], [0], color=COL_AMBIGUOUS, linewidth=1.2, linestyle=':', label='ambiguity threshold'),
+        Line2D([0], [0], color=COL_CLEAN, linewidth=2.2, label='clean fraction'),
+        Line2D([0], [0], color=COL_THRESHOLD, linewidth=1.2, linestyle='--', label='threshold'),
         Line2D([0], [0], color=COL_STOP, marker='v', linestyle='None', markersize=6, label='stop codon'),
         Patch(facecolor=COL_KEEP, edgecolor='none', label='kept'),
         Patch(facecolor=COL_REMOVE, edgecolor='none', label='removed'),
@@ -776,21 +767,18 @@ def _build_summary_figure(records, site_summaries, kept_sites, ambiguous_by_seq,
         strip_ax.set_axis_off()
     else:
         x = np.arange(1, num_sites + 1)
-        occupancy_values = np.array([site['occupancy'] for site in site_summaries], dtype=float)
-        ambiguous_values = np.array([site['ambiguous_fraction'] for site in site_summaries], dtype=float)
+        clean_values = np.array([site['clean_fraction'] for site in site_summaries], dtype=float)
         stop_positions = x[[site['stop_codons'] > 0 for site in site_summaries]]
         keep_mask = np.array([[1 if site_idx in set(kept_sites) else 0 for site_idx in range(num_sites)]], dtype=int)
 
-        main_ax.plot(x, occupancy_values, color=COL_OCCUPANCY, linewidth=2.2)
-        main_ax.plot(x, ambiguous_values, color=COL_AMBIGUOUS, linewidth=2.0)
-        main_ax.axhline(min_occupancy, color=COL_THRESHOLD, linewidth=1.2, linestyle='--')
-        main_ax.axhline(max_ambiguous_fraction, color=COL_AMBIGUOUS, linewidth=1.2, linestyle=':')
+        main_ax.plot(x, clean_values, color=COL_CLEAN, linewidth=2.2)
+        main_ax.axhline(min_clean_fraction, color=COL_THRESHOLD, linewidth=1.2, linestyle='--')
         if len(stop_positions) > 0:
             main_ax.scatter(stop_positions, np.full(len(stop_positions), 1.04), color=COL_STOP, marker='v', s=32, zorder=4)
         main_ax.set_xlim(0.5, num_sites + 0.5)
         main_ax.set_ylim(-0.02, 1.08)
         main_ax.set_ylabel('Fraction')
-        main_ax.set_title('Occupancy and ambiguity by codon site', fontsize=12)
+        main_ax.set_title('Clean fraction by codon site', fontsize=12)
         main_ax.grid(color='#dfe5ea', linewidth=0.8, alpha=0.8)
         main_ax.set_axisbelow(True)
         main_ax.tick_params(axis='x', labelbottom=False)
@@ -800,6 +788,8 @@ def _build_summary_figure(records, site_summaries, kept_sites, ambiguous_by_seq,
             aspect='auto',
             interpolation='nearest',
             cmap=ListedColormap([COL_REMOVE, COL_KEEP]),
+            vmin=0,
+            vmax=1,
             extent=(0.5, num_sites + 0.5, 0.0, 1.0),
         )
         strip_ax.set_yticks([])
@@ -864,11 +854,7 @@ def _build_map_figure(records, summary, args):
     fig.text(
         0.08,
         0.87,
-        (
-            f'Thresholds: occupancy >= {getattr(args, "min_occupancy", 0.0):.2f}, '
-            f'ambiguous fraction <= {getattr(args, "max_ambiguous_fraction", 1.0):.2f}, '
-            f'drop stop codon = {bool(getattr(args, "drop_stop_codon", False))}'
-        ),
+        f'Threshold: clean fraction >= {getattr(args, "min_clean_fraction", 0.5):.2f}',
         fontsize=10,
         ha='left',
         va='top',
@@ -910,6 +896,8 @@ def _build_map_figure(records, summary, args):
             aspect='auto',
             interpolation='nearest',
             cmap=ListedColormap([COL_REMOVE, COL_KEEP]),
+            vmin=0,
+            vmax=1,
             extent=(-0.5, num_sites - 0.5, 0.0, 1.0),
         )
         strip_ax.set_yticks([])
@@ -1026,10 +1014,9 @@ def plot_main(args):
     stop_if_not_aligned(records=records)
     stop_if_not_multiple_of_three(records=records)
     stop_if_invalid_codontable(args.codontable)
-    min_occupancy = validate_fraction(name='--min_occupancy', value=getattr(args, 'min_occupancy', 0.5))
-    max_ambiguous_fraction = validate_fraction(
-        name='--max_ambiguous_fraction',
-        value=getattr(args, 'max_ambiguous_fraction', 1.0),
+    min_clean_fraction = validate_fraction(
+        name='--min_clean_fraction',
+        value=getattr(args, 'min_clean_fraction', 0.5),
     )
     _ = _nonnegative_int_arg('--top_n', getattr(args, 'top_n', 0), 0)
 
@@ -1040,9 +1027,7 @@ def plot_main(args):
         summary = summarize_draw(
             records=records,
             codontable=args.codontable,
-            min_occupancy=min_occupancy,
-            max_ambiguous_fraction=max_ambiguous_fraction,
-            drop_stop_codon=bool(getattr(args, 'drop_stop_codon', False)),
+            min_clean_fraction=min_clean_fraction,
         )
         fig = _build_map_figure(records=records, summary=summary, args=map_args)
         payload = _serialize_figure(fig=fig, plotformat=plotformat)
@@ -1066,9 +1051,7 @@ def plot_main(args):
     kept_sites = choose_kept_codon_sites(
         site_summaries=site_summaries,
         num_sequences=len(records),
-        min_occupancy=min_occupancy,
-        max_ambiguous_fraction=max_ambiguous_fraction,
-        drop_stop_codon=bool(getattr(args, 'drop_stop_codon', False)),
+        min_clean_fraction=min_clean_fraction,
     )
     ambiguous_by_seq = _compute_sequence_stats(records=records, threads=threads)
     fig = _build_summary_figure(

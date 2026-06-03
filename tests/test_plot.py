@@ -36,9 +36,7 @@ class TestPlotMain:
             plotformat="svg",
             width=1100,
             height=680,
-            min_occupancy=0.8,
-            max_ambiguous_fraction=0.2,
-            drop_stop_codon=False,
+            min_clean_fraction=0.8,
             title="My Plot",
             top_n=3,
         )
@@ -50,16 +48,14 @@ class TestPlotMain:
         txt = output_path.read_text()
         assert "<svg" in txt
         assert "My Plot" in txt
-        assert "occupancy threshold" in txt
-        assert "ambiguity threshold" in txt
+        assert "clean fraction" in txt
+        assert "threshold" in txt
         assert "keep/remove strip" in txt
         assert "Top ambiguous sequences" in txt
         assert "seq1" in txt
         assert "seq2" in txt
         assert "seq3" in txt
         assert "stop" in txt
-        assert "occupancy" in txt
-        assert "ambiguity" in txt
 
     def test_plot_writes_svg_to_stdout(self, temp_dir, mock_args, capsys):
         input_path = temp_dir / "input.fasta"
@@ -77,9 +73,7 @@ class TestPlotMain:
             plotformat="svg",
             width=900,
             height=620,
-            min_occupancy=0.5,
-            max_ambiguous_fraction=1.0,
-            drop_stop_codon=False,
+            min_clean_fraction=0.5,
             title="Stdout Plot",
             top_n=2,
         )
@@ -107,9 +101,7 @@ class TestPlotMain:
             mode="summary",
             width=900,
             height=620,
-            min_occupancy=0.5,
-            max_ambiguous_fraction=1.0,
-            drop_stop_codon=False,
+            min_clean_fraction=0.5,
             title="PDF Plot",
             top_n=2,
         )
@@ -135,9 +127,7 @@ class TestPlotMain:
             mode="summary",
             width=900,
             height=620,
-            min_occupancy=0.5,
-            max_ambiguous_fraction=1.0,
-            drop_stop_codon=False,
+            min_clean_fraction=0.5,
             title="Broken",
             top_n=1,
         )
@@ -158,9 +148,7 @@ class TestPlotMain:
             mode="summary",
             width=900,
             height=620,
-            min_occupancy=1.2,
-            max_ambiguous_fraction=1.0,
-            drop_stop_codon=False,
+            min_clean_fraction=1.2,
             title="Broken",
             top_n=1,
         )
@@ -188,9 +176,7 @@ class TestPlotMain:
             label_width=120,
             title="Example map",
             top_n=2,
-            min_occupancy=0.75,
-            max_ambiguous_fraction=0.25,
-            drop_stop_codon=False,
+            min_clean_fraction=0.75,
         )
 
         svg = plot_main(args)
@@ -227,9 +213,7 @@ class TestPlotMain:
             label_width=140,
             title="File output",
             top_n=0,
-            min_occupancy=0.5,
-            max_ambiguous_fraction=1.0,
-            drop_stop_codon=False,
+            min_clean_fraction=0.5,
         )
 
         plot_main(args)

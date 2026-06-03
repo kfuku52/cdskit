@@ -111,7 +111,7 @@ def classify_codon(codon, codontable):
     return 'complete'
 
 
-def summarize_draw(records, codontable, min_occupancy, max_ambiguous_fraction, drop_stop_codon):
+def summarize_draw(records, codontable, min_clean_fraction):
     seq_strings = [str(record.seq) for record in records]
     if len(records) == 0:
         return {
@@ -130,9 +130,7 @@ def summarize_draw(records, codontable, min_occupancy, max_ambiguous_fraction, d
     kept_sites = choose_kept_codon_sites(
         site_summaries=site_summaries,
         num_sequences=len(records),
-        min_occupancy=min_occupancy,
-        max_ambiguous_fraction=max_ambiguous_fraction,
-        drop_stop_codon=drop_stop_codon,
+        min_clean_fraction=min_clean_fraction,
     )
 
     sequence_ambiguous_counts = list()
@@ -250,9 +248,7 @@ def build_svg(records, args, summary):
     )
     out.append(
         svg_text(
-            f"Thresholds: occupancy >= {getattr(args, 'min_occupancy', 0):.2f}, "
-            f"ambiguous fraction <= {getattr(args, 'max_ambiguous_fraction', 1):.2f}, "
-            f"drop stop codon = {bool(getattr(args, 'drop_stop_codon', False))}",
+            f"Threshold: clean fraction >= {getattr(args, 'min_clean_fraction', 0):.2f}",
             margin_left,
             margin_top + 56,
             size=12,
@@ -368,18 +364,14 @@ def draw_main(args):
     stop_if_not_aligned(records=records)
     stop_if_not_multiple_of_three(records=records)
     stop_if_invalid_codontable(args.codontable)
-    min_occupancy = validate_fraction(name='--min_occupancy', value=getattr(args, 'min_occupancy', 0.5))
-    max_ambiguous_fraction = validate_fraction(
-        name='--max_ambiguous_fraction',
-        value=getattr(args, 'max_ambiguous_fraction', 1.0),
+    min_clean_fraction = validate_fraction(
+        name='--min_clean_fraction',
+        value=getattr(args, 'min_clean_fraction', 0.5),
     )
-    drop_stop_codon = bool(getattr(args, 'drop_stop_codon', False))
     summary = summarize_draw(
         records=records,
         codontable=args.codontable,
-        min_occupancy=min_occupancy,
-        max_ambiguous_fraction=max_ambiguous_fraction,
-        drop_stop_codon=drop_stop_codon,
+        min_clean_fraction=min_clean_fraction,
     )
     svg = build_svg(records=records, args=args, summary=summary)
     write_svg(svg_text_content=svg, outfile=getattr(args, 'outfile', '-'))

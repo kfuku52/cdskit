@@ -2,7 +2,13 @@ import json
 import sys
 from functools import partial
 
-from cdskit.codonutil import ambiguous_codon_counts, has_internal_stop, is_gap_only_sequence
+from cdskit.codonutil import (
+    codon_has_missing,
+    codon_is_ambiguous,
+    codon_is_clean,
+    codon_is_stop,
+    has_internal_stop,
+)
 from cdskit.util import (
     parallel_map_ordered,
     read_seqs,
@@ -23,18 +29,39 @@ def validate_fraction(name, value):
 
 def analyze_record(record, codontable, inspect_internal_stop):
     seq_str = str(record.seq)
-    ambiguous_codons, evaluable_codons = ambiguous_codon_counts(seq=seq_str)
-    ambiguous_codon_rate = 0.0
-    if evaluable_codons > 0:
-        ambiguous_codon_rate = ambiguous_codons / evaluable_codons
+    clean_codons = 0
+    missing_codons = 0
+    ambiguous_codons = 0
+    stop_codons = 0
+    total_codons = len(seq_str) // 3
+    for idx in range(total_codons):
+        codon = seq_str[idx * 3:idx * 3 + 3]
+        if codon_is_clean(codon=codon, codontable=codontable):
+            clean_codons += 1
+            continue
+        if codon_has_missing(codon):
+            missing_codons += 1
+            continue
+        if codon_is_ambiguous(codon):
+            ambiguous_codons += 1
+            continue
+        if codon_is_stop(codon=codon, codontable=codontable):
+            stop_codons += 1
+            continue
+    clean_codon_fraction = 0.0
+    if total_codons > 0:
+        clean_codon_fraction = clean_codons / total_codons
     return {
         'id': record.id,
         'non_triplet': (len(seq_str) % 3) != 0,
-        'gap_only': is_gap_only_sequence(seq=seq_str),
         'internal_stop': inspect_internal_stop and has_internal_stop(seq=seq_str, codontable=codontable),
+        'total_codons': total_codons,
+        'clean_codons': clean_codons,
+        'unclean_codons': total_codons - clean_codons,
+        'missing_codons': missing_codons,
         'ambiguous_codons': ambiguous_codons,
-        'evaluable_codons': evaluable_codons,
-        'ambiguous_codon_rate': ambiguous_codon_rate,
+        'stop_codons': stop_codons,
+        'clean_codon_fraction': clean_codon_fraction,
     }
 
 
@@ -72,9 +99,8 @@ def choose_duplicate_winners(records, candidate_indices, dedup):
 def summarize_filter(records, analyses, args):
     reasons = {
         'non_triplet': list(),
-        'gap_only': list(),
         'internal_stop': list(),
-        'ambiguous_rate': list(),
+        'clean_codon_fraction': list(),
         'duplicate': list(),
     }
     surviving_indices = list()
@@ -83,14 +109,11 @@ def summarize_filter(records, analyses, args):
         if args.drop_non_triplet and analysis['non_triplet']:
             reasons['non_triplet'].append(records[idx].id)
             should_drop = True
-        if args.drop_gap_only and analysis['gap_only']:
-            reasons['gap_only'].append(records[idx].id)
-            should_drop = True
         if args.drop_internal_stop and analysis['internal_stop']:
             reasons['internal_stop'].append(records[idx].id)
             should_drop = True
-        if analysis['ambiguous_codon_rate'] > args.max_ambiguous_codon_rate:
-            reasons['ambiguous_rate'].append(records[idx].id)
+        if analysis['clean_codon_fraction'] < args.min_clean_codon_fraction:
+            reasons['clean_codon_fraction'].append(records[idx].id)
             should_drop = True
         if not should_drop:
             surviving_indices.append(idx)
@@ -111,9 +134,8 @@ def summarize_filter(records, analyses, args):
         'num_output_sequences': len(kept_indices),
         'num_dropped_sequences': len(dropped_indices),
         'drop_non_triplet': bool(args.drop_non_triplet),
-        'drop_gap_only': bool(args.drop_gap_only),
         'drop_internal_stop': bool(args.drop_internal_stop),
-        'max_ambiguous_codon_rate': args.max_ambiguous_codon_rate,
+        'min_clean_codon_fraction': args.min_clean_codon_fraction,
         'dedup': args.dedup,
         'dropped_ids_by_reason': reasons,
         'kept_ids': [records[idx].id for idx in kept_indices],
@@ -135,9 +157,8 @@ def write_filter_report(report_path, summary):
             'num_output_sequences',
             'num_dropped_sequences',
             'drop_non_triplet',
-            'drop_gap_only',
             'drop_internal_stop',
-            'max_ambiguous_codon_rate',
+            'min_clean_codon_fraction',
             'dedup',
         ]:
             f.write(f'{key}\t{summary[key]}\n')
@@ -145,9 +166,8 @@ def write_filter_report(report_path, summary):
         f.write('section\tids\n')
         for key in [
             'non_triplet',
-            'gap_only',
             'internal_stop',
-            'ambiguous_rate',
+            'clean_codon_fraction',
             'duplicate',
         ]:
             ids = ','.join(summary['dropped_ids_by_reason'][key])
@@ -159,11 +179,10 @@ def write_filter_report(report_path, summary):
 def filter_main(args):
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
     stop_if_not_dna(records=records, label='--seqfile')
-    if args.drop_internal_stop:
-        stop_if_invalid_codontable(args.codontable)
-    args.max_ambiguous_codon_rate = validate_fraction(
-        name='--max_ambiguous_codon_rate',
-        value=args.max_ambiguous_codon_rate,
+    stop_if_invalid_codontable(args.codontable)
+    args.min_clean_codon_fraction = validate_fraction(
+        name='--min_clean_codon_fraction',
+        value=getattr(args, 'min_clean_codon_fraction', 0.5),
     )
     threads = resolve_threads(getattr(args, 'threads', 1))
     worker = partial(

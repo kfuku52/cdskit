@@ -60,6 +60,15 @@ def codon_is_stop(codon, codontable):
     return codon_upper in get_stop_codons(codontable=codontable)
 
 
+def codon_is_clean(codon, codontable):
+    codon_upper = codon.upper()
+    if codon_has_missing(codon_upper):
+        return False
+    if any(ch not in UNAMBIGUOUS_NT for ch in codon_upper):
+        return False
+    return codon_upper not in get_stop_codons(codontable=codontable)
+
+
 def ambiguous_codon_counts(seq):
     seq_upper = seq.upper()
     ambiguous = 0

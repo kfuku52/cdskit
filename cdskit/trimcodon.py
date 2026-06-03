@@ -4,7 +4,7 @@ import sys
 
 from Bio.Seq import Seq
 
-from cdskit.codonutil import codon_has_missing, codon_is_ambiguous, codon_is_stop
+from cdskit.codonutil import codon_has_missing, codon_is_ambiguous, codon_is_clean, codon_is_stop
 from cdskit.util import (
     read_seqs,
     resolve_threads,
@@ -25,45 +25,44 @@ def validate_fraction(name, value):
 
 
 def summarize_codon_site(seq_strings, codon_site, codontable):
-    occupied = 0
+    clean = 0
+    missing = 0
     ambiguous = 0
     stop = 0
     start = codon_site * 3
     end = start + 3
     for seq_str in seq_strings:
         codon = seq_str[start:end]
-        if codon_has_missing(codon):
+        if codon_is_clean(codon=codon, codontable=codontable):
+            clean += 1
             continue
-        occupied += 1
+        if codon_has_missing(codon):
+            missing += 1
+            continue
         if codon_is_ambiguous(codon):
             ambiguous += 1
             continue
         if codon_is_stop(codon=codon, codontable=codontable):
             stop += 1
+            continue
     return {
         'codon_site_1based': codon_site + 1,
-        'occupied_codons': occupied,
+        'clean_codons': clean,
+        'missing_codons': missing,
         'ambiguous_codons': ambiguous,
         'stop_codons': stop,
     }
 
 
-def choose_kept_codon_sites(site_summaries, num_sequences, min_occupancy, max_ambiguous_fraction, drop_stop_codon):
+def choose_kept_codon_sites(site_summaries, num_sequences, min_clean_fraction):
     kept_sites = list()
     for summary in site_summaries:
-        occupancy = 0.0
+        clean_fraction = 0.0
         if num_sequences > 0:
-            occupancy = summary['occupied_codons'] / num_sequences
-        ambiguous_fraction = 0.0
-        if summary['occupied_codons'] > 0:
-            ambiguous_fraction = summary['ambiguous_codons'] / summary['occupied_codons']
-        summary['occupancy'] = occupancy
-        summary['ambiguous_fraction'] = ambiguous_fraction
-        keep = (
-            (occupancy >= min_occupancy)
-            and (ambiguous_fraction <= max_ambiguous_fraction)
-            and ((not drop_stop_codon) or (summary['stop_codons'] == 0))
-        )
+            clean_fraction = summary['clean_codons'] / num_sequences
+        summary['clean_fraction'] = clean_fraction
+        summary['unclean_codons'] = num_sequences - summary['clean_codons']
+        keep = clean_fraction >= min_clean_fraction
         summary['keep'] = keep
         if keep:
             kept_sites.append(summary['codon_site_1based'] - 1)
@@ -84,9 +83,7 @@ def build_trimcodon_summary(site_summaries, kept_sites, num_sequences, args):
         'num_input_codon_sites': len(site_summaries),
         'num_output_codon_sites': len(kept_sites),
         'num_removed_codon_sites': len(removed_sites),
-        'min_occupancy': args.min_occupancy,
-        'max_ambiguous_fraction': args.max_ambiguous_fraction,
-        'drop_stop_codon': bool(args.drop_stop_codon),
+        'min_clean_fraction': args.min_clean_fraction,
         'kept_codon_sites_1based': [site + 1 for site in kept_sites],
         'removed_codon_sites_1based': removed_sites,
         'site_summaries': site_summaries,
@@ -107,21 +104,23 @@ def write_trimcodon_report(report_path, summary):
             'num_input_codon_sites',
             'num_output_codon_sites',
             'num_removed_codon_sites',
-            'min_occupancy',
-            'max_ambiguous_fraction',
-            'drop_stop_codon',
+            'min_clean_fraction',
         ]:
             f.write(f'{key}\t{summary[key]}\n')
         f.write('\n')
-        f.write('codon_site_1based\toccupancy\toccupied_codons\tambiguous_codons\tambiguous_fraction\tstop_codons\tkeep\n')
+        f.write(
+            'codon_site_1based\tclean_fraction\tclean_codons\tunclean_codons\t'
+            'missing_codons\tambiguous_codons\tstop_codons\tkeep\n'
+        )
         for site_summary in summary['site_summaries']:
             f.write(
-                '{}\t{:.6f}\t{}\t{}\t{:.6f}\t{}\t{}\n'.format(
+                '{}\t{:.6f}\t{}\t{}\t{}\t{}\t{}\t{}\n'.format(
                     site_summary['codon_site_1based'],
-                    site_summary['occupancy'],
-                    site_summary['occupied_codons'],
+                    site_summary['clean_fraction'],
+                    site_summary['clean_codons'],
+                    site_summary['unclean_codons'],
+                    site_summary['missing_codons'],
                     site_summary['ambiguous_codons'],
-                    site_summary['ambiguous_fraction'],
                     site_summary['stop_codons'],
                     site_summary['keep'],
                 )
@@ -135,11 +134,7 @@ def trimcodon_main(args):
     stop_if_not_aligned(records=records)
     stop_if_not_multiple_of_three(records=records)
     stop_if_invalid_codontable(args.codontable)
-    args.min_occupancy = validate_fraction(name='--min_occupancy', value=args.min_occupancy)
-    args.max_ambiguous_fraction = validate_fraction(
-        name='--max_ambiguous_fraction',
-        value=args.max_ambiguous_fraction,
-    )
+    args.min_clean_fraction = validate_fraction(name='--min_clean_fraction', value=args.min_clean_fraction)
     if len(records) == 0:
         summary = build_trimcodon_summary(site_summaries=list(), kept_sites=list(), num_sequences=0, args=args)
         write_trimcodon_report(report_path=args.report, summary=summary)
@@ -158,9 +153,7 @@ def trimcodon_main(args):
     kept_sites = choose_kept_codon_sites(
         site_summaries=site_summaries,
         num_sequences=len(records),
-        min_occupancy=args.min_occupancy,
-        max_ambiguous_fraction=args.max_ambiguous_fraction,
-        drop_stop_codon=args.drop_stop_codon,
+        min_clean_fraction=args.min_clean_fraction,
     )
     summary = build_trimcodon_summary(
         site_summaries=site_summaries,

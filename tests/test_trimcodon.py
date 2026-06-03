@@ -19,7 +19,7 @@ from cdskit.trimcodon import trimcodon_main
 class TestTrimcodonMain:
     """Tests for trimcodon_main function."""
 
-    def test_trimcodon_filters_by_occupancy_and_ambiguity(self, temp_dir, mock_args):
+    def test_trimcodon_filters_by_clean_fraction(self, temp_dir, mock_args):
         input_path = temp_dir / "input.fasta"
         output_path = temp_dir / "output.fasta"
 
@@ -33,9 +33,7 @@ class TestTrimcodonMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            min_occupancy=0.67,
-            max_ambiguous_fraction=0.2,
-            drop_stop_codon=False,
+            min_clean_fraction=0.67,
             report='',
         )
 
@@ -44,7 +42,7 @@ class TestTrimcodonMain:
         result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
         assert [str(record.seq) for record in result] == ["ATGCCC", "ATGCCC", "ATGCCC"]
 
-    def test_trimcodon_drops_stop_codon_columns(self, temp_dir, mock_args):
+    def test_trimcodon_treats_stop_codon_columns_as_unclean(self, temp_dir, mock_args):
         input_path = temp_dir / "input.fasta"
         output_path = temp_dir / "output.fasta"
 
@@ -57,9 +55,7 @@ class TestTrimcodonMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            min_occupancy=0.0,
-            max_ambiguous_fraction=1.0,
-            drop_stop_codon=True,
+            min_clean_fraction=1.0,
             report='',
         )
 
@@ -82,9 +78,7 @@ class TestTrimcodonMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            min_occupancy=0.0,
-            max_ambiguous_fraction=0.0,
-            drop_stop_codon=False,
+            min_clean_fraction=1.0,
             report=str(report_path),
         )
 
@@ -106,9 +100,7 @@ class TestTrimcodonMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(temp_dir / "output.fasta"),
-            min_occupancy=0.5,
-            max_ambiguous_fraction=1.0,
-            drop_stop_codon=False,
+            min_clean_fraction=0.5,
             report='',
         )
 

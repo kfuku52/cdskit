@@ -174,12 +174,10 @@ help_filter = 'Filtering CDS by sequence-level quality rules. See `cdskit filter
 p_filter = subparsers.add_parser('filter', help=help_filter, parents=[p_version,p_infile,p_outfile,p_codon,p_threads])
 p_filter.add_argument('--drop_non_triplet', metavar='yes|no', default=True, type=strtobool, required=False, action='store',
                       help='default=%(default)s: Drop sequences whose lengths are not multiple of three.')
-p_filter.add_argument('--drop_gap_only', metavar='yes|no', default=True, type=strtobool, required=False, action='store',
-                      help='default=%(default)s: Drop sequences composed entirely of missing characters.')
 p_filter.add_argument('--drop_internal_stop', metavar='yes|no', default=False, type=strtobool, required=False, action='store',
                       help='default=%(default)s: Drop sequences with internal in-frame stop codons.')
-p_filter.add_argument('--max_ambiguous_codon_rate', metavar='FLOAT', default=1.0, type=float, required=False, action='store',
-                      help='default=%(default)s: Maximum allowed ambiguous-codon fraction among evaluable codons.')
+p_filter.add_argument('--min_clean_codon_fraction', metavar='FLOAT', default=0.5, type=float, required=False, action='store',
+                      help='default=%(default)s: Minimum fraction of clean codons required to retain a sequence. Clean codons contain no missing, ambiguous, or stop codon.')
 p_filter.add_argument('--dedup', metavar='no|keep-first|keep-longest', default='no', type=str, required=False, action='store',
                       choices=['no', 'keep-first', 'keep-longest'],
                       help='default=%(default)s: How to resolve duplicate sequence IDs after quality filtering.')
@@ -304,14 +302,10 @@ def command_trimcodon(args):
     trimcodon_main(args)
     sys.stderr.write('cdskit trimcodon: ended at {}\n'.format(datetime.now()))
 
-help_trimcodon = 'Trimming aligned CDS codon columns by occupancy and ambiguity. See `cdskit trimcodon -h`'
+help_trimcodon = 'Trimming aligned CDS codon columns by clean-codon fraction. See `cdskit trimcodon -h`'
 p_trimcodon = subparsers.add_parser('trimcodon', help=help_trimcodon, parents=[p_version,p_infile,p_outfile,p_codon,p_threads])
-p_trimcodon.add_argument('--min_occupancy', metavar='FLOAT', default=0.5, type=float, required=False, action='store',
-                         help='default=%(default)s: Minimum fraction of sequences with a non-missing codon to retain a site.')
-p_trimcodon.add_argument('--max_ambiguous_fraction', metavar='FLOAT', default=1.0, type=float, required=False, action='store',
-                         help='default=%(default)s: Maximum fraction of occupied codons that may be ambiguous.')
-p_trimcodon.add_argument('--drop_stop_codon', metavar='yes|no', default=False, type=strtobool, required=False, action='store',
-                         help='default=%(default)s: Drop codon columns that contain any unambiguous stop codon.')
+p_trimcodon.add_argument('--min_clean_fraction', metavar='FLOAT', default=0.5, type=float, required=False, action='store',
+                         help='default=%(default)s: Minimum fraction of sequences with a clean codon to retain a site. Clean codons contain no missing, ambiguous, or stop codon.')
 p_trimcodon.add_argument('--report', metavar='PATH', default='', type=str, required=False, action='store',
                          help='default=%(default)s: Optional report output path. If PATH ends with ".json", JSON is written; otherwise tab-separated TSV is written.')
 p_trimcodon.set_defaults(handler=command_trimcodon)
@@ -478,16 +472,12 @@ p_plot.add_argument('--label_width', metavar='INT', default=180, type=int, requi
                     help='default=%(default)s: Width reserved for sequence labels when --mode=map or --mode=msa.')
 p_plot.add_argument('--wrap', metavar='INT', default=60, type=int, required=False, action='store',
                     help='default=%(default)s: Number of alignment columns per block when --mode=msa. Must be a multiple of three.')
-p_plot.add_argument('--min_occupancy', metavar='FLOAT', default=0.5, type=float, required=False, action='store',
-                    help='default=%(default)s: Minimum occupancy threshold to show as the keep/remove cutoff.')
-p_plot.add_argument('--max_ambiguous_fraction', metavar='FLOAT', default=1.0, type=float, required=False, action='store',
-                    help='default=%(default)s: Maximum ambiguous-codon fraction threshold to show as the keep/remove cutoff.')
-p_plot.add_argument('--drop_stop_codon', metavar='yes|no', default=False, type=strtobool, required=False, action='store',
-                    help='default=%(default)s: Treat stop-codon-containing sites as removed in the keep/remove strip.')
+p_plot.add_argument('--min_clean_fraction', metavar='FLOAT', default=0.5, type=float, required=False, action='store',
+                    help='default=%(default)s: Minimum clean-codon fraction to show as the keep/remove cutoff. Clean codons contain no missing, ambiguous, or stop codon.')
 p_plot.add_argument('--title', metavar='STR', default='', type=str, required=False, action='store',
                     help='default=%(default)s: Optional figure title.')
-p_plot.add_argument('--top_n', metavar='INT', default=10, type=int, required=False, action='store',
-                    help='default=%(default)s: Number of sequences to show in the ambiguous-codon bar chart for --mode=summary or --mode=map.')
+p_plot.add_argument('--top_n', metavar='INT', default=0, type=int, required=False, action='store',
+                    help='default=%(default)s: Number of sequences to show in the ambiguous-codon bar chart for --mode=summary or --mode=map. Use 0 to hide it.')
 p_plot.set_defaults(handler=command_plot)
 
 
