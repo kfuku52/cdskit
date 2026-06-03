@@ -29,11 +29,12 @@ def validate_fraction(name, value):
 
 def analyze_record(record, codontable, inspect_internal_stop):
     seq_str = str(record.seq)
+    length_nt = len(seq_str)
     clean_codons = 0
     missing_codons = 0
     ambiguous_codons = 0
     stop_codons = 0
-    total_codons = len(seq_str) // 3
+    total_codons = length_nt // 3
     for idx in range(total_codons):
         codon = seq_str[idx * 3:idx * 3 + 3]
         if codon_is_clean(codon=codon, codontable=codontable):
@@ -53,7 +54,9 @@ def analyze_record(record, codontable, inspect_internal_stop):
         clean_codon_fraction = clean_codons / total_codons
     return {
         'id': record.id,
-        'non_triplet': (len(seq_str) % 3) != 0,
+        'length_nt': length_nt,
+        'tail_nt': length_nt % 3,
+        'non_triplet': (length_nt % 3) != 0,
         'internal_stop': inspect_internal_stop and has_internal_stop(seq=seq_str, codontable=codontable),
         'total_codons': total_codons,
         'clean_codons': clean_codons,
@@ -103,17 +106,21 @@ def summarize_filter(records, analyses, args):
         'clean_codon_fraction': list(),
         'duplicate': list(),
     }
+    index_reasons = {idx: list() for idx in range(len(records))}
     surviving_indices = list()
     for idx, analysis in enumerate(analyses):
         should_drop = False
         if args.drop_non_triplet and analysis['non_triplet']:
             reasons['non_triplet'].append(records[idx].id)
+            index_reasons[idx].append('non_triplet')
             should_drop = True
         if args.drop_internal_stop and analysis['internal_stop']:
             reasons['internal_stop'].append(records[idx].id)
+            index_reasons[idx].append('internal_stop')
             should_drop = True
         if analysis['clean_codon_fraction'] < args.min_clean_codon_fraction:
             reasons['clean_codon_fraction'].append(records[idx].id)
+            index_reasons[idx].append('clean_codon_fraction')
             should_drop = True
         if not should_drop:
             surviving_indices.append(idx)
@@ -125,9 +132,29 @@ def summarize_filter(records, analyses, args):
     )
     for idx in duplicate_dropped_indices:
         reasons['duplicate'].append(records[idx].id)
+        index_reasons[idx].append('duplicate')
 
     kept_indices = [idx for idx in surviving_indices if idx in kept_index_set]
     dropped_indices = [idx for idx in range(len(records)) if idx not in kept_index_set]
+    sequence_reports = list()
+    for idx, analysis in enumerate(analyses):
+        sequence_reports.append({
+            'input_order': idx + 1,
+            'id': records[idx].id,
+            'kept': idx in kept_index_set,
+            'drop_reasons': index_reasons[idx],
+            'length_nt': analysis['length_nt'],
+            'tail_nt': analysis['tail_nt'],
+            'non_triplet': analysis['non_triplet'],
+            'internal_stop': analysis['internal_stop'],
+            'total_codons': analysis['total_codons'],
+            'clean_codons': analysis['clean_codons'],
+            'unclean_codons': analysis['unclean_codons'],
+            'missing_codons': analysis['missing_codons'],
+            'ambiguous_codons': analysis['ambiguous_codons'],
+            'stop_codons': analysis['stop_codons'],
+            'clean_codon_fraction': analysis['clean_codon_fraction'],
+        })
 
     return {
         'num_input_sequences': len(records),
@@ -137,9 +164,11 @@ def summarize_filter(records, analyses, args):
         'drop_internal_stop': bool(args.drop_internal_stop),
         'min_clean_codon_fraction': args.min_clean_codon_fraction,
         'dedup': args.dedup,
+        'drop_counts_by_reason': {key: len(ids) for key, ids in reasons.items()},
         'dropped_ids_by_reason': reasons,
         'kept_ids': [records[idx].id for idx in kept_indices],
         'dropped_ids': [records[idx].id for idx in dropped_indices],
+        'sequence_reports': sequence_reports,
     }, kept_indices
 
 
@@ -174,6 +203,32 @@ def write_filter_report(report_path, summary):
             f.write(f'dropped_{key}_ids\t{ids}\n')
         f.write(f"kept_ids\t{','.join(summary['kept_ids'])}\n")
         f.write(f"dropped_ids\t{','.join(summary['dropped_ids'])}\n")
+        f.write('\n')
+        f.write('drop_reason\tcount\n')
+        for key in [
+            'non_triplet',
+            'internal_stop',
+            'clean_codon_fraction',
+            'duplicate',
+        ]:
+            f.write(f"{key}\t{summary['drop_counts_by_reason'][key]}\n")
+        f.write('\n')
+        f.write(
+            'input_order\tid\tkept\tdrop_reasons\tlength_nt\ttail_nt\t'
+            'non_triplet\tinternal_stop\ttotal_codons\tclean_codons\t'
+            'unclean_codons\tmissing_codons\tambiguous_codons\tstop_codons\t'
+            'clean_codon_fraction\n'
+        )
+        for row in summary['sequence_reports']:
+            f.write(
+                f"{row['input_order']}\t{row['id']}\t{row['kept']}\t"
+                f"{','.join(row['drop_reasons'])}\t{row['length_nt']}\t"
+                f"{row['tail_nt']}\t{row['non_triplet']}\t{row['internal_stop']}\t"
+                f"{row['total_codons']}\t{row['clean_codons']}\t"
+                f"{row['unclean_codons']}\t{row['missing_codons']}\t"
+                f"{row['ambiguous_codons']}\t{row['stop_codons']}\t"
+                f"{row['clean_codon_fraction']:.6g}\n"
+            )
 
 
 def filter_main(args):

@@ -15,6 +15,7 @@ from cdskit.__init__ import __version__
 
 # Main parser
 psr = argparse.ArgumentParser(description='A toolkit to handle protein-coding DNA sequences in frame')
+psr.add_argument('--version', action='version', version='cdskit version ' + __version__)
 subparsers = psr.add_subparsers()
 
 # Parent parser for shared options
