@@ -41,7 +41,7 @@ def test_unpublished_perox_alias_reports_not_published(temp_dir, monkeypatch):
     monkeypatch.setenv('CDSKIT_MODEL_DIR', str(temp_dir))
 
     with pytest.raises(FileNotFoundError) as exc_info:
-        resolve_localize_model_path('targeting5-perox-deeploc21-hgb-v1')
+        resolve_localize_model_path('targeting5-perox-deeploc21-et-v1')
 
     assert 'not published yet' in str(exc_info.value)
     assert 'explicit --model PATH' in str(exc_info.value)

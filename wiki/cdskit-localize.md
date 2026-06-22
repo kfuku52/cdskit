@@ -246,11 +246,11 @@ a separate benchmark rather than a release claim for `targeting5-v1`.
 
 `p_peroxisome` is being developed as a separate binary head attached to the
 `targeting5` model family. The current unpublished candidate is
-`cdskit-localize-targeting5-perox-deeploc21-hgb-v1.pt`, registered under the
-alias `targeting5-perox-deeploc21-hgb-v1` but not yet downloadable from a
+`cdskit-localize-targeting5-perox-deeploc21-et-v1.pt`, registered under the
+alias `targeting5-perox-deeploc21-et-v1` but not yet downloadable from a
 GitHub Release. Until it is published, use an explicit local `--model` path.
 
-The peroxisome head is a CPU-runtime scikit-learn HGB classifier trained on
+The peroxisome head is a CPU-runtime scikit-learn ExtraTrees classifier trained on
 DeepLoc21 Swiss-Prot train/validation rows with sequence-level features,
 including C-terminal PTS-like features. It should be interpreted as a
 peroxisome sequence-label probability that is strongest for PTS-like targeting
@@ -266,13 +266,12 @@ Fairness checks used for the candidate:
 
 | Model / evaluation | Rows | Positives | AUPRC | AUROC | F1 | Notes |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| DeepLoc21 validation, perox head | 5,462 | 53 | 0.418 | 0.894 | 0.533 | threshold tuned on DeepLoc21 partition 4 |
+| DeepLoc21 validation, perox head | 5,462 | 53 | 0.482 | 0.895 | 0.583 | threshold tuned on DeepLoc21 partition 4 |
 | DeepLoc21 validation, regex PTS | 5,462 | 53 | 0.080 | 0.765 | 0.217 | simple PTS1/PTS2 signal baseline |
-| UniProt experimental CC external, perox head | 11,395 | 138 | 0.239 | 0.860 | 0.293 | no accession/exact-sequence overlap with DeepLoc21 training |
+| UniProt experimental CC external, perox head | 11,395 | 138 | 0.256 | 0.847 | 0.370 | no accession/exact-sequence overlap with DeepLoc21 training |
 | UniProt experimental CC external, regex PTS | 11,395 | 138 | 0.041 | 0.642 | 0.156 | same external rows |
-| UniProt experimental CC cluster OOF, perox head | 11,395 | 138 | 0.191 | - | 0.212 | MMseqs clusters at 30% identity / 80% coverage |
-| HPA external stress test, DeepLoc21-trained perox head | 1,717 | 7 | 0.007 | 0.571 | 0.000 | broad peroxisome-associated task; no positive homology hits |
-| HPA external stress test, UniProt-trained perox head | 1,717 | 7 | 0.146 | 0.430 | 0.008 | train/external exact-sequence overlap removed; very high false-positive rate |
+| UniProt experimental CC cluster OOF, perox head | 11,395 | 138 | 0.246 | 0.854 | 0.277 | MMseqs clusters at 30% identity / 80% coverage |
+| HPA external stress test, DeepLoc21-trained perox head | 1,717 | 7 | 0.149 | 0.665 | 0.250 | broad peroxisome-associated task; no positive homology hits |
 
 These results support replacing the previous constant-zero `p_peroxisome`
 placeholder for signal-like use cases, but they do not yet support advertising
@@ -287,12 +286,12 @@ python -m cdskit.perox_benchmark \
   --external_test_tsv data/localize_bench/eukaryota_full_with_lineage.tsv \
   --external_format uniprot_exp_cc \
   --feature_profile perox_sequence_v1 \
-  --model_kind hist_gradient_boosting \
+  --model_kind extra_trees \
   --base_model targeting5 \
-  --model_out data/localize_bench/perox_deeploc21_hgb_v1/cdskit-localize-targeting5-perox-deeploc21-hgb-v1.pt \
-  --report_json data/localize_bench/perox_deeploc21_hgb_v1/perox_benchmark_uniprot_exp_external.json \
-  --report_md data/localize_bench/perox_deeploc21_hgb_v1/perox_benchmark_uniprot_exp_external.md \
-  --predictions_prefix data/localize_bench/perox_deeploc21_hgb_v1/perox_predictions_uniprot_exp \
+  --model_out data/localize_bench/perox_deeploc21_et_v1/cdskit-localize-targeting5-perox-deeploc21-et-v1.pt \
+  --report_json data/localize_bench/perox_deeploc21_et_v1/perox_benchmark_uniprot_exp_external.json \
+  --report_md data/localize_bench/perox_deeploc21_et_v1/perox_benchmark_uniprot_exp_external.md \
+  --predictions_prefix data/localize_bench/perox_deeploc21_et_v1/perox_predictions_uniprot_exp \
   --homology_check yes \
   --homology_threads 4 \
   --cluster_oof yes \
@@ -301,24 +300,20 @@ python -m cdskit.perox_benchmark \
   --cluster_oof_method mmseqs
 ```
 
-Reproduce the HPA stress test with a UniProt experimental CC-trained head while
-excluding exact train/external overlap:
+Reproduce the HPA stress test for the same DeepLoc21-trained candidate:
 
 ```
 python -m cdskit.perox_benchmark \
-  --train_tsv data/localize_bench/perox_deeploc21_hgb_v1/uniprot_exp_external.tsv \
+  --train_tsv data/localize_bench/deeploc21/deeploc21_localization_train_validation.tsv \
   --external_test_tsv data/localize_bench/deeploc21/deeploc21_hpa_test.tsv \
   --external_format prepared \
-  --exclude_external_from_train yes \
-  --validation_partition hash_stratified \
-  --validation_fraction 0.2 \
   --feature_profile perox_sequence_v1 \
-  --model_kind hist_gradient_boosting \
+  --model_kind extra_trees \
   --homology_check yes \
   --homology_threads 4 \
-  --report_json data/localize_bench/perox_deeploc21_hgb_v1/perox_benchmark_uniprot_train_hpa_external.json \
-  --report_md data/localize_bench/perox_deeploc21_hgb_v1/perox_benchmark_uniprot_train_hpa_external.md \
-  --predictions_prefix data/localize_bench/perox_deeploc21_hgb_v1/perox_predictions_uniprot_train_hpa
+  --report_json data/localize_bench/perox_deeploc21_et_v1/perox_benchmark_hpa_external.json \
+  --report_md data/localize_bench/perox_deeploc21_et_v1/perox_benchmark_hpa_external.md \
+  --predictions_prefix data/localize_bench/perox_deeploc21_et_v1/perox_predictions_hpa
 ```
 
 ### Sources

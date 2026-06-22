@@ -10,8 +10,8 @@ from pathlib import Path
 
 
 TARGETING5_V1_FILENAME = 'cdskit-localize-targeting5-v1.pt'
-TARGETING5_PEROX_DEEPLOC21_HGB_V1_FILENAME = (
-    'cdskit-localize-targeting5-perox-deeploc21-hgb-v1.pt'
+TARGETING5_PEROX_DEEPLOC21_ET_V1_FILENAME = (
+    'cdskit-localize-targeting5-perox-deeploc21-et-v1.pt'
 )
 
 PRETRAINED_LOCALIZE_MODELS = {
@@ -28,26 +28,26 @@ PRETRAINED_LOCALIZE_MODELS = {
         'sha256': 'ddaeab7093533a213ee58117b70ad0f45b0c126cf82c77df32e369eaff2beeb2',
         'published': True,
     },
-    'targeting5-perox-deeploc21-hgb-v1': {
-        'name': 'targeting5-perox-deeploc21-hgb-v1',
+    'targeting5-perox-deeploc21-et-v1': {
+        'name': 'targeting5-perox-deeploc21-et-v1',
         'version': 'v1',
-        'filename': TARGETING5_PEROX_DEEPLOC21_HGB_V1_FILENAME,
+        'filename': TARGETING5_PEROX_DEEPLOC21_ET_V1_FILENAME,
         'aliases': (
-            'targeting5-perox-deeploc21-hgb-v1',
-            'targeting5-perox-deeploc21-hgb',
+            'targeting5-perox-deeploc21-et-v1',
+            'targeting5-perox-deeploc21-et',
             'targeting5-perox-deeploc21',
         ),
         'description': (
             'Unpublished CPU-inference targeting5 model with an experimental '
-            'DeepLoc21-trained peroxisome sequence-label head.'
+            'DeepLoc21-trained ExtraTrees peroxisome sequence-label head.'
         ),
         'url': (
             'https://github.com/kfuku52/cdskit/releases/download/'
-            'localize-targeting5-perox-deeploc21-hgb-v1/{}'.format(
-                TARGETING5_PEROX_DEEPLOC21_HGB_V1_FILENAME
+            'localize-targeting5-perox-deeploc21-et-v1/{}'.format(
+                TARGETING5_PEROX_DEEPLOC21_ET_V1_FILENAME
             )
         ),
-        'sha256': '1e081e26623e73317a1f04bf130ddb9fc717563b98dd8cafbf77383882af375f',
+        'sha256': 'd0998df8819d975b4392342ab78dccc0dd95cf301e4d2df8f38c73d0b5aab445',
         'published': False,
     },
 }
