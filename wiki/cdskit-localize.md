@@ -245,10 +245,22 @@ a separate benchmark rather than a release claim for `targeting5-v1`.
 ## Experimental peroxisome head
 
 `p_peroxisome` is being developed as a separate binary head attached to the
-`targeting5` model family. The current unpublished candidate is
+`targeting5` model family. The current experimental prerelease candidate is
 `cdskit-localize-targeting5-perox-deeploc21-et-v1.pt`, registered under the
-alias `targeting5-perox-deeploc21-et-v1` but not yet downloadable from a
-GitHub Release. Until it is published, use an explicit local `--model` path.
+alias `targeting5-perox-deeploc21-et-v1`. When that alias is used with
+`cdskit localize --model`, CDSKIT downloads the model from GitHub Releases into
+the local model cache if it is not already present.
+
+Example:
+
+```
+cdskit localize \
+  --seqfile proteins.fasta \
+  --seqtype protein \
+  --model targeting5-perox-deeploc21-et-v1 \
+  --organism_group non_plant \
+  --report localize.tsv
+```
 
 The peroxisome head is a CPU-runtime scikit-learn ExtraTrees classifier trained on
 DeepLoc21 Swiss-Prot train/validation rows with sequence-level features,

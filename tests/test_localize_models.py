@@ -37,14 +37,16 @@ def test_targeting5_alias_respects_disabled_download(temp_dir, monkeypatch):
     assert 'model download is disabled' in str(exc_info.value)
 
 
-def test_unpublished_perox_alias_reports_not_published(temp_dir, monkeypatch):
+def test_published_perox_alias_respects_disabled_download(temp_dir, monkeypatch):
     monkeypatch.setenv('CDSKIT_MODEL_DIR', str(temp_dir))
 
     with pytest.raises(FileNotFoundError) as exc_info:
-        resolve_localize_model_path('targeting5-perox-deeploc21-et-v1')
+        resolve_localize_model_path('targeting5-perox-deeploc21-et-v1', allow_download=False)
 
-    assert 'not published yet' in str(exc_info.value)
-    assert 'explicit --model PATH' in str(exc_info.value)
+    spec = PRETRAINED_LOCALIZE_MODELS['targeting5-perox-deeploc21-et-v1']
+    assert spec['published'] is True
+    assert spec['sha256'] == 'd0998df8819d975b4392342ab78dccc0dd95cf301e4d2df8f38c73d0b5aab445'
+    assert 'model download is disabled' in str(exc_info.value)
 
 
 def test_cached_alias_returns_verified_cache_path(temp_dir, monkeypatch):

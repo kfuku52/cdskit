@@ -38,7 +38,7 @@ PRETRAINED_LOCALIZE_MODELS = {
             'targeting5-perox-deeploc21',
         ),
         'description': (
-            'Unpublished CPU-inference targeting5 model with an experimental '
+            'Experimental CPU-inference targeting5 model with a '
             'DeepLoc21-trained ExtraTrees peroxisome sequence-label head.'
         ),
         'url': (
@@ -48,7 +48,7 @@ PRETRAINED_LOCALIZE_MODELS = {
             )
         ),
         'sha256': 'd0998df8819d975b4392342ab78dccc0dd95cf301e4d2df8f38c73d0b5aab445',
-        'published': False,
+        'published': True,
     },
 }
 
