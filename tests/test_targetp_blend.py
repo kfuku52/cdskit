@@ -396,9 +396,9 @@ def test_targetp_pair_blend_cli_writes_model(temp_dir):
     }
     from cdskit.localize_model import load_localize_model, save_localize_model
 
-    model_a_path = temp_dir / 'a.pt'
-    model_b_path = temp_dir / 'b.pt'
-    out_path = temp_dir / 'blend.pt'
+    model_a_path = temp_dir / 'a.json'
+    model_b_path = temp_dir / 'b.json'
+    out_path = temp_dir / 'blend.json'
     save_localize_model(model=model_a, path=str(model_a_path))
     save_localize_model(model=model_b, path=str(model_b_path))
 
@@ -420,6 +420,8 @@ def test_targetp_pair_blend_cli_writes_model(temp_dir):
 
 
 def test_targetp_mtp_notp_specialist_accepts_none_class_weight():
+    pytest.importorskip('sklearn')
+
     class_names = list(LOCALIZATION_CLASSES)
     base_model_a = {
         'model_type': 'nearest_centroid_v1',
