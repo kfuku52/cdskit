@@ -371,6 +371,8 @@ def test_build_targetp_pair_blend_runtime_model_accepts_scalar_alpha():
 
 
 def test_targetp_pair_blend_cli_writes_model(temp_dir):
+    pytest.importorskip('torch')
+
     class_names = list(LOCALIZATION_CLASSES)
     model_a = {
         'model_type': 'nearest_centroid_v1',
@@ -396,9 +398,9 @@ def test_targetp_pair_blend_cli_writes_model(temp_dir):
     }
     from cdskit.localize_model import load_localize_model, save_localize_model
 
-    model_a_path = temp_dir / 'a.json'
-    model_b_path = temp_dir / 'b.json'
-    out_path = temp_dir / 'blend.json'
+    model_a_path = temp_dir / 'a.pt'
+    model_b_path = temp_dir / 'b.pt'
+    out_path = temp_dir / 'blend.pt'
     save_localize_model(model=model_a, path=str(model_a_path))
     save_localize_model(model=model_b, path=str(model_b_path))
 
