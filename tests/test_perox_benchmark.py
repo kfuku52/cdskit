@@ -15,6 +15,7 @@ from cdskit.localize_model import (
 from cdskit.perox_benchmark import (
     assign_cluster_folds,
     binary_metrics,
+    build_arg_parser,
     exclude_rows_overlapping_eval,
     leakage_report,
     maybe_homology_report,
@@ -170,6 +171,12 @@ def test_extract_perox_features_has_stable_tail_onehot():
     assert features.shape[0] == len(PEROX_FEATURE_NAMES)
     assert signals['signal_type'] == 'PTS1'
     assert float(np.sum(features[-(12 * 20):])) == 12.0
+
+
+def test_perox_benchmark_default_model_kind_matches_release_candidate():
+    args = build_arg_parser().parse_args([])
+
+    assert args.model_kind == 'extra_trees'
 
 
 def test_predict_localization_uses_sklearn_binary_perox_head():

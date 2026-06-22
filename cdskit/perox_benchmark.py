@@ -1,9 +1,9 @@
 """
 Build and evaluate a CPU peroxisome head for cdskit localize.
 
-The default workflow trains on DeepLoc 2.1 Swiss-Prot train/validation rows,
-tunes the operating threshold on one predefined partition, and evaluates the
-final head on an independent external table.
+The default workflow trains an ExtraTrees head on DeepLoc 2.1 Swiss-Prot
+train/validation rows, tunes the operating threshold on one predefined
+partition, and evaluates the final head on an independent external table.
 """
 
 import argparse
@@ -198,7 +198,7 @@ def build_perox_feature_matrix(rows, feature_profile='perox_sequence_v1'):
 
 
 def make_perox_classifier(
-    model_kind='hist_gradient_boosting',
+    model_kind='extra_trees',
     random_state=1,
     max_iter=200,
     learning_rate=0.05,
@@ -235,7 +235,7 @@ def make_perox_classifier(
 def fit_sklearn_perox_binary_model(
     rows,
     feature_profile='perox_sequence_v1',
-    model_kind='hist_gradient_boosting',
+    model_kind='extra_trees',
     threshold=0.5,
     random_state=1,
     max_iter=200,
@@ -1046,7 +1046,7 @@ def _rows_by_mask(rows, mask):
 def run_cluster_oof_perox_benchmark(
     rows,
     feature_profile='perox_sequence_v1',
-    model_kind='hist_gradient_boosting',
+    model_kind='extra_trees',
     n_folds=5,
     classification_threshold=0.5,
     cluster_method='mmseqs',
@@ -1217,7 +1217,7 @@ def run_deeploc21_perox_benchmark(
     validation_partition='4',
     validation_fraction=0.2,
     feature_profile='perox_sequence_v1',
-    model_kind='hist_gradient_boosting',
+    model_kind='extra_trees',
     threshold_objective='f1',
     random_state=1,
     max_iter=200,
@@ -1636,7 +1636,10 @@ def format_report_markdown(report):
 
 
 def build_arg_parser():
-    parser = argparse.ArgumentParser(description='Train and evaluate a cdskit localize peroxisome head.')
+    parser = argparse.ArgumentParser(
+        description='Train and evaluate a cdskit localize peroxisome head.',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
     parser.add_argument(
         '--train_tsv',
         default=DEFAULT_TRAIN_TSV,
@@ -1677,13 +1680,13 @@ def build_arg_parser():
         'perox_sequence_v1',
         'broad_localize_v1',
         TARGETP_FEATURE_ENSEMBLE_PROFILE['name'],
-    ])
-    parser.add_argument('--model_kind', default='hist_gradient_boosting', choices=[
+    ], help='Sequence feature profile used by the peroxisome head.')
+    parser.add_argument('--model_kind', default='extra_trees', choices=[
         'hist_gradient_boosting',
         'hgb',
         'extra_trees',
         'et',
-    ])
+    ], help='CPU scikit-learn classifier family for the peroxisome head.')
     parser.add_argument('--threshold_objective', default='f1', choices=['f1', 'mcc', 'precision', 'recall'])
     parser.add_argument('--random_state', default=1, type=int)
     parser.add_argument('--max_iter', default=200, type=int)
