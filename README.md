@@ -29,6 +29,14 @@ cdskit -h
 pip install git+https://github.com/kfuku52/cdskit
 ```
 
+Pretrained `cdskit localize` TargetP-style `.pt` models run on CPU, but they
+need the optional machine-learning dependencies (`torch` and `scikit-learn`).
+For pip installs, use the `ml` extra when you want those models:
+
+```
+pip install 'cdskit[ml]'
+```
+
 ## Subcommands
 See [Wiki](https://github.com/kfuku52/cdskit/wiki) for detailed descriptions.
 
@@ -100,6 +108,10 @@ All subcommands support `--threads INT` for multi-threaded processing.
 - `--threads 0`: auto-detect available CPU count
 
 ## Localization prediction
+
+Lightweight JSON models only need the base installation. Pretrained TargetP-
+style `.pt` models, including experimental peroxisome-head candidates, run on
+CPU but require the optional machine-learning dependencies described above.
 
 Train with a local TSV:
 

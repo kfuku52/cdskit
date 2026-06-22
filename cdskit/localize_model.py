@@ -128,6 +128,43 @@ BROAD_FEATURE_NAMES = FEATURE_NAMES + [
     'kingdom_other',
 ]
 
+PEROX_TAIL_ONEHOT_LEN = 12
+PEROX_AA_ORDER = 'ACDEFGHIKLMNPQRSTVWY'
+
+PEROX_FEATURE_NAMES = BROAD_FEATURE_NAMES + [
+    'c3_basic_frac',
+    'c3_acidic_frac',
+    'c3_hydrophobic_frac',
+    'c3_ser_thr_frac',
+    'c3_small_frac',
+    'c3_hydropathy_mean',
+    'c4_basic_frac',
+    'c4_acidic_frac',
+    'c4_hydrophobic_frac',
+    'c4_ser_thr_frac',
+    'c4_small_frac',
+    'c4_hydropathy_mean',
+    'c12_basic_frac',
+    'c12_acidic_frac',
+    'c12_hydrophobic_frac',
+    'c12_ser_thr_frac',
+    'c12_small_frac',
+    'c12_hydropathy_mean',
+    'c40_basic_frac',
+    'c40_acidic_frac',
+    'c40_hydrophobic_frac',
+    'c40_ser_thr_frac',
+    'c40_small_frac',
+    'c40_hydropathy_mean',
+    'pts1_relaxed_match',
+    'pts1_hydrophobic_terminal',
+    'pts2_nterm_match',
+] + [
+    'tail_pos{}_{}'.format(-offset, aa)
+    for offset in range(PEROX_TAIL_ONEHOT_LEN, 0, -1)
+    for aa in PEROX_AA_ORDER
+]
+
 
 def softmax(logits):
     logits = np.asarray(logits, dtype=np.float64)
@@ -472,6 +509,52 @@ def extract_broad_localize_features(aa_seq, kingdom=''):
         fraction_in_set(c20, AA_ACIDIC),
     ] + _kingdom_feature_flags(kingdom=kingdom), dtype=np.float64)
     return np.concatenate([base_feats, extra_feats]), perox
+
+
+def extract_perox_features(aa_seq, kingdom=''):
+    seq = to_canonical_aa_sequence(aa_seq)
+    broad_feats, perox = extract_broad_localize_features(aa_seq=seq, kingdom=kingdom)
+    c3 = seq[-3:] if len(seq) >= 3 else seq
+    c4 = seq[-4:] if len(seq) >= 4 else seq
+    c12 = seq[-12:] if len(seq) >= 12 else seq
+    c40 = seq[-40:] if len(seq) >= 40 else seq
+    tail3 = seq[-3:] if len(seq) >= 3 else ''
+
+    pts1_relaxed = bool(re.search(r'[A-Z][KRHQ][LIVMFY]$', seq))
+    pts1_terminal_hydrophobic = bool(tail3) and tail3[-1] in AA_HYDROPHOBIC
+    extra_feats = [
+        fraction_in_set(c3, AA_BASIC_STRICT),
+        fraction_in_set(c3, AA_ACIDIC),
+        fraction_in_set(c3, AA_HYDROPHOBIC),
+        fraction_in_set(c3, AA_SER_THR),
+        fraction_in_set(c3, AA_SMALL),
+        mean_hydropathy(c3),
+        fraction_in_set(c4, AA_BASIC_STRICT),
+        fraction_in_set(c4, AA_ACIDIC),
+        fraction_in_set(c4, AA_HYDROPHOBIC),
+        fraction_in_set(c4, AA_SER_THR),
+        fraction_in_set(c4, AA_SMALL),
+        mean_hydropathy(c4),
+        fraction_in_set(c12, AA_BASIC_STRICT),
+        fraction_in_set(c12, AA_ACIDIC),
+        fraction_in_set(c12, AA_HYDROPHOBIC),
+        fraction_in_set(c12, AA_SER_THR),
+        fraction_in_set(c12, AA_SMALL),
+        mean_hydropathy(c12),
+        fraction_in_set(c40, AA_BASIC_STRICT),
+        fraction_in_set(c40, AA_ACIDIC),
+        fraction_in_set(c40, AA_HYDROPHOBIC),
+        fraction_in_set(c40, AA_SER_THR),
+        fraction_in_set(c40, AA_SMALL),
+        mean_hydropathy(c40),
+        1.0 if pts1_relaxed else 0.0,
+        1.0 if pts1_terminal_hydrophobic else 0.0,
+        1.0 if perox['pts2_match'] else 0.0,
+    ]
+    for offset in range(PEROX_TAIL_ONEHOT_LEN, 0, -1):
+        aa = seq[-offset] if len(seq) >= offset else 'X'
+        extra_feats.extend([1.0 if aa == ref else 0.0 for ref in PEROX_AA_ORDER])
+    return np.concatenate([broad_feats, np.asarray(extra_feats, dtype=np.float64)]), perox
 
 
 def normalize_localization_label(label):
@@ -909,14 +992,96 @@ def predict_multilabel_localization(aa_seq, model, kingdom=''):
     }
 
 
-def predict_perox(feature_vec, perox_model):
+def _clamp_probability(value):
+    try:
+        out = float(value)
+    except Exception:
+        return 0.0
+    if not np.isfinite(out):
+        return 0.0
+    if out < 0.0:
+        return 0.0
+    if out > 1.0:
+        return 1.0
+    return out
+
+
+def _perox_feature_vector_for_model(feature_vec, perox_model, aa_seq=None, organism_group=''):
+    profile = str(perox_model.get('feature_profile', '') or '').strip().lower()
+    if profile in ['', 'localize_features_v1', 'feature_names']:
+        return np.asarray(feature_vec, dtype=np.float64)
+    if profile in ['broad_localize_v1', 'broad_localize_features_v1']:
+        if aa_seq is None:
+            raise ValueError('perox_model feature_profile broad_localize_v1 requires aa_seq.')
+        return extract_broad_localize_features(
+            aa_seq=aa_seq,
+            kingdom=organism_group,
+        )[0]
+    if profile in ['perox_sequence_v1', 'perox_features_v1']:
+        if aa_seq is None:
+            raise ValueError('perox_model feature_profile perox_sequence_v1 requires aa_seq.')
+        return extract_perox_features(
+            aa_seq=aa_seq,
+            kingdom=organism_group,
+        )[0]
+    if profile == 'targetp_feature_ensemble_v1':
+        if aa_seq is None:
+            raise ValueError('perox_model feature_profile targetp_feature_ensemble_v1 requires aa_seq.')
+        return extract_targetp_feature_ensemble_features(
+            aa_seq=aa_seq,
+            organism_group=organism_group,
+        )
+    raise ValueError('Unsupported perox_model feature_profile: {}'.format(profile))
+
+
+def _predict_sklearn_binary_perox(feature_vec, perox_model):
+    classifier = perox_model.get('classifier', None)
+    if classifier is None or not hasattr(classifier, 'predict_proba'):
+        raise ValueError('sklearn_binary perox_model requires a classifier with predict_proba.')
+    x = np.asarray(feature_vec, dtype=np.float64).reshape((1, -1))
+    with _targetp_sklearn_single_thread_context():
+        proba = np.asarray(classifier.predict_proba(x), dtype=np.float64)
+    if proba.ndim != 2 or proba.shape[0] != 1:
+        raise ValueError('perox_model classifier returned invalid probability shape.')
+
+    classes = list(getattr(classifier, 'classes_', perox_model.get('classes', [0, 1])))
+    positive_class = perox_model.get('positive_class', 1)
+    positive_col = None
+    for i, class_value in enumerate(classes):
+        if class_value == positive_class:
+            positive_col = i
+            break
+        if str(class_value).strip().lower() in ['1', 'yes', 'true']:
+            positive_col = i
+            break
+    if positive_col is None:
+        if proba.shape[1] == 1 and len(classes) == 1:
+            p_yes = 1.0 if str(classes[0]).strip().lower() in ['1', 'yes', 'true'] else 0.0
+        else:
+            raise ValueError('Could not find positive class in perox_model classifier.')
+    else:
+        p_yes = _clamp_probability(proba[0, int(positive_col)])
+
+    threshold = _clamp_probability(perox_model.get('threshold', 0.5))
+    pred = 'yes' if p_yes >= threshold else 'no'
+    return pred, {'yes': p_yes, 'no': 1.0 - p_yes}
+
+
+def predict_perox(feature_vec, perox_model, aa_seq=None, organism_group=''):
     if perox_model.get('mode') == 'constant':
-        p_yes = float(perox_model['yes_probability'])
-        if p_yes < 0:
-            p_yes = 0.0
-        if p_yes > 1:
-            p_yes = 1.0
+        p_yes = _clamp_probability(perox_model['yes_probability'])
         return ('yes' if p_yes >= 0.5 else 'no', {'yes': p_yes, 'no': 1.0 - p_yes})
+    if str(perox_model.get('mode', '')).strip().lower() == 'sklearn_binary':
+        model_feature_vec = _perox_feature_vector_for_model(
+            feature_vec=feature_vec,
+            perox_model=perox_model,
+            aa_seq=aa_seq,
+            organism_group=organism_group,
+        )
+        return _predict_sklearn_binary_perox(
+            feature_vec=model_feature_vec,
+            perox_model=perox_model,
+        )
     pred, probs = predict_nearest_centroid(feature_vec=feature_vec, model=perox_model)
     return pred, probs
 
@@ -2222,6 +2387,8 @@ def predict_localization_and_peroxisome(aa_seq, model, organism_group=''):
     _, perox_probs = predict_perox(
         feature_vec=feats,
         perox_model=model['perox_model'],
+        aa_seq=aa_seq,
+        organism_group=organism_group,
     )
     out = {
         'predicted_class': pred_class,
