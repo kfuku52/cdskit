@@ -369,6 +369,29 @@ def greedy_complete_and_single_missing_counts(support_counts, active_mask):
     return complete_codon_columns, single_missing_counts
 
 
+def greedy_missing_set_gap_counts(support_counts, active_mask, protected_mask, max_remove_size=None):
+    base_counts = Counter()
+    for support_mask, site_count in support_counts.items():
+        missing_mask = active_mask & ~support_mask
+        if missing_mask == 0:
+            continue
+        if (missing_mask & protected_mask) != 0:
+            continue
+        if (max_remove_size is not None) and (popcount(missing_mask) > max_remove_size):
+            continue
+        base_counts[missing_mask] += site_count
+
+    masks = list(base_counts)
+    gap_counts = dict()
+    for remove_mask in masks:
+        gap_count = 0
+        for missing_mask, site_count in base_counts.items():
+            if (missing_mask | remove_mask) == remove_mask:
+                gap_count += site_count
+        gap_counts[remove_mask] = gap_count
+    return masks, base_counts, gap_counts
+
+
 def solve_greedy(
     codon_presence_matrix,
     active_indices=None,
@@ -396,6 +419,7 @@ def solve_greedy(
         support_counts = support_counts_from_matrix(codon_presence_matrix)
     _ = resolve_threads(threads=threads)
     active_mask = indices_to_bitmask(active_indices)
+    protected_mask = indices_to_bitmask(protected_indices)
     current_complete_codon_columns = count_complete_columns_with_support(
         support_counts=support_counts,
         kept_mask=active_mask,
@@ -409,45 +433,85 @@ def solve_greedy(
         removable = [idx for idx in active_indices if idx not in protected_set]
         if len(removable) == 0:
             break
-        active_count = len(active_indices)
-        current_complete_codon_columns, single_missing_counts = greedy_complete_and_single_missing_counts(
+        remaining_removals = None
+        if max_removed is not None:
+            remaining_removals = max_removed - num_removed_now
+        base_masks, base_counts, gap_counts = greedy_missing_set_gap_counts(
             support_counts=support_counts,
             active_mask=active_mask,
+            protected_mask=protected_mask,
+            max_remove_size=remaining_removals,
         )
-        best_remove_idx = None
-        best_area = None
-        best_complete_codon_columns = None
-        num_kept_next = active_count - 1
-        for remove_idx in removable:
-            complete_codon_columns = current_complete_codon_columns + single_missing_counts.get(remove_idx, 0)
-            candidate_area = num_kept_next * complete_codon_columns
-            if best_area is None:
-                best_remove_idx = remove_idx
-                best_area = candidate_area
-                best_complete_codon_columns = complete_codon_columns
-                continue
-            if candidate_area > best_area:
-                best_remove_idx = remove_idx
-                best_area = candidate_area
-                best_complete_codon_columns = complete_codon_columns
-                continue
-            # For active_indices sorted ascending, when area ties, removing a larger index
-            # yields lexicographically smaller kept_indices.
-            if (candidate_area == best_area) and (remove_idx > best_remove_idx):
-                best_remove_idx = remove_idx
-                best_area = candidate_area
-                best_complete_codon_columns = complete_codon_columns
-        if best_remove_idx is None:
+        best = None
+        best_bang = None
+        best_gap_count = None
+        gap_count_cache = dict(gap_counts)
+
+        def get_gap_count(remove_mask):
+            if remove_mask not in gap_count_cache:
+                gap_count_cache[remove_mask] = sum(
+                    site_count
+                    for missing_mask, site_count in base_counts.items()
+                    if (missing_mask | remove_mask) == remove_mask
+                )
+            return gap_count_cache[remove_mask]
+
+        def update_best(remove_mask):
+            nonlocal best, best_bang, best_gap_count
+            num_removed = popcount(remove_mask)
+            if num_removed == 0:
+                return
+            if remaining_removals is not None and num_removed > remaining_removals:
+                return
+            kept_mask = active_mask & ~remove_mask
+            kept_indices = mask_to_indices(mask=kept_mask, num_sequences=total_sequences)
+            gap_count = get_gap_count(remove_mask)
+            complete_codon_columns = current_complete_codon_columns + gap_count
+            area = len(kept_indices) * complete_codon_columns
+            bang = (area - current_area) / num_removed
+            candidate = {
+                'area': area,
+                'num_kept': len(kept_indices),
+                'complete_codon_columns': complete_codon_columns,
+                'kept_indices': kept_indices,
+                'removed_indices': mask_to_indices(mask=remove_mask, num_sequences=total_sequences),
+            }
+            if best is None:
+                best = candidate
+                best_bang = bang
+                best_gap_count = gap_count
+                return
+            if bang > best_bang:
+                best = candidate
+                best_bang = bang
+                best_gap_count = gap_count
+                return
+            if bang < best_bang:
+                return
+            if gap_count > best_gap_count:
+                best = candidate
+                best_bang = bang
+                best_gap_count = gap_count
+
+        for i in range(len(base_masks) - 1, -1, -1):
+            set_i = base_masks[i]
+            update_best(set_i)
+            for j in range(i - 1, -1, -1):
+                update_best(set_i | base_masks[j])
+        if best is None:
             break
-        if best_area <= current_area:
+        if best['area'] <= current_area:
             break
-        active_mask &= ~(1 << best_remove_idx)
-        active_indices = [idx for idx in active_indices if idx != best_remove_idx]
-        current_area = best_area
-        current_complete_codon_columns = best_complete_codon_columns
+        active_mask = indices_to_bitmask(best['kept_indices'])
+        active_indices = best['kept_indices']
+        current_area = best['area']
+        current_complete_codon_columns = best['complete_codon_columns']
+        removed_indices = best['removed_indices']
+        removed_index = removed_indices[0] if len(removed_indices) == 1 else None
         steps.append({
             'action': 'remove',
-            'removed_index': best_remove_idx,
+            'removed_index': removed_index,
+            'removed_indices': removed_indices,
             'kept_indices': list(active_indices),
             'num_kept': len(active_indices),
             'complete_codon_columns': current_complete_codon_columns,
@@ -767,7 +831,10 @@ def maxalign_main(args):
             support_masks=support_masks,
         )]
         for greedy_step in solution.get('steps', list()):
-            removed_id = original_records[greedy_step['removed_index']].id
+            removed_indices = greedy_step.get('removed_indices', list())
+            if len(removed_indices) == 0 and greedy_step.get('removed_index') is not None:
+                removed_indices = [greedy_step['removed_index']]
+            removed_id = ','.join(original_records[i].id for i in removed_indices)
             steps.append(build_step_snapshot(
                 label='greedy_remove',
                 kept_indices=greedy_step['kept_indices'],

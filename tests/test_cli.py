@@ -8,6 +8,7 @@ and don't cause errors (e.g., Issue #10 with % characters).
 import pytest
 import sys
 import argparse
+import subprocess
 from pathlib import Path
 from io import StringIO
 from unittest.mock import patch
@@ -117,25 +118,33 @@ class TestCLIModuleImport:
             'cdskit.aggregate',
             'cdskit.backalign',
             'cdskit.backtrim',
+            'cdskit.codonstats',
+            'cdskit.codonutil',
             'cdskit.deeploc_benchmark',
+            'cdskit.degeneracy',
+            'cdskit.filter',
             'cdskit.hammer',
             'cdskit.intersection',
             'cdskit.label',
             'cdskit.longestcds',
+            'cdskit.longestorf',
             'cdskit.localize',
             'cdskit.localize_bilstm',
             'cdskit.localize_learn',
             'cdskit.localize_model',
+            'cdskit.localize_models',
             'cdskit.localize_multilabel_cnn',
             'cdskit.maxalign',
             'cdskit.mask',
             'cdskit.pad',
             'cdskit.parsegb',
+            'cdskit.plot',
             'cdskit.printseq',
             'cdskit.rmseq',
             'cdskit.split',
             'cdskit.stats',
             'cdskit.translate',
+            'cdskit.trimcodon',
             'cdskit.gapjust',
             'cdskit.util',
             'cdskit.validate',
@@ -155,6 +164,21 @@ class TestCLIModuleImport:
         assert callable(read_seqs)
         assert callable(write_seqs)
         assert callable(stop_if_not_multiple_of_three)
+
+    def test_root_version_option(self):
+        """Test that cdskit --version works without a subcommand."""
+        from cdskit import __version__
+
+        cli_path = Path(__file__).parent.parent / "cdskit" / "cdskit"
+        result = subprocess.run(
+            [sys.executable, str(cli_path), "--version"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.stdout.strip() == f"cdskit version {__version__}"
+        assert result.stderr == ""
 
 
 class TestCLIEdgeCases:

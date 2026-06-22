@@ -4,11 +4,18 @@ import argparse
 import sys
 
 from datetime import datetime
+from pathlib import Path
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = SCRIPT_DIR.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from cdskit.__init__ import __version__
 
 # Main parser
 psr = argparse.ArgumentParser(description='A toolkit to handle protein-coding DNA sequences in frame')
+psr.add_argument('--version', action='version', version='cdskit version ' + __version__)
 subparsers = psr.add_subparsers()
 
 # Parent parser for shared options
@@ -27,6 +34,10 @@ p_outfile.add_argument('-o', '--outfile', metavar='PATH', default='-', type=str,
                  help='default=%(default)s: Output sequence file. Use "-" for STDOUT.')
 p_outfile.add_argument('-of', '--outseqformat', metavar='STR', default='fasta', type=str, required=False, action='store',
                  help='default=%(default)s: Output sequence format. See Biopython documentation for available options. https://biopython.org/wiki/SeqIO')
+
+p_viz_outfile = argparse.ArgumentParser(add_help=False)
+p_viz_outfile.add_argument('-o', '--outfile', metavar='PATH', default='-', type=str, required=False, action='store',
+                 help='default=%(default)s: Output plot file. Use "-" for STDOUT.')
 
 p_codon = argparse.ArgumentParser(add_help=False)
 p_codon.add_argument('-d', '--codontable', metavar='INT', default=1, type=int, required=False, action='store',
@@ -154,6 +165,28 @@ p_gapjust.add_argument('--gap_just_max', metavar='INT', default=None, type=int, 
 p_gapjust.set_defaults(handler=command_gapjust)
 
 
+def command_filter(args):
+    from cdskit.filter import filter_main
+    sys.stderr.write('cdskit filter: started at {}\n'.format(datetime.now()))
+    filter_main(args)
+    sys.stderr.write('cdskit filter: ended at {}\n'.format(datetime.now()))
+
+help_filter = 'Filtering CDS by sequence-level quality rules. See `cdskit filter -h`'
+p_filter = subparsers.add_parser('filter', help=help_filter, parents=[p_version,p_infile,p_outfile,p_codon,p_threads])
+p_filter.add_argument('--drop_non_triplet', metavar='yes|no', default=True, type=strtobool, required=False, action='store',
+                      help='default=%(default)s: Drop sequences whose lengths are not multiple of three.')
+p_filter.add_argument('--drop_internal_stop', metavar='yes|no', default=False, type=strtobool, required=False, action='store',
+                      help='default=%(default)s: Drop sequences with internal in-frame stop codons.')
+p_filter.add_argument('--min_clean_codon_fraction', metavar='FLOAT', default=0.5, type=float, required=False, action='store',
+                      help='default=%(default)s: Minimum fraction of clean codons required to retain a sequence. Clean codons contain no missing, ambiguous, or stop codon.')
+p_filter.add_argument('--dedup', metavar='no|keep-first|keep-longest', default='no', type=str, required=False, action='store',
+                      choices=['no', 'keep-first', 'keep-longest'],
+                      help='default=%(default)s: How to resolve duplicate sequence IDs after quality filtering.')
+p_filter.add_argument('--report', metavar='PATH', default='', type=str, required=False, action='store',
+                      help='default=%(default)s: Optional report output path. If PATH ends with ".json", JSON is written; otherwise tab-separated TSV is written.')
+p_filter.set_defaults(handler=command_filter)
+
+
 def command_hammer(args):
     from cdskit.hammer import hammer_main
     sys.stderr.write('cdskit hammer: started at {}\n'.format(datetime.now()))
@@ -209,13 +242,34 @@ p_label.add_argument('--unique', metavar='yes|no', default='no', type=strtobool,
 p_label.set_defaults(handler=command_label)
 
 
-def command_longestcds(args):
-    from cdskit.longestcds import longestcds_main
-    sys.stderr.write('cdskit longestcds: started at {}\n'.format(datetime.now()))
-    longestcds_main(args)
-    sys.stderr.write('cdskit longestcds: ended at {}\n'.format(datetime.now()))
+def run_longestorf(args, invoked_as, deprecated=False):
+    from cdskit.longestorf import longestorf_main
+    if deprecated:
+        sys.stderr.write(
+            'Warning: `cdskit longestcds` is deprecated and may be removed in a future release. '
+            'Use `cdskit longestorf` instead.\n'
+        )
+    sys.stderr.write(f'cdskit {invoked_as}: started at {datetime.now()}\n')
+    longestorf_main(args)
+    sys.stderr.write(f'cdskit {invoked_as}: ended at {datetime.now()}\n')
 
-help_longestcds = 'Finding the longest CDS from six-frame translation. See `cdskit longestcds -h`'
+
+def command_longestorf(args):
+    run_longestorf(args=args, invoked_as='longestorf', deprecated=False)
+
+
+def command_longestcds(args):
+    run_longestorf(args=args, invoked_as='longestcds', deprecated=True)
+
+
+help_longestorf = 'Finding the longest ORF from six-frame translation. See `cdskit longestorf -h`'
+p_longestorf = subparsers.add_parser('longestorf', help=help_longestorf, parents=[p_version,p_infile,p_outfile,p_codon,p_threads])
+p_longestorf.add_argument('--annotate_seqname', metavar='yes|no', default='no', type=strtobool, required=False, action='store',
+                          help='default=%(default)s: Whether to append strand/frame/coordinate metadata to FASTA headers.')
+p_longestorf.set_defaults(handler=command_longestorf)
+
+
+help_longestcds = 'Deprecated alias of longestorf. See `cdskit longestorf -h`'
 p_longestcds = subparsers.add_parser('longestcds', help=help_longestcds, parents=[p_version,p_infile,p_outfile,p_codon,p_threads])
 p_longestcds.add_argument('--annotate_seqname', metavar='yes|no', default='no', type=strtobool, required=False, action='store',
                           help='default=%(default)s: Whether to append strand/frame/coordinate metadata to FASTA headers.')
@@ -390,6 +444,21 @@ p_mask.add_argument('-t', '--stopcodon', metavar='yes|no', default='yes', type=s
 p_mask.set_defaults(handler=command_mask)
 
 
+def command_trimcodon(args):
+    from cdskit.trimcodon import trimcodon_main
+    sys.stderr.write('cdskit trimcodon: started at {}\n'.format(datetime.now()))
+    trimcodon_main(args)
+    sys.stderr.write('cdskit trimcodon: ended at {}\n'.format(datetime.now()))
+
+help_trimcodon = 'Trimming aligned CDS codon columns by clean-codon fraction. See `cdskit trimcodon -h`'
+p_trimcodon = subparsers.add_parser('trimcodon', help=help_trimcodon, parents=[p_version,p_infile,p_outfile,p_codon,p_threads])
+p_trimcodon.add_argument('--min_clean_fraction', metavar='FLOAT', default=0.5, type=float, required=False, action='store',
+                         help='default=%(default)s: Minimum fraction of sequences with a clean codon to retain a site. Clean codons contain no missing, ambiguous, or stop codon.')
+p_trimcodon.add_argument('--report', metavar='PATH', default='', type=str, required=False, action='store',
+                         help='default=%(default)s: Optional report output path. If PATH ends with ".json", JSON is written; otherwise tab-separated TSV is written.')
+p_trimcodon.set_defaults(handler=command_trimcodon)
+
+
 def command_maxalign(args):
     from cdskit.maxalign import maxalign_main
     sys.stderr.write('cdskit maxalign: started at {}\n'.format(datetime.now()))
@@ -496,6 +565,25 @@ p_split.add_argument('--prefix', default='INFILE', type=str, required=False, act
                              'If this is INFILE and --outfile is set, --outfile is used as the prefix.')
 p_split.set_defaults(handler=command_split)
 
+
+def command_degeneracy(args):
+    from cdskit.degeneracy import degeneracy_main
+    sys.stderr.write('cdskit degeneracy: started at {}\n'.format(datetime.now()))
+    degeneracy_main(args)
+    sys.stderr.write('cdskit degeneracy: ended at {}\n'.format(datetime.now()))
+
+help_degeneracy = 'Extracting aligned 0/2/3/4-fold degenerate sites. See `cdskit degeneracy -h`'
+p_degeneracy = subparsers.add_parser('degeneracy', help=help_degeneracy, parents=[p_version,p_infile,p_outfile,p_codon,p_threads])
+p_degeneracy.add_argument('--prefix', default='INFILE', type=str, required=False, action='store',
+                          help='default=%(default)s: Output prefix PATH. '
+                               'If this is INFILE and --outfile is set, --outfile is used as the prefix.')
+p_degeneracy.add_argument('--fold', metavar='INT', default=[0, 2, 3, 4], type=int, required=False, action='store',
+                          nargs='+', choices=[0, 2, 3, 4],
+                          help='default=%(default)s: Fold class(es) to write out.')
+p_degeneracy.add_argument('--report', metavar='PATH', default='', type=str, required=False, action='store',
+                          help='default=%(default)s: Optional report output path. If PATH ends with ".json", JSON is written; otherwise tab-separated TSV is written.')
+p_degeneracy.set_defaults(handler=command_degeneracy)
+
 def command_stats(args):
     from cdskit.stats import stats_main
     sys.stderr.write('cdskit stats: started at {}\n'.format(datetime.now()))
@@ -505,6 +593,54 @@ def command_stats(args):
 help_stats = 'Printing sequence statistics. See `cdskit stats -h`'
 p_stats = subparsers.add_parser('stats', help=help_stats, parents=[p_version,p_infile,p_threads])
 p_stats.set_defaults(handler=command_stats)
+
+
+def command_plot(args):
+    from cdskit.plot import plot_main
+    sys.stderr.write('cdskit plot: started at {}\n'.format(datetime.now()))
+    plot_main(args)
+    sys.stderr.write('cdskit plot: ended at {}\n'.format(datetime.now()))
+
+help_plot = 'Plotting alignment-level CDS summaries and alignment views. See `cdskit plot -h`'
+p_plot = subparsers.add_parser('plot', help=help_plot, parents=[p_version,p_infile,p_viz_outfile,p_codon,p_threads])
+p_plot.add_argument('--mode', metavar='summary|map|msa', default='summary', type=str, required=False, action='store',
+                    choices=['summary', 'map', 'msa'],
+                    help='default=%(default)s: Plot mode. "summary" draws site-level QC lines; "map" draws a sequence-by-site codon-state tile map; "msa" draws a nucleotide alignment with consensus codon/AA and an AA frequency logo.')
+p_plot.add_argument('--width', metavar='INT', default=1100, type=int, required=False, action='store',
+                    help='default=%(default)s: Figure width in pixels.')
+p_plot.add_argument('--height', metavar='INT', default=780, type=int, required=False, action='store',
+                    help='default=%(default)s: Figure height in pixels.')
+p_plot.add_argument('--format', '--plotformat', metavar='pdf|svg|png', default='auto', type=str, required=False, action='store',
+                    dest='plotformat',
+                    choices=['auto', 'pdf', 'svg', 'png'],
+                    help='default=%(default)s: Output format. "auto" infers from --outfile extension, otherwise defaults to PDF.')
+p_plot.add_argument('--row_height', metavar='INT', default=18, type=int, required=False, action='store',
+                    help='default=%(default)s: Height of each sequence row in pixels when --mode=map or --mode=msa.')
+p_plot.add_argument('--label_width', metavar='INT', default=180, type=int, required=False, action='store',
+                    help='default=%(default)s: Width reserved for sequence labels when --mode=map or --mode=msa.')
+p_plot.add_argument('--wrap', metavar='INT', default=60, type=int, required=False, action='store',
+                    help='default=%(default)s: Number of alignment columns per block when --mode=msa. Must be a multiple of three.')
+p_plot.add_argument('--min_clean_fraction', metavar='FLOAT', default=0.5, type=float, required=False, action='store',
+                    help='default=%(default)s: Minimum clean-codon fraction to show as the keep/remove cutoff. Clean codons contain no missing, ambiguous, or stop codon.')
+p_plot.add_argument('--title', metavar='STR', default='', type=str, required=False, action='store',
+                    help='default=%(default)s: Optional figure title.')
+p_plot.add_argument('--top_n', metavar='INT', default=0, type=int, required=False, action='store',
+                    help='default=%(default)s: Number of sequences to show in the ambiguous-codon bar chart for --mode=summary or --mode=map. Use 0 to hide it.')
+p_plot.set_defaults(handler=command_plot)
+
+
+def command_codonstats(args):
+    from cdskit.codonstats import codonstats_main
+    sys.stderr.write('cdskit codonstats: started at {}\n'.format(datetime.now()))
+    codonstats_main(args)
+    sys.stderr.write('cdskit codonstats: ended at {}\n'.format(datetime.now()))
+
+help_codonstats = 'Printing codon-aware per-sequence and usage statistics. See `cdskit codonstats -h`'
+p_codonstats = subparsers.add_parser('codonstats', help=help_codonstats, parents=[p_version,p_infile,p_codon,p_threads])
+p_codonstats.add_argument('--mode', metavar='summary|usage|both', default='summary', type=str, required=False, action='store',
+                          choices=['summary', 'usage', 'both'],
+                          help='default=%(default)s: Output summary table, aggregate codon usage table, or both.')
+p_codonstats.set_defaults(handler=command_codonstats)
 
 
 def command_translate(args):

@@ -3,6 +3,7 @@ Tests for cdskit longestcds command.
 """
 
 from pathlib import Path
+import subprocess
 
 import Bio.SeqIO
 import pytest
@@ -237,3 +238,59 @@ class TestLongestCdsMain:
         assert [r.id for r in result_single] == [r.id for r in result_threaded]
         assert [str(r.seq) for r in result_single] == [str(r.seq) for r in result_threaded]
         assert [r.description for r in result_single] == [r.description for r in result_threaded]
+
+
+class TestLongestCommandAliases:
+    """Tests for longestorf canonical command and longestcds alias behavior."""
+
+    def test_longestcds_cli_warns_deprecated_alias(self, temp_dir):
+        input_path = temp_dir / "input.fasta"
+        output_path = temp_dir / "output.fasta"
+        cli_path = Path(__file__).parent.parent / "cdskit" / "cdskit"
+        records = [SeqRecord(Seq("GGGATGAAATAGCCC"), id="seq1", description="")]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        completed = subprocess.run(
+            [
+                sys.executable,
+                str(cli_path),
+                "longestcds",
+                "--seqfile",
+                str(input_path),
+                "--outfile",
+                str(output_path),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        assert "deprecated" in completed.stderr.lower()
+        result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
+        assert str(result[0].seq) == "ATGAAATAG"
+
+    def test_longestorf_cli_is_canonical_without_deprecation_warning(self, temp_dir):
+        input_path = temp_dir / "input.fasta"
+        output_path = temp_dir / "output.fasta"
+        cli_path = Path(__file__).parent.parent / "cdskit" / "cdskit"
+        records = [SeqRecord(Seq("GGGATGAAATAGCCC"), id="seq1", description="")]
+        Bio.SeqIO.write(records, str(input_path), "fasta")
+
+        completed = subprocess.run(
+            [
+                sys.executable,
+                str(cli_path),
+                "longestorf",
+                "--seqfile",
+                str(input_path),
+                "--outfile",
+                str(output_path),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        assert "deprecated" not in completed.stderr.lower()
+        result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
+        assert str(result[0].seq) == "ATGAAATAG"

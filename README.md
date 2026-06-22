@@ -40,6 +40,12 @@ See [Wiki](https://github.com/kfuku52/cdskit/wiki) for detailed descriptions.
 
 - [`backtrim`](https://github.com/kfuku52/cdskit/wiki/cdskit-backtrim): Back-translating a trimmed protein alignment
 
+- [`codonstats`](https://github.com/kfuku52/cdskit/wiki/cdskit-codonstats): Printing codon-aware per-sequence and aggregate codon-usage statistics
+
+- [`degeneracy`](https://github.com/kfuku52/cdskit/wiki/cdskit-degeneracy): Extracting aligned 0/2/3/4-fold degenerate nucleotide positions
+
+- [`filter`](https://github.com/kfuku52/cdskit/wiki/cdskit-filter): Filtering CDS by sequence-level quality rules
+
 - [`gapjust`](https://github.com/kfuku52/cdskit/wiki/cdskit-gapjust): Adjusting consecutive Ns to the fixed length
 
 - [`hammer`](https://github.com/kfuku52/cdskit/wiki/cdskit-hammer): Removing less-occupied codon columns from a gappy alignment
@@ -48,7 +54,7 @@ See [Wiki](https://github.com/kfuku52/cdskit/wiki) for detailed descriptions.
 
 - [`label`](https://github.com/kfuku52/cdskit/wiki/cdskit-label): Modifying sequence labels
 
-- [`longestcds`](https://github.com/kfuku52/cdskit/wiki/cdskit-longestcds): Finding the longest CDS by six-frame translation (+/- strands, 3 frames each)
+- [`longestorf`](https://github.com/kfuku52/cdskit/wiki/cdskit-longestorf): Finding the longest ORF by six-frame translation (+/- strands, 3 frames each)
 
 - [`localize`](https://github.com/kfuku52/cdskit/wiki/cdskit-localize): Predicting targeting peptide classes (`noTP`, `SP`, `mTP`, `cTP`, `lTP`) or compatible multi-label localization models from CDS or protein input
 
@@ -62,6 +68,8 @@ See [Wiki](https://github.com/kfuku52/cdskit/wiki) for detailed descriptions.
 
 - [`parsegb`](https://github.com/kfuku52/cdskit/wiki/cdskit-parsegb): Converting the GenBank format
 
+- [`plot`](https://github.com/kfuku52/cdskit/wiki/cdskit-plot): Plotting aligned CDS summaries, codon-state maps, or nucleotide alignment views with consensus codon/AA and AA frequency logos using matplotlib (`--mode summary|map|msa`; default output is PDF, override with `--format`)
+
 - [`printseq`](https://github.com/kfuku52/cdskit/wiki/cdskit-printseq): Print a subset of sequences with a regex
 
 - [`rmseq`](https://github.com/kfuku52/cdskit/wiki/cdskit-rmseq): Removing a subset of sequences by using a sequence name regex and by detecting problematic sequence characters
@@ -71,6 +79,8 @@ See [Wiki](https://github.com/kfuku52/cdskit/wiki) for detailed descriptions.
 - [`stats`](https://github.com/kfuku52/cdskit/wiki/cdskit-stats): Printing sequence statistics
 
 - [`translate`](https://github.com/kfuku52/cdskit/wiki/cdskit-translate): Translating CDS nucleotide sequences to amino acids
+
+- [`trimcodon`](https://github.com/kfuku52/cdskit/wiki/cdskit-trimcodon): Trimming aligned CDS codon columns by clean-codon fraction
 
 - [`validate`](https://github.com/kfuku52/cdskit/wiki/cdskit-validate): Validating aligned CDS quality and reporting issues
 
