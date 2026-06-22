@@ -264,6 +264,16 @@ Fairness checks used for the candidate:
   optimism.
 - HPA is kept as a difficult broad-localization stress test.
 
+The current candidate uses ExtraTrees because it improved the independent
+external and cluster-OOF checks compared with the earlier HGB candidate, while
+keeping inference CPU-only:
+
+| Candidate | UniProt external AUPRC | UniProt external F1 | Cluster OOF AUPRC | Cluster OOF F1 | HPA stress AUPRC | HPA stress F1 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| HGB, `perox_sequence_v1` | 0.239 | 0.293 | 0.191 | 0.212 | 0.007 | 0.000 |
+| HGB, `broad_localize_v1` | 0.209 | 0.302 | 0.125 | 0.142 | - | - |
+| ExtraTrees, `perox_sequence_v1` | 0.256 | 0.370 | 0.246 | 0.277 | 0.149 | 0.250 |
+
 | Model / evaluation | Rows | Positives | AUPRC | AUROC | F1 | Notes |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
 | DeepLoc21 validation, perox head | 5,462 | 53 | 0.482 | 0.895 | 0.583 | threshold tuned on DeepLoc21 partition 4 |
