@@ -162,16 +162,15 @@ The TargetP task maps to cdskit labels as follows:
 | `CH` | `cTP` |
 | `TH` | `lTP` |
 
-## Draft pretrained targeting5-v1 model
+## Pretrained targeting5-v1 model
 
-The planned release model for `cdskit localize` is
+The release model for `cdskit localize` is
 `cdskit-localize-targeting5-v1.pt`, exposed through the alias `targeting5`.
-The CLI resolver and checksum are prepared, but the alias is intentionally
-marked unpublished until the GitHub Release asset is uploaded. Until then,
-`cdskit localize --model targeting5` fails with a clear "not published yet"
-message; use an explicit local model path for internal testing.
+When the model is not already cached, `cdskit localize --model targeting5`
+downloads it from the cdskit GitHub Release and verifies its SHA-256 checksum
+before loading it.
 
-After publication, the intended user-facing command is:
+The typical user-facing command is:
 
 ```
 cdskit localize \
