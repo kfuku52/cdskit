@@ -23,7 +23,7 @@ PRETRAINED_LOCALIZE_MODELS = {
             'localize-targeting5-v1/{}'.format(TARGETING5_V1_FILENAME)
         ),
         'sha256': 'ddaeab7093533a213ee58117b70ad0f45b0c126cf82c77df32e369eaff2beeb2',
-        'published': False,
+        'published': True,
     },
 }
 

@@ -28,13 +28,13 @@ def test_resolve_localize_model_path_reports_unknown_path(temp_dir):
     assert 'targeting5' in str(exc_info.value)
 
 
-def test_unpublished_targeting5_alias_does_not_download(temp_dir, monkeypatch):
+def test_targeting5_alias_respects_disabled_download(temp_dir, monkeypatch):
     monkeypatch.setenv('CDSKIT_MODEL_DIR', str(temp_dir))
 
     with pytest.raises(FileNotFoundError) as exc_info:
-        resolve_localize_model_path('targeting5')
+        resolve_localize_model_path('targeting5', allow_download=False)
 
-    assert 'not published yet' in str(exc_info.value)
+    assert 'model download is disabled' in str(exc_info.value)
 
 
 def test_cached_alias_returns_verified_cache_path(temp_dir, monkeypatch):
