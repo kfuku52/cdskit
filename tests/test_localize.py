@@ -19,6 +19,8 @@ from cdskit.localize import localize_main
 import cdskit.localize_learn as localize_learn_module
 from cdskit.localize_learn import localize_learn_main
 from cdskit.localize_model import (
+    FEATURE_NAMES,
+    LOCALIZATION_CLASSES,
     _targetp_probability_sequence_feature_vector,
     _targetp_reranker_feature_vector,
     extract_targetp_feature_ensemble_features,
@@ -26,6 +28,7 @@ from cdskit.localize_model import (
     load_localize_model,
     postprocess_localization_probabilities,
     predict_localization_and_peroxisome,
+    save_localize_model,
 )
 
 
@@ -398,6 +401,57 @@ class TestLocalizeMain:
         assert pred_map['seq_sp']['predicted_class'] == 'SP'
         assert pred_map['seq_mtp']['predicted_class'] == 'mTP'
         assert pred_map['seq_perox']['perox_signal_type'] in ['PTS1', 'PTS2', 'none']
+
+    @pytest.mark.skipif(not HAS_TORCH, reason='torch is required for .pt model loading')
+    def test_localize_pt_model_uses_sklearn_binary_perox_head(self, temp_dir, mock_args):
+        model_path = temp_dir / 'localize_with_perox_head.pt'
+        model = {
+            'model_type': 'targetp_feature_ensemble_v1',
+            'feature_names': list(FEATURE_NAMES),
+            'localization_model': {
+                'mode': 'constant',
+                'class_label': 'noTP',
+                'class_order': list(LOCALIZATION_CLASSES),
+            },
+            'perox_model': {
+                'mode': 'sklearn_binary',
+                'classifier': ConstantBinaryScore(0.73),
+                'positive_class': 1,
+                'threshold': 0.5,
+                'feature_profile': 'perox_sequence_v1',
+            },
+        }
+        save_localize_model(model=model, path=str(model_path))
+
+        input_path = temp_dir / 'predict_perox_head_input.fasta'
+        output_path = temp_dir / 'predict_perox_head_output.tsv'
+        records = [
+            SeqRecord(Seq('MAAAAAAAAAAAAAAASKL'), id='pts1_like', description=''),
+            SeqRecord(Seq('MAAAAAAAAAAAAAAAAAA'), id='plain', description=''),
+        ]
+        Bio.SeqIO.write(records, str(input_path), 'fasta')
+
+        args = mock_args(
+            seqfile=str(input_path),
+            inseqformat='fasta',
+            codontable=1,
+            seqtype='protein',
+            model=str(model_path),
+            report=str(output_path),
+            include_features=False,
+            threads=1,
+        )
+        localize_main(args)
+
+        with open(output_path, 'r', encoding='utf-8') as inp:
+            out_rows = list(csv.DictReader(inp, delimiter='\t'))
+
+        assert len(out_rows) == 2
+        for row in out_rows:
+            assert row['predicted_class'] == 'noTP'
+            assert float(row['p_peroxisome']) == pytest.approx(0.73)
+        assert out_rows[0]['perox_signal_type'] == 'PTS1'
+        assert out_rows[1]['perox_signal_type'] == 'none'
 
     def test_localize_rejects_non_triplet_input(self, temp_dir, mock_args):
         model_path = train_test_model(temp_dir=temp_dir, mock_args=mock_args)
