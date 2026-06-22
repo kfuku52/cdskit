@@ -1,5 +1,6 @@
 from functools import partial
 
+from cdskit.localize_models import resolve_localize_model_path
 from cdskit.localize_model import (
     BROAD_FEATURE_NAMES,
     FEATURE_NAMES,
@@ -24,6 +25,12 @@ from cdskit.util import (
 
 
 MULTILABEL_MODEL_TYPES = {'multilabel_centroid_v1', 'multilabel_cnn_v1'}
+
+
+def _is_true_arg(value):
+    if isinstance(value, bool):
+        return value
+    return str(value or '').strip().lower() in {'1', 'true', 't', 'yes', 'y', 'on'}
 
 
 def _record_to_aa_sequence(record, codontable, seqtype):
@@ -128,7 +135,11 @@ def localize_main(args):
     else:
         raise ValueError('--seqtype should be dna or protein.')
 
-    model = load_localize_model(path=args.model)
+    model_path = resolve_localize_model_path(
+        model=args.model,
+        allow_download=not _is_true_arg(getattr(args, 'no_model_download', False)),
+    )
+    model = load_localize_model(path=model_path)
     if str(model.get('model_type', '')) not in MULTILABEL_MODEL_TYPES:
         model_classes = tuple(model['localization_model']['class_order'])
         if model_classes != LOCALIZATION_CLASSES:

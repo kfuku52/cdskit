@@ -162,10 +162,92 @@ The TargetP task maps to cdskit labels as follows:
 | `CH` | `cTP` |
 | `TH` | `lTP` |
 
-Current local comparison snapshots on the official 13,005-sequence TargetP 2.0
-dataset. The older high cached snapshot below is retained as provenance, but it
-should not be interpreted as regenerated BiLSTM/ESM performance: the high rows
-used `/tmp/targetp_oof_feat_extra300.npz` and
+## Draft pretrained targeting5-v1 model
+
+The planned release model for `cdskit localize` is
+`cdskit-localize-targeting5-v1.pt`, exposed through the alias `targeting5`.
+The CLI resolver and checksum are prepared, but the alias is intentionally
+marked unpublished until the GitHub Release asset is uploaded. Until then,
+`cdskit localize --model targeting5` fails with a clear "not published yet"
+message; use an explicit local model path for internal testing.
+
+After publication, the intended user-facing command is:
+
+```
+cdskit localize \
+  --seqfile proteins.faa \
+  --seqtype protein \
+  --model targeting5 \
+  --report localize.tsv
+```
+
+Model files are cached under `$CDSKIT_MODEL_DIR` when set, otherwise under the
+standard user cache directory. The download path verifies the hard-coded
+SHA-256 checksum before the model is accepted.
+
+### Training data
+
+TargetP-2.0 and the cdskit release candidate use the same five target labels,
+but they do not use identical training recipes. TargetP-2.0 was trained and
+tested on the official 13,005-sequence TargetP-2.0 dataset with nested
+cross-validation. The public data page describes the downloadable sequences,
+targeting peptide type annotations, and peptide lengths, and the source
+repository stores the fold-aware `targetp_data.npz` data used by the published
+training/test code.
+
+The cdskit `targeting5-v1` candidate uses the TargetP-2.0 public table as the
+canonical supervised target set and adds strict non-overlapping external labels
+for model fitting and calibration. Evaluation holdouts listed below were not
+used for fitting the final model components.
+
+| Data source | Rows | Class counts | Role in cdskit targeting5-v1 |
+| --- | ---: | --- | --- |
+| TargetP-2.0 public table, `targetp2_benchmark.tsv` | 13,005 | noTP 9,537; SP 2,697; mTP 499; cTP 227; lTP 45 | canonical TargetP-compatible supervised labels for base training |
+| Strict external table, `targetp2_external_torch_strict_cleanholdout_seed1seed2_plus_thylum_h128_e6_external.tsv` | 13,983 | noTP 4,684; SP 3,986; mTP 2,914; cTP 1,872; lTP 527 | external augmentation for base PyTorch models; split into 11,187 train and 2,796 calibration rows |
+| Reranker development holdout, `targetp_external_eval_strict_label_holdout_seed1_unused_bal4000_dev/uniprot_targetp_holdout.tsv` | 20,000 | 4,000 per class | trains the multiclass HGB reranker and its class thresholds |
+| mTP/noTP specialist train, `targetp_mtp_notp_specialist_unused_after_dev_seed2_bal9000_train8000.tsv` | 16,000 | mTP 8,000; noTP 8,000 | trains the binary mTP/noTP specialist |
+| mTP/noTP specialist validation, `targetp_mtp_notp_specialist_unused_after_dev_seed2_bal9000_val1000.tsv` | 2,000 | mTP 1,000; noTP 1,000 | selects the specialist threshold, currently 0.41 |
+
+### Model structure
+
+| Item | TargetP-2.0 | cdskit targeting5-v1 candidate |
+| --- | --- | --- |
+| Runtime dependency | TensorFlow model in the TargetP-2.0 codebase/server | PyTorch CPU modules plus scikit-learn HGB classifiers inside one cdskit model file |
+| Sequence representation | BLOSUM62 encoding, padded/trimmed to 200 amino acids | TargetP2-style amino-acid encoder in the cdskit PyTorch base models plus hand-engineered targeting features for reranking |
+| Neural architecture | Conv1D, organism-aware BiLSTM, multi-attention, class head, and cleavage-site heads | Two cdskit-trained TargetP2-style PyTorch base models (`sqrt` and `logcw`) blended classwise |
+| Postprocessing | TargetP-2.0 trained decision heads and cleavage-site outputs | Classwise blend alpha 0.4; thresholds noTP 1.0, SP 0.65, mTP 1.0, cTP 0.8, lTP 1.0; HGB multiclass reranker; HGB mTP/noTP specialist |
+| Parameter provenance | Official TargetP-2.0 training code and weights/server | No TargetP executable, weights, or fitted parameters are used; all parameters are fitted by cdskit pipelines |
+| User inference | Server or local TargetP-2.0 environment | CPU-only `cdskit localize`; GPU is useful only for retraining large base models |
+
+### Performance snapshot
+
+These values should be read as release-candidate checks, not as an official
+TargetP-2.0 server rerun. The first row is the TargetP-2.0 paper Table 1
+reference stored in `cdskit.targetp_benchmark`; the two cdskit rows are strict
+external UniProt holdouts that were not used to fit the final model.
+
+| Model / evaluation | Rows | Macro F1 | Accuracy | noTP F1 | SP F1 | mTP F1 | cTP F1 | lTP F1 | Notes |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| TargetP-2.0 paper Table 1 | - | 0.890 | - | 0.980 | 0.980 | 0.860 | 0.880 | 0.750 | published reference, not rerun locally |
+| cdskit targeting5-v1, seed2 strict external holdout | 1,801 | 0.891 | 0.895 | 0.773 | 0.921 | 0.851 | 0.950 | 0.957 | fixed holdout excluded from training and development |
+| cdskit targeting5-v1, fresh unused balanced holdout | 1,000 | 0.907 | 0.909 | 0.796 | 0.915 | 0.861 | 0.976 | 0.990 | 200 rows per class, selected after excluding training/dev/evaluation accessions |
+
+The cdskit candidate is therefore TargetP-2.0-class for the five-class
+targeting-peptide task, but it is not a universal subcellular-localization
+replacement. In particular, DeepLoc broad mature-localization proxy checks got
+worse after strengthening the mTP/noTP specialist, so that proxy should remain
+a separate benchmark rather than a release claim for `targeting5-v1`.
+
+### Sources
+
+- [TargetP-2.0 data page](https://services.healthtech.dtu.dk/services/TargetP-2.0/3-Data.php)
+- [TargetP-2.0 source repository](https://github.com/JJAlmagro/TargetP-2.0)
+
+## Historical TargetP 2.0 development snapshots
+
+The older high cached snapshot below is retained as provenance, but it should
+not be interpreted as regenerated BiLSTM/ESM performance or as the release
+candidate result. The high rows used `/tmp/targetp_oof_feat_extra300.npz` and
 `/tmp/targetp_oof_x80feat_extra300.npz`, untracked tree/feature-stack OOF
 probability caches without metadata or `true_idx`.
 
