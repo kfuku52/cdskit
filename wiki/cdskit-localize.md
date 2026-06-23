@@ -20,6 +20,9 @@ Lightweight JSON models only need the base `cdskit` installation. TargetP-style
 optional machine-learning dependencies (`torch` and `scikit-learn`). GPU is
 useful only for retraining larger neural models.
 
+For custom model training details, see
+[cdskit localize-learn](https://github.com/kfuku52/cdskit/wiki/cdskit-localize-learn).
+
 ## Input
 
 CDS input is the default. Sequences must be DNA, in frame, and have no internal
