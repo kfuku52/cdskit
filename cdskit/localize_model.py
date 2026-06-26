@@ -33,6 +33,17 @@ AA_ACIDIC = frozenset('DE')
 AA_SER_THR = frozenset('ST')
 AA_AROMATIC = frozenset('FWY')
 AA_SMALL = frozenset('AGSTCP')
+AA_STANDARD_ORDER = 'ACDEFGHIKLMNPQRSTVWY'
+AA_PROLINE = frozenset('P')
+AA_ARG = frozenset('R')
+AA_LYS = frozenset('K')
+AA_ALA = frozenset('A')
+AA_GLY = frozenset('G')
+AA_SER = frozenset('S')
+AA_THR = frozenset('T')
+AA_LIV = frozenset('LIV')
+AA_DE = frozenset('DE')
+AA_STNQ = frozenset('STNQ')
 
 AA_HYDROPATHY = {
     'A': 1.8,
@@ -56,6 +67,49 @@ AA_HYDROPATHY = {
     'W': -0.9,
     'Y': -1.3,
 }
+
+
+def _chars_to_ord_tuple(chars):
+    return tuple(ord(ch) for ch in chars)
+
+
+AA_ORD_COUNT_SIZE = max(ord(ch) for ch in (AA_STANDARD_ORDER + 'XYZ')) + 1
+AA_STANDARD_ORDS = _chars_to_ord_tuple(AA_STANDARD_ORDER)
+AA_HYDROPATHY_ORD_VALUES = tuple(
+    (ord(ch), value) for ch, value in AA_HYDROPATHY.items()
+)
+TARGETP_CTP_LTP_GROUP_ORDS = (
+    _chars_to_ord_tuple(AA_BASIC),
+    _chars_to_ord_tuple(AA_ACIDIC),
+    _chars_to_ord_tuple(AA_HYDROPHOBIC),
+    _chars_to_ord_tuple(AA_SMALL),
+    _chars_to_ord_tuple(AA_SER_THR),
+    _chars_to_ord_tuple(AA_AROMATIC),
+    _chars_to_ord_tuple(AA_ARG),
+    _chars_to_ord_tuple(AA_LYS),
+    _chars_to_ord_tuple(AA_ALA),
+    _chars_to_ord_tuple(AA_SER),
+    _chars_to_ord_tuple(AA_THR),
+    _chars_to_ord_tuple(AA_PROLINE),
+    _chars_to_ord_tuple(AA_GLY),
+    _chars_to_ord_tuple(AA_LIV),
+)
+TARGETP_FEATURE_WINDOW_GROUP_ORDS = (
+    _chars_to_ord_tuple(AA_BASIC),
+    _chars_to_ord_tuple(AA_ACIDIC),
+    _chars_to_ord_tuple(AA_HYDROPHOBIC),
+    _chars_to_ord_tuple(AA_SMALL),
+    _chars_to_ord_tuple(AA_SER_THR),
+    _chars_to_ord_tuple(AA_AROMATIC),
+    _chars_to_ord_tuple(AA_ALA),
+    _chars_to_ord_tuple(AA_GLY),
+    _chars_to_ord_tuple(AA_PROLINE),
+    _chars_to_ord_tuple(AA_ARG),
+    _chars_to_ord_tuple(AA_LYS),
+    _chars_to_ord_tuple(AA_LIV),
+    _chars_to_ord_tuple(AA_DE),
+    _chars_to_ord_tuple(AA_STNQ),
+)
 
 PTS1_REGEX = re.compile(r'[ASNCGTP][KRHQ][LIVMF]$')
 PTS2_REGEX = re.compile(r'[RK][LIVQ].{4}[HQ][LA]')
@@ -129,7 +183,7 @@ BROAD_FEATURE_NAMES = FEATURE_NAMES + [
 ]
 
 PEROX_TAIL_ONEHOT_LEN = 12
-PEROX_AA_ORDER = 'ACDEFGHIKLMNPQRSTVWY'
+PEROX_AA_ORDER = AA_STANDARD_ORDER
 
 PEROX_FEATURE_NAMES = BROAD_FEATURE_NAMES + [
     'c3_basic_frac',
@@ -288,22 +342,41 @@ def postprocess_localization_probabilities(class_probs, localization_model):
 
 
 def fraction_in_set(seq, chars):
-    if len(seq) == 0:
+    seq_len = len(seq)
+    if seq_len == 0:
         return 0.0
     count = 0
     for ch in seq:
         if ch in chars:
             count += 1
-    return float(count) / float(len(seq))
+    return float(count) / float(seq_len)
 
 
 def mean_hydropathy(seq):
-    if len(seq) == 0:
+    seq_len = len(seq)
+    if seq_len == 0:
         return 0.0
     total = 0.0
     for ch in seq:
         total += AA_HYDROPATHY.get(ch, 0.0)
-    return total / float(len(seq))
+    return total / float(seq_len)
+
+
+def _prefix_membership_counts(seq, chars):
+    out = [0]
+    count = 0
+    for ch in seq:
+        if ch in chars:
+            count += 1
+        out.append(count)
+    return out
+
+
+def _prefix_fraction(prefix_counts, start, end):
+    width = end - start
+    if width <= 0:
+        return 0.0
+    return float(prefix_counts[end] - prefix_counts[start]) / float(width)
 
 
 def longest_hydrophobic_run(seq):
@@ -425,6 +498,10 @@ def detect_perox_signals(aa_seq):
 
 def extract_localize_features(aa_seq):
     seq = to_canonical_aa_sequence(aa_seq)
+    return _extract_localize_features_from_canonical(seq)
+
+
+def _extract_localize_features_from_canonical(seq):
     n20 = seq[:20]
     n40 = seq[:40]
     n60 = seq[:60]
@@ -443,16 +520,16 @@ def extract_localize_features(aa_seq):
         fraction_in_set(n20, AA_ACIDIC),
         fraction_in_set(n20, AA_HYDROPHOBIC),
         fraction_in_set(n20, AA_SER_THR),
-        fraction_in_set(n20, frozenset('P')),
+        fraction_in_set(n20, AA_PROLINE),
         fraction_in_set(n40, AA_BASIC),
         fraction_in_set(n40, AA_ACIDIC),
         fraction_in_set(n40, AA_HYDROPHOBIC),
         fraction_in_set(n40, AA_SER_THR),
-        fraction_in_set(n40, frozenset('R')),
-        fraction_in_set(n40, frozenset('K')),
-        fraction_in_set(n40, frozenset('A')),
-        fraction_in_set(n40, frozenset('P')),
-        fraction_in_set(n40, frozenset('G')),
+        fraction_in_set(n40, AA_ARG),
+        fraction_in_set(n40, AA_LYS),
+        fraction_in_set(n40, AA_ALA),
+        fraction_in_set(n40, AA_PROLINE),
+        fraction_in_set(n40, AA_GLY),
         fraction_in_set(n40, AA_AROMATIC),
         mean_hydropathy(n40),
         longest_hydrophobic_run(n40),
@@ -477,7 +554,11 @@ def extract_localize_features(aa_seq):
 
 def extract_broad_localize_features(aa_seq, kingdom=''):
     seq = to_canonical_aa_sequence(aa_seq)
-    base_feats, perox = extract_localize_features(aa_seq=seq)
+    return _extract_broad_localize_features_from_canonical(seq=seq, kingdom=kingdom)
+
+
+def _extract_broad_localize_features_from_canonical(seq, kingdom=''):
+    base_feats, perox = _extract_localize_features_from_canonical(seq)
     n60 = seq[:60]
     n100 = seq[:100]
     c20 = seq[-20:] if len(seq) >= 20 else seq
@@ -513,7 +594,10 @@ def extract_broad_localize_features(aa_seq, kingdom=''):
 
 def extract_perox_features(aa_seq, kingdom=''):
     seq = to_canonical_aa_sequence(aa_seq)
-    broad_feats, perox = extract_broad_localize_features(aa_seq=seq, kingdom=kingdom)
+    broad_feats, perox = _extract_broad_localize_features_from_canonical(
+        seq=seq,
+        kingdom=kingdom,
+    )
     c3 = seq[-3:] if len(seq) >= 3 else seq
     c4 = seq[-4:] if len(seq) >= 4 else seq
     c12 = seq[-12:] if len(seq) >= 12 else seq
@@ -1259,27 +1343,40 @@ def _targetp_blend_class_probabilities(prob_a, prob_b, alpha_by_class):
 
 def _targetp_sp_scan_features(seq):
     seq = str(seq or '')
+    seq_len = len(seq)
+    # The scan loop only touches through cut + 1, with max cut 44.
+    prefix_seq = seq[:min(seq_len, 46)]
+    hydrophobic_prefix = _prefix_membership_counts(prefix_seq, AA_HYDROPHOBIC)
+    basic_prefix = _prefix_membership_counts(prefix_seq, AA_BASIC)
+    acidic_prefix = _prefix_membership_counts(prefix_seq, AA_ACIDIC)
+    ser_thr_prefix = _prefix_membership_counts(prefix_seq, AA_SER_THR)
+    small_prefix = _prefix_membership_counts(prefix_seq, AA_SMALL)
     best_score = -99.0
     best_cut = 0
     best_parts = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
-    for cut in range(12, min(45, len(seq) - 1)):
-        pre = seq[:cut]
-        nreg = seq[:max(1, cut - 18)]
-        hreg = seq[max(0, cut - 18):max(0, cut - 7)]
-        creg = seq[max(0, cut - 7):cut + 2]
+    for cut in range(12, min(45, seq_len - 1)):
+        n_end = max(1, cut - 18)
+        h_start = max(0, cut - 18)
+        h_end = max(0, cut - 7)
+        c_start = max(0, cut - 7)
+        c_end = min(seq_len, cut + 2)
+        hreg = seq[h_start:h_end]
         m3 = seq[cut - 3] if cut - 3 >= 0 else 'X'
         m2 = seq[cut - 2] if cut - 2 >= 0 else 'X'
         m1 = seq[cut - 1] if cut - 1 >= 0 else 'X'
-        p1 = seq[cut] if cut < len(seq) else 'X'
+        p1 = seq[cut] if cut < seq_len else 'X'
         small_m3 = 1.0 if m3 in 'AVSGTC' else 0.0
         small_m1 = 1.0 if m1 in 'ASGTC' else 0.0
         ala_m1 = 1.0 if m1 == 'A' else 0.0
         pro_bad = 1.0 if 'P' in (m3 + m2 + m1 + p1) else 0.0
-        hyd = fraction_in_set(hreg, AA_HYDROPHOBIC)
+        hyd = _prefix_fraction(hydrophobic_prefix, h_start, h_end)
         run = longest_hydrophobic_run(hreg)
-        small = fraction_in_set(creg, AA_SMALL)
-        ncharge = fraction_in_set(nreg, AA_BASIC) - fraction_in_set(nreg, AA_ACIDIC)
-        st_frac = fraction_in_set(pre, AA_SER_THR)
+        small = _prefix_fraction(small_prefix, c_start, c_end)
+        ncharge = (
+            _prefix_fraction(basic_prefix, 0, n_end)
+            - _prefix_fraction(acidic_prefix, 0, n_end)
+        )
+        st_frac = _prefix_fraction(ser_thr_prefix, 0, cut)
         score = (
             (2.2 * hyd)
             + (0.15 * run)
@@ -1306,7 +1403,7 @@ def _targetp_sp_scan_features(seq):
                 float(st_frac),
             )
 
-    out = [best_score, float(best_cut), float(best_cut) / float(max(1, len(seq)))]
+    out = [best_score, float(best_cut), float(best_cut) / float(max(1, seq_len))]
     out.extend(best_parts)
     for window in [
         seq[:15],
@@ -1330,9 +1427,15 @@ def _targetp_sp_scan_features(seq):
     return out
 
 
-def _targetp_ctp_ltp_sequence_features(seq, organism_group):
+def _targetp_ctp_ltp_sequence_features(seq, organism_group, broad_features=None):
     seq = str(seq or '')
-    out = list(extract_broad_localize_features(seq, organism_group)[0])
+    if broad_features is None:
+        out = list(_extract_broad_localize_features_from_canonical(
+            seq=to_canonical_aa_sequence(seq),
+            kingdom=organism_group,
+        )[0])
+    else:
+        out = list(broad_features)
     windows = [
         seq[:20],
         seq[:40],
@@ -1343,29 +1446,16 @@ def _targetp_ctp_ltp_sequence_features(seq, organism_group):
         seq[20:80],
         seq[40:120],
     ]
-    groups = [
-        AA_BASIC,
-        AA_ACIDIC,
-        AA_HYDROPHOBIC,
-        AA_SMALL,
-        AA_SER_THR,
-        AA_AROMATIC,
-        frozenset('R'),
-        frozenset('K'),
-        frozenset('A'),
-        frozenset('S'),
-        frozenset('T'),
-        frozenset('P'),
-        frozenset('G'),
-        frozenset('LIV'),
-    ]
     for window in windows:
-        out.extend([mean_hydropathy(window), longest_hydrophobic_run(window)])
-        out.extend([fraction_in_set(window, group) for group in groups])
+        out.extend(_targetp_counted_window_features(
+            window=window,
+            groups=TARGETP_CTP_LTP_GROUP_ORDS,
+        ))
     n_term = seq[:140]
     for motif in ['RR', 'KR', 'RK', 'KK', 'RA', 'RS', 'SR', 'ST', 'TS', 'SS', 'TP', 'SP']:
-        out.append(1.0 if motif in n_term else 0.0)
-        out.append(float(n_term.find(motif) if motif in n_term else 999))
+        pos = n_term.find(motif)
+        out.append(1.0 if pos >= 0 else 0.0)
+        out.append(float(pos if pos >= 0 else 999))
     return out
 
 
@@ -1571,6 +1661,40 @@ TARGETP_FEATURE_ENSEMBLE_PROFILE = {
 }
 
 
+def _targetp_counted_window_features(
+    window,
+    groups,
+    include_length=False,
+    include_standard_aa=False,
+):
+    seq_len = len(window)
+    counts = [0] * AA_ORD_COUNT_SIZE
+    for ch in window:
+        code = ord(ch)
+        if code < AA_ORD_COUNT_SIZE:
+            counts[code] += 1
+    out = list()
+    if include_length:
+        out.append(float(seq_len))
+    inv_len = 0.0 if seq_len == 0 else 1.0 / float(seq_len)
+    hydropathy_total = 0.0
+    for code, value in AA_HYDROPATHY_ORD_VALUES:
+        hydropathy_total += float(counts[code]) * value
+    out.extend([
+        hydropathy_total * inv_len,
+        longest_hydrophobic_run(window),
+    ])
+    for group in groups:
+        count = 0
+        for code in group:
+            count += counts[code]
+        out.append(float(count) * inv_len)
+    if include_standard_aa:
+        for code in AA_STANDARD_ORDS:
+            out.append(float(counts[code]) * inv_len)
+    return out
+
+
 def _targetp_feature_window_features(seq):
     seq = str(seq or '')
     windows = [
@@ -1595,34 +1719,14 @@ def _targetp_feature_window_features(seq):
         seq[-20:],
         seq[-40:],
     ]
-    groups = [
-        AA_BASIC,
-        AA_ACIDIC,
-        AA_HYDROPHOBIC,
-        AA_SMALL,
-        AA_SER_THR,
-        AA_AROMATIC,
-        frozenset('A'),
-        frozenset('G'),
-        frozenset('P'),
-        frozenset('R'),
-        frozenset('K'),
-        frozenset('LIV'),
-        frozenset('DE'),
-        frozenset('STNQ'),
-    ]
     out = list()
     for window in windows:
-        out.extend([
-            float(len(window)),
-            mean_hydropathy(window),
-            longest_hydrophobic_run(window),
-        ])
-        out.extend([fraction_in_set(window, group) for group in groups])
-        out.extend([
-            fraction_in_set(window, frozenset(aa))
-            for aa in 'ACDEFGHIKLMNPQRSTVWY'
-        ])
+        out.extend(_targetp_counted_window_features(
+            window=window,
+            groups=TARGETP_FEATURE_WINDOW_GROUP_ORDS,
+            include_length=True,
+            include_standard_aa=True,
+        ))
     return out
 
 
@@ -1650,9 +1754,17 @@ def extract_targetp_feature_ensemble_features(aa_seq, organism_group=''):
     seq = to_canonical_aa_sequence(aa_seq)
     group = normalize_organism_group(organism_group)
     plant_flag = 1.0 if group == 'plant' else 0.0
-    out = list(extract_broad_localize_features(seq, group)[0])
+    broad_features, _ = _extract_broad_localize_features_from_canonical(
+        seq=seq,
+        kingdom=group,
+    )
+    out = list(broad_features)
     out.extend(_targetp_sp_scan_features(seq))
-    out.extend(_targetp_ctp_ltp_sequence_features(seq, group))
+    out.extend(_targetp_ctp_ltp_sequence_features(
+        seq=seq,
+        organism_group=group,
+        broad_features=broad_features,
+    ))
     out.append(plant_flag)
     out.extend(_targetp_feature_window_features(seq))
     out.extend(_targetp_feature_positional_group_features(

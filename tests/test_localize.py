@@ -1453,6 +1453,88 @@ def test_predict_targetp_feature_ensemble_uses_cpu_sklearn_classifier_and_organi
     assert non_plant_pred['class_probabilities']['cTP'] == pytest.approx(0.0)
 
 
+def test_localize_main_batches_targetp_torch_runtime(monkeypatch, temp_dir, mock_args):
+    seq_path = temp_dir / 'targetp_torch_query.faa'
+    Bio.SeqIO.write(
+        [
+            SeqRecord(Seq('MKKLLLLAA'), id='seq1', description=''),
+            SeqRecord(Seq('MASTSTSTST'), id='seq2', description=''),
+            SeqRecord(Seq('MRRRAAAAAA'), id='seq3', description=''),
+        ],
+        str(seq_path),
+        'fasta',
+    )
+    model = {
+        'model_type': 'targetp_torch_v1',
+        'feature_names': list(FEATURE_NAMES),
+        'localization_model': {
+            'class_order': list(LOCALIZATION_CLASSES),
+            'class_thresholds': {class_name: 1.0 for class_name in LOCALIZATION_CLASSES},
+            'config': {'seq_len': 12},
+        },
+        'perox_model': {
+            'mode': 'constant',
+            'yes_probability': 0.25,
+        },
+    }
+    calls = list()
+
+    def fake_predict_targetp2_torch_batch(
+        aa_sequences,
+        organism_groups,
+        localization_model,
+        device='cpu',
+        batch_size=512,
+    ):
+        calls.append({
+            'aa_sequences': list(aa_sequences),
+            'organism_groups': list(organism_groups),
+            'batch_size': int(batch_size),
+        })
+        return np.asarray([
+            [0.05, 0.80, 0.05, 0.05, 0.05],
+            [0.70, 0.10, 0.10, 0.05, 0.05],
+            [0.05, 0.05, 0.80, 0.05, 0.05],
+        ], dtype=np.float64)
+
+    monkeypatch.setattr(
+        'cdskit.localize.resolve_localize_model_path',
+        lambda model, allow_download=True: 'dummy-targetp-torch.pt',
+    )
+    monkeypatch.setattr(
+        'cdskit.localize.load_localize_model',
+        lambda path: model,
+    )
+    monkeypatch.setattr(
+        'cdskit.targetp_torch.predict_targetp2_torch_batch',
+        fake_predict_targetp2_torch_batch,
+    )
+    report_path = temp_dir / 'targetp_torch_report.tsv'
+    args = mock_args(
+        seqfile=str(seq_path),
+        inseqformat='fasta',
+        seqtype='protein',
+        model='targetp_torch_v1',
+        report=str(report_path),
+        include_features=False,
+        organism_group='non_plant',
+        no_model_download=True,
+        codontable=1,
+        threads=4,
+    )
+
+    localize_main(args)
+
+    assert len(calls) == 1
+    assert calls[0]['aa_sequences'] == ['MKKLLLLAA', 'MASTSTSTST', 'MRRRAAAAAA']
+    assert calls[0]['organism_groups'] == ['non_plant', 'non_plant', 'non_plant']
+    assert calls[0]['batch_size'] == 512
+    with open(report_path, 'r', encoding='utf-8') as inp:
+        rows = list(csv.DictReader(inp, delimiter='\t'))
+    assert [row['predicted_class'] for row in rows] == ['SP', 'noTP', 'mTP']
+    assert [float(row['p_peroxisome']) for row in rows] == [0.25, 0.25, 0.25]
+
+
 def test_localize_learn_predefined_cv_fold_col(temp_dir, mock_args):
     train_tsv = temp_dir / 'train_localize_predefined_fold.tsv'
     model_path = temp_dir / 'localize_model_predefined_fold.json'
