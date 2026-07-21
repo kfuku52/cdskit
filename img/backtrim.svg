@@ -108,7 +108,7 @@
      id="text942"><tspan
        id="tspan940"
        x="20.439737"
-       y="21.342577">Untrimmed codon alignment (--seqfile)</tspan></text><text
+       y="21.342577">Untrimmed codon alignment (--seq_file)</tspan></text><text
      id="text942-2"
      y="194.9146"
      x="70.15451"
@@ -116,7 +116,7 @@
      xml:space="preserve"><tspan
        y="194.9146"
        x="70.15451"
-       id="tspan940-8">Trimmed codon alignment (--outfile)</tspan></text><text
+       id="tspan940-8">Trimmed codon alignment (--out_file)</tspan></text><text
      xml:space="preserve"
      style="font-size:10.6667px;line-height:1.05;font-family:sans-serif;text-align:end;text-anchor:end"
      x="685.20844"

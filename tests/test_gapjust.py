@@ -372,7 +372,7 @@ class TestGapjustMain:
 
         with pytest.raises(Exception) as exc_info:
             gapjust_main(args)
-        assert "Duplicate sequence IDs are not supported with --ingff" in str(exc_info.value)
+        assert "Duplicate sequence IDs are not supported with --in_gff" in str(exc_info.value)
         assert not output_fasta.exists()
         assert not output_gff.exists()
 

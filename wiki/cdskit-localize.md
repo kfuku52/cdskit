@@ -45,6 +45,25 @@ cdskit localize \
   --report localize.tsv
 ```
 
+## Prediction report
+
+For `targeting5` and other single-label targeting-peptide models, TSV output
+contains `seq_id`, `predicted_class`, class probabilities (`p_noTP`, `p_SP`,
+`p_mTP`, `p_cTP`, `p_lTP`), `p_peroxisome`, and `perox_signal_type`:
+
+```tsv
+seq_id	predicted_class	p_noTP	p_SP	p_mTP	p_cTP	p_lTP	p_peroxisome	perox_signal_type
+seq_sp	SP	0.0004	0.9979	0.0009	0.0004	0.0004	0.0	none
+seq_mtp	mTP	0.0742	0.0099	0.9122	0.0007	0.0029	0.0	none
+```
+
+Compatible multi-label models instead write `predicted_labels` and one
+probability column per model label. TSV output is UTF-8, tab-delimited,
+rectangular, and LF-terminated; `.json` reports contain the same row objects.
+`p_peroxisome` is a separate binary-head score and does not replace
+`predicted_class`. Use `--model_download no` when pretrained model downloads
+must be disabled for offline-only operation.
+
 ## DeepLoc 2.1 benchmark models
 
 The helper module can download and prepare the public DeepLoc 2.1 datasets, run
@@ -291,7 +310,7 @@ keeping inference CPU-only:
 
 | Model / evaluation | Rows | Positives | AUPRC | AUROC | F1 | Notes |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| DeepLoc21 validation, perox head | 5,462 | 53 | 0.482 | 0.895 | 0.583 | threshold tuned on DeepLoc21 partition 4 |
+| DeepLoc21 validation, perox head | 5,462 | 53 | 0.482 | 0.895 | 0.583 | threshold tuned on DeepLoc21 `fold_id=4` |
 | DeepLoc21 validation, regex PTS | 5,462 | 53 | 0.080 | 0.765 | 0.217 | simple PTS1/PTS2 signal baseline |
 | UniProt experimental CC external, perox head | 11,395 | 138 | 0.256 | 0.847 | 0.370 | no accession/exact-sequence overlap with DeepLoc21 training |
 | UniProt experimental CC external, regex PTS | 11,395 | 138 | 0.041 | 0.642 | 0.156 | same external rows |
@@ -432,7 +451,7 @@ selection.
 The command used for the feature/ESM run was:
 
 ```
-PYTHONPATH=. python -m cdskit.targetp_feature_ensemble \
+python -m cdskit.targetp_feature_ensemble \
   --training_tsv data/localize_bench/targetp2_benchmark.tsv \
   --reuse_oof_cache no \
   --feature_oof_npz data/localize_bench/targetp2_oof_feature_ensemble_formal_et300.npz \
@@ -449,7 +468,7 @@ PYTHONPATH=. python -m cdskit.targetp_feature_ensemble \
 The one-vs-rest CPU feature run can be regenerated with:
 
 ```
-PYTHONPATH=. python scripts/targetp_feature_ensemble_eval.py \
+scripts/targetp_feature_ensemble_eval.py \
   --training_tsv data/localize_bench/targetp2_benchmark.tsv \
   --reuse_oof_cache no \
   --feature_oof_npz data/localize_bench/targetp2_oof_feature_binary_et600_leaf2_formal.npz \
@@ -470,7 +489,7 @@ specialist thresholds are selected on each training-fold complement using
 `macro_f1`, not on the held-out fold:
 
 ```
-PYTHONPATH=. python -m cdskit.targetp_blend \
+python -m cdskit.targetp_blend \
   --training_tsv data/localize_bench/targetp2_benchmark.tsv \
   --reuse_oof_cache yes \
   --organism_gate yes \
@@ -486,7 +505,7 @@ PYTHONPATH=. python -m cdskit.targetp_blend \
 The fair RF stack can be regenerated with:
 
 ```
-PYTHONPATH=. python -m cdskit.targetp_stack \
+python -m cdskit.targetp_stack \
   --training_tsv data/localize_bench/targetp2_benchmark.tsv \
   --base_oof_npzs data/localize_bench/targetp2_oof_feature_binary_et600_leaf2_formal.npz,data/localize_bench/targetp2_oof_esm_formal_mps_b128.npz,data/localize_bench/targetp2_oof_feature_ensemble_formal_et300.npz,data/localize_bench/targetp2_oof_bilstm_formal_mps_b2048.npz \
   --stack_oof_npz data/localize_bench/targetp2_oof_stack_rf100_orgsplit_ltp_signal_rs123_leaf2subsample_nogate.npz \
@@ -532,7 +551,7 @@ The composed all-outer Torch OOF can be regenerated from the per-outer nested
 OOF caches with:
 
 ```
-PYTHONPATH=. python scripts/targetp_torch_compose_oof.py \
+scripts/targetp_torch_compose_oof.py \
   --base_oof_npz data/localize_bench/targetp2_oof_targetp_torch_torchlstm_h256_e12_balbatch_typeonly_pair_seed100_valthrnorm.npz \
   --replacement_oof_npzs data/localize_bench/targetp2_oof_targetp_torch_torchlstm_h256_e12_balbatch_typeonly_outer0_inner4_seed100_valthr.npz,data/localize_bench/targetp2_oof_targetp_torch_torchlstm_h256_e12_balbatch_typeonly_outer1_inner4_seed100_valthr.npz,data/localize_bench/targetp2_oof_targetp_torch_torchlstm_h256_e12_balbatch_typeonly_outer2_inner4_seed100_valthr.npz,data/localize_bench/targetp2_oof_targetp_torch_torchlstm_h256_e12_balbatch_typeonly_outer3_inner4_seed100_valthr.npz,data/localize_bench/targetp2_oof_targetp_torch_torchlstm_h256_e12_balbatch_typeonly_outer4_inner4_seed100_valthr.npz \
   --source val_threshold \
@@ -543,7 +562,7 @@ PYTHONPATH=. python scripts/targetp_torch_compose_oof.py \
 Then run the post-blend stack with:
 
 ```
-PYTHONPATH=. python -m cdskit.targetp_stack \
+python -m cdskit.targetp_stack \
   --training_tsv data/localize_bench/targetp2_benchmark.tsv \
   --base_oof_npzs data/localize_bench/targetp2_oof_feature_binary_et600_leaf2_formal.npz,data/localize_bench/targetp2_oof_esm_formal_mps_b128.npz,data/localize_bench/targetp2_oof_feature_ensemble_formal_et300.npz,data/localize_bench/targetp2_oof_bilstm_formal_mps_b2048.npz \
   --stack_oof_npz data/localize_bench/targetp2_oof_stack_rf100_orgsplit_postblend_h256_seed100_allouter_inner4.npz \
@@ -578,7 +597,7 @@ The strict external weak-label OOF used by the 3-way best can be regenerated
 with:
 
 ```
-PYTHONPATH=. python scripts/targetp_external_feature_oof.py \
+scripts/targetp_external_feature_oof.py \
   --training_tsv data/localize_bench/targetp2_benchmark.tsv \
   --uniprot_tsv data/localize_bench/eukaryota_full_with_lineage.tsv \
   --deeploc_dir data/localize_bench/deeploc21 \
@@ -599,7 +618,7 @@ PYTHONPATH=. python scripts/targetp_external_feature_oof.py \
 Then run the 3-way foldwise source blend:
 
 ```
-PYTHONPATH=. python -m cdskit.targetp_stack \
+python -m cdskit.targetp_stack \
   --training_tsv data/localize_bench/targetp2_benchmark.tsv \
   --base_oof_npzs data/localize_bench/targetp2_oof_feature_binary_et600_leaf2_formal.npz,data/localize_bench/targetp2_oof_esm_formal_mps_b128.npz,data/localize_bench/targetp2_oof_feature_ensemble_formal_et300.npz,data/localize_bench/targetp2_oof_bilstm_formal_mps_b2048.npz \
   --stack_oof_npz data/localize_bench/targetp2_oof_stack_rf100_orgsplit_3way_extaug_w0p25_h256_seed100_allouter_inner4.npz \
@@ -630,7 +649,7 @@ It can also be supplied separately through `--extra_uniprot_tsvs`; in the local
 snapshot the premerged file produced the best held-out blend.
 
 ```
-PYTHONPATH=. python scripts/targetp_external_feature_oof.py \
+scripts/targetp_external_feature_oof.py \
   --training_tsv data/localize_bench/targetp2_benchmark.tsv \
   --uniprot_tsv data/localize_bench/eukaryota_full_with_lineage_plus_thylakoid_lumen_20260530.tsv \
   --deeploc_dir data/localize_bench/deeploc21 \
@@ -651,7 +670,7 @@ PYTHONPATH=. python scripts/targetp_external_feature_oof.py \
 Then run the 4-way foldwise source blend:
 
 ```
-PYTHONPATH=. python -m cdskit.targetp_stack \
+python -m cdskit.targetp_stack \
   --training_tsv data/localize_bench/targetp2_benchmark.tsv \
   --base_oof_npzs data/localize_bench/targetp2_oof_feature_binary_et600_leaf2_formal.npz,data/localize_bench/targetp2_oof_esm_formal_mps_b128.npz,data/localize_bench/targetp2_oof_feature_ensemble_formal_et300.npz,data/localize_bench/targetp2_oof_bilstm_formal_mps_b2048.npz \
   --stack_oof_npz data/localize_bench/targetp2_oof_stack_rf100_orgsplit_4way_extaug_strict_thylum_sl0057_w0p05_h256_seed100_allouter_inner4.npz \
@@ -693,7 +712,7 @@ source. Each held-out fold's source weights and class thresholds are selected
 only on the other folds:
 
 ```
-PYTHONPATH=. python -m cdskit.targetp_stack \
+python -m cdskit.targetp_stack \
   --training_tsv data/localize_bench/targetp2_benchmark.tsv \
   --base_oof_npzs data/localize_bench/targetp2_oof_stack_rf100_orgsplit_4way_extaug_strict_thylum_sl0057_w0p05_h256_seed100_allouter_inner4.npz,data/localize_bench/targetp2_oof_targetp_torch_torchlstm_h256_e12_balbatch_typeonly_allouter_inner4_seed100_valthrnorm.npz,data/localize_bench/targetp2_oof_feature_extaug_strict_et200_w0p25.npz \
   --stack_oof_npz data/localize_bench/targetp2_oof_meta_rf300_leaf2_stack_torch_ext_repro_sp.npz \
@@ -920,7 +939,7 @@ the h64 probe, but still not strong enough to close the TargetP gap.
 The h128 one-model-per-fold probe can be reproduced or continued with:
 
 ```
-PYTHONPATH=. python -u scripts/targetp_torch_eval.py \
+python -u scripts/targetp_torch_eval.py \
   --targetp_npz data/targetp_raw/targetp_data.npz \
   --model_dir data/localize_bench/targetp2_torch_torchlstm_h128_e12_balbatch_typeonly_pair_models \
   --out_npz data/localize_bench/targetp2_oof_targetp_torch_torchlstm_h128_e12_balbatch_typeonly_pair_valthr.npz \
@@ -1097,7 +1116,7 @@ regeneration can resume from already completed folds.
 The completed MPS formal export command was:
 
 ```
-PYTHONPATH=. TOKENIZERS_PARALLELISM=false \
+TOKENIZERS_PARALLELISM=false \
 PYTORCH_ENABLE_MPS_FALLBACK=1 \
 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 \
 python -m cdskit.targetp_blend \

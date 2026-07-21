@@ -248,7 +248,7 @@ def stop_if_duplicate_sequence_ids(records):
     if len(duplicated) > 10:
         shown += ',...'
     txt = (
-        'Duplicate sequence IDs are not supported with --ingff because '
+        'Duplicate sequence IDs are not supported with --in_gff because '
         'GFF seqid mapping becomes ambiguous. Duplicate IDs: {}. Exiting.\n'
     )
     raise Exception(txt.format(shown))

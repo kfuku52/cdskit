@@ -52,7 +52,7 @@ keeping inference CPU-only.
 
 | Model / evaluation | Rows | Positives | AUPRC | AUROC | F1 | Notes |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| DeepLoc21 validation, perox head | 5,462 | 53 | 0.482 | 0.895 | 0.583 | threshold tuned on DeepLoc21 partition 4 |
+| DeepLoc21 validation, perox head | 5,462 | 53 | 0.482 | 0.895 | 0.583 | threshold tuned on DeepLoc21 `fold_id=4` |
 | DeepLoc21 validation, regex PTS | 5,462 | 53 | 0.080 | 0.765 | 0.217 | simple PTS1/PTS2 signal baseline |
 | UniProt experimental CC external, perox head | 11,395 | 138 | 0.256 | 0.847 | 0.370 | no accession/exact-sequence overlap with DeepLoc21 training |
 | UniProt experimental CC external, regex PTS | 11,395 | 138 | 0.041 | 0.642 | 0.156 | same external rows |

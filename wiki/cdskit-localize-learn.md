@@ -26,7 +26,7 @@ For explicit labels, prepare a tab-separated table with at least:
 Example:
 
 ```tsv
-id	sequence	localization	peroxisome
+accession	sequence	localization	peroxisome
 seq_noTP	MAAAAAAAAGGGGGGGG	noTP	no
 seq_SP	MKKLLLLLLLLLLAVAVAASAASA	SP	no
 seq_mTP	MRRKRRAARAKRRNQAAARRRAA	mTP	no
