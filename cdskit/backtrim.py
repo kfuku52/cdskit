@@ -35,14 +35,14 @@ def get_record_map(records, label):
 
 
 def reorder_aa_records_by_cds_ids(cdn_records, pep_records):
-    cdn_record_map = get_record_map(cdn_records, '--seqfile')
+    cdn_record_map = get_record_map(cdn_records, '--seq_file')
     pep_record_map = get_record_map(pep_records, '--trimmed_aa_aln')
     cdn_ids = set(cdn_record_map.keys())
     pep_ids = set(pep_record_map.keys())
     if cdn_ids != pep_ids:
         missing_in_cds = sorted(list(pep_ids - cdn_ids))
         missing_in_aa = sorted(list(cdn_ids - pep_ids))
-        txt = 'Sequence IDs did not match between CDS (--seqfile) and trimmed amino acid alignment (--trimmed_aa_aln).'
+        txt = 'Sequence IDs did not match between CDS (--seq_file) and trimmed amino acid alignment (--trimmed_aa_aln).'
         if len(missing_in_cds) > 0:
             txt += ' Missing in CDS: {}.'.format(','.join(missing_in_cds))
         if len(missing_in_aa) > 0:
@@ -187,7 +187,7 @@ def trim_codon_record_with_ranges(record, nucleotide_ranges):
 
 def backtrim_main(args):
     cdn_records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
-    stop_if_not_dna(records=cdn_records, label='--seqfile')
+    stop_if_not_dna(records=cdn_records, label='--seq_file')
     stop_if_invalid_codontable(args.codontable)
     pep_records = read_seqs(seqfile=args.trimmed_aa_aln, seqformat=args.inseqformat)
     if len(cdn_records) == 0:

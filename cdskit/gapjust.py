@@ -269,7 +269,7 @@ def gapjust_main(args):
     validate_gapjust_args(args.gap_len, gap_just_min, gap_just_max)
 
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
-    stop_if_not_dna(records=records, label='--seqfile')
+    stop_if_not_dna(records=records, label='--seq_file')
     threads = resolve_threads(getattr(args, 'threads', 1))
     num_justifications = 0
     min_original_gap_length = None

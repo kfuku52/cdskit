@@ -30,6 +30,7 @@ from cdskit.localize_model import (
     write_rows_json,
     write_rows_tsv,
 )
+from cdskit.tsvio import read_tsv, write_tsv
 from cdskit.util import stop_if_invalid_codontable
 
 UNIPROT_SEARCH_URL = 'https://rest.uniprot.org/uniprotkb/search'
@@ -53,10 +54,12 @@ UNIPROT_PRESET_QUERIES = {
 }
 
 
-def read_training_tsv(path):
-    with open(path, 'r', encoding='utf-8', newline='') as inp:
-        reader = csv.DictReader(inp, delimiter='\t')
-        return list(reader)
+def read_training_tsv(path, required_columns=None, return_fieldnames=False):
+    return read_tsv(
+        path=path,
+        required_columns=required_columns,
+        return_fieldnames=return_fieldnames,
+    )
 
 
 def parse_uniprot_fields(field_text):
@@ -218,16 +221,7 @@ def fetch_uniprot_training_rows(
 
 
 def write_uniprot_rows_tsv(rows, fields, out_path):
-    with open(out_path, 'w', encoding='utf-8', newline='') as out:
-        writer = csv.DictWriter(
-            out,
-            fieldnames=fields,
-            delimiter='\t',
-            lineterminator='\n',
-        )
-        writer.writeheader()
-        for row in rows:
-            writer.writerow(row)
+    write_tsv(path=out_path, rows=rows, fieldnames=fields)
 
 
 def resolve_sequence_mode(seq_str, seqtype):
@@ -1267,7 +1261,7 @@ def evaluate_cross_validation(
 
 
 def localize_learn_main(args):
-    stop_if_invalid_codontable(codontable=args.codontable, label='--codontable')
+    stop_if_invalid_codontable(codontable=args.codontable, label='--codon_table')
     training_tsv = getattr(args, 'training_tsv', '')
     uniprot_query = getattr(args, 'uniprot_query', '')
     uniprot_preset = getattr(args, 'uniprot_preset', 'none')
@@ -1373,7 +1367,31 @@ def localize_learn_main(args):
         raise Exception(txt)
 
     if has_training_tsv:
-        rows = read_training_tsv(path=training_tsv)
+        required_columns = [args.seq_col]
+        if args.label_mode == 'explicit':
+            required_columns.extend([args.localization_col, args.perox_col])
+        if cv_fold_col != '':
+            required_columns.append(cv_fold_col)
+        rows, input_fieldnames = read_training_tsv(
+            path=training_tsv,
+            required_columns=required_columns,
+            return_fieldnames=True,
+        )
+        if args.label_mode == 'uniprot_cc':
+            location_candidates = [
+                args.localization_col,
+                'cc_subcellular_location',
+                'Subcellular location [CC]',
+                'subcellular_location',
+                'localization',
+            ]
+            if not any(name in input_fieldnames for name in location_candidates):
+                raise ValueError(
+                    'Missing required localization text column in {}: expected one of {}.'.format(
+                        training_tsv,
+                        ', '.join(dict.fromkeys(location_candidates)),
+                    )
+                )
     else:
         fields = parse_uniprot_fields(field_text=uniprot_fields_text)
         if args.seq_col not in fields:
@@ -1804,7 +1822,7 @@ def localize_learn_main(args):
     })
 
     if args.report != '':
-        if args.report.endswith('.json'):
+        if args.report.lower().endswith('.json'):
             write_rows_json(rows=report_rows, output_path=args.report)
         else:
             write_rows_tsv(

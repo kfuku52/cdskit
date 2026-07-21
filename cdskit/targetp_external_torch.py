@@ -1,7 +1,8 @@
-import argparse
 import json
 import os
 from collections import Counter
+
+from cdskit.cliutil import CdskitArgumentParser, parse_bool, resolve_threads
 
 from cdskit.localize_model import LOCALIZATION_CLASSES, save_localize_model
 from cdskit.targetp_external_aug import (
@@ -99,9 +100,15 @@ def fit_external_augmented_torch_runtime_model(
     **train_kwargs
 ):
     seq_len = int(train_kwargs.get('seq_len', TARGETP_EXTERNAL_TORCH_DEFAULTS['seq_len']))
-    target_rows = read_tsv(training_tsv)
+    target_rows = read_tsv(
+        training_tsv,
+        required_columns=['sequence', 'localization', 'organism_group', 'fold_id'],
+    )
     if str(external_tsv or '').strip() != '':
-        external_rows = read_tsv(str(external_tsv))
+        external_rows = read_tsv(
+            str(external_tsv),
+            required_columns=['accession', 'sequence', 'organism_group', 'localization'],
+        )
         external_report = {
             'source': 'external_tsv',
             'external_tsv': str(external_tsv),
@@ -276,7 +283,7 @@ def _parse_class_thresholds(text):
 
 
 def build_parser():
-    parser = argparse.ArgumentParser(
+    parser = CdskitArgumentParser(
         description='Train a CPU-inference TargetP-style Torch model with strict non-overlapping external weak labels.',
     )
     parser.add_argument('--training_tsv', default='data/localize_bench/targetp2_benchmark.tsv', type=str)
@@ -294,13 +301,13 @@ def build_parser():
     parser.add_argument('--extra_uniprot_tsvs', default='', type=str)
     parser.add_argument('--exclusion_tsvs', default='', type=str)
     parser.add_argument('--deeploc_dir', default='data/localize_bench/deeploc21', type=str)
-    parser.add_argument('--include_deeploc', default='yes', choices=['yes', 'no'], type=str)
+    parser.add_argument('--include_deeploc', default=True, type=parse_bool)
     parser.add_argument('--max_external_per_class', default=5000, type=int)
     parser.add_argument('--calibration_fraction', default=TARGETP_EXTERNAL_TORCH_DEFAULTS['calibration_fraction'], type=float)
     parser.add_argument('--calibration_seed', default='', type=str)
     parser.add_argument('--external_seed', default=TARGETP_EXTERNAL_TORCH_DEFAULTS['external_seed'], type=int)
     parser.add_argument('--seed', default=TARGETP_EXTERNAL_TORCH_DEFAULTS['seed'], type=int)
-    parser.add_argument('--mmseqs', default='no', choices=['yes', 'no'], type=str)
+    parser.add_argument('--mmseqs', default=False, type=parse_bool)
     parser.add_argument('--exclusion_mmseqs', default='yes', choices=['auto', 'yes', 'no'], type=str)
     parser.add_argument('--mmseqs_min_seq_id', default=0.30, type=float)
     parser.add_argument('--mmseqs_min_coverage', default=0.80, type=float)
@@ -320,7 +327,11 @@ def build_parser():
     parser.add_argument('--type_class_weight', default=TARGETP_EXTERNAL_TORCH_DEFAULTS['type_class_weight'], choices=['none', 'balanced', 'sqrt_balanced', 'log_balanced'], type=str)
     parser.add_argument('--cleavage_loss_weight', default=TARGETP_EXTERNAL_TORCH_DEFAULTS['cleavage_loss_weight'], type=float)
     parser.add_argument('--selection_metric', default=TARGETP_EXTERNAL_TORCH_DEFAULTS['selection_metric'], choices=['val_loss', 'val_macro_f1', 'val_threshold_macro_f1'], type=str)
-    parser.add_argument('--balanced_batch', default=TARGETP_EXTERNAL_TORCH_DEFAULTS['balanced_batch'], choices=['yes', 'no'], type=str)
+    parser.add_argument(
+        '--balanced_batch',
+        default=parse_bool(TARGETP_EXTERNAL_TORCH_DEFAULTS['balanced_batch']),
+        type=parse_bool,
+    )
     parser.add_argument('--initializer', default=TARGETP_EXTERNAL_TORCH_DEFAULTS['initializer'], choices=['targetp_tf', 'pytorch'], type=str)
     parser.add_argument('--grad_clip_norm', default=TARGETP_EXTERNAL_TORCH_DEFAULTS['grad_clip_norm'], type=float)
     parser.add_argument('--rnn_impl', default=TARGETP_EXTERNAL_TORCH_DEFAULTS['rnn_impl'], choices=['torch_lstm', 'targetp_tf_cell'], type=str)
@@ -328,15 +339,16 @@ def build_parser():
     parser.add_argument('--class_thresholds', default='', type=str)
     parser.add_argument('--epoch_checkpoint_path', default='', type=str)
     parser.add_argument('--torch_payload_out', default='', type=str)
-    parser.add_argument('--external_tsv_out', default='', type=str)
+    parser.add_argument('--external_out_tsv', dest='external_tsv_out', default='', type=str)
     parser.add_argument('--model_out', required=True, type=str)
     parser.add_argument('--out_json', required=True, type=str)
-    parser.add_argument('--verbose', default='no', choices=['yes', 'no'], type=str)
+    parser.add_argument('--verbose', default=False, type=parse_bool)
+    parser.add_deprecated_alias('--external_tsv_out', '--external_out_tsv')
     return parser
 
 
-def main():
-    args = build_parser().parse_args()
+def main(argv=None):
+    args = build_parser().parse_args(argv)
     result = fit_external_augmented_torch_runtime_model(
         training_tsv=args.training_tsv,
         uniprot_tsv=args.uniprot_tsv,
@@ -357,7 +369,7 @@ def main():
         exclusion_mmseqs=_parse_exclusion_mmseqs(args.exclusion_mmseqs),
         mmseqs_min_seq_id=float(args.mmseqs_min_seq_id),
         mmseqs_min_coverage=float(args.mmseqs_min_coverage),
-        threads=int(args.threads),
+        threads=resolve_threads(args.threads),
         device=args.device,
         verbose=_yes_no(args.verbose),
         epoch_checkpoint_path=args.epoch_checkpoint_path,

@@ -3,7 +3,6 @@ Tests for cdskit localize and localize-learn commands.
 """
 
 import csv
-from pathlib import Path
 from urllib import parse as urllib_parse
 
 import Bio.SeqIO
@@ -12,12 +11,9 @@ import pytest
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
 from cdskit.localize import localize_main
 import cdskit.localize_learn as localize_learn_module
-from cdskit.localize_learn import localize_learn_main
+from cdskit.localize_learn import localize_learn_main, read_training_tsv
 from cdskit.localize_model import (
     FEATURE_NAMES,
     LOCALIZATION_CLASSES,
@@ -89,6 +85,20 @@ class ConstantMulticlassScore:
 
 def aa_to_cds(aa_seq):
     return ''.join([AA_TO_CODON[aa] for aa in aa_seq])
+
+
+def test_training_tsv_requires_explicit_peroxisome_column(temp_dir):
+    path = temp_dir / 'missing_peroxisome.tsv'
+    path.write_text(
+        'sequence\tlocalization\nMAAA\tnoTP\n',
+        encoding='utf-8',
+    )
+
+    with pytest.raises(ValueError, match='peroxisome'):
+        read_training_tsv(
+            str(path),
+            required_columns=['sequence', 'localization', 'peroxisome'],
+        )
 
 
 def build_training_table(path):

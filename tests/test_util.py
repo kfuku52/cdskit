@@ -3,18 +3,12 @@ Tests for cdskit/util.py utility functions.
 """
 
 import pytest
-import tempfile
 import numpy as np
-from pathlib import Path
-from io import StringIO
 
 import Bio.SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 from Bio.SeqFeature import FeatureLocation, SeqFeature
-
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from cdskit import util
 
@@ -228,7 +222,7 @@ class TestStopIfNotSeqtype:
         records = [SeqRecord(Seq("ATG"), id="seq1")]
         with pytest.raises(Exception) as exc_info:
             util.stop_if_not_seqtype(records=records, seqtype="rna", label="--seqfile")
-        assert "Invalid --seqtype" in str(exc_info.value)
+        assert "Invalid --seq_type" in str(exc_info.value)
 
 
 class TestStopIfInvalidCodontable:
@@ -238,7 +232,7 @@ class TestStopIfInvalidCodontable:
     def test_rejects_invalid_codontable(self):
         with pytest.raises(Exception) as exc_info:
             util.stop_if_invalid_codontable(999)
-        assert "Invalid --codontable" in str(exc_info.value)
+        assert "Invalid --codon_table" in str(exc_info.value)
 
 
 class TestTranslateRecords:
@@ -312,7 +306,7 @@ class TestGetSeqname:
         record.annotations["organism"] = "Homo sapiens"
         with pytest.raises(Exception) as exc_info:
             util.get_seqname(record, "organism_unknown")
-        assert "Invalid --seqnamefmt element (unknown)" in str(exc_info.value)
+        assert "Invalid --seq_name_format element (unknown)" in str(exc_info.value)
 
 
 class TestReplaceSeq2Cds:

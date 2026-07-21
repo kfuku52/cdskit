@@ -3,14 +3,10 @@ Tests for cdskit aggregate command.
 """
 
 import pytest
-from pathlib import Path
 
 import Bio.SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
-
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from cdskit.aggregate import aggregate_main, aggregate_name, select_aggregate_record
 

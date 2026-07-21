@@ -4,15 +4,10 @@ Based on wiki example: https://github.com/kfuku52/cdskit/wiki/cdskit-printseq
 """
 
 import pytest
-from pathlib import Path
-from io import StringIO
-import sys
 
 import Bio.SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
-
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from cdskit.printseq import format_printseq_lines, printseq_main, record_matches_seqname
 
@@ -230,7 +225,7 @@ class TestPrintseqMain:
         )
         with pytest.raises(Exception) as exc_info:
             printseq_main(args)
-        assert 'Invalid regex in --seqname' in str(exc_info.value)
+        assert 'Invalid regex in --seq_name_regex' in str(exc_info.value)
 
     def test_printseq_rejects_non_dna_input(self, temp_dir, mock_args):
         input_path = temp_dir / "input.fasta"

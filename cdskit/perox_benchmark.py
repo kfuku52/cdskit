@@ -6,14 +6,13 @@ train/validation rows, tunes the operating threshold on one predefined
 partition, and evaluates the final head on an independent external table.
 """
 
-import argparse
-import csv
 import hashlib
 import json
 import re
 import shutil
 import subprocess
 import tempfile
+import warnings
 from collections import Counter
 from pathlib import Path
 
@@ -28,9 +27,12 @@ from cdskit.localize_model import (
     extract_perox_features,
     extract_targetp_feature_ensemble_features,
     load_localize_model,
+    normalize_organism_group,
     save_localize_model,
 )
 from cdskit.localize_models import resolve_localize_model_path
+from cdskit.cliutil import CdskitArgumentParser, parse_bool, resolve_threads
+from cdskit.tsvio import read_tsv, write_tsv
 
 
 DEFAULT_TRAIN_TSV = 'data/localize_bench/deeploc21/deeploc21_localization_train_validation.tsv'
@@ -54,25 +56,40 @@ def _label_to_int(value):
 
 def read_perox_rows(path):
     rows = list()
-    with open(path, 'r', encoding='utf-8', newline='') as inp:
-        reader = csv.DictReader(inp, delimiter='\t')
-        required = ['accession', 'kingdom', 'partition', 'sequence', 'peroxisome']
-        missing = [name for name in required if name not in (reader.fieldnames or [])]
-        if missing:
-            raise ValueError('Missing required columns in {}: {}'.format(path, ', '.join(missing)))
-        for row in reader:
-            seq = str(row.get('sequence', '') or '').strip()
-            if seq == '':
-                continue
-            rows.append({
-                'accession': str(row.get('accession', '') or '').strip(),
-                'kingdom': str(row.get('kingdom', '') or '').strip(),
-                'partition': str(row.get('partition', '') or '').strip(),
-                'sequence': seq,
-                'peroxisome': int(_label_to_int(row.get('peroxisome', '0'))),
-                'localization_labels': str(row.get('localization_labels', '') or '').strip(),
-                'source': str(row.get('source', '') or '').strip(),
-            })
+    source_rows, fieldnames = read_tsv(
+        path=path,
+        required_columns=['accession', 'sequence', 'peroxisome'],
+        return_fieldnames=True,
+    )
+    organism_column = 'organism_group' if 'organism_group' in fieldnames else 'kingdom'
+    fold_column = 'fold_id' if 'fold_id' in fieldnames else 'partition'
+    for old_name, new_name, selected in [
+        ('kingdom', 'organism_group', organism_column),
+        ('partition', 'fold_id', fold_column),
+    ]:
+        if selected == old_name:
+            if old_name not in fieldnames:
+                raise ValueError('Missing required columns in {}: {}'.format(path, new_name))
+            warnings.warn(
+                'TSV column {} is deprecated; use {} instead.'.format(old_name, new_name),
+                FutureWarning,
+                stacklevel=2,
+            )
+    for row in source_rows:
+        seq = str(row.get('sequence', '') or '').strip()
+        if seq == '':
+            continue
+        rows.append({
+            'accession': str(row.get('accession', '') or '').strip(),
+            'organism_group': (
+                normalize_organism_group(row.get(organism_column, '')) or 'unknown'
+            ),
+            'fold_id': str(row.get(fold_column, '') or '').strip(),
+            'sequence': seq,
+            'peroxisome': int(_label_to_int(row.get('peroxisome', '0'))),
+            'localization_labels': str(row.get('localization_labels', '') or '').strip(),
+            'source': str(row.get('source', '') or '').strip(),
+        })
     return rows
 
 
@@ -83,12 +100,12 @@ def _sequence_digest(seq):
 def _kingdom_from_lineage_ids(lineage_ids):
     txt = str(lineage_ids or '')
     if '33090 ' in txt or 'Viridiplantae' in txt:
-        return 'Viridiplantae'
+        return 'plant'
     if '33208 ' in txt or 'Metazoa' in txt:
-        return 'Metazoa'
+        return 'non_plant'
     if '4751 ' in txt or 'Fungi' in txt:
-        return 'Fungi'
-    return 'Other'
+        return 'non_plant'
+    return 'non_plant'
 
 
 def read_uniprot_exp_cc_perox_rows(path, exclude_rows=None):
@@ -105,38 +122,36 @@ def read_uniprot_exp_cc_perox_rows(path, exclude_rows=None):
     }
     rows = list()
     skipped = Counter()
-    with open(path, 'r', encoding='utf-8', newline='') as inp:
-        reader = csv.DictReader(inp, delimiter='\t')
-        required = ['accession', 'sequence', 'cc_subcellular_location', 'lineage_ids']
-        missing = [name for name in required if name not in (reader.fieldnames or [])]
-        if missing:
-            raise ValueError('Missing required columns in {}: {}'.format(path, ', '.join(missing)))
-        for row in reader:
-            acc = str(row.get('accession', '') or '').strip()
-            seq = str(row.get('sequence', '') or '').strip()
-            cc = str(row.get('cc_subcellular_location', '') or '').strip()
-            if seq == '' or cc == '':
-                skipped['missing_sequence_or_cc'] += 1
-                continue
-            if 'ECO:0000269' not in cc:
-                skipped['non_experimental'] += 1
-                continue
-            if acc in exclude_accessions:
-                skipped['accession_overlap'] += 1
-                continue
-            if _sequence_digest(seq) in exclude_sequences:
-                skipped['exact_sequence_overlap'] += 1
-                continue
-            is_perox = 'peroxisom' in cc.lower()
-            rows.append({
-                'accession': acc,
-                'kingdom': _kingdom_from_lineage_ids(row.get('lineage_ids', '')),
-                'partition': 'external_uniprot_exp_cc',
-                'sequence': seq,
-                'peroxisome': 1 if is_perox else 0,
-                'localization_labels': 'peroxisome' if is_perox else 'non_peroxisome_exp_cc',
-                'source': 'uniprot_exp_cc',
-            })
+    source_rows = read_tsv(
+        path=path,
+        required_columns=['accession', 'sequence', 'cc_subcellular_location', 'lineage_ids'],
+    )
+    for row in source_rows:
+        acc = str(row.get('accession', '') or '').strip()
+        seq = str(row.get('sequence', '') or '').strip()
+        cc = str(row.get('cc_subcellular_location', '') or '').strip()
+        if seq == '' or cc == '':
+            skipped['missing_sequence_or_cc'] += 1
+            continue
+        if 'ECO:0000269' not in cc:
+            skipped['non_experimental'] += 1
+            continue
+        if acc in exclude_accessions:
+            skipped['accession_overlap'] += 1
+            continue
+        if _sequence_digest(seq) in exclude_sequences:
+            skipped['exact_sequence_overlap'] += 1
+            continue
+        is_perox = 'peroxisom' in cc.lower()
+        rows.append({
+            'accession': acc,
+            'organism_group': _kingdom_from_lineage_ids(row.get('lineage_ids', '')),
+            'fold_id': 'external_uniprot_exp_cc',
+            'sequence': seq,
+            'peroxisome': 1 if is_perox else 0,
+            'localization_labels': 'peroxisome' if is_perox else 'non_peroxisome_exp_cc',
+            'source': 'uniprot_exp_cc',
+        })
     return rows, dict(skipped)
 
 
@@ -174,7 +189,7 @@ def _targetp_feature_dim_probe():
 def extract_perox_model_features(row, feature_profile='perox_sequence_v1'):
     profile = str(feature_profile or '').strip().lower()
     seq = row.get('sequence', '')
-    kingdom = row.get('kingdom', '')
+    kingdom = row.get('organism_group', row.get('kingdom', ''))
     if profile in ['perox_sequence_v1', 'perox_features_v1']:
         return extract_perox_features(aa_seq=seq, kingdom=kingdom)[0]
     if profile in ['broad_localize_v1', 'broad_localize_features_v1']:
@@ -532,12 +547,18 @@ def split_train_valid(rows, validation_partition='4', validation_fraction=0.2):
             rows=rows,
             validation_fraction=validation_fraction,
         )
-    train_rows = [row for row in rows if str(row.get('partition', '')) != validation_partition]
-    valid_rows = [row for row in rows if str(row.get('partition', '')) == validation_partition]
+    train_rows = [
+        row for row in rows
+        if str(row.get('fold_id', row.get('partition', ''))) != validation_partition
+    ]
+    valid_rows = [
+        row for row in rows
+        if str(row.get('fold_id', row.get('partition', ''))) == validation_partition
+    ]
     if len(train_rows) == 0 or len(valid_rows) == 0:
         raise ValueError(
-            'Could not split rows with validation_partition={}. '
-            'Use validation_partition=hash_stratified for datasets without predefined folds.'.format(
+            'Could not split rows with validation_fold_id={}. '
+            'Use validation_fold_id=hash_stratified for datasets without predefined folds.'.format(
                 validation_partition
             )
         )
@@ -1180,33 +1201,31 @@ def attach_perox_model_to_base(base_model, perox_model, metadata):
 
 
 def write_predictions_tsv(path, rows, probabilities, threshold):
-    with open(path, 'w', encoding='utf-8', newline='') as out:
-        fieldnames = [
-            'accession',
-            'source',
-            'kingdom',
-            'partition',
-            'true_peroxisome',
-            'p_peroxisome',
-            'predicted_peroxisome',
-            'signal_type',
-            'sequence_tail',
-        ]
-        writer = csv.DictWriter(out, fieldnames=fieldnames, delimiter='\t', lineterminator='\n')
-        writer.writeheader()
-        for row, prob in zip(rows, probabilities.tolist()):
-            signals = detect_perox_signals(row.get('sequence', ''))
-            writer.writerow({
+    fieldnames = [
+        'accession', 'source', 'organism_group', 'fold_id', 'true_peroxisome',
+        'p_peroxisome', 'predicted_peroxisome', 'signal_type', 'sequence_tail',
+    ]
+    output_rows = []
+    for row, prob in zip(rows, probabilities.tolist()):
+        signals = detect_perox_signals(row.get('sequence', ''))
+        output_rows.append({
                 'accession': row.get('accession', ''),
                 'source': row.get('source', ''),
-                'kingdom': row.get('kingdom', ''),
-                'partition': row.get('partition', ''),
-                'true_peroxisome': int(row.get('peroxisome', 0)),
+                'organism_group': (
+                    normalize_organism_group(
+                        row.get('organism_group', row.get('kingdom', ''))
+                    ) or 'unknown'
+                ),
+                'fold_id': row.get('fold_id', row.get('partition', '')),
+                'true_peroxisome': 'yes' if int(row.get('peroxisome', 0)) else 'no',
                 'p_peroxisome': float(prob),
-                'predicted_peroxisome': 1 if float(prob) >= float(threshold) else 0,
+                'predicted_peroxisome': (
+                    'yes' if float(prob) >= float(threshold) else 'no'
+                ),
                 'signal_type': signals.get('signal_type', 'none'),
                 'sequence_tail': str(row.get('sequence', ''))[-20:],
-            })
+        })
+    write_tsv(path=path, rows=output_rows, fieldnames=fieldnames)
 
 
 def run_deeploc21_perox_benchmark(
@@ -1636,15 +1655,14 @@ def format_report_markdown(report):
 
 
 def build_arg_parser():
-    parser = argparse.ArgumentParser(
+    parser = CdskitArgumentParser(
         description='Train and evaluate a cdskit localize peroxisome head.',
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
-        '--train_tsv',
+        '--training_tsv', dest='train_tsv',
         default=DEFAULT_TRAIN_TSV,
         type=str,
-        help='Prepared perox TSV with accession, kingdom, partition, sequence, and peroxisome columns.',
+        help='Prepared perox TSV with accession, organism_group, fold_id, sequence, and peroxisome columns.',
     )
     parser.add_argument(
         '--external_test_tsv',
@@ -1660,12 +1678,12 @@ def build_arg_parser():
     )
     parser.add_argument(
         '--exclude_external_from_train',
-        default='yes',
-        choices=['yes', 'no'],
+        default=True,
+        type=parse_bool,
         help='Remove training rows with accession or exact-sequence overlap against the external test set.',
     )
     parser.add_argument(
-        '--validation_partition',
+        '--validation_fold_id', dest='validation_partition',
         default='4',
         type=str,
         help='Partition value used for threshold tuning, or hash_stratified for deterministic label-stratified holdout.',
@@ -1674,7 +1692,7 @@ def build_arg_parser():
         '--validation_fraction',
         default=0.2,
         type=float,
-        help='Validation fraction used only when --validation_partition hash_stratified is selected.',
+        help='Validation fraction used only when --validation_fold_id hash_stratified is selected.',
     )
     parser.add_argument('--feature_profile', default='perox_sequence_v1', choices=[
         'perox_sequence_v1',
@@ -1697,13 +1715,13 @@ def build_arg_parser():
     parser.add_argument('--min_samples_leaf', default=10, type=int)
     parser.add_argument('--base_model', default='', type=str)
     parser.add_argument('--model_out', default='', type=str)
-    parser.add_argument('--report_json', default='', type=str)
-    parser.add_argument('--report_md', default='', type=str)
+    parser.add_argument('--out_json', dest='report_json', default='', type=str)
+    parser.add_argument('--out_md', dest='report_md', default='', type=str)
     parser.add_argument('--predictions_prefix', default='', type=str)
     parser.add_argument(
         '--homology_check',
-        default='no',
-        choices=['yes', 'no'],
+        default=False,
+        type=parse_bool,
         help='Run MMseqs train-vs-evaluation homology checks and subset metrics.',
     )
     parser.add_argument('--homology_min_seq_id', default=0.3, type=float)
@@ -1713,14 +1731,18 @@ def build_arg_parser():
     parser.add_argument('--homology_tmp_dir', default='', type=str)
     parser.add_argument(
         '--cluster_oof',
-        default='no',
-        choices=['yes', 'no'],
+        default=False,
+        type=parse_bool,
         help='Run cluster-level out-of-fold evaluation to expose similarity-driven optimism.',
     )
     parser.add_argument('--cluster_oof_source', default='external', choices=['external', 'train_validation'])
     parser.add_argument('--cluster_oof_folds', default=5, type=int)
     parser.add_argument('--cluster_oof_threshold', default=0.5, type=float)
     parser.add_argument('--cluster_oof_method', default='mmseqs', choices=['mmseqs', 'singleton'])
+    parser.add_deprecated_alias('--train_tsv', '--training_tsv')
+    parser.add_deprecated_alias('--report_json', '--out_json')
+    parser.add_deprecated_alias('--report_md', '--out_md')
+    parser.add_deprecated_alias('--validation_partition', '--validation_fold_id')
     return parser
 
 
@@ -1753,7 +1775,7 @@ def main(argv=None):
         homology_min_seq_id=args.homology_min_seq_id,
         homology_coverage=args.homology_coverage,
         homology_cov_mode=args.homology_cov_mode,
-        homology_threads=args.homology_threads,
+        homology_threads=resolve_threads(args.homology_threads),
         homology_tmp_dir=args.homology_tmp_dir,
         cluster_oof=args.cluster_oof,
         cluster_oof_source=args.cluster_oof_source,

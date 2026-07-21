@@ -4,14 +4,12 @@ Tests for cdskit maxalign command.
 
 import json
 import pytest
-from pathlib import Path
 
 import Bio.SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
+from cdskit.tsvio import read_tsv
 
 from cdskit.maxalign import (
     alignment_area,
@@ -516,9 +514,11 @@ class TestMaxalignMain:
 
         maxalign_main(args)
 
-        txt = report_path.read_text()
-        assert txt.startswith("metric\tvalue")
-        assert "steps" in txt
+        rows, fieldnames = read_tsv(str(report_path), return_fieldnames=True)
+        assert fieldnames[:2] == ['schema_version', 'section']
+        assert {row['schema_version'] for row in rows} == {'2'}
+        assert any(row['section'] == 'summary' and row['metric'] == 'mode' for row in rows)
+        assert any(row['section'] == 'step' and row['label'] == 'initial' for row in rows)
 
     def test_maxalign_threads_matches_single_thread_exact(self, temp_dir, mock_args):
         input_path = temp_dir / "input.fasta"

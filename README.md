@@ -107,6 +107,25 @@ All subcommands support `--threads INT` for multi-threaded processing.
 - `--threads 2` or larger: multi-threaded
 - `--threads 0`: auto-detect available CPU count
 
+## CLI and TSV conventions
+
+Long options use snake_case consistently, for example `--seq_file`,
+`--out_file`, `--codon_table`, and `--seq_name_regex`. Older compact names
+remain accepted for backward compatibility, but print a deprecation warning
+that names the replacement. Boolean values consistently accept
+`yes/no`, `true/false`, `on/off`, and `1/0`.
+
+cdskit TSV files are UTF-8, tab-delimited, rectangular, and written with LF
+line endings. Input tables must have a unique, non-empty header and all
+columns required by the selected operation. Shared biological columns use
+`accession`, `sequence`, `organism_group`, `localization`, `peroxisome`, and
+`fold_id`. Peroxisome values are written as `yes` or `no`. Multi-part TSV
+reports use one header, a `schema_version` column, and a `section` column
+instead of concatenating tables with different widths. Versioned reports
+currently use schema version `2` on every row. See [the 0.24 migration
+guide](MIGRATION.md) for the old-to-new CLI and TSV mappings and
+[the changelog](CHANGELOG.md) for release details.
+
 ## Localization prediction
 
 Lightweight JSON models only need the base installation. Pretrained TargetP-
@@ -146,7 +165,7 @@ Train a BiLSTM+attention model (PyTorch required):
 cdskit localize-learn \
   --training_tsv uniprot_download.tsv \
   --seq_col sequence \
-  --seqtype protein \
+  --seq_type protein \
   --label_mode uniprot_cc \
   --localization_col cc_subcellular_location \
   --model_arch bilstm_attention \
@@ -168,7 +187,7 @@ Predict from in-frame CDS:
 
 ```
 cdskit localize \
-  --seqfile cds.fasta \
+  --seq_file cds.fasta \
   --model localize_model.json \
   --report localize.tsv
 ```
@@ -177,8 +196,8 @@ Predict from protein sequences:
 
 ```
 cdskit localize \
-  --seqfile proteins.faa \
-  --seqtype protein \
+  --seq_file proteins.faa \
+  --seq_type protein \
   --model localize_model.json \
   --report localize.tsv
 ```

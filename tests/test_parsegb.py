@@ -3,16 +3,11 @@ Tests for cdskit parsegb command.
 """
 
 import pytest
-from pathlib import Path
-from io import StringIO
 
 import Bio.SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 from Bio.SeqFeature import SeqFeature, FeatureLocation
-
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from cdskit.parsegb import parsegb_main, parsegb_record
 
@@ -305,7 +300,7 @@ class TestParsegbMain:
 
         with pytest.raises(Exception) as exc_info:
             parsegb_main(args)
-        assert 'parsegb requires --inseqformat genbank' in str(exc_info.value)
+        assert 'parsegb requires --in_seq_format genbank' in str(exc_info.value)
 
 
 class TestParsegbHelpers:

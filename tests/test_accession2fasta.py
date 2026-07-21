@@ -2,15 +2,10 @@
 Tests for cdskit accession2fasta command.
 """
 
-from pathlib import Path
-
 import pytest
 from Bio.Seq import Seq
 from Bio.SeqFeature import FeatureLocation, SeqFeature
 from Bio.SeqRecord import SeqRecord
-
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import cdskit.accession2fasta as accession_module
 from cdskit.accession2fasta import (

@@ -1,5 +1,3 @@
-import argparse
-import csv
 import json
 import os
 import random
@@ -24,6 +22,8 @@ from cdskit.targetp_feature_ensemble import (
 )
 from cdskit.targetp_labeling import strict_uniprot_targetp_label
 from cdskit.uniprot_preset_split import classify_lineage_ids, parse_taxon_ids
+from cdskit.cliutil import CdskitArgumentParser, parse_bool, resolve_threads
+from cdskit.tsvio import read_tsv as _read_tsv, write_tsv as _write_tsv
 
 
 DEFAULT_CLASS_THRESHOLD_GRID = [
@@ -60,20 +60,16 @@ DEEPLOC_LOCALIZATION_TO_TARGETP = {
 }
 
 
-def read_tsv(path):
-    with open(path, 'r', encoding='utf-8', newline='') as inp:
-        return list(csv.DictReader(inp, delimiter='\t'))
+def read_tsv(path, required_columns=None, return_fieldnames=False):
+    return _read_tsv(
+        path=path,
+        required_columns=required_columns,
+        return_fieldnames=return_fieldnames,
+    )
 
 
 def write_tsv(path, rows, fieldnames):
-    out_dir = os.path.dirname(path)
-    if out_dir != '':
-        os.makedirs(out_dir, exist_ok=True)
-    with open(path, 'w', encoding='utf-8', newline='') as out:
-        writer = csv.DictWriter(out, delimiter='\t', fieldnames=list(fieldnames))
-        writer.writeheader()
-        for row in rows:
-            writer.writerow({name: row.get(name, '') for name in fieldnames})
+    _write_tsv(path=path, rows=rows, fieldnames=fieldnames)
 
 
 def _accession_key(value):
@@ -85,7 +81,7 @@ def _sequence_key(value):
 
 
 def load_targetp_exclusion_keys(targetp_tsv):
-    rows = read_tsv(path=targetp_tsv)
+    rows = read_tsv(path=targetp_tsv, required_columns=['accession', 'sequence'])
     return {
         'rows': rows,
         'accessions': set(_accession_key(row.get('accession', '')) for row in rows),
@@ -126,7 +122,10 @@ def organism_group_from_row(row):
 
 
 def build_deeploc_sorting_rows(path, targetp_keys, exclude_exact=True):
-    rows = read_tsv(path=path)
+    rows = read_tsv(
+        path=path,
+        required_columns=['accession', 'sequence', 'sorting_signal_labels'],
+    )
     out = list()
     skipped = Counter()
     for row in rows:
@@ -171,7 +170,10 @@ def _targetp_class_from_deeploc_localization_labels(label_text):
 
 
 def build_deeploc_hpa_broad_rows(path, targetp_keys, exclude_exact=True):
-    rows = read_tsv(path=path)
+    rows = read_tsv(
+        path=path,
+        required_columns=['accession', 'sequence', 'localization_labels'],
+    )
     out = list()
     skipped = Counter()
     for row in rows:
@@ -202,7 +204,16 @@ def build_uniprot_holdout_rows(
     skip_ambiguous=True,
     strict_targetp_organism_labels=False,
 ):
-    rows = read_tsv(path=path)
+    rows, fieldnames = read_tsv(
+        path=path,
+        required_columns=['accession', 'sequence'],
+        return_fieldnames=True,
+    )
+    if not any(name in fieldnames for name in ['cc_subcellular_location', 'localization']):
+        raise ValueError(
+            '{} is missing required TSV column: cc_subcellular_location '
+            '(or localization)'.format(path)
+        )
     out = list()
     skipped = Counter()
     for row in rows:
@@ -241,7 +252,16 @@ def build_uniprot_holdout_rows(
 def load_fixed_uniprot_holdout_rows(path, strict_targetp_organism_labels=False):
     out = list()
     skipped = Counter()
-    for row in read_tsv(path):
+    rows, fieldnames = read_tsv(
+        path,
+        required_columns=['accession', 'sequence'],
+        return_fieldnames=True,
+    )
+    if not any(name in fieldnames for name in ['true_class', 'localization']):
+        raise ValueError(
+            '{} is missing required TSV column: true_class (or localization)'.format(path)
+        )
+    for row in rows:
         true_class = str(row.get('true_class', row.get('localization', '')) or '').strip()
         if true_class not in LOCALIZATION_CLASSES:
             skipped['unknown_true_class'] += 1
@@ -887,29 +907,33 @@ def run_external_evaluation(
 
 
 def build_parser():
-    parser = argparse.ArgumentParser(
+    parser = CdskitArgumentParser(
         description='Evaluate a TargetP-trained cdskit localize model on external non-overlapping data.'
     )
     parser.add_argument('--model', required=True, type=str)
-    parser.add_argument('--targetp_tsv', default='data/localize_bench/targetp2_benchmark.tsv', type=str)
+    parser.add_argument(
+        '--targetp_reference_tsv', dest='targetp_tsv',
+        default='data/localize_bench/targetp2_benchmark.tsv', type=str,
+    )
     parser.add_argument('--deeploc_dir', default='data/localize_bench/deeploc21', type=str)
     parser.add_argument('--uniprot_tsv', default='data/localize_bench/eukaryota_full_with_lineage.tsv', type=str)
     parser.add_argument('--fixed_uniprot_holdout_tsv', default='', type=str)
     parser.add_argument('--out_dir', default='data/localize_bench/targetp_external_eval', type=str)
     parser.add_argument('--max_uniprot_per_class', default=500, type=int)
-    parser.add_argument('--mmseqs', default='yes', choices=['yes', 'no'], type=str)
+    parser.add_argument('--mmseqs', default=True, type=parse_bool)
     parser.add_argument('--mmseqs_min_seq_id', default=0.30, type=float)
     parser.add_argument('--mmseqs_min_coverage', default=0.80, type=float)
     parser.add_argument('--seed', default=1, type=int)
     parser.add_argument('--threads', default=1, type=int)
-    parser.add_argument('--threshold_calibration', default='yes', choices=['yes', 'no'], type=str)
+    parser.add_argument('--threshold_calibration', default=True, type=parse_bool)
     parser.add_argument('--threshold_cv_folds', default=5, type=int)
     parser.add_argument(
         '--threshold_grid',
         default=','.join(str(value) for value in DEFAULT_CLASS_THRESHOLD_GRID),
         type=str,
     )
-    parser.add_argument('--strict_targetp_organism_labels', default='no', choices=['yes', 'no'], type=str)
+    parser.add_argument('--strict_targetp_organism_labels', default=False, type=parse_bool)
+    parser.add_deprecated_alias('--targetp_tsv', '--targetp_reference_tsv')
     return parser
 
 
@@ -928,8 +952,8 @@ def _parse_threshold_grid(value):
     return sorted(set(out))
 
 
-def main():
-    args = build_parser().parse_args()
+def main(argv=None):
+    args = build_parser().parse_args(argv)
     result = run_external_evaluation(
         model_path=args.model,
         targetp_tsv=args.targetp_tsv,
@@ -942,7 +966,7 @@ def main():
         mmseqs_min_seq_id=float(args.mmseqs_min_seq_id),
         mmseqs_min_coverage=float(args.mmseqs_min_coverage),
         seed=int(args.seed),
-        threads=int(args.threads),
+        threads=resolve_threads(args.threads),
         threshold_calibration=_to_bool_yes_no(args.threshold_calibration),
         threshold_cv_folds=int(args.threshold_cv_folds),
         threshold_grid=_parse_threshold_grid(args.threshold_grid),

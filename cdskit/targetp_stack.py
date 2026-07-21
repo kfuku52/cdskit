@@ -1,9 +1,10 @@
-import argparse
-import csv
 import json
 import os
 
 import numpy as np
+
+from cdskit.cliutil import CdskitArgumentParser, parse_bool
+from cdskit.tsvio import read_tsv
 
 from cdskit.localize_learn import LOCALIZATION_CLASSES
 from cdskit.localize_model import (
@@ -109,9 +110,8 @@ TARGETP_STACK_LTP_AFTER_SPECIALIST_DEFAULTS = {
 }
 
 
-def read_training_rows(path):
-    with open(path, 'r', encoding='utf-8', newline='') as inp:
-        return list(csv.DictReader(inp, delimiter='\t'))
+def read_training_rows(path, required_columns=None):
+    return read_tsv(path=path, required_columns=required_columns)
 
 
 def fold_ids_from_rows(rows):
@@ -1444,7 +1444,10 @@ def run_targetp_stack_oof(
     organism_gate=False,
     organism_specialized_stack=False,
 ):
-    rows = read_training_rows(path=training_tsv)
+    rows = read_training_rows(
+        path=training_tsv,
+        required_columns=['sequence', 'localization', 'organism_group', 'fold_id'],
+    )
     class_names = list(LOCALIZATION_CLASSES)
     true_idx = _read_true_idx_from_training_tsv(
         training_tsv=training_tsv,
@@ -2203,7 +2206,7 @@ def render_markdown(out):
 
 
 def build_parser():
-    parser = argparse.ArgumentParser(
+    parser = CdskitArgumentParser(
         description='Evaluate a foldwise TargetP stacking model from fair base OOF probabilities.',
     )
     parser.add_argument('--training_tsv', default='data/localize_bench/targetp2_benchmark.tsv', type=str)
@@ -2215,12 +2218,11 @@ def build_parser():
     parser.add_argument('--class_weight', default=TARGETP_STACK_DEFAULTS['class_weight'], type=str)
     parser.add_argument('--max_features', default=TARGETP_STACK_DEFAULTS['max_features'], type=str)
     parser.add_argument('--min_samples_leaf', default=TARGETP_STACK_DEFAULTS['min_samples_leaf'], type=int)
-    parser.add_argument('--include_sequence_features', default='yes', choices=['yes', 'no'], type=str)
+    parser.add_argument('--include_sequence_features', default=True, type=parse_bool)
     parser.add_argument(
         '--ltp_ctp_override',
-        default='yes' if TARGETP_STACK_LTP_CTP_DEFAULTS['ltp_ctp_override'] else 'no',
-        choices=['yes', 'no'],
-        type=str,
+        default=TARGETP_STACK_LTP_CTP_DEFAULTS['ltp_ctp_override'],
+        type=parse_bool,
     )
     parser.add_argument(
         '--ltp_ctp_model_kind',
@@ -2246,9 +2248,8 @@ def build_parser():
     parser.add_argument('--ltp_source_classes', default='cTP', type=str)
     parser.add_argument(
         '--notp_ctp_ltp_override',
-        default='yes' if TARGETP_STACK_NOTP_CTP_LTP_DEFAULTS['notp_ctp_ltp_override'] else 'no',
-        choices=['yes', 'no'],
-        type=str,
+        default=TARGETP_STACK_NOTP_CTP_LTP_DEFAULTS['notp_ctp_ltp_override'],
+        type=parse_bool,
     )
     parser.add_argument(
         '--notp_ctp_model_kind',
@@ -2270,26 +2271,23 @@ def build_parser():
     )
     parser.add_argument(
         '--organism_gate',
-        default='yes' if TARGETP_STACK_DEFAULTS['organism_gate'] else 'no',
-        choices=['yes', 'no'],
-        type=str,
+        default=TARGETP_STACK_DEFAULTS['organism_gate'],
+        type=parse_bool,
     )
     parser.add_argument(
         '--organism_specialized_stack',
-        default='yes' if TARGETP_STACK_DEFAULTS['organism_specialized_stack'] else 'no',
-        choices=['yes', 'no'],
-        type=str,
+        default=TARGETP_STACK_DEFAULTS['organism_specialized_stack'],
+        type=parse_bool,
     )
     parser.add_argument('--post_blend_oof_npz', default='', type=str)
     parser.add_argument('--post_blend_oof_npzs', default='', type=str)
     parser.add_argument('--post_blend_label', default='post_blend', type=str)
     parser.add_argument('--post_blend_grid_step', default=0.10, type=float)
-    parser.add_argument('--post_blend_ltp_ctp_override', default='yes', choices=['yes', 'no'], type=str)
+    parser.add_argument('--post_blend_ltp_ctp_override', default=True, type=parse_bool)
     parser.add_argument(
         '--post_blend_sp_override',
-        default='yes' if TARGETP_STACK_SP_SPECIALIST_DEFAULTS['sp_override'] else 'no',
-        choices=['yes', 'no'],
-        type=str,
+        default=TARGETP_STACK_SP_SPECIALIST_DEFAULTS['sp_override'],
+        type=parse_bool,
     )
     parser.add_argument('--post_blend_sp_max_iter', default=TARGETP_STACK_SP_SPECIALIST_DEFAULTS['sp_max_iter'], type=int)
     parser.add_argument('--post_blend_sp_learning_rate', default=TARGETP_STACK_SP_SPECIALIST_DEFAULTS['sp_learning_rate'], type=float)
@@ -2299,9 +2297,8 @@ def build_parser():
     parser.add_argument('--post_blend_sp_extra_thresholds', default=','.join(str(value) for value in TARGETP_STACK_SP_SPECIALIST_DEFAULTS['sp_extra_thresholds']), type=str)
     parser.add_argument(
         '--post_blend_mtp_override',
-        default='yes' if TARGETP_STACK_MTP_SPECIALIST_DEFAULTS['mtp_override'] else 'no',
-        choices=['yes', 'no'],
-        type=str,
+        default=TARGETP_STACK_MTP_SPECIALIST_DEFAULTS['mtp_override'],
+        type=parse_bool,
     )
     parser.add_argument(
         '--post_blend_mtp_model_kind',
@@ -2319,9 +2316,8 @@ def build_parser():
     parser.add_argument('--post_blend_mtp_score_steps', default=TARGETP_STACK_MTP_SPECIALIST_DEFAULTS['mtp_score_steps'], type=int)
     parser.add_argument(
         '--post_blend_ltp_after_specialists_override',
-        default='yes' if TARGETP_STACK_LTP_AFTER_SPECIALIST_DEFAULTS['ltp_after_override'] else 'no',
-        choices=['yes', 'no'],
-        type=str,
+        default=TARGETP_STACK_LTP_AFTER_SPECIALIST_DEFAULTS['ltp_after_override'],
+        type=parse_bool,
     )
     parser.add_argument(
         '--post_blend_ltp_after_model_kind',
@@ -2365,8 +2361,8 @@ def _parse_float_list(value):
     ]
 
 
-def main():
-    args = build_parser().parse_args()
+def main(argv=None):
+    args = build_parser().parse_args(argv)
     base_oof_npzs = [
         value.strip() for value in str(args.base_oof_npzs).split(',')
         if value.strip() != ''

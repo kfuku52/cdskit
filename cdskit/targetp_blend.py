@@ -1,6 +1,4 @@
-import argparse
 from contextlib import contextmanager
-import csv
 import json
 import os
 import sys
@@ -37,6 +35,8 @@ from cdskit.targetp_benchmark import (
     TARGETP_TABLE1_REFERENCE,
     compute_prf_by_class,
 )
+from cdskit.cliutil import CdskitArgumentParser, parse_bool
+from cdskit.tsvio import read_tsv
 
 TARGETP_SPECIALIST_FIXED_PROFILE = {
     'name': 'targetp_specialist_fixed_v1',
@@ -49,9 +49,8 @@ TARGETP_SPECIALIST_FIXED_PROFILE = {
 }
 
 
-def _read_training_rows(path):
-    with open(path, 'r', encoding='utf-8', newline='') as inp:
-        return list(csv.DictReader(inp, delimiter='\t'))
+def _read_training_rows(path, required_columns=None):
+    return read_tsv(path=path, required_columns=required_columns)
 
 
 def _oof_rows_to_prob_and_true(oof_rows, class_names):
@@ -311,7 +310,7 @@ def _load_oof_fold_npz(path, class_names, cache_key=''):
 
 def _read_true_idx_from_training_tsv(training_tsv, class_names):
     class_to_idx = {name: i for i, name in enumerate(class_names)}
-    rows = _read_training_rows(path=training_tsv)
+    rows = _read_training_rows(path=training_tsv, required_columns=['localization'])
     out = list()
     for row in rows:
         class_name = str(row.get('localization', '')).strip()
@@ -322,7 +321,7 @@ def _read_true_idx_from_training_tsv(training_tsv, class_names):
 
 
 def _read_fold_ids_from_training_tsv(training_tsv):
-    rows = _read_training_rows(path=training_tsv)
+    rows = _read_training_rows(path=training_tsv, required_columns=['fold_id'])
     fold_ids = list()
     for row_i, row in enumerate(rows):
         fold_id = str(row.get('fold_id', '')).strip()
@@ -335,7 +334,7 @@ def _read_fold_ids_from_training_tsv(training_tsv):
 
 
 def _read_organism_group_mask(training_tsv):
-    rows = _read_training_rows(path=training_tsv)
+    rows = _read_training_rows(path=training_tsv, required_columns=['organism_group'])
     return np.asarray([
         str(row.get('organism_group', '')).strip().lower() == 'plant'
         for row in rows
@@ -1891,7 +1890,10 @@ def _run_model_oof(
     cv_seed,
     fold_cache_dir='',
 ):
-    rows = _read_training_rows(path=training_tsv)
+    rows = _read_training_rows(
+        path=training_tsv,
+        required_columns=['sequence', 'localization', 'peroxisome', 'fold_id'],
+    )
     x, aa_sequences, class_labels, perox_labels, skipped, fold_ids = build_training_matrix(
         rows=rows,
         seq_col='sequence',
@@ -2195,7 +2197,10 @@ def _export_targetp_blend_runtime_model(
     benchmark_out,
 ):
     class_names = list(LOCALIZATION_CLASSES)
-    rows = _read_training_rows(path=args.training_tsv)
+    rows = _read_training_rows(
+        path=args.training_tsv,
+        required_columns=['sequence', 'localization', 'peroxisome'],
+    )
     x, aa_sequences, class_labels, perox_labels, skipped, _ = build_training_matrix(
         rows=rows,
         seq_col='sequence',
@@ -2575,12 +2580,12 @@ def _render_markdown(out):
 
 
 def build_parser():
-    parser = argparse.ArgumentParser(
+    parser = CdskitArgumentParser(
         description='Blend bilstm-cdskit and esm-cdskit on TargetP fold-fixed benchmark.',
     )
     parser.add_argument('--training_tsv', default='data/localize_bench/targetp2_benchmark.tsv', type=str)
-    parser.add_argument('--reuse_oof_cache', default='yes', choices=['yes', 'no'], type=str)
-    parser.add_argument('--organism_gate', default='no', choices=['yes', 'no'], type=str)
+    parser.add_argument('--reuse_oof_cache', default=True, type=parse_bool)
+    parser.add_argument('--organism_gate', default=False, type=parse_bool)
     parser.add_argument('--bilstm_oof_npz', default='data/localize_bench/targetp2_oof_bilstm.npz', type=str)
     parser.add_argument('--esm_oof_npz', default='data/localize_bench/targetp2_oof_esm.npz', type=str)
     parser.add_argument('--oof_fold_cache_dir', default='', type=str)
@@ -2595,10 +2600,10 @@ def build_parser():
     parser.add_argument('--bilstm_dl_batch_size', default=128, type=int)
     parser.add_argument('--bilstm_dl_lr', default=1.0e-3, type=float)
     parser.add_argument('--bilstm_dl_weight_decay', default=1.0e-4, type=float)
-    parser.add_argument('--bilstm_dl_class_weight', default='yes', choices=['yes', 'no'], type=str)
+    parser.add_argument('--bilstm_dl_class_weight', default=True, type=parse_bool)
     parser.add_argument('--bilstm_dl_loss', default='ce', choices=['ce', 'focal'], type=str)
-    parser.add_argument('--bilstm_dl_balanced_batch', default='no', choices=['yes', 'no'], type=str)
-    parser.add_argument('--bilstm_dl_feature_fusion', default='yes', choices=['yes', 'no'], type=str)
+    parser.add_argument('--bilstm_dl_balanced_batch', default=False, type=parse_bool)
+    parser.add_argument('--bilstm_dl_feature_fusion', default=True, type=parse_bool)
     parser.add_argument('--bilstm_dl_seed', default=1, type=int)
     parser.add_argument('--bilstm_dl_device', default='cpu', choices=['cpu', 'cuda', 'mps', 'auto'], type=str)
     parser.add_argument('--esm_model_name', default='facebook/esm2_t6_8M_UR50D', type=str)
@@ -2609,20 +2614,20 @@ def build_parser():
     parser.add_argument('--esm_dl_batch_size', default=32, type=int)
     parser.add_argument('--esm_dl_lr', default=1.0e-3, type=float)
     parser.add_argument('--esm_dl_weight_decay', default=1.0e-4, type=float)
-    parser.add_argument('--esm_dl_class_weight', default='yes', choices=['yes', 'no'], type=str)
+    parser.add_argument('--esm_dl_class_weight', default=True, type=parse_bool)
     parser.add_argument('--esm_dl_seed', default=1, type=int)
     parser.add_argument('--esm_dl_device', default='cpu', choices=['cpu', 'cuda', 'mps', 'auto'], type=str)
     parser.add_argument('--blend_grid_step', default=0.05, type=float)
     parser.add_argument('--threshold_grid', default='0.05,0.075,0.1,0.15,0.2,0.3,0.4,0.5,0.65,0.8,1.0,1.25,1.5,2.0,3.0,5.0', type=str)
-    parser.add_argument('--foldwise_blend_eval', default='no', choices=['yes', 'no'], type=str)
-    parser.add_argument('--specialist_postprocess', default='no', choices=['yes', 'no'], type=str)
-    parser.add_argument('--foldwise_specialist_eval', default='no', choices=['yes', 'no'], type=str)
-    parser.add_argument('--foldwise_specialist_fixed_eval', default='no', choices=['yes', 'no'], type=str)
+    parser.add_argument('--foldwise_blend_eval', default=False, type=parse_bool)
+    parser.add_argument('--specialist_postprocess', default=False, type=parse_bool)
+    parser.add_argument('--foldwise_specialist_eval', default=False, type=parse_bool)
+    parser.add_argument('--foldwise_specialist_fixed_eval', default=False, type=parse_bool)
     parser.add_argument('--foldwise_specialist_fixed_score_npz', default='', type=str)
     parser.add_argument('--specialist_ltp_mass_threshold', default=0.20, type=float)
     parser.add_argument('--specialist_threshold_objective', default='targetp_margin', choices=['targetp_margin', 'macro_f1'], type=str)
     parser.add_argument('--model_out', default='', type=str)
-    parser.add_argument('--model_out_specialist_postprocess', default='yes', choices=['yes', 'no'], type=str)
+    parser.add_argument('--model_out_specialist_postprocess', default=True, type=parse_bool)
     parser.add_argument('--out_json', default='data/localize_bench/targetp2_bilstm_esm_blend.json', type=str)
     parser.add_argument('--out_md', default='data/localize_bench/targetp2_bilstm_esm_blend.md', type=str)
     return parser
@@ -2632,8 +2637,8 @@ def _to_bool_yes_no(value):
     return str(value).strip().lower() in ['yes', 'y', 'true', '1']
 
 
-def main():
-    args = build_parser().parse_args()
+def main(argv=None):
+    args = build_parser().parse_args(argv)
     class_names = list(LOCALIZATION_CLASSES)
     reuse_cache = _to_bool_yes_no(args.reuse_oof_cache)
     fallback_true_idx = None

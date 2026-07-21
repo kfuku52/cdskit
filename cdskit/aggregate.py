@@ -44,7 +44,7 @@ def aggregate_main(args):
     stop_if_not_seqtype(
         records=records,
         seqtype=getattr(args, 'seqtype', 'auto'),
-        label='--seqfile',
+        label='--seq_file',
     )
     if len(expressions) == 0:
         write_seqs(records=records, outfile=args.outfile, outseqformat=args.outseqformat)

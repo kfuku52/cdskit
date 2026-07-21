@@ -3,14 +3,10 @@ Tests for cdskit rmseq command.
 """
 
 import pytest
-from pathlib import Path
 
 import Bio.SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
-
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from cdskit.rmseq import problematic_rate, rmseq_main, should_remove_record
 
@@ -249,7 +245,7 @@ class TestRmseqMain:
     def test_rmseq_wiki_example_species_removal(self, temp_dir, mock_args):
         """Test wiki example: remove Arabidopsis sequences and high-N sequences.
 
-        Wiki command: cdskit rmseq --seqname "Arabidopsis_thaliana.*" --problematic_percent 50
+        Wiki command: cdskit rmseq --seq_name_regex "Arabidopsis_thaliana.*" --problematic_percent 50
         This removes:
         - All Arabidopsis_thaliana sequences (by name regex)
         - Sequences with >=50% N characters
@@ -466,7 +462,7 @@ class TestRmseqMain:
         )
         with pytest.raises(Exception) as exc_info:
             rmseq_main(args)
-        assert 'Invalid regex in --seqname' in str(exc_info.value)
+        assert 'Invalid regex in --seq_name_regex' in str(exc_info.value)
 
     @pytest.mark.parametrize('problematic_percent', [-1, 101, float('nan'), float('inf')])
     def test_rmseq_rejects_invalid_problematic_percent(self, temp_dir, mock_args, problematic_percent):
@@ -501,7 +497,7 @@ class TestRmseqMain:
         )
         with pytest.raises(Exception) as exc_info:
             rmseq_main(args)
-        assert '--problematic_char must contain at least one character' in str(exc_info.value)
+        assert '--problematic_chars must contain at least one character' in str(exc_info.value)
 
     def test_rmseq_rejects_non_dna_input(self, temp_dir, mock_args):
         input_path = temp_dir / "input.fasta"

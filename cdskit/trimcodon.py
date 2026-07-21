@@ -14,6 +14,7 @@ from cdskit.util import (
     stop_if_not_multiple_of_three,
     write_seqs,
 )
+from cdskit.tsvio import write_sectioned_tsv
 
 
 def validate_fraction(name, value):
@@ -97,40 +98,34 @@ def write_trimcodon_report(report_path, summary):
         with open(report_path, 'w', encoding='utf-8') as f:
             json.dump(summary, f, indent=2, ensure_ascii=False)
         return
-    with open(report_path, 'w', encoding='utf-8') as f:
-        f.write('metric\tvalue\n')
+    rows = [
+        {'section': 'summary', 'metric': key, 'value': summary[key]}
         for key in [
-            'num_sequences',
-            'num_input_codon_sites',
-            'num_output_codon_sites',
-            'num_removed_codon_sites',
-            'min_clean_fraction',
-        ]:
-            f.write(f'{key}\t{summary[key]}\n')
-        f.write('\n')
-        f.write(
-            'codon_site_1based\tclean_fraction\tclean_codons\tunclean_codons\t'
-            'missing_codons\tambiguous_codons\tstop_codons\tkeep\n'
-        )
-        for site_summary in summary['site_summaries']:
-            f.write(
-                '{}\t{:.6f}\t{}\t{}\t{}\t{}\t{}\t{}\n'.format(
-                    site_summary['codon_site_1based'],
-                    site_summary['clean_fraction'],
-                    site_summary['clean_codons'],
-                    site_summary['unclean_codons'],
-                    site_summary['missing_codons'],
-                    site_summary['ambiguous_codons'],
-                    site_summary['stop_codons'],
-                    site_summary['keep'],
-                )
-            )
+            'num_sequences', 'num_input_codon_sites', 'num_output_codon_sites',
+            'num_removed_codon_sites', 'min_clean_fraction',
+        ]
+    ]
+    for source_row in summary['site_summaries']:
+        row = dict(source_row)
+        row['section'] = 'site'
+        row['clean_fraction'] = '{:.6f}'.format(row['clean_fraction'])
+        row['keep'] = 'yes' if row['keep'] else 'no'
+        rows.append(row)
+    write_sectioned_tsv(
+        path=report_path,
+        fieldnames=[
+            'section', 'metric', 'value', 'codon_site_1based', 'clean_fraction',
+            'clean_codons', 'unclean_codons', 'missing_codons',
+            'ambiguous_codons', 'stop_codons', 'keep',
+        ],
+        rows=rows,
+    )
 
 
 def trimcodon_main(args):
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
     _ = resolve_threads(getattr(args, 'threads', 1))
-    stop_if_not_dna(records=records, label='--seqfile')
+    stop_if_not_dna(records=records, label='--seq_file')
     stop_if_not_aligned(records=records)
     stop_if_not_multiple_of_three(records=records)
     stop_if_invalid_codontable(args.codontable)

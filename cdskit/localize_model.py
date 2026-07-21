@@ -1,4 +1,3 @@
-import csv
 from contextlib import contextmanager
 import json
 import math
@@ -8,6 +7,7 @@ import warnings
 import numpy as np
 
 from cdskit.translate import translate_sequence_string
+from cdskit.tsvio import write_tsv as write_tsv_file
 from cdskit.util import DNA_ALLOWED_CHARS
 
 LOCALIZATION_CLASSES = ('noTP', 'SP', 'mTP', 'cTP', 'lTP')
@@ -2601,19 +2601,7 @@ def load_localize_model(path):
 
 
 def write_rows_tsv(rows, output_path, fieldnames):
-    if output_path == '-':
-        import sys
-        out = sys.stdout
-        writer = csv.DictWriter(out, fieldnames=fieldnames, delimiter='\t', lineterminator='\n')
-        writer.writeheader()
-        for row in rows:
-            writer.writerow(row)
-        return
-    with open(output_path, 'w', encoding='utf-8', newline='') as out:
-        writer = csv.DictWriter(out, fieldnames=fieldnames, delimiter='\t', lineterminator='\n')
-        writer.writeheader()
-        for row in rows:
-            writer.writerow(row)
+    write_tsv_file(path=output_path, rows=rows, fieldnames=fieldnames)
 
 
 def write_rows_json(rows, output_path):

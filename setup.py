@@ -33,7 +33,7 @@ setup(
     packages=find_packages(),
     install_requires=['numpy', 'biopython', 'matplotlib'],
     extras_require={
-        'test': ['pytest', 'pytest-cov'],
+        'test': ['pytest>=7', 'pytest-cov'],
         'ml': ['torch', 'scikit-learn'],
     },
     python_requires='>=3.9',

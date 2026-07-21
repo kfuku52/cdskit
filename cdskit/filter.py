@@ -17,6 +17,7 @@ from cdskit.util import (
     stop_if_not_dna,
     write_seqs,
 )
+from cdskit.tsvio import json_cell, write_sectioned_tsv
 
 
 def validate_fraction(name, value):
@@ -179,61 +180,58 @@ def write_filter_report(report_path, summary):
         with open(report_path, 'w', encoding='utf-8') as f:
             json.dump(summary, f, indent=2, ensure_ascii=False)
         return
-    with open(report_path, 'w', encoding='utf-8') as f:
-        f.write('metric\tvalue\n')
-        for key in [
-            'num_input_sequences',
-            'num_output_sequences',
-            'num_dropped_sequences',
-            'drop_non_triplet',
-            'drop_internal_stop',
-            'min_clean_codon_fraction',
-            'dedup',
-        ]:
-            f.write(f'{key}\t{summary[key]}\n')
-        f.write('\n')
-        f.write('section\tids\n')
-        for key in [
-            'non_triplet',
-            'internal_stop',
+    rows = []
+    for key in [
+        'num_input_sequences',
+        'num_output_sequences',
+        'num_dropped_sequences',
+        'drop_non_triplet',
+        'drop_internal_stop',
+        'min_clean_codon_fraction',
+        'dedup',
+    ]:
+        rows.append({'section': 'summary', 'metric': key, 'value': json_cell(summary[key])})
+    for key in ['non_triplet', 'internal_stop', 'clean_codon_fraction', 'duplicate']:
+        rows.append({
+            'section': 'id_set',
+            'metric': 'dropped_{}_ids'.format(key),
+            'ids': json_cell(summary['dropped_ids_by_reason'][key]),
+        })
+    rows.extend([
+        {'section': 'id_set', 'metric': 'kept_ids', 'ids': json_cell(summary['kept_ids'])},
+        {'section': 'id_set', 'metric': 'dropped_ids', 'ids': json_cell(summary['dropped_ids'])},
+    ])
+    for key in ['non_triplet', 'internal_stop', 'clean_codon_fraction', 'duplicate']:
+        rows.append({
+            'section': 'drop_reason',
+            'drop_reason': key,
+            'count': summary['drop_counts_by_reason'][key],
+        })
+    for source_row in summary['sequence_reports']:
+        row = dict(source_row)
+        row['section'] = 'sequence'
+        row['kept'] = json_cell(row['kept'])
+        row['non_triplet'] = json_cell(row['non_triplet'])
+        row['internal_stop'] = json_cell(row['internal_stop'])
+        row['drop_reasons'] = json_cell(row['drop_reasons'])
+        row['clean_codon_fraction'] = '{:.6g}'.format(row['clean_codon_fraction'])
+        rows.append(row)
+    write_sectioned_tsv(
+        path=report_path,
+        fieldnames=[
+            'section', 'metric', 'value', 'ids', 'drop_reason', 'count',
+            'input_order', 'id', 'kept', 'drop_reasons', 'length_nt', 'tail_nt',
+            'non_triplet', 'internal_stop', 'total_codons', 'clean_codons',
+            'unclean_codons', 'missing_codons', 'ambiguous_codons', 'stop_codons',
             'clean_codon_fraction',
-            'duplicate',
-        ]:
-            ids = ','.join(summary['dropped_ids_by_reason'][key])
-            f.write(f'dropped_{key}_ids\t{ids}\n')
-        f.write(f"kept_ids\t{','.join(summary['kept_ids'])}\n")
-        f.write(f"dropped_ids\t{','.join(summary['dropped_ids'])}\n")
-        f.write('\n')
-        f.write('drop_reason\tcount\n')
-        for key in [
-            'non_triplet',
-            'internal_stop',
-            'clean_codon_fraction',
-            'duplicate',
-        ]:
-            f.write(f"{key}\t{summary['drop_counts_by_reason'][key]}\n")
-        f.write('\n')
-        f.write(
-            'input_order\tid\tkept\tdrop_reasons\tlength_nt\ttail_nt\t'
-            'non_triplet\tinternal_stop\ttotal_codons\tclean_codons\t'
-            'unclean_codons\tmissing_codons\tambiguous_codons\tstop_codons\t'
-            'clean_codon_fraction\n'
-        )
-        for row in summary['sequence_reports']:
-            f.write(
-                f"{row['input_order']}\t{row['id']}\t{row['kept']}\t"
-                f"{','.join(row['drop_reasons'])}\t{row['length_nt']}\t"
-                f"{row['tail_nt']}\t{row['non_triplet']}\t{row['internal_stop']}\t"
-                f"{row['total_codons']}\t{row['clean_codons']}\t"
-                f"{row['unclean_codons']}\t{row['missing_codons']}\t"
-                f"{row['ambiguous_codons']}\t{row['stop_codons']}\t"
-                f"{row['clean_codon_fraction']:.6g}\n"
-            )
+        ],
+        rows=rows,
+    )
 
 
 def filter_main(args):
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
-    stop_if_not_dna(records=records, label='--seqfile')
+    stop_if_not_dna(records=records, label='--seq_file')
     stop_if_invalid_codontable(args.codontable)
     args.min_clean_codon_fraction = validate_fraction(
         name='--min_clean_codon_fraction',

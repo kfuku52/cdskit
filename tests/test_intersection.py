@@ -3,14 +3,10 @@ Tests for cdskit intersection command.
 """
 
 import pytest
-from pathlib import Path
 
 import Bio.SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
-
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from cdskit.intersection import intersection_main
 from cdskit.util import DNA_ALLOWED_CHARS
@@ -383,7 +379,7 @@ seq1\tsource\tgene\t3\t20\t.\t+\t.\tID=g_end_beyond
 
         with pytest.raises(Exception) as exc_info:
             intersection_main(args)
-        assert "seqfile2 or ingff" in str(exc_info.value)
+        assert "--seq_file_2 or --in_gff" in str(exc_info.value)
 
     def test_intersection_rejects_both_seqfile2_and_ingff(self, temp_dir, mock_args):
         input_path = temp_dir / "input.fasta"
@@ -413,7 +409,7 @@ seq1\tsource\tgene\t3\t20\t.\t+\t.\tID=g_end_beyond
 
         with pytest.raises(Exception) as exc_info:
             intersection_main(args)
-        assert "either --seqfile2 or --ingff" in str(exc_info.value)
+        assert "either --seq_file_2 or --in_gff" in str(exc_info.value)
 
     def test_intersection_with_test_data(self, data_dir, temp_dir, mock_args):
         """Test intersection with intersection_01 test data."""
@@ -719,7 +715,7 @@ chr3\tsource\tgene\t1\t12\t.\t+\t.\tID=gene2
 
         with pytest.raises(Exception) as exc_info:
             intersection_main(args)
-        assert '--seqfile2' in str(exc_info.value)
+        assert '--seq_file_2' in str(exc_info.value)
 
     def test_intersection_accepts_protein_input_when_seqtype_protein(self, temp_dir, mock_args):
         input1_path = temp_dir / "input1.fasta"

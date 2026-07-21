@@ -132,7 +132,7 @@ def build_hammer_output_record(record, selected_nucleotide_ranges):
 
 def hammer_main(args):
     original_records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
-    stop_if_not_dna(records=original_records, label='--seqfile')
+    stop_if_not_dna(records=original_records, label='--seq_file')
     stop_if_invalid_codontable(args.codontable)
     if len(original_records) == 0:
         write_seqs(records=original_records, outfile=args.outfile, outseqformat=args.outseqformat)

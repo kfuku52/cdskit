@@ -3,14 +3,10 @@ Tests for cdskit label command.
 """
 
 import pytest
-from pathlib import Path
 
 import Bio.SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
-
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from cdskit.label import (
     apply_char_replacement,

@@ -31,8 +31,8 @@ def _write_prepared_localization_tsv(path, rows):
     fieldnames = [
         'source',
         'accession',
-        'kingdom',
-        'partition',
+        'organism_group',
+        'fold_id',
         'sequence',
         'localization_labels',
     ] + list(DEEPLOC_LOCALIZATION_LABELS)
@@ -47,8 +47,10 @@ def _write_prepared_localization_tsv(path, rows):
         for row in rows:
             active = set(row['localization_labels'].split(';'))
             out_row = {key: row.get(key, '') for key in fieldnames}
+            out_row['organism_group'] = row.get('organism_group', row.get('kingdom', ''))
+            out_row['fold_id'] = row.get('fold_id', row.get('partition', ''))
             for label in DEEPLOC_LOCALIZATION_LABELS:
-                out_row[label] = 1 if label in active else 0
+                out_row[label] = 'yes' if label in active else 'no'
             writer.writerow(out_row)
 
 
@@ -75,8 +77,8 @@ def test_prepare_deeploc21_localization_maps_plastid_to_chloroplast(temp_dir):
     assert report['n_multi_label_rows'] == 1
     assert report['label_counts']['chloroplast'] == 1
     assert report['label_counts']['peroxisome'] == 1
-    assert rows[0]['chloroplast'] == '1'
-    assert rows[0]['peroxisome'] == '1'
+    assert rows[0]['chloroplast'] == 'yes'
+    assert rows[0]['peroxisome'] == 'yes'
     assert rows[0]['localization_labels'] == 'chloroplast;peroxisome'
     assert set(DEEPLOC_LOCALIZATION_LABELS).issuperset(rows[0]['localization_labels'].split(';'))
 
@@ -103,7 +105,7 @@ def test_prepare_deeploc21_hpa_uses_fasta_column(temp_dir):
     assert report['label_counts']['nucleus'] == 1
     assert rows[0]['source'] == 'hpa'
     assert rows[0]['sequence'] == 'MAAAAA'
-    assert rows[0]['partition'] == 'test'
+    assert rows[0]['fold_id'] == 'test'
 
 
 def test_prepare_deeploc21_membrane_and_sorting_signal_tsv(temp_dir):
@@ -191,7 +193,7 @@ def test_prepare_all_deeploc21_and_main_without_download(temp_dir, monkeypatch):
             str(data_dir),
             '--out_dir',
             str(out_dir),
-            '--report_json',
+            '--prepare_report_json',
             str(report_json),
         ],
     )

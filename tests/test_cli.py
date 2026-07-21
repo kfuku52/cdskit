@@ -13,9 +13,7 @@ from pathlib import Path
 from io import StringIO
 from unittest.mock import patch
 
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
+from cdskit.cliutil import CdskitArgumentParser, parse_bool, resolve_threads
 
 class TestCLIHelpStrings:
     """Tests for CLI help string formatting.
@@ -224,3 +222,71 @@ class TestCLIEdgeCases:
 
         output = help_output.getvalue()
         assert '42' in output
+
+
+class TestCLIConsistency:
+    def test_automatic_help_describes_common_argument_roles(self):
+        parser = CdskitArgumentParser()
+        parser.add_argument('--training_tsv')
+        parser.add_argument('--out_json')
+        parser.add_argument('--threshold_grid')
+        parser.add_argument('--verbose', action='store_true')
+
+        help_text = parser.format_help()
+
+        assert 'Path to the training TSV file.' in help_text
+        assert 'Path for the output result JSON file.' in help_text
+        assert 'Decision threshold or candidate thresholds' in help_text
+        assert 'Enable detailed progress output.' in help_text
+        assert 'Set training tsv.' not in help_text
+
+    def test_deprecated_long_option_is_accepted_with_warning(self, capsys):
+        parser = CdskitArgumentParser()
+        parser.add_argument('--seq_file')
+        parser.add_deprecated_alias('--seqfile', '--seq_file')
+
+        args = parser.parse_args(['--seqfile', 'input.fasta'])
+
+        assert args.seq_file == 'input.fasta'
+        assert '--seqfile is deprecated; use --seq_file' in capsys.readouterr().err
+
+    @pytest.mark.parametrize(
+        ('text', 'expected'),
+        [('yes', True), ('true', True), ('1', True), ('no', False), ('off', False), ('0', False)],
+    )
+    def test_boolean_spellings_are_shared(self, text, expected):
+        assert parse_bool(text) is expected
+
+    def test_threads_zero_uses_detected_cpu_count(self, monkeypatch):
+        monkeypatch.setattr('cdskit.cliutil.os.cpu_count', lambda: 6)
+        assert resolve_threads(0) == 6
+
+    def test_public_cli_legacy_option_warns_and_still_runs(self, tmp_path):
+        cli_path = Path(__file__).parent.parent / 'cdskit' / 'cdskit'
+        fasta = tmp_path / 'input.fasta'
+        fasta.write_text('>seq1\nATGAAA\n', encoding='utf-8')
+
+        result = subprocess.run(
+            [sys.executable, str(cli_path), 'stats', '--seqfile', str(fasta)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        assert '--seqfile is deprecated; use --seq_file' in result.stderr
+        assert 'Number of sequences: 1' in result.stdout
+
+    def test_checkout_script_wrapper_runs_directly(self):
+        script_path = (
+            Path(__file__).parent.parent / 'scripts' / 'split_eukaryota_presets.py'
+        )
+
+        result = subprocess.run(
+            [str(script_path), '--help'],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        assert '--eukaryota_tsv' in result.stdout
+        assert result.stderr == ''

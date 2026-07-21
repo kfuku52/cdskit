@@ -1,9 +1,10 @@
-import argparse
-import csv
 import json
 import os
 
 import numpy as np
+
+from cdskit.cliutil import CdskitArgumentParser, parse_bool
+from cdskit.tsvio import read_tsv
 
 from cdskit.localize_model import (
     FEATURE_NAMES,
@@ -43,9 +44,8 @@ TARGETP_FEATURE_BINARY_MODEL_KINDS = frozenset([
 ])
 
 
-def read_training_rows(path):
-    with open(path, 'r', encoding='utf-8', newline='') as inp:
-        return list(csv.DictReader(inp, delimiter='\t'))
+def read_training_rows(path, required_columns=None):
+    return read_tsv(path=path, required_columns=required_columns)
 
 
 def build_targetp_feature_matrix(rows):
@@ -178,7 +178,10 @@ def run_targetp_feature_ensemble_oof(
     max_features='sqrt',
     min_samples_leaf=1,
 ):
-    rows = read_training_rows(path=training_tsv)
+    rows = read_training_rows(
+        path=training_tsv,
+        required_columns=['sequence', 'localization', 'organism_group', 'fold_id'],
+    )
     class_names = list(LOCALIZATION_CLASSES)
     true_idx = _true_idx_from_rows(rows=rows, class_names=class_names)
     fold_ids = _fold_ids_from_rows(rows=rows)
@@ -256,7 +259,10 @@ def fit_targetp_feature_runtime_model(
     max_features='sqrt',
     min_samples_leaf=1,
 ):
-    rows = read_training_rows(path=training_tsv)
+    rows = read_training_rows(
+        path=training_tsv,
+        required_columns=['sequence', 'localization', 'organism_group'],
+    )
     class_names = list(LOCALIZATION_CLASSES)
     true_idx = _true_idx_from_rows(rows=rows, class_names=class_names)
     features = build_targetp_feature_matrix(rows=rows)
@@ -647,13 +653,13 @@ def _render_markdown(out):
 
 
 def build_parser():
-    parser = argparse.ArgumentParser(
+    parser = CdskitArgumentParser(
         description='Evaluate a CPU TargetP feature ensemble on the fold-fixed TargetP benchmark.',
     )
     parser.add_argument('--training_tsv', default='data/localize_bench/targetp2_benchmark.tsv', type=str)
-    parser.add_argument('--reuse_oof_cache', default='yes', choices=['yes', 'no'], type=str)
+    parser.add_argument('--reuse_oof_cache', default=True, type=parse_bool)
     parser.add_argument('--feature_oof_npz', default='data/localize_bench/targetp2_oof_feature_ensemble.npz', type=str)
-    parser.add_argument('--organism_gate', default='yes', choices=['yes', 'no'], type=str)
+    parser.add_argument('--organism_gate', default=True, type=parse_bool)
     parser.add_argument('--model_kind', default=TARGETP_FEATURE_ENSEMBLE_DEFAULTS['model_kind'], choices=['extra_trees', 'random_forest', 'binary_extra_trees', 'extra_trees_ovr'], type=str)
     parser.add_argument('--n_estimators', default=TARGETP_FEATURE_ENSEMBLE_DEFAULTS['n_estimators'], type=int)
     parser.add_argument('--random_state', default=TARGETP_FEATURE_ENSEMBLE_DEFAULTS['random_state'], type=int)
@@ -677,8 +683,8 @@ def _to_bool_yes_no(value):
     return str(value).strip().lower() in ['yes', 'y', 'true', '1']
 
 
-def main():
-    args = build_parser().parse_args()
+def main(argv=None):
+    args = build_parser().parse_args(argv)
     class_names = list(LOCALIZATION_CLASSES)
     fallback_true_idx = _read_true_idx_from_training_tsv(
         training_tsv=args.training_tsv,
@@ -692,7 +698,10 @@ def main():
         )
         if names != class_names:
             raise ValueError('Class names in feature_oof_npz do not match LOCALIZATION_CLASSES.')
-        fold_ids = _fold_ids_from_rows(read_training_rows(path=args.training_tsv))
+        fold_ids = _fold_ids_from_rows(read_training_rows(
+            path=args.training_tsv,
+            required_columns=['fold_id'],
+        ))
         feature_profile = {'used_cache': True}
     else:
         oof = run_targetp_feature_ensemble_oof(

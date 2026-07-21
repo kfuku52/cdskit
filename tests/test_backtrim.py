@@ -3,14 +3,10 @@ Tests for cdskit backtrim command.
 """
 
 import pytest
-from pathlib import Path
 
 import Bio.SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
-
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from cdskit.backtrim import backtrim_main, build_column_index, check_same_seq_num
 
@@ -346,7 +342,7 @@ class TestBacktrimMain:
 
         with pytest.raises(Exception) as exc_info:
             backtrim_main(args)
-        assert "Invalid --codontable" in str(exc_info.value)
+        assert "Invalid --codon_table" in str(exc_info.value)
 
     def test_backtrim_empty_inputs_produce_empty_output(self, temp_dir, mock_args):
         cdn_path = temp_dir / "codon.fasta"

@@ -1,4 +1,3 @@
-import argparse
 import json
 
 import numpy as np
@@ -13,6 +12,7 @@ from cdskit.localize_model import (
 )
 from cdskit.targetp_external_eval import load_fixed_uniprot_holdout_rows, read_tsv
 from cdskit.targetp_blend import _fit_sklearn_model, build_targetp_pair_blend_runtime_model
+from cdskit.cliutil import CdskitArgumentParser
 
 
 TARGETP_NOTP_SPECIALIST_PROFILE = {
@@ -224,12 +224,62 @@ def _base_probabilities_from_prediction_row(row, prefix):
     }
 
 
+def _align_prediction_rows(rows, prediction_rows, label):
+    """Join prediction rows to source rows by accession, never by row position."""
+    if prediction_rows is None:
+        return None
+    required_probability_columns = {
+        'p_{}'.format(class_name) for class_name in LOCALIZATION_CLASSES
+    }
+    aligned_by_accession = {}
+    for row_i, row in enumerate(prediction_rows, start=2):
+        accession = str(row.get('accession', '') or '').strip()
+        if accession == '':
+            raise ValueError(
+                '{} prediction TSV row {} has an empty accession.'.format(label, row_i)
+            )
+        if accession in aligned_by_accession:
+            raise ValueError(
+                '{} prediction TSV has duplicate accession: {}'.format(label, accession)
+            )
+        missing = sorted(required_probability_columns.difference(row))
+        if missing:
+            raise ValueError(
+                '{} prediction TSV is missing required columns: {}'.format(
+                    label,
+                    ', '.join(missing),
+                )
+            )
+        aligned_by_accession[accession] = row
+
+    source_accessions = []
+    seen = set()
+    for row_i, row in enumerate(rows, start=2):
+        accession = str(row.get('accession', '') or '').strip()
+        if accession == '':
+            raise ValueError('{} source TSV row {} has an empty accession.'.format(label, row_i))
+        if accession in seen:
+            raise ValueError('{} source TSV has duplicate accession: {}'.format(label, accession))
+        seen.add(accession)
+        source_accessions.append(accession)
+
+    missing_predictions = sorted(seen.difference(aligned_by_accession))
+    unexpected_predictions = sorted(set(aligned_by_accession).difference(seen))
+    if missing_predictions or unexpected_predictions:
+        details = []
+        if missing_predictions:
+            details.append('missing predictions for {}'.format(', '.join(missing_predictions)))
+        if unexpected_predictions:
+            details.append('unexpected predictions for {}'.format(', '.join(unexpected_predictions)))
+        raise ValueError('{} accession mismatch: {}.'.format(label, '; '.join(details)))
+    return [aligned_by_accession[accession] for accession in source_accessions]
+
+
 def _targetp_notp_specialist_training_matrix_from_predictions(model, rows, prediction_rows=None):
     if str(model.get('model_type', '')).strip() != 'targetp_blend_v1':
         raise ValueError('noTP specialist training requires a targetp_blend_v1 model.')
     localization_model = model.get('localization_model', {})
-    if prediction_rows is not None and len(prediction_rows) != len(rows):
-        raise ValueError('noTP specialist rows and prediction rows differ in length.')
+    prediction_rows = _align_prediction_rows(rows, prediction_rows, 'noTP specialist')
     features = list()
     labels = list()
     for row_i, row in enumerate(rows):
@@ -281,8 +331,7 @@ def _targetp_reranker_training_matrix_from_predictions(model, rows, prediction_r
     if str(model.get('model_type', '')).strip() != 'targetp_blend_v1':
         raise ValueError('TargetP reranker training requires a targetp_blend_v1 model.')
     localization_model = model.get('localization_model', {})
-    if prediction_rows is not None and len(prediction_rows) != len(rows):
-        raise ValueError('TargetP reranker rows and prediction rows differ in length.')
+    prediction_rows = _align_prediction_rows(rows, prediction_rows, 'TargetP reranker')
     class_to_idx = {class_name: i for i, class_name in enumerate(LOCALIZATION_CLASSES)}
     features = list()
     labels = list()
@@ -340,8 +389,7 @@ def _targetp_mtp_notp_specialist_training_matrix_from_predictions(
     if str(model.get('model_type', '')).strip() != 'targetp_blend_v1':
         raise ValueError('mTP/noTP specialist training requires a targetp_blend_v1 model.')
     localization_model = model.get('localization_model', {})
-    if prediction_rows is not None and len(prediction_rows) != len(rows):
-        raise ValueError('mTP/noTP specialist rows and prediction rows differ in length.')
+    prediction_rows = _align_prediction_rows(rows, prediction_rows, 'mTP/noTP specialist')
     features = list()
     labels = list()
     for row_i, row in enumerate(rows):
@@ -637,7 +685,7 @@ def attach_targetp_reranker(
 
 
 def build_parser():
-    parser = argparse.ArgumentParser(
+    parser = CdskitArgumentParser(
         description='Build a CPU-runtime TargetP pair blend from two trained cdskit localize models.',
     )
     parser.add_argument('--model_a', required=True, type=str)
@@ -750,6 +798,17 @@ def build_parser():
 
 def main(argv=None):
     args = build_parser().parse_args(argv)
+    dependent_options = [
+        ('--notp_specialist_predictions_tsv', args.notp_specialist_predictions_tsv,
+         '--notp_specialist_tsv', args.notp_specialist_tsv),
+        ('--reranker_predictions_tsv', args.reranker_predictions_tsv,
+         '--reranker_tsv', args.reranker_tsv),
+        ('--mtp_notp_specialist_predictions_tsv', args.mtp_notp_specialist_predictions_tsv,
+         '--mtp_notp_specialist_tsv', args.mtp_notp_specialist_tsv),
+    ]
+    for child_name, child_value, parent_name, parent_value in dependent_options:
+        if str(child_value).strip() != '' and str(parent_value).strip() == '':
+            raise ValueError('{} requires {}.'.format(child_name, parent_name))
     model_a = load_localize_model(args.model_a)
     model_b = load_localize_model(args.model_b)
     metadata = {}

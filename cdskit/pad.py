@@ -197,7 +197,7 @@ def process_padding_payloads_process_parallel(payloads, codon_table, padchar, th
 
 def pad_main(args):
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
-    stop_if_not_dna(records=records, label='--seqfile')
+    stop_if_not_dna(records=records, label='--seq_file')
     stop_if_invalid_codontable(args.codontable)
     threads = resolve_threads(getattr(args, 'threads', 1))
     results = None

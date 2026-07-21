@@ -9,8 +9,8 @@ checksum.
 
 ```bash
 cdskit localize \
-  --seqfile proteins.faa \
-  --seqtype protein \
+  --seq_file proteins.faa \
+  --seq_type protein \
   --model targeting5-perox-deeploc21-et-v1 \
   --organism_group non_plant \
   --report localize.tsv
@@ -69,15 +69,15 @@ Main candidate model and UniProt experimental CC external benchmark:
 
 ```bash
 python -m cdskit.perox_benchmark \
-  --train_tsv data/localize_bench/deeploc21/deeploc21_localization_train_validation.tsv \
+  --training_tsv data/localize_bench/deeploc21/deeploc21_localization_train_validation.tsv \
   --external_test_tsv data/localize_bench/eukaryota_full_with_lineage.tsv \
   --external_format uniprot_exp_cc \
   --feature_profile perox_sequence_v1 \
   --model_kind extra_trees \
   --base_model targeting5 \
   --model_out data/localize_bench/perox_deeploc21_et_v1/cdskit-localize-targeting5-perox-deeploc21-et-v1.pt \
-  --report_json data/localize_bench/perox_deeploc21_et_v1/perox_benchmark_uniprot_exp_external.json \
-  --report_md data/localize_bench/perox_deeploc21_et_v1/perox_benchmark_uniprot_exp_external.md \
+  --out_json data/localize_bench/perox_deeploc21_et_v1/perox_benchmark_uniprot_exp_external.json \
+  --out_md data/localize_bench/perox_deeploc21_et_v1/perox_benchmark_uniprot_exp_external.md \
   --predictions_prefix data/localize_bench/perox_deeploc21_et_v1/perox_predictions_uniprot_exp \
   --homology_check yes \
   --homology_threads 4 \
@@ -91,14 +91,14 @@ HPA stress test for the same DeepLoc21-trained candidate:
 
 ```bash
 python -m cdskit.perox_benchmark \
-  --train_tsv data/localize_bench/deeploc21/deeploc21_localization_train_validation.tsv \
+  --training_tsv data/localize_bench/deeploc21/deeploc21_localization_train_validation.tsv \
   --external_test_tsv data/localize_bench/deeploc21/deeploc21_hpa_test.tsv \
   --external_format prepared \
   --feature_profile perox_sequence_v1 \
   --model_kind extra_trees \
   --homology_check yes \
   --homology_threads 4 \
-  --report_json data/localize_bench/perox_deeploc21_et_v1/perox_benchmark_hpa_external.json \
-  --report_md data/localize_bench/perox_deeploc21_et_v1/perox_benchmark_hpa_external.md \
+  --out_json data/localize_bench/perox_deeploc21_et_v1/perox_benchmark_hpa_external.json \
+  --out_md data/localize_bench/perox_deeploc21_et_v1/perox_benchmark_hpa_external.md \
   --predictions_prefix data/localize_bench/perox_deeploc21_et_v1/perox_predictions_hpa
 ```

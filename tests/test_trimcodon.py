@@ -3,16 +3,13 @@ Tests for cdskit trimcodon command.
 """
 
 import json
-from pathlib import Path
 
 import Bio.SeqIO
 import pytest
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
+from cdskit.tsvio import read_tsv
 from cdskit.trimcodon import trimcodon_main
 
 
@@ -87,6 +84,33 @@ class TestTrimcodonMain:
         report = json.loads(report_path.read_text())
         assert report["num_removed_codon_sites"] == 1
         assert report["removed_codon_sites_1based"] == [2]
+
+    def test_trimcodon_writes_versioned_tsv_report(self, temp_dir, mock_args):
+        input_path = temp_dir / "input.fasta"
+        output_path = temp_dir / "output.fasta"
+        report_path = temp_dir / "report.tsv"
+        Bio.SeqIO.write(
+            [
+                SeqRecord(Seq("ATGAAACCC"), id="seq1", description=""),
+                SeqRecord(Seq("ATGNNNCCC"), id="seq2", description=""),
+            ],
+            str(input_path),
+            "fasta",
+        )
+        args = mock_args(
+            seqfile=str(input_path),
+            outfile=str(output_path),
+            min_clean_fraction=1.0,
+            report=str(report_path),
+        )
+
+        trimcodon_main(args)
+
+        rows, fieldnames = read_tsv(str(report_path), return_fieldnames=True)
+        assert fieldnames[:2] == ['schema_version', 'section']
+        assert {row['schema_version'] for row in rows} == {'2'}
+        assert any(row['section'] == 'summary' for row in rows)
+        assert any(row['section'] == 'site' for row in rows)
 
     def test_trimcodon_rejects_unaligned_input(self, temp_dir, mock_args):
         input_path = temp_dir / "input.fasta"

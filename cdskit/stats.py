@@ -22,7 +22,7 @@ def record_stats(record):
 
 def stats_main(args):
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
-    stop_if_not_dna(records=records, label='--seqfile')
+    stop_if_not_dna(records=records, label='--seq_file')
     threads = resolve_threads(getattr(args, 'threads', 1))
     num_seq = len(records)
     record_count_stats = parallel_map_ordered(items=records, worker=record_stats, threads=threads)

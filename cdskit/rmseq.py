@@ -63,7 +63,7 @@ def compile_seqname_regex(seqname_pattern):
     try:
         return re.compile(seqname_pattern)
     except re.error as e:
-        txt = 'Invalid regex in --seqname: {} ({})'
+        txt = 'Invalid regex in --seq_name_regex: {} ({})'
         raise Exception(txt.format(seqname_pattern, e))
 
 
@@ -79,7 +79,7 @@ def validate_problematic_percent(problematic_percent):
 def validate_problematic_chars(problematic_chars, problematic_percent):
     normalized_chars = normalize_problematic_chars(problematic_chars)
     if (problematic_percent > 0) and (len(normalized_chars) == 0):
-        txt = '--problematic_char must contain at least one character when --problematic_percent > 0. Exiting.\n'
+        txt = '--problematic_chars must contain at least one character when --problematic_percent > 0. Exiting.\n'
         raise Exception(txt)
     return normalized_chars
 
@@ -89,7 +89,7 @@ def rmseq_main(args):
     stop_if_not_seqtype(
         records=records,
         seqtype=getattr(args, 'seqtype', 'auto'),
-        label='--seqfile',
+        label='--seq_file',
     )
     validate_problematic_percent(args.problematic_percent)
     normalized_problematic_chars = validate_problematic_chars(

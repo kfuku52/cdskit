@@ -2,15 +2,10 @@
 Tests for cdskit plot command.
 """
 
-from pathlib import Path
-
 import Bio.SeqIO
 import pytest
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
-
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from cdskit.plot import plot_main
 

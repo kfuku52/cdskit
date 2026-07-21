@@ -11,8 +11,6 @@ from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
 import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
 from cdskit.longestcds import longestcds_main
 
 
@@ -28,7 +26,7 @@ class TestLongestCdsMain:
         args = mock_args(seqfile=str(input_path), outfile=str(output_path), codontable=999)
         with pytest.raises(Exception) as exc_info:
             longestcds_main(args)
-        assert "Invalid --codontable" in str(exc_info.value)
+        assert "Invalid --codon_table" in str(exc_info.value)
 
     def test_longestcds_accepts_codontable_name_when_called_programmatically(self, temp_dir, mock_args):
         input_path = temp_dir / "input.fasta"
@@ -255,9 +253,9 @@ class TestLongestCommandAliases:
                 sys.executable,
                 str(cli_path),
                 "longestcds",
-                "--seqfile",
+                "--seq_file",
                 str(input_path),
-                "--outfile",
+                "--out_file",
                 str(output_path),
             ],
             check=True,
@@ -281,9 +279,9 @@ class TestLongestCommandAliases:
                 sys.executable,
                 str(cli_path),
                 "longestorf",
-                "--seqfile",
+                "--seq_file",
                 str(input_path),
-                "--outfile",
+                "--out_file",
                 str(output_path),
             ],
             check=True,

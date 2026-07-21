@@ -13,6 +13,7 @@ from cdskit.util import (
     stop_if_invalid_codontable,
     stop_if_not_dna,
 )
+from cdskit.tsvio import json_cell, write_sectioned_tsv
 
 
 MISSING_CHARS = frozenset('-?.')
@@ -34,7 +35,7 @@ def get_stop_codons(codontable):
         try:
             table = Bio.Data.CodonTable.unambiguous_dna_by_id[int(codontable)]
         except (KeyError, TypeError, ValueError):
-            txt = 'Invalid --codontable: {}. Exiting.\n'
+            txt = 'Invalid --codon_table: {}. Exiting.\n'
             raise Exception(txt.format(codontable))
         stop_codons = frozenset([codon.upper() for codon in table.stop_codons])
         _STOP_CODON_CACHE[codontable] = stop_codons
@@ -205,38 +206,38 @@ def write_validate_report(report_path, summary):
         with open(report_path, 'w', encoding='utf-8') as f:
             json.dump(summary, f, indent=2, ensure_ascii=False)
         return
-    with open(report_path, 'w', encoding='utf-8') as f:
-        f.write('metric\tvalue\n')
-        for key in [
-            'num_sequences',
-            'aligned',
-            'num_non_triplet_sequences',
-            'num_duplicate_ids',
-            'num_gap_only_sequences',
-            'num_internal_stop_sequences',
-            'ambiguous_codons',
-            'evaluable_codons',
-            'ambiguous_codon_rate',
-            'num_sequences_with_issues',
-        ]:
-            if key == 'num_non_triplet_sequences':
-                value = len(summary['non_triplet_ids'])
-            elif key == 'num_duplicate_ids':
-                value = len(summary['duplicate_ids'])
-            elif key == 'num_gap_only_sequences':
-                value = len(summary['gap_only_ids'])
-            elif key == 'num_internal_stop_sequences':
-                value = len(summary['internal_stop_ids'])
-            else:
-                value = summary[key]
-            f.write(f'{key}\t{value}\n')
-        f.write('\n')
-        f.write('section\tids\n')
-        f.write(f"non_triplet_ids\t{','.join(summary['non_triplet_ids'])}\n")
-        f.write(f"duplicate_ids\t{','.join(summary['duplicate_ids'])}\n")
-        f.write(f"gap_only_ids\t{','.join(summary['gap_only_ids'])}\n")
-        f.write(f"internal_stop_ids\t{','.join(summary['internal_stop_ids'])}\n")
-        f.write(f"sequence_ids_with_issues\t{','.join(summary['sequence_ids_with_issues'])}\n")
+    count_values = {
+        'num_non_triplet_sequences': len(summary['non_triplet_ids']),
+        'num_duplicate_ids': len(summary['duplicate_ids']),
+        'num_gap_only_sequences': len(summary['gap_only_ids']),
+        'num_internal_stop_sequences': len(summary['internal_stop_ids']),
+    }
+    rows = []
+    for key in [
+        'num_sequences', 'aligned', 'num_non_triplet_sequences',
+        'num_duplicate_ids', 'num_gap_only_sequences',
+        'num_internal_stop_sequences', 'ambiguous_codons', 'evaluable_codons',
+        'ambiguous_codon_rate', 'num_sequences_with_issues',
+    ]:
+        rows.append({
+            'section': 'summary',
+            'metric': key,
+            'value': json_cell(count_values.get(key, summary.get(key, ''))),
+        })
+    for key in [
+        'non_triplet_ids', 'duplicate_ids', 'gap_only_ids',
+        'internal_stop_ids', 'sequence_ids_with_issues',
+    ]:
+        rows.append({
+            'section': 'id_set',
+            'metric': key,
+            'ids': json_cell(summary[key]),
+        })
+    write_sectioned_tsv(
+        path=report_path,
+        fieldnames=['section', 'metric', 'value', 'ids'],
+        rows=rows,
+    )
 
 
 def print_validate_summary(summary):
@@ -264,7 +265,7 @@ def print_validate_summary(summary):
 
 def validate_main(args):
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
-    stop_if_not_dna(records=records, label='--seqfile')
+    stop_if_not_dna(records=records, label='--seq_file')
     stop_if_invalid_codontable(args.codontable)
     summary = summarize_records(
         records=records,

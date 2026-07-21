@@ -3,14 +3,10 @@ Tests for cdskit mask command.
 """
 
 import pytest
-from pathlib import Path
 
 import Bio.SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
-
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from cdskit.mask import (
     mask_main,
@@ -238,7 +234,7 @@ class TestMaskMain:
 
         with pytest.raises(Exception) as exc_info:
             mask_main(args)
-        assert "Invalid --codontable" in str(exc_info.value)
+        assert "Invalid --codon_table" in str(exc_info.value)
 
     def test_mask_consecutive_stop_codons(self, temp_dir, mock_args):
         """Test masking consecutive stop codons."""

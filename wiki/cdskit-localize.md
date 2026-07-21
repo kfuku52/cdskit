@@ -30,17 +30,17 @@ stop codons.
 
 ```
 cdskit localize \
-  --seqfile cds.fasta \
+  --seq_file cds.fasta \
   --model localize_model.json \
   --report localize.tsv
 ```
 
-Protein input can be used with `--seqtype protein`.
+Protein input can be used with `--seq_type protein`.
 
 ```
 cdskit localize \
-  --seqfile proteins.faa \
-  --seqtype protein \
+  --seq_file proteins.faa \
+  --seq_type protein \
   --model localize_model.json \
   --report localize.tsv
 ```
@@ -49,7 +49,7 @@ cdskit localize \
 
 The helper module can download and prepare the public DeepLoc 2.1 datasets, run
 cross-validation, write comparison reports, and export models that are directly
-usable by `cdskit localize --seqtype protein`.
+usable by `cdskit localize --seq_type protein`.
 
 ```
 python -m cdskit.deeploc_benchmark \
@@ -182,8 +182,8 @@ The typical user-facing command is:
 
 ```
 cdskit localize \
-  --seqfile proteins.faa \
-  --seqtype protein \
+  --seq_file proteins.faa \
+  --seq_type protein \
   --model targeting5 \
   --report localize.tsv
 ```
@@ -258,8 +258,8 @@ Example:
 
 ```
 cdskit localize \
-  --seqfile proteins.fasta \
-  --seqtype protein \
+  --seq_file proteins.fasta \
+  --seq_type protein \
   --model targeting5-perox-deeploc21-et-v1 \
   --organism_group non_plant \
   --report localize.tsv
@@ -307,15 +307,15 @@ benchmark:
 
 ```
 python -m cdskit.perox_benchmark \
-  --train_tsv data/localize_bench/deeploc21/deeploc21_localization_train_validation.tsv \
+  --training_tsv data/localize_bench/deeploc21/deeploc21_localization_train_validation.tsv \
   --external_test_tsv data/localize_bench/eukaryota_full_with_lineage.tsv \
   --external_format uniprot_exp_cc \
   --feature_profile perox_sequence_v1 \
   --model_kind extra_trees \
   --base_model targeting5 \
   --model_out data/localize_bench/perox_deeploc21_et_v1/cdskit-localize-targeting5-perox-deeploc21-et-v1.pt \
-  --report_json data/localize_bench/perox_deeploc21_et_v1/perox_benchmark_uniprot_exp_external.json \
-  --report_md data/localize_bench/perox_deeploc21_et_v1/perox_benchmark_uniprot_exp_external.md \
+  --out_json data/localize_bench/perox_deeploc21_et_v1/perox_benchmark_uniprot_exp_external.json \
+  --out_md data/localize_bench/perox_deeploc21_et_v1/perox_benchmark_uniprot_exp_external.md \
   --predictions_prefix data/localize_bench/perox_deeploc21_et_v1/perox_predictions_uniprot_exp \
   --homology_check yes \
   --homology_threads 4 \
@@ -329,15 +329,15 @@ Reproduce the HPA stress test for the same DeepLoc21-trained candidate:
 
 ```
 python -m cdskit.perox_benchmark \
-  --train_tsv data/localize_bench/deeploc21/deeploc21_localization_train_validation.tsv \
+  --training_tsv data/localize_bench/deeploc21/deeploc21_localization_train_validation.tsv \
   --external_test_tsv data/localize_bench/deeploc21/deeploc21_hpa_test.tsv \
   --external_format prepared \
   --feature_profile perox_sequence_v1 \
   --model_kind extra_trees \
   --homology_check yes \
   --homology_threads 4 \
-  --report_json data/localize_bench/perox_deeploc21_et_v1/perox_benchmark_hpa_external.json \
-  --report_md data/localize_bench/perox_deeploc21_et_v1/perox_benchmark_hpa_external.md \
+  --out_json data/localize_bench/perox_deeploc21_et_v1/perox_benchmark_hpa_external.json \
+  --out_md data/localize_bench/perox_deeploc21_et_v1/perox_benchmark_hpa_external.md \
   --predictions_prefix data/localize_bench/perox_deeploc21_et_v1/perox_predictions_hpa
 ```
 
@@ -848,7 +848,7 @@ dropping the hidden state/output. Older short-lived `targetp_tf_cell`
 checkpoints written with PyTorch's `nn.LSTMCell` are converted on load. TargetP
 torch training now
 writes resumable per-model checkpoints to `--model_dir`; rerunning the same
-command with a larger `--epochs` and `--reuse_cache yes` continues an incomplete
+command with a larger `--epochs` and `--reuse_oof_cache yes` continues an incomplete
 or shorter completed checkpoint instead of starting from scratch. New
 checkpoints include a `latest_epoch` marker so resume only restores optimizer
 state when it matches the latest weights; legacy completed checkpoints without
@@ -926,7 +926,7 @@ PYTHONPATH=. python -u scripts/targetp_torch_eval.py \
   --out_npz data/localize_bench/targetp2_oof_targetp_torch_torchlstm_h128_e12_balbatch_typeonly_pair_valthr.npz \
   --out_json data/localize_bench/targetp2_torch_torchlstm_h128_e12_balbatch_typeonly_pair_valthr_eval.json \
   --fold_pairs 0:1,1:2,2:3,3:4,4:0 \
-  --reuse_cache yes \
+  --reuse_oof_cache yes \
   --device mps \
   --epochs 12 \
   --batch_size 128 \
@@ -1003,7 +1003,7 @@ External evaluation datasets:
 ```
 python -m cdskit.targetp_external_eval \
   --model data/localize_bench/targetp2_blend_runtime_specialist_cached_e15.pt \
-  --targetp_tsv data/localize_bench/targetp2_benchmark.tsv \
+  --targetp_reference_tsv data/localize_bench/targetp2_benchmark.tsv \
   --deeploc_dir data/localize_bench/deeploc21 \
   --uniprot_tsv data/localize_bench/eukaryota_full_with_lineage.tsv \
   --out_dir data/localize_bench/targetp_external_eval_cached_e15 \

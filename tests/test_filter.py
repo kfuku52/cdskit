@@ -3,17 +3,14 @@ Tests for cdskit filter command.
 """
 
 import json
-from pathlib import Path
 
 import Bio.SeqIO
 import pytest
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
 from cdskit.filter import filter_main
+from cdskit.tsvio import read_tsv
 
 
 class TestFilterMain:
@@ -165,15 +162,25 @@ class TestFilterMain:
 
         filter_main(args)
 
-        report = report_path.read_text()
-        assert "drop_reason\tcount" in report
-        assert "clean_codon_fraction\t1" in report
-        assert (
-            "input_order\tid\tkept\tdrop_reasons\tlength_nt\ttail_nt\t"
-            "non_triplet\tinternal_stop\ttotal_codons"
-        ) in report
-        assert "1\tkeep\tTrue\t\t9\t0\tFalse\tFalse\t3\t3\t0\t0\t0\t0\t1" in report
-        assert "2\tgappy\tFalse\tclean_codon_fraction\t9\t0\tFalse\tFalse\t3\t2\t1\t1\t0\t0\t0.666667" in report
+        rows, fieldnames = read_tsv(str(report_path), return_fieldnames=True)
+        assert fieldnames[:2] == ['schema_version', 'section']
+        assert {row['schema_version'] for row in rows} == {'2'}
+        reason = next(
+            row for row in rows
+            if row['section'] == 'drop_reason'
+            and row['drop_reason'] == 'clean_codon_fraction'
+        )
+        assert reason['drop_reason'] == 'clean_codon_fraction'
+        assert reason['count'] == '1'
+        sequence_rows = {
+            row['id']: row for row in rows if row['section'] == 'sequence'
+        }
+        assert sequence_rows['keep']['kept'] == 'yes'
+        assert sequence_rows['gappy']['kept'] == 'no'
+        assert json.loads(sequence_rows['gappy']['drop_reasons']) == [
+            'clean_codon_fraction'
+        ]
+        assert sequence_rows['gappy']['clean_codon_fraction'] == '0.666667'
 
     def test_filter_rejects_invalid_clean_codon_fraction(self, temp_dir, mock_args):
         input_path = temp_dir / "input.fasta"

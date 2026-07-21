@@ -3,14 +3,10 @@ Tests for cdskit pad command.
 """
 
 import pytest
-from pathlib import Path
 
 import Bio.SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
-
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from cdskit.pad import count_internal_stop_codons, get_stop_codons, pad_main, padseqs
 
@@ -112,7 +108,7 @@ class TestPadMain:
 
         with pytest.raises(Exception) as exc_info:
             pad_main(args)
-        assert "Invalid --codontable" in str(exc_info.value)
+        assert "Invalid --codon_table" in str(exc_info.value)
 
     def test_pad_01_data(self, data_dir, temp_dir, mock_args):
         """Test pad command with pad_01 test data."""

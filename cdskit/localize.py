@@ -57,7 +57,7 @@ def _record_to_aa_sequence(record, codontable, seqtype):
             codontable=codontable,
             seq_id=record.id,
         )
-    raise ValueError('--seqtype should be dna or protein.')
+    raise ValueError('--seq_type should be dna or protein.')
 
 
 def _predict_single_record(record, codontable, seqtype, model, include_features, organism_group=''):
@@ -350,17 +350,21 @@ def localize_main(args):
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
     seqtype = str(getattr(args, 'seqtype', 'dna') or 'dna').strip().lower()
     if seqtype == 'protein':
-        stop_if_not_protein(records=records, label='--seqfile')
+        stop_if_not_protein(records=records, label='--seq_file')
     elif seqtype == 'dna':
-        stop_if_not_dna(records=records, label='--seqfile')
+        stop_if_not_dna(records=records, label='--seq_file')
         stop_if_not_multiple_of_three(records=records)
-        stop_if_invalid_codontable(codontable=args.codontable, label='--codontable')
+        stop_if_invalid_codontable(codontable=args.codontable, label='--codon_table')
     else:
-        raise ValueError('--seqtype should be dna or protein.')
+        raise ValueError('--seq_type should be dna or protein.')
 
+    if hasattr(args, 'model_download'):
+        allow_model_download = _is_true_arg(args.model_download)
+    else:
+        allow_model_download = not _is_true_arg(getattr(args, 'no_model_download', False))
     model_path = resolve_localize_model_path(
         model=args.model,
-        allow_download=not _is_true_arg(getattr(args, 'no_model_download', False)),
+        allow_download=allow_model_download,
     )
     model = load_localize_model(path=model_path)
     if str(model.get('model_type', '')) not in MULTILABEL_MODEL_TYPES:
@@ -392,7 +396,7 @@ def localize_main(args):
     report_path = args.report
     if report_path == '':
         report_path = '-'
-    if report_path.endswith('.json'):
+    if report_path.lower().endswith('.json'):
         write_rows_json(rows=rows, output_path=report_path)
     else:
         write_rows_tsv(

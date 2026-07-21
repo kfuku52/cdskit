@@ -1,4 +1,3 @@
-import argparse
 import csv
 import json
 import os
@@ -11,6 +10,8 @@ from cdskit.localize_learn import (
     evaluate_cross_validation,
     write_rows_tsv,
 )
+from cdskit.tsvio import read_tsv
+from cdskit.cliutil import CdskitArgumentParser, parse_bool
 
 TARGETP_LABEL_TO_LOCALIZATION = {
     'Other': 'noTP',
@@ -302,9 +303,10 @@ def run_cdskit_cv_on_targetp(
             'esm_pooling': 'cls',
             'esm_max_len': 200,
         }
-    rows = list()
-    with open(training_tsv, 'r', encoding='utf-8', newline='') as inp:
-        rows = list(csv.DictReader(inp, delimiter='\t'))
+    required_columns = ['sequence', 'localization', 'peroxisome', 'fold_id']
+    if bool(use_organism_group):
+        required_columns.append('organism_group')
+    rows = read_tsv(path=training_tsv, required_columns=required_columns)
     x, aa_sequences, class_labels, perox_labels, skipped, fold_ids = build_training_matrix(
         rows=rows,
         seq_col='sequence',
@@ -447,17 +449,20 @@ def render_markdown_table(comparison):
 
 
 def build_parser():
-    parser = argparse.ArgumentParser(
+    parser = CdskitArgumentParser(
         description='Prepare TargetP-2.0 benchmark TSV and run fair fold-fixed cdskit comparison.',
     )
     parser.add_argument('--targetp_fasta', default='data/targetp_raw/targetp.fasta', type=str)
     parser.add_argument('--targetp_tab', default='data/targetp_raw/swissprot_annotated_proteins.tab', type=str)
     parser.add_argument('--targetp_npz', default='data/targetp_raw/targetp_data.npz', type=str)
-    parser.add_argument('--download', default='no', choices=['yes', 'no'], type=str)
-    parser.add_argument('--prepared_tsv', default='data/localize_bench/targetp2_benchmark.tsv', type=str)
+    parser.add_argument('--download', default=False, type=parse_bool)
+    parser.add_argument(
+        '--out_tsv', dest='prepared_tsv',
+        default='data/localize_bench/targetp2_benchmark.tsv', type=str,
+    )
     parser.add_argument('--prepare_report_json', default='data/localize_bench/targetp2_prepare_report.json', type=str)
-    parser.add_argument('--run_cdskit_cv', default='yes', choices=['yes', 'no'], type=str)
-    parser.add_argument('--organism_gate', default='no', choices=['yes', 'no'], type=str)
+    parser.add_argument('--run_cdskit_cv', default=True, type=parse_bool)
+    parser.add_argument('--organism_gate', default=False, type=parse_bool)
     parser.add_argument('--comparison_json', default='data/localize_bench/targetp2_cdskit_comparison.json', type=str)
     parser.add_argument('--comparison_md', default='data/localize_bench/targetp2_cdskit_comparison.md', type=str)
     parser.add_argument('--model_arch', default='bilstm_attention', choices=['nearest_centroid', 'bilstm_attention', 'esm_head'], type=str)
@@ -471,12 +476,12 @@ def build_parser():
     parser.add_argument('--dl_batch_size', default=128, type=int)
     parser.add_argument('--dl_lr', default=1.0e-3, type=float)
     parser.add_argument('--dl_weight_decay', default=1.0e-4, type=float)
-    parser.add_argument('--dl_class_weight', default='yes', choices=['yes', 'no'], type=str)
+    parser.add_argument('--dl_class_weight', default=True, type=parse_bool)
     parser.add_argument('--dl_loss', default='ce', choices=['ce', 'focal'], type=str)
-    parser.add_argument('--dl_balanced_batch', default='no', choices=['yes', 'no'], type=str)
+    parser.add_argument('--dl_balanced_batch', default=False, type=parse_bool)
     parser.add_argument('--dl_aux_tp_weight', default=0.0, type=float)
     parser.add_argument('--dl_aux_ctp_ltp_weight', default=0.0, type=float)
-    parser.add_argument('--dl_feature_fusion', default='yes', choices=['yes', 'no'], type=str)
+    parser.add_argument('--dl_feature_fusion', default=True, type=parse_bool)
     parser.add_argument('--dl_distill_weight', default=0.0, type=float)
     parser.add_argument('--dl_distill_temperature', default=1.0, type=float)
     parser.add_argument('--distill_oof_npz', default='', type=str)
@@ -487,6 +492,7 @@ def build_parser():
     parser.add_argument('--esm_pooling', default='cls', choices=['cls', 'mean'], type=str)
     parser.add_argument('--esm_max_len', default=200, type=int)
     parser.add_argument('--cv_seed', default=1, type=int)
+    parser.add_deprecated_alias('--prepared_tsv', '--out_tsv')
     return parser
 
 
@@ -513,9 +519,9 @@ def _download_if_requested(args):
             out.write(body)
 
 
-def main():
+def main(argv=None):
     parser = build_parser()
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     _download_if_requested(args=args)
 
     prep_report = prepare_targetp_benchmark_tsv(

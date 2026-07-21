@@ -98,7 +98,7 @@ def translate_payloads_process_parallel(payloads, codontable, to_stop, threads):
 
 def translate_main(args):
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
-    stop_if_not_dna(records=records, label='--seqfile')
+    stop_if_not_dna(records=records, label='--seq_file')
     stop_if_invalid_codontable(args.codontable)
     if len(records) == 0:
         write_seqs(records=records, outfile=args.outfile, outseqformat=args.outseqformat)

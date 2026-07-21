@@ -3,15 +3,11 @@ Tests for cdskit gapjust command.
 """
 
 import pytest
-from pathlib import Path
 import numpy as np
 
 import Bio.SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
-
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from cdskit.gapjust import (
     gapjust_main,

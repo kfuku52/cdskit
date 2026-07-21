@@ -30,7 +30,7 @@ def test_fit_external_augmented_torch_runtime_model_uses_external_calibration(mo
     monkeypatch.setattr(
         external_torch,
         'read_tsv',
-        lambda path: list(target_rows),
+        lambda path, **kwargs: list(target_rows),
     )
     monkeypatch.setattr(
         external_torch,
@@ -98,7 +98,7 @@ def test_fit_external_augmented_torch_runtime_model_can_reuse_external_tsv(monke
     ]
     calls = {'builder': 0}
 
-    def fake_read_tsv(path):
+    def fake_read_tsv(path, **kwargs):
         if path == 'precomputed.tsv':
             return list(external_rows)
         return list(target_rows)
@@ -156,7 +156,7 @@ def test_fit_external_augmented_torch_runtime_model_requires_all_calibration_cla
     monkeypatch.setattr(
         external_torch,
         'read_tsv',
-        lambda path: list(target_rows),
+        lambda path, **kwargs: list(target_rows),
     )
     monkeypatch.setattr(
         external_torch,

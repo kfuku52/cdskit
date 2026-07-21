@@ -64,7 +64,7 @@ def stop_if_sequence_ids_do_not_match(cdn_records, pep_records):
         return
     missing_in_cds = sorted(list(pep_ids - cdn_ids))
     missing_in_aa = sorted(list(cdn_ids - pep_ids))
-    txt = 'Sequence IDs did not match between CDS (--seqfile) and amino acid alignment (--aa_aln).'
+    txt = 'Sequence IDs did not match between CDS (--seq_file) and amino acid alignment (--aa_aln).'
     if len(missing_in_cds) > 0:
         txt += ' Missing in CDS: {}.'.format(','.join(missing_in_cds))
     if len(missing_in_aa) > 0:
@@ -257,7 +257,7 @@ def backalign_payloads_process_parallel(payloads, codontable, threads):
 
 def backalign_main(args):
     cdn_records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
-    stop_if_not_dna(records=cdn_records, label='--seqfile')
+    stop_if_not_dna(records=cdn_records, label='--seq_file')
     stop_if_invalid_codontable(args.codontable)
     pep_records = read_seqs(seqfile=args.aa_aln, seqformat=args.inseqformat)
     if len(cdn_records) == 0:
@@ -270,7 +270,7 @@ def backalign_main(args):
     stop_if_not_aligned(records=pep_records)
     stop_if_sequence_ids_do_not_match(cdn_records=cdn_records, pep_records=pep_records)
 
-    _ = get_record_map(cdn_records, '--seqfile')
+    _ = get_record_map(cdn_records, '--seq_file')
     pep_record_map = get_record_map(pep_records, '--aa_aln')
 
     threads = resolve_threads(getattr(args, 'threads', 1))

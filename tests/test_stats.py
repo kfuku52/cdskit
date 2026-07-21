@@ -3,15 +3,10 @@ Tests for cdskit stats command.
 """
 
 import pytest
-from pathlib import Path
-from io import StringIO
-import sys
 
 import Bio.SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
-
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from cdskit.stats import stats_main, num_masked_bp
 

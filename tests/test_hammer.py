@@ -3,14 +3,10 @@ Tests for cdskit hammer command.
 """
 
 import pytest
-from pathlib import Path
 
 import Bio.SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
-
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from cdskit.hammer import hammer_main
 
@@ -278,7 +274,7 @@ class TestHammerMain:
 
         with pytest.raises(Exception) as exc_info:
             hammer_main(args)
-        assert "Invalid --codontable" in str(exc_info.value)
+        assert "Invalid --codon_table" in str(exc_info.value)
 
     def test_hammer_wiki_example_nail_4(self, temp_dir, mock_args):
         """Test hammer with wiki example: --nail 4 on 6 sequences.

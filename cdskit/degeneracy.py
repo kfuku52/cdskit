@@ -15,6 +15,7 @@ from cdskit.util import (
     stop_if_not_multiple_of_three,
     write_seqs,
 )
+from cdskit.tsvio import write_tsv
 
 
 def build_degeneracy_output_path(prefix, fold, outseqformat):
@@ -72,24 +73,27 @@ def write_degeneracy_report(report_path, summary):
         with open(report_path, 'w', encoding='utf-8') as f:
             json.dump(summary, f, indent=2, ensure_ascii=False)
         return
-    with open(report_path, 'w', encoding='utf-8') as f:
-        f.write('metric\tvalue\n')
+    rows = [
+        {'metric': key, 'value': summary[key]}
         for key in [
-            'num_sequences',
-            'num_input_nt_sites',
-            'num_input_codon_sites',
-            'num_conflict_sites',
-            'num_unassigned_sites',
-        ]:
-            f.write(f'{key}\t{summary[key]}\n')
-        for fold in [0, 2, 3, 4]:
-            f.write(f'num_{fold}fold_sites\t{summary["counts_by_fold"][str(fold)]}\n')
+            'num_sequences', 'num_input_nt_sites', 'num_input_codon_sites',
+            'num_conflict_sites', 'num_unassigned_sites',
+        ]
+    ]
+    rows.extend([
+        {
+            'metric': 'num_{}fold_sites'.format(fold),
+            'value': summary['counts_by_fold'][str(fold)],
+        }
+        for fold in [0, 2, 3, 4]
+    ])
+    write_tsv(path=report_path, rows=rows, fieldnames=['metric', 'value'])
 
 
 def degeneracy_main(args):
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
     _ = resolve_threads(getattr(args, 'threads', 1))
-    stop_if_not_dna(records=records, label='--seqfile')
+    stop_if_not_dna(records=records, label='--seq_file')
     stop_if_not_aligned(records=records)
     stop_if_not_multiple_of_three(records=records)
     stop_if_invalid_codontable(args.codontable)

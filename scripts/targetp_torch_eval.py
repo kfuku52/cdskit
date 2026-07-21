@@ -1,6 +1,9 @@
 #!/usr/bin/env python
-import argparse
+import sys
+from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from cdskit.cliutil import CdskitArgumentParser, parse_bool
 from cdskit.targetp_torch import (
     TARGETP_CLASS_THRESHOLD_GRID,
     TARGETP_TORCH_DEFAULTS,
@@ -22,7 +25,7 @@ def _parse_threshold_grid(text):
 
 
 def build_parser():
-    parser = argparse.ArgumentParser(
+    parser = CdskitArgumentParser(
         description='Train/evaluate a PyTorch TargetP2-style model with fold-fixed nested OOF.',
     )
     parser.add_argument('--targetp_npz', default='data/targetp_raw/targetp_data.npz', type=str)
@@ -38,14 +41,14 @@ def build_parser():
         help='Optional comma-separated outer:val pairs, for example 0:1,1:2,2:3.',
     )
     parser.add_argument('--max_models', default=0, type=int)
-    parser.add_argument('--reuse_cache', default='yes', choices=['yes', 'no'], type=str)
+    parser.add_argument('--reuse_oof_cache', dest='reuse_cache', default=True, type=parse_bool)
     parser.add_argument('--device', default='auto', type=str)
     parser.add_argument('--seed_offset', default=0, type=int)
     parser.add_argument('--resume_state', default='latest', choices=['latest', 'best'], type=str)
     parser.add_argument('--resume_learning_rate', default=None, type=float)
-    parser.add_argument('--resume_reset_optimizer', default='no', choices=['yes', 'no'], type=str)
-    parser.add_argument('--resume_reset_scheduler', default='no', choices=['yes', 'no'], type=str)
-    parser.add_argument('--resume_reset_best_metrics', default='no', choices=['yes', 'no'], type=str)
+    parser.add_argument('--resume_reset_optimizer', default=False, type=parse_bool)
+    parser.add_argument('--resume_reset_scheduler', default=False, type=parse_bool)
+    parser.add_argument('--resume_reset_best_metrics', default=False, type=parse_bool)
     parser.add_argument('--epochs', default=TARGETP_TORCH_DEFAULTS['epochs'], type=int)
     parser.add_argument('--batch_size', default=TARGETP_TORCH_DEFAULTS['batch_size'], type=int)
     parser.add_argument('--learning_rate', default=TARGETP_TORCH_DEFAULTS['learning_rate'], type=float)
@@ -72,22 +75,27 @@ def build_parser():
         choices=['val_loss', 'val_macro_f1', 'val_threshold_macro_f1'],
         type=str,
     )
-    parser.add_argument('--balanced_batch', default=TARGETP_TORCH_DEFAULTS['balanced_batch'], choices=['yes', 'no'], type=str)
+    parser.add_argument(
+        '--balanced_batch',
+        default=parse_bool(TARGETP_TORCH_DEFAULTS['balanced_batch']),
+        type=parse_bool,
+    )
     parser.add_argument('--initializer', default=TARGETP_TORCH_DEFAULTS['initializer'], choices=['targetp_tf', 'pytorch'], type=str)
     parser.add_argument('--grad_clip_norm', default=TARGETP_TORCH_DEFAULTS['grad_clip_norm'], type=float)
     parser.add_argument('--rnn_impl', default=TARGETP_TORCH_DEFAULTS['rnn_impl'], choices=['torch_lstm', 'targetp_tf_cell'], type=str)
-    parser.add_argument('--val_threshold_eval', default='no', choices=['yes', 'no'], type=str)
+    parser.add_argument('--val_threshold_eval', default=False, type=parse_bool)
     parser.add_argument(
         '--threshold_grid',
         default=','.join(str(value) for value in TARGETP_CLASS_THRESHOLD_GRID),
         type=str,
     )
-    parser.add_argument('--verbose', default='no', choices=['yes', 'no'], type=str)
+    parser.add_argument('--verbose', default=False, type=parse_bool)
+    parser.add_deprecated_alias('--reuse_cache', '--reuse_oof_cache')
     return parser
 
 
-def main():
-    args = build_parser().parse_args()
+def main(argv=None):
+    args = build_parser().parse_args(argv)
     threshold_grid = _parse_threshold_grid(args.threshold_grid)
     train_kwargs = {
         'epochs': int(args.epochs),
@@ -116,17 +124,17 @@ def main():
         'resume_reset_optimizer': args.resume_reset_optimizer,
         'resume_reset_scheduler': args.resume_reset_scheduler,
         'resume_reset_best_metrics': args.resume_reset_best_metrics,
-        'verbose': str(args.verbose).strip().lower() == 'yes',
+        'verbose': bool(args.verbose),
     }
     if str(args.fold_pairs).strip() != '':
         result = run_targetp2_torch_paired_oof(
             targetp_npz=args.targetp_npz,
             model_dir=args.model_dir,
             fold_pairs=args.fold_pairs,
-            reuse_cache=str(args.reuse_cache).strip().lower() == 'yes',
+            reuse_cache=bool(args.reuse_cache),
             seed_offset=int(args.seed_offset),
             device=args.device,
-            val_threshold_eval=str(args.val_threshold_eval).strip().lower() == 'yes',
+            val_threshold_eval=bool(args.val_threshold_eval),
             threshold_grid=threshold_grid,
             **train_kwargs
         )
@@ -136,11 +144,11 @@ def main():
             model_dir=args.model_dir,
             outer_folds=args.outer_folds,
             val_folds=args.val_folds,
-            reuse_cache=str(args.reuse_cache).strip().lower() == 'yes',
+            reuse_cache=bool(args.reuse_cache),
             max_models=int(args.max_models),
             seed_offset=int(args.seed_offset),
             device=args.device,
-            val_threshold_eval=str(args.val_threshold_eval).strip().lower() == 'yes',
+            val_threshold_eval=bool(args.val_threshold_eval),
             threshold_grid=threshold_grid,
             **train_kwargs
         )

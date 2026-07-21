@@ -3,15 +3,13 @@ Tests for cdskit validate command.
 """
 
 import json
-from pathlib import Path
 
 import Bio.SeqIO
 import pytest
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
+from cdskit.tsvio import read_tsv
 
 from cdskit.validate import summarize_records, validate_main
 
@@ -118,9 +116,17 @@ class TestValidateMain:
         )
         validate_main(args)
 
-        txt = report_path.read_text()
-        assert txt.startswith("metric\tvalue")
-        assert "num_sequences\t2" in txt
+        rows, fieldnames = read_tsv(str(report_path), return_fieldnames=True)
+        assert fieldnames == [
+            'schema_version', 'section', 'metric', 'value', 'ids',
+        ]
+        assert {row['schema_version'] for row in rows} == {'2'}
+        assert any(
+            row['section'] == 'summary'
+            and row['metric'] == 'num_sequences'
+            and row['value'] == '2'
+            for row in rows
+        )
 
     def test_validate_empty_input(self, temp_dir, mock_args, capsys):
         input_path = temp_dir / "empty.fasta"
@@ -179,4 +185,4 @@ class TestValidateMain:
 
         with pytest.raises(Exception) as exc_info:
             validate_main(args)
-        assert "Invalid --codontable" in str(exc_info.value)
+        assert "Invalid --codon_table" in str(exc_info.value)

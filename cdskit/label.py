@@ -86,7 +86,7 @@ def label_main(args):
     stop_if_not_seqtype(
         records=records,
         seqtype=getattr(args, 'seqtype', 'auto'),
-        label='--seqfile',
+        label='--seq_file',
     )
     validate_clip_len(args.clip_len)
     _ = resolve_threads(getattr(args, 'threads', 1))

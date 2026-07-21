@@ -1,15 +1,19 @@
-import argparse
 import csv
 import json
 import os
+import warnings
 from urllib import request as urllib_request
 
 import numpy as np
+
+from cdskit.cliutil import CdskitArgumentParser, parse_bool
+from cdskit.tsvio import read_tsv, write_tsv
 
 from cdskit.localize_model import (
     BROAD_FEATURE_NAMES,
     extract_broad_localize_features,
     fit_multilabel_centroid_classifier,
+    normalize_organism_group,
     predict_multilabel_centroid_matrix,
     save_localize_model,
 )
@@ -155,25 +159,18 @@ def _to_bool01(value):
     return 0
 
 
+def _canonical_organism_group(value):
+    normalized = normalize_organism_group(value)
+    return normalized if normalized != '' else 'unknown'
+
+
 def _read_csv_rows(path):
     with open(path, 'r', encoding='utf-8', newline='') as inp:
         return list(csv.DictReader(inp))
 
 
 def _write_tsv_rows(path, rows, fieldnames):
-    out_dir = os.path.dirname(path)
-    if out_dir != '':
-        os.makedirs(out_dir, exist_ok=True)
-    with open(path, 'w', encoding='utf-8', newline='') as out:
-        writer = csv.DictWriter(
-            out,
-            fieldnames=fieldnames,
-            delimiter='\t',
-            lineterminator='\n',
-        )
-        writer.writeheader()
-        for row in rows:
-            writer.writerow(row)
+    write_tsv(path=path, rows=rows, fieldnames=fieldnames)
 
 
 def _collect_labels(row, labels, input_columns):
@@ -191,7 +188,7 @@ def _collect_labels(row, labels, input_columns):
 
 def _label_columns_to_row(label_values, labels):
     values = set(label_values)
-    return {label: int(label in values) for label in labels}
+    return {label: ('yes' if label in values else 'no') for label in labels}
 
 
 def _summarize_label_rows(rows, labels, label_list_col):
@@ -246,8 +243,8 @@ def prepare_deeploc21_localization_tsv(csv_path, out_tsv_path, source_name='swis
         out_row = {
             'source': source_name,
             'accession': str(row.get('ACC', row.get('sid', ''))).strip(),
-            'kingdom': str(row.get('Kingdom', '')).strip(),
-            'partition': str(row.get('Partition', '')).strip(),
+            'organism_group': _canonical_organism_group(row.get('Kingdom', '')),
+            'fold_id': str(row.get('Partition', '')).strip(),
             'sequence': str(row.get('Sequence', row.get('fasta', ''))).strip(),
             'localization_labels': ';'.join(labels),
         }
@@ -256,8 +253,8 @@ def prepare_deeploc21_localization_tsv(csv_path, out_tsv_path, source_name='swis
     fieldnames = [
         'source',
         'accession',
-        'kingdom',
-        'partition',
+        'organism_group',
+        'fold_id',
         'sequence',
         'localization_labels',
     ] + list(DEEPLOC_LOCALIZATION_LABELS)
@@ -281,8 +278,8 @@ def prepare_deeploc21_hpa_tsv(csv_path, out_tsv_path):
         out_row = {
             'source': 'hpa',
             'accession': str(row.get('sid', '')).strip(),
-            'kingdom': 'Metazoa',
-            'partition': 'test',
+            'organism_group': 'non_plant',
+            'fold_id': 'test',
             'sequence': str(row.get('fasta', row.get('Sequence', ''))).strip(),
             'localization_labels': ';'.join(labels),
         }
@@ -291,8 +288,8 @@ def prepare_deeploc21_hpa_tsv(csv_path, out_tsv_path):
     fieldnames = [
         'source',
         'accession',
-        'kingdom',
-        'partition',
+        'organism_group',
+        'fold_id',
         'sequence',
         'localization_labels',
     ] + list(DEEPLOC_LOCALIZATION_LABELS)
@@ -316,8 +313,8 @@ def prepare_deeploc21_membrane_tsv(csv_path, out_tsv_path):
         out_row = {
             'source': 'swissprot_membrane',
             'accession': str(row.get('ACC', '')).strip(),
-            'kingdom': str(row.get('Kingdom', '')).strip(),
-            'partition': str(row.get('Partition', '')).strip(),
+            'organism_group': _canonical_organism_group(row.get('Kingdom', '')),
+            'fold_id': str(row.get('Partition', '')).strip(),
             'sequence': str(row.get('Sequence', '')).strip(),
             'membrane_labels': ';'.join(labels),
         }
@@ -326,8 +323,8 @@ def prepare_deeploc21_membrane_tsv(csv_path, out_tsv_path):
     fieldnames = [
         'source',
         'accession',
-        'kingdom',
-        'partition',
+        'organism_group',
+        'fold_id',
         'sequence',
         'membrane_labels',
     ] + list(DEEPLOC_MEMBRANE_LABELS)
@@ -351,7 +348,7 @@ def prepare_deeploc21_sorting_signal_tsv(csv_path, out_tsv_path):
         out_row = {
             'source': 'swissprot_sorting_signals',
             'accession': str(row.get('ACC', '')).strip(),
-            'kingdom': str(row.get('Kingdom', '')).strip(),
+            'organism_group': _canonical_organism_group(row.get('Kingdom', '')),
             'sequence': str(row.get('Sequence', '')).strip(),
             'annotation_encoded': str(row.get('AnnotEncoded', '')).strip(),
             'sorting_signal_labels': ';'.join(labels),
@@ -362,7 +359,7 @@ def prepare_deeploc21_sorting_signal_tsv(csv_path, out_tsv_path):
     fieldnames = [
         'source',
         'accession',
-        'kingdom',
+        'organism_group',
         'sequence',
         'annotation_encoded',
         'sorting_signal_labels',
@@ -413,9 +410,22 @@ def prepare_all_deeploc21(data_dir, out_dir):
     return report
 
 
-def _read_prepared_tsv(path):
-    with open(path, 'r', encoding='utf-8', newline='') as inp:
-        return list(csv.DictReader(inp, delimiter='\t'))
+def _read_prepared_tsv(path, required_columns=None):
+    rows, fieldnames = read_tsv(
+        path=path,
+        required_columns=required_columns,
+        return_fieldnames=True,
+    )
+    for old_name, new_name in [('kingdom', 'organism_group'), ('partition', 'fold_id')]:
+        if new_name not in fieldnames and old_name in fieldnames:
+            warnings.warn(
+                'TSV column {} is deprecated; use {} instead.'.format(old_name, new_name),
+                FutureWarning,
+                stacklevel=2,
+            )
+            for row in rows:
+                row[new_name] = row.get(old_name, '')
+    return rows
 
 
 def _active_labels_from_row(row, labels, label_col):
@@ -451,7 +461,7 @@ def build_deeploc_feature_matrix(rows):
     for row in rows:
         feats, _ = extract_broad_localize_features(
             aa_seq=row.get('sequence', ''),
-            kingdom=row.get('kingdom', ''),
+            kingdom=row.get('organism_group', row.get('kingdom', '')),
         )
         features.append(feats)
     if len(features) == 0:
@@ -662,7 +672,7 @@ def compute_multilabel_metrics(y_true, y_pred, labels):
     }
 
 
-def _fold_ids_from_rows(rows, fold_col='partition', n_folds=5, seed=1):
+def _fold_ids_from_rows(rows, fold_col='fold_id', n_folds=5, seed=1):
     values = [str(row.get(fold_col, '')).strip() for row in rows]
     if all(value != '' for value in values):
         return np.asarray(values)
@@ -796,14 +806,17 @@ def evaluate_deeploc21_task_cv(
     labels,
     label_col,
     task_name='localization',
-    fold_col='partition',
+    fold_col='fold_id',
     n_folds=5,
     seed=1,
     model_arch='centroid',
     dl_params=None,
 ):
     rows = _filter_multilabel_rows(
-        rows=_read_prepared_tsv(path=tsv_path),
+        rows=_read_prepared_tsv(
+            path=tsv_path,
+            required_columns=['sequence', label_col],
+        ),
         labels=labels,
         label_col=label_col,
     )
@@ -880,12 +893,18 @@ def evaluate_deeploc21_train_test(
     dl_params=None,
 ):
     train_rows = _filter_multilabel_rows(
-        rows=_read_prepared_tsv(path=train_tsv_path),
+        rows=_read_prepared_tsv(
+            path=train_tsv_path,
+            required_columns=['sequence', label_col],
+        ),
         labels=labels,
         label_col=label_col,
     )
     test_rows = _filter_multilabel_rows(
-        rows=_read_prepared_tsv(path=test_tsv_path),
+        rows=_read_prepared_tsv(
+            path=test_tsv_path,
+            required_columns=['sequence', label_col],
+        ),
         labels=labels,
         label_col=label_col,
     )
@@ -1027,7 +1046,7 @@ def run_deeploc21_benchmark(
         labels=cfg['labels'],
         label_col=cfg['label_col'],
         task_name=cfg['task'],
-        fold_col='partition',
+        fold_col='fold_id',
         n_folds=n_folds,
         seed=seed,
         model_arch=model_arch,
@@ -1044,7 +1063,10 @@ def run_deeploc21_benchmark(
             dl_params=dl_params,
         )
     if str(model_out or '').strip() != '':
-        train_rows = _read_prepared_tsv(path=cfg['train_tsv'])
+        train_rows = _read_prepared_tsv(
+            path=cfg['train_tsv'],
+            required_columns=['sequence', cfg['label_col']],
+        )
         model = fit_deeploc_multilabel_model(
             rows=train_rows,
             labels=cfg['labels'],
@@ -1074,16 +1096,19 @@ def run_deeploc21_benchmark(
 
 
 def build_parser():
-    parser = argparse.ArgumentParser(
+    parser = CdskitArgumentParser(
         description='Prepare DeepLoc 2.1 public benchmark datasets for cdskit localization work.',
     )
-    parser.add_argument('--download', default='no', choices=['yes', 'no'], type=str)
-    parser.add_argument('--prepare', default='yes', choices=['yes', 'no'], type=str)
-    parser.add_argument('--benchmark', default='no', choices=['yes', 'no'], type=str)
+    parser.add_argument('--download', default=False, type=parse_bool)
+    parser.add_argument('--prepare', default=True, type=parse_bool)
+    parser.add_argument('--benchmark', default=False, type=parse_bool)
     parser.add_argument('--task', default='localization', choices=['localization', 'membrane', 'sorting_signals'], type=str)
     parser.add_argument('--data_dir', default='data/deeploc21_raw', type=str)
     parser.add_argument('--out_dir', default='data/localize_bench/deeploc21', type=str)
-    parser.add_argument('--report_json', default='data/localize_bench/deeploc21/prepare_report.json', type=str)
+    parser.add_argument(
+        '--prepare_report_json', dest='report_json',
+        default='data/localize_bench/deeploc21/prepare_report.json', type=str,
+    )
     parser.add_argument('--comparison_json', default='data/localize_bench/deeploc21/comparison.json', type=str)
     parser.add_argument('--comparison_md', default='data/localize_bench/deeploc21/comparison.md', type=str)
     parser.add_argument('--model_out', default='', type=str)
@@ -1097,8 +1122,8 @@ def build_parser():
     parser.add_argument('--dl_batch_size', default=256, type=int)
     parser.add_argument('--dl_lr', default=1.0e-3, type=float)
     parser.add_argument('--dl_weight_decay', default=1.0e-4, type=float)
-    parser.add_argument('--dl_class_weight', default='yes', choices=['yes', 'no'], type=str)
-    parser.add_argument('--dl_feature_fusion', default='no', choices=['yes', 'no'], type=str)
+    parser.add_argument('--dl_class_weight', default=True, type=parse_bool)
+    parser.add_argument('--dl_feature_fusion', default=False, type=parse_bool)
     parser.add_argument('--dl_sample_weight_power', default=0.0, type=float)
     parser.add_argument('--dl_threshold_objective', default='f1', choices=['f0.5', 'f1', 'f2', 'mcc'], type=str)
     parser.add_argument('--rare_label_threshold_objective', default='none', choices=['none', 'f0.5', 'f1', 'f2', 'mcc'], type=str)
@@ -1109,6 +1134,7 @@ def build_parser():
     parser.add_argument('--cv_folds', default=5, type=int)
     parser.add_argument('--cv_seed', default=1, type=int)
     parser.add_argument('--timeout_sec', default=120, type=int)
+    parser.add_deprecated_alias('--report_json', '--prepare_report_json')
     return parser
 
 
@@ -1116,8 +1142,8 @@ def _to_bool_yes_no(value):
     return str(value).strip().lower() in ['yes', 'y', 'true', '1']
 
 
-def main():
-    args = build_parser().parse_args()
+def main(argv=None):
+    args = build_parser().parse_args(argv)
     out = dict()
     if _to_bool_yes_no(args.download):
         out['download'] = download_deeploc21_data(

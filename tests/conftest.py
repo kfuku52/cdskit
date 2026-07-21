@@ -3,7 +3,6 @@ Pytest configuration and fixtures for CDSKIT tests.
 """
 
 import pytest
-import os
 import tempfile
 import shutil
 from pathlib import Path

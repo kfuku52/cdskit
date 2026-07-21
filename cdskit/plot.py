@@ -1010,7 +1010,7 @@ def plot_main(args):
     plotformat = _normalize_plotformat(getattr(args, 'plotformat', 'auto'), outfile=outfile)
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
     threads = resolve_threads(getattr(args, 'threads', 1))
-    stop_if_not_dna(records=records, label='--seqfile')
+    stop_if_not_dna(records=records, label='--seq_file')
     stop_if_not_aligned(records=records)
     stop_if_not_multiple_of_three(records=records)
     stop_if_invalid_codontable(args.codontable)

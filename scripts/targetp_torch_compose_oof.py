@@ -1,6 +1,9 @@
 #!/usr/bin/env python
-import argparse
+import sys
+from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from cdskit.cliutil import CdskitArgumentParser
 from cdskit.targetp_torch import (
     compose_targetp_torch_oof_replacements,
     write_targetp2_torch_compose_report,
@@ -19,7 +22,7 @@ def _parse_paths(text):
 
 
 def build_parser():
-    parser = argparse.ArgumentParser(
+    parser = CdskitArgumentParser(
         description='Compose a TargetP torch OOF cache by replacing full folds from partial OOF caches.',
     )
     parser.add_argument('--base_oof_npz', required=True, type=str)
@@ -36,8 +39,8 @@ def build_parser():
     return parser
 
 
-def main():
-    args = build_parser().parse_args()
+def main(argv=None):
+    args = build_parser().parse_args(argv)
     replacements = _parse_paths(args.replacement_oof_npzs)
     result = compose_targetp_torch_oof_replacements(
         base_oof_npz=args.base_oof_npz,

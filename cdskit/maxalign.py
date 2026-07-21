@@ -17,6 +17,7 @@ from cdskit.util import (
     stop_if_not_multiple_of_three,
     write_seqs,
 )
+from cdskit.tsvio import json_cell, write_sectioned_tsv
 
 
 DEFAULT_MISSING_CHARS = '-?.'
@@ -535,7 +536,13 @@ def parse_missing_chars(missing_char_arg):
 def parse_csv_patterns(pattern_text):
     if pattern_text is None:
         return list()
-    return [part.strip() for part in pattern_text.split(',') if part.strip() != '']
+    values = [pattern_text] if isinstance(pattern_text, str) else list(pattern_text)
+    return [
+        part.strip()
+        for value in values
+        for part in str(value).split(',')
+        if part.strip() != ''
+    ]
 
 
 def validate_patterns(patterns, option_name):
@@ -665,36 +672,33 @@ def write_report(report_path, report_data):
             json.dump(report_data, f, indent=2, ensure_ascii=False)
         return
 
-    with open(report_path, 'w', encoding='utf-8') as f:
-        f.write('metric\tvalue\n')
-        summary_keys = [
-            'mode',
-            'num_input_sequences',
-            'num_kept_sequences',
-            'num_removed_sequences',
-            'initial_complete_codon_sites',
-            'final_complete_codon_sites',
-            'initial_area',
-            'final_area',
-            'area_delta',
-            'forced_keep_ids',
-            'kept_ids',
-            'removed_ids',
-        ]
-        for key in summary_keys:
-            value = report_data.get(key, '')
-            if isinstance(value, list):
-                value = ','.join(value)
-            f.write(f'{key}\t{value}\n')
-        f.write('\n')
-        f.write('steps\n')
-        f.write('label\tnum_kept\tcomplete_codon_sites\tarea\tremoved_id\tremoved_ids\n')
-        for step in report_data['steps']:
-            removed_ids = ','.join(step['removed_ids'])
-            f.write(
-                f"{step['label']}\t{step['num_kept']}\t{step['complete_codon_sites']}\t"
-                f"{step['area']}\t{step['removed_id']}\t{removed_ids}\n"
-            )
+    summary_keys = [
+        'mode', 'num_input_sequences', 'num_kept_sequences',
+        'num_removed_sequences', 'initial_complete_codon_sites',
+        'final_complete_codon_sites', 'initial_area', 'final_area', 'area_delta',
+        'forced_keep_ids', 'kept_ids', 'removed_ids',
+    ]
+    rows = [
+        {
+            'section': 'summary',
+            'metric': key,
+            'value': json_cell(report_data.get(key, '')),
+        }
+        for key in summary_keys
+    ]
+    for source_row in report_data['steps']:
+        row = dict(source_row)
+        row['section'] = 'step'
+        row['removed_ids'] = json_cell(row['removed_ids'])
+        rows.append(row)
+    write_sectioned_tsv(
+        path=report_path,
+        fieldnames=[
+            'section', 'metric', 'value', 'label', 'num_kept',
+            'complete_codon_sites', 'area', 'removed_id', 'removed_ids',
+        ],
+        rows=rows,
+    )
 
 
 def maxalign_main(args):
@@ -708,7 +712,7 @@ def maxalign_main(args):
     threads = resolve_threads(getattr(args, 'threads', 1))
 
     original_records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
-    stop_if_not_dna(records=original_records, label='--seqfile')
+    stop_if_not_dna(records=original_records, label='--seq_file')
     if len(original_records) == 0:
         write_seqs(records=original_records, outfile=args.outfile, outseqformat=args.outseqformat)
         return
@@ -716,13 +720,13 @@ def maxalign_main(args):
     stop_if_not_multiple_of_three(records=original_records)
 
     keep_patterns = parse_csv_patterns(keep_arg)
-    validate_patterns(keep_patterns, '--keep')
+    validate_patterns(keep_patterns, '--keep_seq_name_regex')
 
     keep_indices = select_indices_by_patterns(records=original_records, patterns=keep_patterns)
     keep_set = set(keep_indices)
     candidate_indices = list(range(len(original_records)))
     if (len(keep_patterns) > 0) and (len(keep_set) == 0):
-        sys.stderr.write('No sequence names matched --keep patterns.\n')
+        sys.stderr.write('No sequence names matched --keep_seq_name_regex patterns.\n')
 
     max_removed = parse_max_removed(max_removed_arg, len(original_records))
 

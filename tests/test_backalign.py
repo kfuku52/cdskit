@@ -3,14 +3,10 @@ Tests for cdskit backalign command.
 """
 
 import pytest
-from pathlib import Path
 
 import Bio.SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
-
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from cdskit.backalign import amino_acid_matches
 from cdskit.backalign import backalign_main
@@ -312,7 +308,7 @@ class TestBackalignMain:
         )
         with pytest.raises(Exception) as exc_info:
             backalign_main(args)
-        assert "Invalid --codontable" in str(exc_info.value)
+        assert "Invalid --codon_table" in str(exc_info.value)
 
     def test_backalign_rejects_rna_cds_input(self, temp_dir, mock_args):
         cdn_path = temp_dir / "cds.fasta"

@@ -30,9 +30,45 @@ from cdskit.targetp_blend import (
 from cdskit.localize_model import FEATURE_NAMES, predict_localization_and_peroxisome
 from cdskit.targetp_pair_blend import (
     attach_targetp_mtp_notp_specialist,
+    _align_prediction_rows,
     _select_mtp_notp_threshold_from_scores,
     main as targetp_pair_blend_main,
 )
+
+
+def test_pair_prediction_rows_are_joined_by_accession_not_position():
+    rows = [{'accession': 'A'}, {'accession': 'B'}]
+    prediction_rows = []
+    for accession in ['B', 'A']:
+        row = {'accession': accession}
+        row.update({'p_{}'.format(name): 0.2 for name in LOCALIZATION_CLASSES})
+        prediction_rows.append(row)
+
+    aligned = _align_prediction_rows(rows, prediction_rows, 'test')
+
+    assert [row['accession'] for row in aligned] == ['A', 'B']
+
+
+def test_pair_prediction_rows_require_complete_unique_accessions():
+    rows = [{'accession': 'A'}]
+    prediction = {'accession': ''}
+    prediction.update({'p_{}'.format(name): 0.2 for name in LOCALIZATION_CLASSES})
+
+    with pytest.raises(ValueError, match='empty accession'):
+        _align_prediction_rows(rows, [prediction], 'test')
+
+
+def test_pair_blend_cli_rejects_orphan_prediction_table():
+    with pytest.raises(
+        ValueError,
+        match='--reranker_predictions_tsv requires --reranker_tsv',
+    ):
+        targetp_pair_blend_main([
+            '--model_a', 'unused-a.json',
+            '--model_b', 'unused-b.json',
+            '--reranker_predictions_tsv', 'predictions.tsv',
+            '--model_out', 'unused-out.json',
+        ])
 
 
 def test_oof_rows_to_prob_and_true_sorts_and_normalizes():

@@ -457,7 +457,7 @@ def longestcds_main(args):
     annotate_seqname = bool(getattr(args, 'annotate_seqname', False))
     threads = resolve_threads(getattr(args, 'threads', 1))
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
-    stop_if_not_dna(records=records, label='--seqfile')
+    stop_if_not_dna(records=records, label='--seq_file')
     stop_if_invalid_codontable(args.codontable)
     if len(records) == 0:
         write_seqs(records=records, outfile=args.outfile, outseqformat=args.outseqformat)

@@ -2,15 +2,10 @@
 Tests for cdskit codonstats command.
 """
 
-from pathlib import Path
-
 import pytest
 import Bio.SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
-
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from cdskit.codonstats import codonstats_main
 

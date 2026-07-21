@@ -167,12 +167,20 @@ def mask_payloads_process_parallel(payloads, codontable, mask_triplet, mask_ambi
 
 def mask_main(args):
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
-    stop_if_not_dna(records=records, label='--seqfile')
+    stop_if_not_dna(records=records, label='--seq_file')
     stop_if_invalid_codontable(args.codontable)
     stop_if_not_multiple_of_three(records)
     mask_triplet = args.maskchar * 3
-    mask_ambiguous = (args.ambiguouscodon == 'yes')
-    mask_stop = (args.stopcodon == 'yes')
+    mask_ambiguous = (
+        args.ambiguouscodon
+        if isinstance(args.ambiguouscodon, bool)
+        else str(args.ambiguouscodon).strip().lower() in ['yes', 'true', '1']
+    )
+    mask_stop = (
+        args.stopcodon
+        if isinstance(args.stopcodon, bool)
+        else str(args.stopcodon).strip().lower() in ['yes', 'true', '1']
+    )
     threads = resolve_threads(getattr(args, 'threads', 1))
     masked_seqs = None
     if (threads > 1) and (len(records) >= _PROCESS_PARALLEL_MIN_RECORDS):

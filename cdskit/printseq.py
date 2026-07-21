@@ -14,7 +14,7 @@ def compile_seqname_regex(seqname_pattern):
     try:
         return re.compile(seqname_pattern)
     except re.error as e:
-        txt = 'Invalid regex in --seqname: {} ({})'
+        txt = 'Invalid regex in --seq_name_regex: {} ({})'
         raise Exception(txt.format(seqname_pattern, e))
 
 
@@ -31,7 +31,7 @@ def printseq_main(args):
     stop_if_not_seqtype(
         records=records,
         seqtype=getattr(args, 'seqtype', 'auto'),
-        label='--seqfile',
+        label='--seq_file',
     )
     compiled_pattern = compile_seqname_regex(args.seqname)
     threads = resolve_threads(getattr(args, 'threads', 1))

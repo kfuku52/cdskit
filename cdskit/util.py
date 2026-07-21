@@ -9,6 +9,8 @@ import re
 import sys
 from concurrent.futures import ThreadPoolExecutor
 
+from cdskit.cliutil import resolve_threads as resolve_cli_threads
+
 GFF_DTYPE = [
     ('seqid', 'U100'),
     ('source', 'U100'),
@@ -28,18 +30,10 @@ PROTEIN_ALLOWED_CHARS = frozenset(
 
 
 def resolve_threads(threads):
-    if threads is None:
-        return 1
-    threads = int(threads)
-    if threads < 0:
-        txt = '--threads should be >= 0. 0 means auto-detect CPU count. Exiting.\n'
-        raise Exception(txt)
-    if threads == 0:
-        detected = os.cpu_count()
-        if (detected is None) or (detected < 1):
-            return 1
-        return detected
-    return threads
+    try:
+        return resolve_cli_threads(threads)
+    except ValueError as exc:
+        raise Exception(str(exc) + ' Exiting.\n')
 
 
 def parallel_map_ordered(items, worker, threads):
@@ -109,7 +103,7 @@ def stop_if_not_aligned(records):
             raise Exception(txt)
 
 
-def stop_if_not_dna(records, label='--seqfile'):
+def stop_if_not_dna(records, label='--seq_file'):
     invalid_ids = list()
     invalid_chars = set()
     for record in records:
@@ -135,7 +129,7 @@ def stop_if_not_dna(records, label='--seqfile'):
     raise Exception(txt.format(label, shown, chars))
 
 
-def stop_if_not_protein(records, label='--seqfile'):
+def stop_if_not_protein(records, label='--seq_file'):
     invalid_ids = list()
     invalid_chars = set()
     for record in records:
@@ -161,7 +155,7 @@ def stop_if_not_protein(records, label='--seqfile'):
     raise Exception(txt.format(label, shown, chars))
 
 
-def stop_if_not_seqtype(records, seqtype='auto', label='--seqfile'):
+def stop_if_not_seqtype(records, seqtype='auto', label='--seq_file'):
     seqtype_value = str(seqtype).lower()
     if seqtype_value == 'dna':
         stop_if_not_dna(records=records, label=label)
@@ -191,15 +185,15 @@ def stop_if_not_seqtype(records, seqtype='auto', label='--seqfile'):
         chars = ''.join(sorted(invalid_chars))
         txt = (
             'Invalid sequence character(s) were detected in {} ({}) [chars: {}]. '
-            'DNA or protein input is required when --seqtype=auto. Exiting.\n'
+            'DNA or protein input is required when --seq_type=auto. Exiting.\n'
         )
         raise Exception(txt.format(label, shown, chars))
 
-    txt = 'Invalid --seqtype: {}. Choose from dna, protein, auto. Exiting.\n'
+    txt = 'Invalid --seq_type: {}. Choose from dna, protein, auto. Exiting.\n'
     raise Exception(txt.format(seqtype))
 
 
-def stop_if_invalid_codontable(codontable, label='--codontable'):
+def stop_if_invalid_codontable(codontable, label='--codon_table'):
     try:
         Bio.Data.CodonTable.unambiguous_dna_by_id[int(codontable)]
         return
@@ -245,7 +239,7 @@ def get_seqname(record, seqnamefmt):
     for name_item in name_items:
         if name_item not in record.annotations:
             available_items = ', '.join(list(record.annotations.keys()))
-            txt = 'Invalid --seqnamefmt element ({}) in {}. Available elements: {}'
+            txt = 'Invalid --seq_name_format element ({}) in {}. Available elements: {}'
             raise Exception(txt.format(name_item, record.id, available_items))
 
         try:
@@ -255,7 +249,7 @@ def get_seqname(record, seqnamefmt):
             seqname += '_' + new_name
         except Exception:
             available_items = ', '.join(list(record.annotations.keys()))
-            txt = 'Invalid --seqnamefmt element ({}) in {}. Available elements: {}'
+            txt = 'Invalid --seq_name_format element ({}) in {}. Available elements: {}'
             raise Exception(txt.format(name_item, record.id, available_items))
     seqname = re.sub('^_', '', seqname)
     seqname = re.sub(' ', '_', seqname)

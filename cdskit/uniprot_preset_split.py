@@ -1,5 +1,3 @@
-import argparse
-import csv
 import json
 import os
 import re
@@ -8,6 +6,8 @@ from cdskit.localize_learn import (
     fetch_uniprot_training_rows,
     write_uniprot_rows_tsv,
 )
+from cdskit.cliutil import CdskitArgumentParser, parse_bool
+from cdskit.tsvio import read_tsv, write_tsv
 
 LINEAGE_COL_CANDIDATES = (
     'lineage_ids',
@@ -108,24 +108,11 @@ def split_rows_by_eukaryota_presets(rows, lineage_col):
 
 
 def read_rows_tsv(path):
-    with open(path, 'r', encoding='utf-8', newline='') as inp:
-        reader = csv.DictReader(inp, delimiter='\t')
-        rows = list(reader)
-        fieldnames = list(reader.fieldnames or [])
-    return rows, fieldnames
+    return read_tsv(path=path, return_fieldnames=True)
 
 
 def write_rows_tsv(rows, fieldnames, path):
-    with open(path, 'w', encoding='utf-8', newline='') as out:
-        writer = csv.DictWriter(
-            out,
-            fieldnames=fieldnames,
-            delimiter='\t',
-            lineterminator='\n',
-        )
-        writer.writeheader()
-        for row in rows:
-            writer.writerow(row)
+    write_tsv(path=path, rows=rows, fieldnames=fieldnames)
 
 
 def split_uniprot_eukaryota_tsv(input_tsv, out_dir, out_prefix='', lineage_col='', report_json=''):
@@ -175,11 +162,11 @@ def split_uniprot_eukaryota_tsv(input_tsv, out_dir, out_prefix='', lineage_col='
 
 
 def build_parser():
-    parser = argparse.ArgumentParser(
+    parser = CdskitArgumentParser(
         description='Download eukaryota once and split it into derived preset TSVs.',
     )
     parser.add_argument(
-        '--input_tsv',
+        '--eukaryota_tsv', dest='input_tsv',
         required=True,
         type=str,
         help='Input eukaryota TSV path. If --download_eukaryota yes, this path is overwritten.',
@@ -203,28 +190,28 @@ def build_parser():
         help='Optional lineage column name override.',
     )
     parser.add_argument(
-        '--report_json',
+        '--out_json', dest='report_json',
         default='',
         type=str,
         help='Optional JSON report path.',
     )
     parser.add_argument(
         '--download_eukaryota',
-        default='no',
-        type=str,
-        help='yes|no. If yes, download eukaryota to --input_tsv first.',
+        default=False,
+        type=parse_bool,
+        help='Whether to download eukaryota to --eukaryota_tsv first.',
     )
     parser.add_argument(
         '--uniprot_reviewed',
-        default='yes',
-        type=str,
-        help='yes|no. Download only reviewed entries.',
+        default=True,
+        type=parse_bool,
+        help='Whether to download only reviewed entries.',
     )
     parser.add_argument(
         '--uniprot_exclude_fragments',
-        default='yes',
-        type=str,
-        help='yes|no. Exclude entries annotated as fragment:true.',
+        default=True,
+        type=parse_bool,
+        help='Whether to exclude entries annotated as fragment:true.',
     )
     parser.add_argument(
         '--uniprot_page_size',
@@ -263,12 +250,14 @@ def build_parser():
         type=int,
         help='Number of HTTP retries.',
     )
+    parser.add_deprecated_alias('--input_tsv', '--eukaryota_tsv')
+    parser.add_deprecated_alias('--report_json', '--out_json')
     return parser
 
 
-def main():
+def main(argv=None):
     parser = build_parser()
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     download_euk = parse_yes_no(args.download_eukaryota, '--download_eukaryota')
     reviewed = parse_yes_no(args.uniprot_reviewed, '--uniprot_reviewed')

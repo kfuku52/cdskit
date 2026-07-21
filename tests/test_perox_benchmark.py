@@ -46,38 +46,38 @@ def _write_perox_fixture(path):
         {
             'source': 'fixture',
             'accession': 'train_pos',
-            'kingdom': 'Metazoa',
-            'partition': 'train',
+            'organism_group': 'non_plant',
+            'fold_id': 'train',
             'sequence': 'MAAAAAAAAAAAAAAAAAAASKL',
             'localization_labels': 'peroxisome',
-            'peroxisome': '1',
+            'peroxisome': 'yes',
         },
         {
             'source': 'fixture',
             'accession': 'train_neg',
-            'kingdom': 'Metazoa',
-            'partition': 'train',
+            'organism_group': 'non_plant',
+            'fold_id': 'train',
             'sequence': 'MAAAAAAAAAAAAAAAAAAAAAA',
             'localization_labels': 'cytoplasm',
-            'peroxisome': '0',
+            'peroxisome': 'no',
         },
         {
             'source': 'fixture',
             'accession': 'valid_pos',
-            'kingdom': 'Fungi',
-            'partition': 'valid',
+            'organism_group': 'non_plant',
+            'fold_id': 'valid',
             'sequence': 'MSSSSSSSSSSSSSSSSSSAKL',
             'localization_labels': 'peroxisome',
-            'peroxisome': '1',
+            'peroxisome': 'yes',
         },
         {
             'source': 'fixture',
             'accession': 'valid_neg',
-            'kingdom': 'Fungi',
-            'partition': 'valid',
+            'organism_group': 'non_plant',
+            'fold_id': 'valid',
             'sequence': 'MSSSSSSSSSSSSSSSSSSAAA',
             'localization_labels': 'cytoplasm',
-            'peroxisome': '0',
+            'peroxisome': 'no',
         },
     ]
     with open(path, 'w', encoding='utf-8', newline='') as out:
@@ -86,8 +86,8 @@ def _write_perox_fixture(path):
             fieldnames=[
                 'source',
                 'accession',
-                'kingdom',
-                'partition',
+                'organism_group',
+                'fold_id',
                 'sequence',
                 'localization_labels',
                 'peroxisome',
@@ -231,6 +231,24 @@ def test_read_rows_and_leakage_report(temp_dir):
     assert len(rows) == 4
     assert report['accession_overlap_count'] == 0
     assert report['exact_sequence_overlap_count'] == 0
+
+
+def test_read_perox_rows_accepts_legacy_schema_with_warning(temp_dir):
+    path = temp_dir / 'legacy_perox.tsv'
+    path.write_text(
+        'accession\tkingdom\tpartition\tsequence\tperoxisome\n'
+        'A\tMetazoa\t1\tMAAA\t1\n',
+        encoding='utf-8',
+    )
+
+    with pytest.warns(FutureWarning) as warning_records:
+        rows = read_perox_rows(str(path))
+
+    messages = [str(record.message) for record in warning_records]
+    assert any('kingdom is deprecated' in message for message in messages)
+    assert any('partition is deprecated' in message for message in messages)
+    assert rows[0]['organism_group'] == 'non_plant'
+    assert rows[0]['fold_id'] == '1'
 
 
 def test_exclude_rows_overlapping_eval_removes_accession_and_sequence_overlap():
@@ -547,8 +565,8 @@ def test_deeploc21_perox_benchmark_can_exclude_external_from_train(temp_dir):
             fieldnames=[
                 'source',
                 'accession',
-                'kingdom',
-                'partition',
+                'organism_group',
+                'fold_id',
                 'sequence',
                 'localization_labels',
                 'peroxisome',
@@ -560,11 +578,11 @@ def test_deeploc21_perox_benchmark_can_exclude_external_from_train(temp_dir):
         writer.writerow({
             'source': 'fixture',
             'accession': 'external_only',
-            'kingdom': 'Metazoa',
-            'partition': 'external',
+            'organism_group': 'non_plant',
+            'fold_id': 'external',
             'sequence': 'MCCCCCCCCCCCCCCCCCCCCC',
             'localization_labels': 'cytoplasm',
-            'peroxisome': '0',
+            'peroxisome': 'no',
         })
 
     report = run_deeploc21_perox_benchmark(

@@ -106,7 +106,7 @@ def print_usage_table(summaries, codontable):
 def codonstats_main(args):
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
     _ = resolve_threads(getattr(args, 'threads', 1))
-    stop_if_not_dna(records=records, label='--seqfile')
+    stop_if_not_dna(records=records, label='--seq_file')
     stop_if_not_multiple_of_three(records=records)
     stop_if_invalid_codontable(args.codontable)
     summaries = [summarize_record(record=record, codontable=args.codontable) for record in records]

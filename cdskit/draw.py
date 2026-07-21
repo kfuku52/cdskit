@@ -360,7 +360,7 @@ def write_svg(svg_text_content, outfile):
 def draw_main(args):
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
     _ = resolve_threads(getattr(args, 'threads', 1))
-    stop_if_not_dna(records=records, label='--seqfile')
+    stop_if_not_dna(records=records, label='--seq_file')
     stop_if_not_aligned(records=records)
     stop_if_not_multiple_of_three(records=records)
     stop_if_invalid_codontable(args.codontable)

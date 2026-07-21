@@ -17,7 +17,7 @@ from cdskit.util import (
 _INTERSECTION_PARALLEL_MIN_RECORDS = 5000
 
 
-def stop_if_duplicate_sequence_ids(records, label='--seqfile'):
+def stop_if_duplicate_sequence_ids(records, label='--seq_file'):
     counts = Counter(record.id for record in records)
     duplicated = sorted([seq_id for seq_id, count in counts.items() if count > 1])
     if len(duplicated) == 0:
@@ -97,7 +97,7 @@ def intersect_two_fasta_inputs(original_records1, args, threads=1):
     stop_if_not_seqtype(
         records=original_records2,
         seqtype=getattr(args, 'seqtype', 'auto'),
-        label='--seqfile2',
+        label='--seq_file_2',
     )
     original_records1_names = [rec.id for rec in original_records1]
     original_records2_names = [rec.id for rec in original_records2]
@@ -109,7 +109,7 @@ def intersect_two_fasta_inputs(original_records1, args, threads=1):
 
 
 def intersect_fasta_with_gff(original_records1, args, threads=1):
-    stop_if_duplicate_sequence_ids(records=original_records1, label='--seqfile')
+    stop_if_duplicate_sequence_ids(records=original_records1, label='--seq_file')
     original_records1_names = [rec.id for rec in original_records1]
     original_gff = read_gff(gff_file=args.ingff)
     original_gff_names = np.unique(original_gff['data']['seqid'])
@@ -132,14 +132,14 @@ def intersection_main(args):
     stop_if_not_seqtype(
         records=original_records1,
         seqtype=getattr(args, 'seqtype', 'auto'),
-        label='--seqfile',
+        label='--seq_file',
     )
     threads = resolve_threads(getattr(args, 'threads', 1))
     if (args.seqfile2 is not None) and (args.ingff is not None):
-        raise Exception('Specify either --seqfile2 or --ingff, but not both.')
+        raise Exception('Specify either --seq_file_2 or --in_gff, but not both.')
     if args.seqfile2 is not None:
         intersect_two_fasta_inputs(original_records1, args, threads=threads)
     elif args.ingff is not None:
         intersect_fasta_with_gff(original_records1, args, threads=threads)
     else:
-        raise Exception('Either seqfile2 or ingff should be provided.')
+        raise Exception('Either --seq_file_2 or --in_gff should be provided.')

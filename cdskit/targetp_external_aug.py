@@ -1,10 +1,11 @@
-import argparse
 import json
 import os
 import random
 from collections import Counter, defaultdict
 
 import numpy as np
+
+from cdskit.cliutil import CdskitArgumentParser, parse_bool, resolve_threads
 
 from cdskit.localize_learn import LOCALIZATION_CLASSES, build_training_matrix
 from cdskit.localize_model import (
@@ -68,7 +69,12 @@ def load_external_exclusion_keys(paths):
     for path in paths or []:
         if str(path).strip() == '':
             continue
-        for row in read_tsv(str(path)):
+        table_rows, fieldnames = read_tsv(str(path), return_fieldnames=True)
+        if not any(name in fieldnames for name in ['accession', 'sequence']):
+            raise ValueError(
+                '{} requires at least one TSV column: accession or sequence.'.format(path)
+            )
+        for row in table_rows:
             accession = _row_key(row.get('accession', ''))
             sequence = _sequence_key(row.get('sequence', ''))
             if accession != '':
@@ -83,7 +89,12 @@ def load_external_exclusion_rows(paths):
     for path in paths or []:
         if str(path).strip() == '':
             continue
-        for row in read_tsv(str(path)):
+        table_rows, fieldnames = read_tsv(str(path), return_fieldnames=True)
+        if not any(name in fieldnames for name in ['accession', 'sequence']):
+            raise ValueError(
+                '{} requires at least one TSV column: accession or sequence.'.format(path)
+            )
+        for row in table_rows:
             accession = _row_key(row.get('accession', ''))
             sequence = _sequence_key(row.get('sequence', ''))
             if accession == '' and sequence == '':
@@ -120,7 +131,17 @@ def _external_training_row(source, accession, sequence, organism_group, localiza
 def build_strict_uniprot_external_rows(path, targetp_keys, exclude_exact=True, exclusion_keys=None):
     out = list()
     skipped = Counter()
-    for row in read_tsv(path):
+    source_rows, fieldnames = read_tsv(
+        path,
+        required_columns=['accession', 'sequence'],
+        return_fieldnames=True,
+    )
+    if not any(name in fieldnames for name in ['cc_subcellular_location', 'localization']):
+        raise ValueError(
+            '{} is missing required TSV column: cc_subcellular_location '
+            '(or localization).'.format(path)
+        )
+    for row in source_rows:
         if exclude_exact and is_exact_targetp_overlap(row=row, targetp_keys=targetp_keys):
             skipped['targetp_exact_overlap'] += 1
             continue
@@ -148,7 +169,10 @@ def build_strict_uniprot_external_rows(path, targetp_keys, exclude_exact=True, e
 def build_deeploc_localization_external_rows(path, targetp_keys, exclude_exact=True, exclusion_keys=None):
     out = list()
     skipped = Counter()
-    for row in read_tsv(path):
+    for row in read_tsv(
+        path,
+        required_columns=['accession', 'sequence', 'localization_labels'],
+    ):
         if exclude_exact and is_exact_targetp_overlap(row=row, targetp_keys=targetp_keys):
             skipped['targetp_exact_overlap'] += 1
             continue
@@ -682,7 +706,10 @@ def run_external_augmented_feature_oof(
     threshold_grid=None,
 ):
     class_names = list(LOCALIZATION_CLASSES)
-    target_rows = read_tsv(training_tsv)
+    target_rows = read_tsv(
+        training_tsv,
+        required_columns=['sequence', 'localization', 'organism_group', 'fold_id'],
+    )
     true_idx = _true_idx_from_rows(rows=target_rows, class_names=class_names)
     fold_ids = _fold_ids_from_rows(rows=target_rows)
     if np.any(fold_ids == ''):
@@ -831,7 +858,10 @@ def fit_external_augmented_feature_runtime_model(
     ltp_specialist_mass_threshold=0.0,
 ):
     class_names = list(LOCALIZATION_CLASSES)
-    target_rows = read_tsv(training_tsv)
+    target_rows = read_tsv(
+        training_tsv,
+        required_columns=['sequence', 'localization', 'organism_group', 'fold_id'],
+    )
     external_rows, external_report = build_external_augmented_training_rows(
         targetp_tsv=training_tsv,
         uniprot_tsv=uniprot_tsv,
@@ -1049,7 +1079,7 @@ def write_external_augmented_feature_report(path, result, external_tsv=''):
 
 
 def build_parser():
-    parser = argparse.ArgumentParser(
+    parser = CdskitArgumentParser(
         description='Build a fair TargetP OOF from target folds plus strict non-overlapping external weak labels.',
     )
     parser.add_argument('--training_tsv', default='data/localize_bench/targetp2_benchmark.tsv', type=str)
@@ -1057,7 +1087,7 @@ def build_parser():
     parser.add_argument('--extra_uniprot_tsvs', default='', type=str)
     parser.add_argument('--exclusion_tsvs', default='', type=str)
     parser.add_argument('--deeploc_dir', default='data/localize_bench/deeploc21', type=str)
-    parser.add_argument('--include_deeploc', default='yes', choices=['yes', 'no'], type=str)
+    parser.add_argument('--include_deeploc', default=True, type=parse_bool)
     parser.add_argument('--max_external_per_class', default=TARGETP_EXTERNAL_AUG_DEFAULTS['max_external_per_class'], type=int)
     parser.add_argument('--external_weight', default=TARGETP_EXTERNAL_AUG_DEFAULTS['external_weight'], type=float)
     parser.add_argument('--external_class_weights', default='', type=str)
@@ -1065,7 +1095,7 @@ def build_parser():
     parser.add_argument('--calibration_seed', default='', type=str)
     parser.add_argument('--calibration_threshold_grid', default='0.05,0.10,0.15,0.20,0.25,0.30,0.35,0.40,0.45,0.50,0.55,0.60,0.65,0.70,0.75,0.80,0.85,0.90,0.95,1.00,1.05,1.10,1.15,1.20,1.25,1.30,1.35,1.40,1.45,1.50,1.55,1.60,1.65,1.70,1.75,1.80,1.85,1.90,1.95,2.00,3.00,5.00', type=str)
     parser.add_argument('--seed', default=TARGETP_EXTERNAL_AUG_DEFAULTS['seed'], type=int)
-    parser.add_argument('--mmseqs', default='no', choices=['yes', 'no'], type=str)
+    parser.add_argument('--mmseqs', default=False, type=parse_bool)
     parser.add_argument('--exclusion_mmseqs', default='auto', choices=['auto', 'yes', 'no'], type=str)
     parser.add_argument('--mmseqs_min_seq_id', default=0.30, type=float)
     parser.add_argument('--mmseqs_min_coverage', default=0.80, type=float)
@@ -1078,15 +1108,16 @@ def build_parser():
     parser.add_argument('--min_samples_leaf', default=TARGETP_EXTERNAL_AUG_DEFAULTS['min_samples_leaf'], type=int)
     parser.add_argument('--threshold_grid', default='0.05,0.10,0.15,0.20,0.25,0.30,0.35,0.40,0.45,0.50,0.55,0.60,0.65,0.70,0.75,0.80,0.85,0.90,0.95,1.00,1.05,1.10,1.15,1.20,1.25,1.30,1.35,1.40,1.45,1.50,1.55,1.60,1.65,1.70,1.75,1.80,1.85,1.90,1.95,2.00', type=str)
     parser.add_argument('--class_thresholds', default='', type=str)
-    parser.add_argument('--ltp_specialist', default='no', choices=['yes', 'no'], type=str)
+    parser.add_argument('--ltp_specialist', default=False, type=parse_bool)
     parser.add_argument('--ltp_specialist_source_classes', default='cTP', type=str)
     parser.add_argument('--ltp_specialist_negative_classes', default='cTP', type=str)
     parser.add_argument('--ltp_specialist_score_grid', default='0.01,0.02,0.03,0.04,0.05,0.06,0.07,0.08,0.09,0.10,0.15,0.20,0.25,0.30,0.35,0.40,0.45,0.50,0.55,0.60,0.65,0.70,0.75,0.80,0.85,0.90,0.95,0.99', type=str)
     parser.add_argument('--ltp_specialist_mass_threshold', default=0.0, type=float)
     parser.add_argument('--out_npz', required=True, type=str)
     parser.add_argument('--out_json', required=True, type=str)
-    parser.add_argument('--external_tsv_out', default='', type=str)
+    parser.add_argument('--external_out_tsv', dest='external_tsv_out', default='', type=str)
     parser.add_argument('--model_out', default='', type=str)
+    parser.add_deprecated_alias('--external_tsv_out', '--external_out_tsv')
     return parser
 
 
@@ -1154,8 +1185,8 @@ def _parse_exclusion_mmseqs(value):
     return _yes_no(value)
 
 
-def main():
-    args = build_parser().parse_args()
+def main(argv=None):
+    args = build_parser().parse_args(argv)
     extra_uniprot_tsvs = _parse_paths(args.extra_uniprot_tsvs)
     exclusion_tsvs = _parse_paths(args.exclusion_tsvs)
     class_thresholds = _parse_class_thresholds(args.class_thresholds)
@@ -1176,7 +1207,7 @@ def main():
         exclusion_mmseqs=exclusion_mmseqs,
         mmseqs_min_seq_id=float(args.mmseqs_min_seq_id),
         mmseqs_min_coverage=float(args.mmseqs_min_coverage),
-        threads=int(args.threads),
+        threads=resolve_threads(args.threads),
         model_kind=args.model_kind,
         n_estimators=int(args.n_estimators),
         random_state=int(args.random_state),
@@ -1200,7 +1231,7 @@ def main():
             exclusion_mmseqs=exclusion_mmseqs,
             mmseqs_min_seq_id=float(args.mmseqs_min_seq_id),
             mmseqs_min_coverage=float(args.mmseqs_min_coverage),
-            threads=int(args.threads),
+            threads=resolve_threads(args.threads),
         )
         write_tsv(
             path=args.external_tsv_out,
@@ -1235,7 +1266,7 @@ def main():
             exclusion_mmseqs=exclusion_mmseqs,
             mmseqs_min_seq_id=float(args.mmseqs_min_seq_id),
             mmseqs_min_coverage=float(args.mmseqs_min_coverage),
-            threads=int(args.threads),
+            threads=resolve_threads(args.threads),
             model_kind=args.model_kind,
             n_estimators=int(args.n_estimators),
             random_state=int(args.random_state),

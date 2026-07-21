@@ -9,8 +9,8 @@ The generated model can be used with:
 
 ```bash
 cdskit localize \
-  --seqfile proteins.faa \
-  --seqtype protein \
+  --seq_file proteins.faa \
+  --seq_type protein \
   --model localize_model.json \
   --report localize.tsv
 ```
@@ -41,7 +41,7 @@ Train a lightweight JSON model:
 cdskit localize-learn \
   --training_tsv train.tsv \
   --seq_col sequence \
-  --seqtype protein \
+  --seq_type protein \
   --label_mode explicit \
   --localization_col localization \
   --perox_col peroxisome \
@@ -49,8 +49,8 @@ cdskit localize-learn \
   --report localize_learn_report.tsv
 ```
 
-If `--seqtype dna` is used, sequences are translated in frame before training.
-With `--seqtype auto`, CDS-like rows are translated and protein-like rows are
+If `--seq_type dna` is used, sequences are translated in frame before training.
+With `--seq_type auto`, CDS-like rows are translated and protein-like rows are
 used directly.
 
 ## UniProt Download
@@ -96,7 +96,7 @@ JSON model. It is a good starting point for small datasets and smoke tests.
 cdskit localize-learn \
   --training_tsv train.tsv \
   --seq_col sequence \
-  --seqtype protein \
+  --seq_type protein \
   --label_mode explicit \
   --localization_col localization \
   --perox_col peroxisome \
@@ -112,7 +112,7 @@ runs the resulting model on CPU for user inference.
 cdskit localize-learn \
   --training_tsv train.tsv \
   --seq_col sequence \
-  --seqtype protein \
+  --seq_type protein \
   --label_mode explicit \
   --localization_col localization \
   --perox_col peroxisome \
@@ -137,7 +137,7 @@ Random stratified CV:
 cdskit localize-learn \
   --training_tsv train.tsv \
   --seq_col sequence \
-  --seqtype protein \
+  --seq_type protein \
   --label_mode explicit \
   --localization_col localization \
   --perox_col peroxisome \
@@ -153,7 +153,7 @@ Fixed folds from a column:
 cdskit localize-learn \
   --training_tsv train.tsv \
   --seq_col sequence \
-  --seqtype protein \
+  --seq_type protein \
   --label_mode explicit \
   --localization_col localization \
   --perox_col peroxisome \
@@ -168,7 +168,7 @@ For threshold-based postprocessing, use out-of-fold probabilities:
 cdskit localize-learn \
   --training_tsv train.tsv \
   --seq_col sequence \
-  --seqtype protein \
+  --seq_type protein \
   --label_mode explicit \
   --localization_col localization \
   --perox_col peroxisome \
@@ -206,8 +206,8 @@ Use the trained model with `cdskit localize`:
 
 ```bash
 cdskit localize \
-  --seqfile query.faa \
-  --seqtype protein \
+  --seq_file query.faa \
+  --seq_type protein \
   --model localize_model.json \
   --report query_localize.tsv
 ```
