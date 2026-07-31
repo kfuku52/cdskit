@@ -1,13 +1,12 @@
 import copy
-import json
+import math
 import sys
-
-from Bio.Seq import Seq
 
 from cdskit.codonutil import codon_has_missing, codon_is_ambiguous, codon_is_clean, codon_is_stop
 from cdskit.util import (
+    atomic_write_json,
     read_seqs,
-    resolve_threads,
+    replace_record_sequence,
     stop_if_invalid_codontable,
     stop_if_not_aligned,
     stop_if_not_dna,
@@ -19,7 +18,7 @@ from cdskit.tsvio import write_sectioned_tsv
 
 def validate_fraction(name, value):
     value = float(value)
-    if (value < 0.0) or (value > 1.0):
+    if (not math.isfinite(value)) or (value < 0.0) or (value > 1.0):
         txt = '{} should be between 0 and 1 inclusive. Exiting.\n'
         raise Exception(txt.format(name))
     return value
@@ -73,7 +72,10 @@ def choose_kept_codon_sites(site_summaries, num_sequences, min_clean_fraction):
 def trim_record_to_codon_sites(record, kept_sites):
     trimmed = copy.copy(record)
     seq_str = str(record.seq)
-    trimmed.seq = Seq(''.join(seq_str[site * 3:site * 3 + 3] for site in kept_sites))
+    replace_record_sequence(
+        trimmed,
+        ''.join(seq_str[site * 3:site * 3 + 3] for site in kept_sites),
+    )
     return trimmed
 
 
@@ -95,8 +97,7 @@ def write_trimcodon_report(report_path, summary):
     if report_path == '':
         return
     if report_path.lower().endswith('.json'):
-        with open(report_path, 'w', encoding='utf-8') as f:
-            json.dump(summary, f, indent=2, ensure_ascii=False)
+        atomic_write_json(report_path, summary, indent=2)
         return
     rows = [
         {'section': 'summary', 'metric': key, 'value': summary[key]}
@@ -124,7 +125,6 @@ def write_trimcodon_report(report_path, summary):
 
 def trimcodon_main(args):
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
-    _ = resolve_threads(getattr(args, 'threads', 1))
     stop_if_not_dna(records=records, label='--seq_file')
     stop_if_not_aligned(records=records)
     stop_if_not_multiple_of_three(records=records)

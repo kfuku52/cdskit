@@ -11,6 +11,7 @@ from Bio.SeqRecord import SeqRecord
 from cdskit.mask import (
     mask_main,
     mask_partial_gap_codons,
+    mask_sequence_string,
     should_mask_amino_acid,
 )
 
@@ -29,6 +30,22 @@ class TestMaskHelpers:
         assert should_mask_amino_acid("*", mask_ambiguous=False, mask_stop=True) is True
         assert should_mask_amino_acid("X", mask_ambiguous=False, mask_stop=True) is False
         assert should_mask_amino_acid("M", mask_ambiguous=True, mask_stop=True) is False
+
+    def test_iupac_codons_use_translation_semantics(self):
+        assert mask_sequence_string(
+            'TGY',
+            codontable=1,
+            mask_triplet='NNN',
+            mask_ambiguous=True,
+            mask_stop=False,
+        ) == 'TGY'
+        assert mask_sequence_string(
+            'TAR',
+            codontable=1,
+            mask_triplet='NNN',
+            mask_ambiguous=False,
+            mask_stop=True,
+        ) == 'NNN'
 
 
 class TestMaskMain:

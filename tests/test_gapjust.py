@@ -161,6 +161,26 @@ class TestVectorizedCoordinateUpdate:
         assert list(new_starts) == [212]
         assert list(new_ends) == [220]
 
+    def test_shortened_gap_preserves_retained_coordinates(self):
+        starts = np.array([5, 9])
+        ends = np.array([5, 9])
+        justifications = [{
+            'original_gap_start': 3,
+            'original_gap_length': 5,
+            'target_gap_length': 2,
+            'original_edit_start': 3,
+            'edit_length': -3,
+        }]
+
+        new_starts, new_ends = vectorized_coordinate_update(
+            starts,
+            ends,
+            justifications,
+        )
+
+        assert list(new_starts) == [5, 6]
+        assert list(new_ends) == [5, 6]
+
 
 class TestShouldJustifyGap:
     """Tests for should_justify_gap helper."""
@@ -637,9 +657,9 @@ class TestGapjustMain:
         # If expected GFF exists, compare coordinates
         if expected_gff.exists():
             with open(output_gff) as f:
-                result_lines = [l for l in f.readlines() if not l.startswith('#') and l.strip()]
+                result_lines = [line for line in f.readlines() if not line.startswith('#') and line.strip()]
             with open(expected_gff) as f:
-                expected_lines = [l for l in f.readlines() if not l.startswith('#') and l.strip()]
+                expected_lines = [line for line in f.readlines() if not line.startswith('#') and line.strip()]
 
             # Same number of records
             assert len(result_lines) == len(expected_lines)

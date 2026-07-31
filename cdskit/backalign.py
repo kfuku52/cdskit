@@ -19,8 +19,8 @@ from cdskit.util import (
 AA_GAP_CHARS = {'-', '.'}
 AA_WILDCARD_CHARS = {'X', '?'}
 CDS_GAP_CHARS = {'-', '.'}
-_GAP_DROP_TABLE_CACHE = dict()
-_CODON_TRANSLATOR_CACHE = dict()
+_GAP_DROP_TABLE_CACHE: dict = {}
+_CODON_TRANSLATOR_CACHE: dict = {}
 _PROCESS_PARALLEL_MIN_RECORDS = 2000
 
 

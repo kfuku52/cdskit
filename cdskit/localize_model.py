@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+from importlib.metadata import PackageNotFoundError, version as package_version
 import json
 import math
 import re
@@ -8,7 +9,7 @@ import numpy as np
 
 from cdskit.translate import translate_sequence_string
 from cdskit.tsvio import write_tsv as write_tsv_file
-from cdskit.util import DNA_ALLOWED_CHARS
+from cdskit.util import DNA_ALLOWED_CHARS, atomic_output_path, atomic_write_json
 
 LOCALIZATION_CLASSES = ('noTP', 'SP', 'mTP', 'cTP', 'lTP')
 TP_STAGE_CLASSES = ('SP', 'mTP', 'cTP', 'lTP')
@@ -2535,8 +2536,7 @@ def _strip_runtime_caches(value):
 def save_localize_model(model, path):
     model_type = str(model.get('model_type', ''))
     if model_type in ['nearest_centroid_v1', 'multilabel_centroid_v1']:
-        with open(path, 'w', encoding='utf-8') as out:
-            json.dump(model, out, indent=2, sort_keys=True)
+        atomic_write_json(path, model, indent=2, sort_keys=True)
         return
     if model_type in [
         'bilstm_attention_v1',
@@ -2549,12 +2549,13 @@ def save_localize_model(model, path):
         from cdskit.localize_bilstm import require_torch
         torch, _ = require_torch()
         to_save = _strip_runtime_caches(dict(model))
-        torch.save({'model': to_save}, path)
+        with atomic_output_path(path) as temporary:
+            torch.save({'model': to_save}, temporary)
         return
     raise ValueError('Unsupported model_type: {}'.format(model_type))
 
 
-def load_localize_model(path):
+def load_localize_model(path, allow_unsafe=False):
     model = None
     json_error = None
     try:
@@ -2568,9 +2569,28 @@ def load_localize_model(path):
             from cdskit.localize_bilstm import require_torch
             torch, _ = require_torch()
             try:
-                payload = torch.load(path, map_location='cpu', weights_only=False)
+                payload = torch.load(path, map_location='cpu', weights_only=True)
             except TypeError:
+                if not allow_unsafe:
+                    raise ValueError(
+                        'This PyTorch version cannot perform safe model loading.'
+                    )
                 payload = torch.load(path, map_location='cpu')
+            except Exception:
+                if not allow_unsafe:
+                    raise ValueError(
+                        'Model requires unsafe pickle deserialization. '
+                        'Use --allow_unsafe_model yes only for a trusted legacy model.'
+                    )
+                warnings.warn(
+                    'Loading a trusted legacy model with pickle deserialization enabled.',
+                    RuntimeWarning,
+                )
+                payload = torch.load(
+                    path,
+                    map_location='cpu',
+                    weights_only=False,
+                )
             if isinstance(payload, dict) and ('model' in payload):
                 model = payload['model']
             elif isinstance(payload, dict):
@@ -2597,6 +2617,25 @@ def load_localize_model(path):
     ]
     if model['model_type'] not in allowed_model_types:
         raise ValueError('Unsupported model_type: {}'.format(model['model_type']))
+    expected_sklearn = str(
+        model.get('metadata', {}).get('scikit_learn_version', '')
+    ).strip()
+    if expected_sklearn:
+        try:
+            current_sklearn = package_version('scikit-learn')
+        except PackageNotFoundError:
+            current_sklearn = ''
+        if (
+            current_sklearn
+            and current_sklearn.split('.')[:2] != expected_sklearn.split('.')[:2]
+        ):
+            warnings.warn(
+                'Model was created with scikit-learn {}, but {} is installed.'.format(
+                    expected_sklearn,
+                    current_sklearn,
+                ),
+                RuntimeWarning,
+            )
     return model
 
 
@@ -2607,8 +2646,7 @@ def write_rows_tsv(rows, output_path, fieldnames):
 def write_rows_json(rows, output_path):
     if output_path == '-':
         import sys
-        json.dump(rows, sys.stdout, indent=2)
+        json.dump(rows, sys.stdout, indent=2, allow_nan=False)
         sys.stdout.write('\n')
         return
-    with open(output_path, 'w', encoding='utf-8') as out:
-        json.dump(rows, out, indent=2)
+    atomic_write_json(output_path, rows, indent=2)

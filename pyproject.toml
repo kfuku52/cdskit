@@ -1,3 +1,6 @@
 [build-system]
 requires = ["setuptools>=61", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[tool.ruff.lint.per-file-ignores]
+"cdskit/plot.py" = ["E402"]

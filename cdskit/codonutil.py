@@ -6,8 +6,8 @@ GAP_ONLY_CHARS = frozenset('-?.NXnx')
 UNAMBIGUOUS_NT = frozenset('ACGT')
 DNA_BASES = ('A', 'C', 'G', 'T')
 
-_CODON_TABLE_CACHE = dict()
-_DEGENERACY_CACHE = dict()
+_CODON_TABLE_CACHE: dict = {}
+_DEGENERACY_CACHE: dict = {}
 
 
 def get_codon_table_components(codontable):

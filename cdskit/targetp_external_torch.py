@@ -1,4 +1,3 @@
-import json
 import os
 from collections import Counter
 
@@ -10,6 +9,7 @@ from cdskit.targetp_external_aug import (
     split_external_train_calibration_rows,
 )
 from cdskit.targetp_external_eval import read_tsv, write_tsv
+from cdskit.util import atomic_write_json
 from cdskit.targetp_torch import (
     TARGETP_CLASS_THRESHOLD_GRID,
     export_targetp2_torch_localize_model,
@@ -232,8 +232,7 @@ def write_external_augmented_torch_report(path, report):
     out_dir = os.path.dirname(path)
     if out_dir != '':
         os.makedirs(out_dir, exist_ok=True)
-    with open(path, 'w', encoding='utf-8') as handle:
-        json.dump(report, handle, indent=2, sort_keys=True)
+    atomic_write_json(path, report, indent=2, sort_keys=True)
 
 
 def _yes_no(value):

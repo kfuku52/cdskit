@@ -182,7 +182,8 @@ class TestFilterMain:
         ]
         assert sequence_rows['gappy']['clean_codon_fraction'] == '0.666667'
 
-    def test_filter_rejects_invalid_clean_codon_fraction(self, temp_dir, mock_args):
+    @pytest.mark.parametrize("fraction", [1.5, float("nan")])
+    def test_filter_rejects_invalid_clean_codon_fraction(self, temp_dir, mock_args, fraction):
         input_path = temp_dir / "input.fasta"
         output_path = temp_dir / "output.fasta"
         records = [SeqRecord(Seq("ATGAAACCC"), id="seq1", description="")]
@@ -193,7 +194,7 @@ class TestFilterMain:
             outfile=str(output_path),
             drop_non_triplet=False,
             drop_internal_stop=False,
-            min_clean_codon_fraction=1.5,
+            min_clean_codon_fraction=fraction,
             dedup='no',
             report='',
         )

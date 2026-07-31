@@ -122,9 +122,12 @@ cdskit localize-learn \
   --model_out localize_model.pt
 ```
 
-`esm_head` is experimental and intended for users who know they have the needed
-protein language model dependencies and enough training data. Prefer a held-out
-evaluation before using it for biological interpretation.
+Install `esm_head` dependencies with `pip install "cdskit[ml]"`. Remote encoder
+downloads are pinned to a Hugging Face commit by `--esm_model_revision`.
+Inference honors `--model_download no` and `CDSKIT_OFFLINE`; pre-download the
+encoder or set `--esm_model_local_dir` for offline use. `esm_head` remains
+experimental, and a held-out evaluation is recommended before biological
+interpretation.
 
 ## Evaluation
 

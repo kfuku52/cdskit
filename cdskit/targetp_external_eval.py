@@ -24,6 +24,7 @@ from cdskit.targetp_labeling import strict_uniprot_targetp_label
 from cdskit.uniprot_preset_split import classify_lineage_ids, parse_taxon_ids
 from cdskit.cliutil import CdskitArgumentParser, parse_bool, resolve_threads
 from cdskit.tsvio import read_tsv as _read_tsv, write_tsv as _write_tsv
+from cdskit.util import atomic_text_writer, atomic_write_json
 
 
 DEFAULT_CLASS_THRESHOLD_GRID = [
@@ -307,7 +308,7 @@ def stratified_sample_rows(rows, max_per_class=0, seed=1):
 
 
 def _write_fasta(path, rows):
-    with open(path, 'w', encoding='utf-8') as out:
+    with atomic_text_writer(path, encoding='utf-8') as out:
         for row_i, row in enumerate(rows):
             seq = to_canonical_aa_sequence(row.get('sequence', ''))
             if seq == '':
@@ -366,7 +367,13 @@ def filter_rows_by_mmseqs_similarity(
             '--format-output',
             'query,target,pident,alnlen,qlen,tlen,evalue,bits',
         ]
-        proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        proc = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=3600,
+        )
         report['available'] = True
         report['command'] = ' '.join(cmd)
         report['returncode'] = int(proc.returncode)
@@ -436,11 +443,23 @@ def _prob_matrix_from_prediction_rows(rows, class_names=LOCALIZATION_CLASSES):
     for row in rows:
         values = list()
         for class_name in class_names:
-            value = row.get('p_{}'.format(class_name), 0.0)
+            column = 'p_{}'.format(class_name)
+            if column not in row:
+                raise ValueError('Missing prediction probability column: {}.'.format(column))
+            value = row[column]
             try:
                 value = float(value)
-            except Exception:
-                value = 0.0
+            except (TypeError, ValueError):
+                raise ValueError(
+                    'Invalid probability for {}: {!r}.'.format(column, value)
+                )
+            if not np.isfinite(value) or value < 0.0 or value > 1.0:
+                raise ValueError(
+                    'Probability for {} should be finite within [0, 1]: {!r}.'.format(
+                        column,
+                        value,
+                    )
+                )
             values.append(float(value))
         out.append(values)
     if len(out) == 0:
@@ -899,9 +918,8 @@ def run_external_evaluation(
     out_md = os.path.join(out_dir, 'targetp_external_eval.md')
     result['out_json'] = out_json
     result['out_md'] = out_md
-    with open(out_json, 'w', encoding='utf-8') as out:
-        json.dump(result, out, indent=2, sort_keys=True)
-    with open(out_md, 'w', encoding='utf-8') as out:
+    atomic_write_json(out_json, result, indent=2, sort_keys=True)
+    with atomic_text_writer(out_md, encoding='utf-8') as out:
         out.write(render_markdown(result=result))
     return result
 
@@ -972,7 +990,7 @@ def main(argv=None):
         threshold_grid=_parse_threshold_grid(args.threshold_grid),
         strict_targetp_organism_labels=_to_bool_yes_no(args.strict_targetp_organism_labels),
     )
-    print(json.dumps(result, indent=2, sort_keys=True))
+    print(json.dumps(result, indent=2, sort_keys=True, allow_nan=False))
 
 
 if __name__ == '__main__':

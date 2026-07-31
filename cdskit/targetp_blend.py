@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+import hashlib
 import json
 import os
 import sys
@@ -6,6 +7,7 @@ import warnings
 
 import numpy as np
 
+from cdskit import __version__
 from cdskit.localize_model import (
     AA_ACIDIC,
     AA_AROMATIC,
@@ -37,6 +39,7 @@ from cdskit.targetp_benchmark import (
 )
 from cdskit.cliutil import CdskitArgumentParser, parse_bool
 from cdskit.tsvio import read_tsv
+from cdskit.util import atomic_text_writer, atomic_write_json
 
 TARGETP_SPECIALIST_FIXED_PROFILE = {
     'name': 'targetp_specialist_fixed_v1',
@@ -216,30 +219,42 @@ def _optimize_class_thresholds(prob_matrix, true_idx, class_names, grid):
     return thresholds, best_metrics
 
 
-def _save_oof_npz(path, prob_matrix, true_idx, class_names):
+def _save_oof_npz(path, prob_matrix, true_idx, class_names, cache_key=''):
     out_dir = os.path.dirname(path)
     if out_dir != '':
         os.makedirs(out_dir, exist_ok=True)
-    np.savez_compressed(
-        path,
-        prob_matrix=np.asarray(prob_matrix, dtype=np.float64),
-        true_idx=np.asarray(true_idx, dtype=np.int64),
-        class_names=np.asarray(class_names),
-    )
+    from cdskit.util import atomic_output_path
+    with atomic_output_path(path) as temporary:
+        with open(temporary, 'wb') as out:
+            np.savez_compressed(
+                out,
+                prob_matrix=np.asarray(prob_matrix, dtype=np.float64),
+                true_idx=np.asarray(true_idx, dtype=np.int64),
+                class_names=np.asarray(class_names),
+                cache_key=str(cache_key),
+            )
 
 
-def _load_oof_npz(path, fallback_true_idx=None):
-    data = np.load(path, allow_pickle=True)
-    prob_matrix = np.asarray(data['prob_matrix'], dtype=np.float64)
-    if 'true_idx' in data.files:
-        true_idx = np.asarray(data['true_idx'], dtype=np.int64)
-    elif fallback_true_idx is not None:
-        true_idx = np.asarray(fallback_true_idx, dtype=np.int64)
-    else:
-        raise KeyError(
-            'true_idx is not a file in the archive and no fallback_true_idx was provided.'
-        )
-    class_names = [str(v) for v in data['class_names'].tolist()]
+def _load_oof_npz(path, fallback_true_idx=None, cache_key=''):
+    with np.load(path, allow_pickle=False) as data:
+        prob_matrix = np.asarray(data['prob_matrix'], dtype=np.float64)
+        if 'true_idx' in data.files:
+            true_idx = np.asarray(data['true_idx'], dtype=np.int64)
+        elif fallback_true_idx is not None:
+            true_idx = np.asarray(fallback_true_idx, dtype=np.int64)
+        else:
+            raise KeyError(
+                'true_idx is not a file in the archive and no fallback_true_idx was provided.'
+            )
+        class_names = [str(v) for v in data['class_names'].tolist()]
+        if cache_key:
+            if 'cache_key' not in data.files:
+                raise ValueError('OOF cache has no provenance metadata: {}'.format(path))
+            loaded_key = str(np.asarray(data['cache_key']).tolist())
+            if loaded_key != str(cache_key):
+                raise ValueError('OOF cache provenance does not match current run: {}'.format(path))
+    if not np.isfinite(prob_matrix).all():
+        raise ValueError('OOF probability matrix contains non-finite values: {}'.format(path))
     return prob_matrix, true_idx, class_names
 
 
@@ -263,11 +278,65 @@ def _oof_fold_cache_path(cache_dir, model_arch, fold_label):
     )
 
 
-def _oof_fold_cache_key(model_arch, localize_strategy, dl_train_params):
+def _content_fingerprint(values):
+    digest = hashlib.sha256()
+
+    def update_part(part):
+        digest.update(len(part).to_bytes(8, byteorder='big', signed=False))
+        digest.update(part)
+
+    for value in values:
+        if isinstance(value, np.ndarray):
+            array = np.ascontiguousarray(value)
+            update_part(str(array.dtype).encode('utf-8'))
+            update_part(str(array.shape).encode('utf-8'))
+            update_part(array.tobytes())
+        else:
+            update_part(
+                json.dumps(value, sort_keys=True, default=str).encode('utf-8')
+            )
+    return digest.hexdigest()
+
+
+def _training_file_cache_key(path, model_arch, localize_strategy, dl_train_params, cv_seed):
+    digest = hashlib.sha256()
+    with open(path, 'rb') as inp:
+        for chunk in iter(lambda: inp.read(1024 * 1024), b''):
+            digest.update(chunk)
+    return _content_fingerprint([
+        __version__,
+        digest.hexdigest(),
+        model_arch,
+        localize_strategy,
+        dict(sorted(dict(dl_train_params).items())),
+        int(cv_seed),
+    ])
+
+
+def _oof_fold_cache_key(
+    model_arch,
+    localize_strategy,
+    dl_train_params,
+    x,
+    aa_sequences,
+    class_labels,
+    perox_labels,
+    fold_ids,
+    cv_seed,
+):
     payload = {
+        'cdskit_version': __version__,
         'model_arch': str(model_arch),
         'localize_strategy': str(localize_strategy),
         'dl_train_params': dict(sorted(dict(dl_train_params).items())),
+        'cv_seed': int(cv_seed),
+        'training_content_sha256': _content_fingerprint([
+            np.asarray(x),
+            list(aa_sequences),
+            list(class_labels),
+            list(perox_labels),
+            None if fold_ids is None else list(fold_ids),
+        ]),
     }
     return json.dumps(payload, sort_keys=True, default=str)
 
@@ -276,35 +345,38 @@ def _save_oof_fold_npz(path, row_index, prob_matrix, true_idx, class_names, fold
     out_dir = os.path.dirname(path)
     if out_dir != '':
         os.makedirs(out_dir, exist_ok=True)
-    tmp_path = str(path) + '.tmp.npz'
-    np.savez_compressed(
-        tmp_path,
-        row_index=np.asarray(row_index, dtype=np.int64),
-        prob_matrix=np.asarray(prob_matrix, dtype=np.float64),
-        true_idx=np.asarray(true_idx, dtype=np.int64),
-        class_names=np.asarray(list(class_names)),
-        fold_label=str(fold_label),
-        cache_key=str(cache_key),
-    )
-    os.replace(tmp_path, path)
+    from cdskit.util import atomic_output_path
+    with atomic_output_path(path) as temporary:
+        with open(temporary, 'wb') as out:
+            np.savez_compressed(
+                out,
+                row_index=np.asarray(row_index, dtype=np.int64),
+                prob_matrix=np.asarray(prob_matrix, dtype=np.float64),
+                true_idx=np.asarray(true_idx, dtype=np.int64),
+                class_names=np.asarray(list(class_names)),
+                fold_label=str(fold_label),
+                cache_key=str(cache_key),
+            )
 
 
 def _load_oof_fold_npz(path, class_names, cache_key=''):
-    data = np.load(path, allow_pickle=True)
-    loaded_names = [str(v) for v in np.asarray(data['class_names']).tolist()]
-    if loaded_names != list(class_names):
-        raise ValueError('Class names in OOF fold cache do not match LOCALIZATION_CLASSES.')
-    if str(cache_key or '') != '':
-        if 'cache_key' not in data.files:
-            raise ValueError('OOF fold cache has no cache_key metadata: {}'.format(path))
-        loaded_key = str(np.asarray(data['cache_key']).tolist())
-        if loaded_key != str(cache_key):
-            raise ValueError('OOF fold cache parameters do not match current run: {}'.format(path))
-    row_index = np.asarray(data['row_index'], dtype=np.int64)
-    prob_matrix = np.asarray(data['prob_matrix'], dtype=np.float64)
-    true_idx = np.asarray(data['true_idx'], dtype=np.int64)
+    with np.load(path, allow_pickle=False) as data:
+        loaded_names = [str(v) for v in np.asarray(data['class_names']).tolist()]
+        if loaded_names != list(class_names):
+            raise ValueError('Class names in OOF fold cache do not match LOCALIZATION_CLASSES.')
+        if str(cache_key or '') != '':
+            if 'cache_key' not in data.files:
+                raise ValueError('OOF fold cache has no cache_key metadata: {}'.format(path))
+            loaded_key = str(np.asarray(data['cache_key']).tolist())
+            if loaded_key != str(cache_key):
+                raise ValueError('OOF fold cache parameters do not match current run: {}'.format(path))
+        row_index = np.asarray(data['row_index'], dtype=np.int64)
+        prob_matrix = np.asarray(data['prob_matrix'], dtype=np.float64)
+        true_idx = np.asarray(data['true_idx'], dtype=np.int64)
     if prob_matrix.shape[0] != row_index.shape[0] or true_idx.shape[0] != row_index.shape[0]:
         raise ValueError('Row count mismatch in OOF fold cache: {}'.format(path))
+    if not np.isfinite(prob_matrix).all():
+        raise ValueError('OOF fold cache contains non-finite values: {}'.format(path))
     return row_index, prob_matrix, true_idx
 
 
@@ -1790,6 +1862,12 @@ def _run_model_oof_with_fold_cache(
         model_arch=model_arch,
         localize_strategy=localize_strategy,
         dl_train_params=dl_train_params,
+        x=x,
+        aa_sequences=aa_sequences,
+        class_labels=class_labels,
+        perox_labels=perox_labels,
+        fold_ids=fold_ids,
+        cv_seed=cv_seed,
     )
     for fold_i, test_idx in enumerate(folds):
         fold_label = fold_labels[fold_i]
@@ -2004,6 +2082,7 @@ def _esm_dl_params_from_args(args):
         'seed': int(args.esm_dl_seed),
         'device': str(args.esm_dl_device),
         'esm_model_name': str(args.esm_model_name),
+        'esm_model_revision': str(args.esm_model_revision),
         'esm_model_local_dir': str(args.esm_model_local_dir),
         'esm_pooling': str(args.esm_pooling),
         'esm_max_len': int(args.esm_max_len),
@@ -2607,6 +2686,11 @@ def build_parser():
     parser.add_argument('--bilstm_dl_seed', default=1, type=int)
     parser.add_argument('--bilstm_dl_device', default='cpu', choices=['cpu', 'cuda', 'mps', 'auto'], type=str)
     parser.add_argument('--esm_model_name', default='facebook/esm2_t6_8M_UR50D', type=str)
+    parser.add_argument(
+        '--esm_model_revision',
+        default='c731040fcd8d73dceaa04b0a8e6329b345b0f5df',
+        type=str,
+    )
     parser.add_argument('--esm_model_local_dir', default='', type=str)
     parser.add_argument('--esm_pooling', default='cls', choices=['cls', 'mean'], type=str)
     parser.add_argument('--esm_max_len', default=200, type=int)
@@ -2648,12 +2732,21 @@ def main(argv=None):
             class_names=class_names,
         )
 
+    bilstm_dl = _bilstm_dl_params_from_args(args)
+    bilstm_cache_key = _training_file_cache_key(
+        path=args.training_tsv,
+        model_arch='bilstm_attention',
+        localize_strategy=args.localize_strategy,
+        dl_train_params=bilstm_dl,
+        cv_seed=args.cv_seed,
+    )
     bilstm_prob = None
     bilstm_true = None
     if reuse_cache and os.path.exists(args.bilstm_oof_npz):
         bilstm_prob, bilstm_true, class_names_from_file = _load_oof_npz(
             args.bilstm_oof_npz,
             fallback_true_idx=fallback_true_idx,
+            cache_key=bilstm_cache_key,
         )
         if class_names_from_file != class_names:
             raise ValueError('Class names in bilstm_oof_npz do not match LOCALIZATION_CLASSES.')
@@ -2670,7 +2763,6 @@ def main(argv=None):
             'used_cache': True,
         }
     else:
-        bilstm_dl = _bilstm_dl_params_from_args(args)
         out = _run_model_oof(
             training_tsv=args.training_tsv,
             model_arch='bilstm_attention',
@@ -2686,6 +2778,7 @@ def main(argv=None):
             prob_matrix=bilstm_prob,
             true_idx=bilstm_true,
             class_names=class_names,
+            cache_key=bilstm_cache_key,
         )
         bilstm_info = {
             'metrics': out['metrics'],
@@ -2699,12 +2792,21 @@ def main(argv=None):
             if key in out:
                 bilstm_info[key] = out[key]
 
+    esm_dl = _esm_dl_params_from_args(args)
+    esm_cache_key = _training_file_cache_key(
+        path=args.training_tsv,
+        model_arch='esm_head',
+        localize_strategy=args.localize_strategy,
+        dl_train_params=esm_dl,
+        cv_seed=args.cv_seed,
+    )
     esm_prob = None
     esm_true = None
     if reuse_cache and os.path.exists(args.esm_oof_npz):
         esm_prob, esm_true, class_names_from_file = _load_oof_npz(
             args.esm_oof_npz,
             fallback_true_idx=fallback_true_idx,
+            cache_key=esm_cache_key,
         )
         if class_names_from_file != class_names:
             raise ValueError('Class names in esm_oof_npz do not match LOCALIZATION_CLASSES.')
@@ -2721,7 +2823,6 @@ def main(argv=None):
             'used_cache': True,
         }
     else:
-        esm_dl = _esm_dl_params_from_args(args)
         out = _run_model_oof(
             training_tsv=args.training_tsv,
             model_arch='esm_head',
@@ -2737,6 +2838,7 @@ def main(argv=None):
             prob_matrix=esm_prob,
             true_idx=esm_true,
             class_names=class_names,
+            cache_key=esm_cache_key,
         )
         esm_info = {
             'metrics': out['metrics'],
@@ -2951,16 +3053,15 @@ def main(argv=None):
     out_json_dir = os.path.dirname(args.out_json)
     if out_json_dir != '':
         os.makedirs(out_json_dir, exist_ok=True)
-    with open(args.out_json, 'w', encoding='utf-8') as out_json:
-        json.dump(out, out_json, indent=2)
+    atomic_write_json(args.out_json, out, indent=2)
 
     out_md_dir = os.path.dirname(args.out_md)
     if out_md_dir != '':
         os.makedirs(out_md_dir, exist_ok=True)
-    with open(args.out_md, 'w', encoding='utf-8') as out_md:
+    with atomic_text_writer(args.out_md, encoding='utf-8') as out_md:
         out_md.write(out['markdown'] + '\n')
 
-    print(json.dumps(out, indent=2))
+    print(json.dumps(out, indent=2, allow_nan=False))
 
 
 if __name__ == '__main__':

@@ -786,23 +786,41 @@ def test_main_runs_with_cached_oof_only(temp_dir, monkeypatch):
     out_json = temp_dir / 'blend_out.json'
     out_md = temp_dir / 'blend_out.md'
     dummy_tsv = temp_dir / 'dummy.tsv'
+    dummy_tsv.write_text(
+        'sequence\tlocalization\tperoxisome\tfold_id\n'
+        'MAAA\tnoTP\tno\tfold1\n',
+        encoding='utf-8',
+    )
+    cache_args = targetp_blend_module.build_parser().parse_args([])
+    cache_args.training_tsv = str(dummy_tsv)
+    bilstm_key = targetp_blend_module._training_file_cache_key(
+        path=str(dummy_tsv),
+        model_arch='bilstm_attention',
+        localize_strategy=cache_args.localize_strategy,
+        dl_train_params=targetp_blend_module._bilstm_dl_params_from_args(cache_args),
+        cv_seed=cache_args.cv_seed,
+    )
+    esm_key = targetp_blend_module._training_file_cache_key(
+        path=str(dummy_tsv),
+        model_arch='esm_head',
+        localize_strategy=cache_args.localize_strategy,
+        dl_train_params=targetp_blend_module._esm_dl_params_from_args(cache_args),
+        cv_seed=cache_args.cv_seed,
+    )
 
     _save_oof_npz(
         path=str(bilstm_npz),
         prob_matrix=bilstm_prob,
         true_idx=true_idx,
         class_names=class_names,
+        cache_key=bilstm_key,
     )
     _save_oof_npz(
         path=str(esm_npz),
         prob_matrix=esm_prob,
         true_idx=true_idx,
         class_names=class_names,
-    )
-    dummy_tsv.write_text(
-        'sequence\tlocalization\tperoxisome\tfold_id\n'
-        'MAAA\tnoTP\tno\tfold1\n',
-        encoding='utf-8',
+        cache_key=esm_key,
     )
 
     monkeypatch.setattr(

@@ -10,8 +10,8 @@ from cdskit.codonutil import (
 )
 from cdskit.trimcodon import choose_kept_codon_sites, summarize_codon_site, validate_fraction
 from cdskit.util import (
+    atomic_text_writer,
     read_seqs,
-    resolve_threads,
     stop_if_invalid_codontable,
     stop_if_not_aligned,
     stop_if_not_dna,
@@ -351,7 +351,7 @@ def write_svg(svg_text_content, outfile):
         if not svg_text_content.endswith('\n'):
             sys.stdout.write('\n')
         return
-    with open(outfile, 'w', encoding='utf-8') as f:
+    with atomic_text_writer(outfile, encoding='utf-8') as f:
         f.write(svg_text_content)
         if not svg_text_content.endswith('\n'):
             f.write('\n')
@@ -359,7 +359,6 @@ def write_svg(svg_text_content, outfile):
 
 def draw_main(args):
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
-    _ = resolve_threads(getattr(args, 'threads', 1))
     stop_if_not_dna(records=records, label='--seq_file')
     stop_if_not_aligned(records=records)
     stop_if_not_multiple_of_three(records=records)

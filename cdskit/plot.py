@@ -23,6 +23,8 @@ from cdskit.codonutil import codon_has_missing, get_forward_table, get_stop_codo
 from cdskit.draw import classify_codon, summarize_draw
 from cdskit.trimcodon import choose_kept_codon_sites, summarize_codon_site, validate_fraction
 from cdskit.util import (
+    atomic_output_path,
+    atomic_text_writer,
     parallel_map_ordered,
     read_seqs,
     resolve_threads,
@@ -88,6 +90,8 @@ def _int_arg(name, value, default):
         raise Exception(f'{name} must be an integer. Exiting.\n')
     if value <= 0:
         raise Exception(f'{name} must be greater than zero. Exiting.\n')
+    if value > 20_000:
+        raise Exception(f'{name} must be <= 20000 for resource safety. Exiting.\n')
     return value
 
 
@@ -139,10 +143,11 @@ def _truncate_text(text, limit=28):
 
 
 def _compute_sequence_stats(records, threads):
-    worker = lambda record: {
-        'seq_id': record.id,
-        'ambiguous_codons': sequence_ambiguous_codon_counts(str(record.seq))[0],
-    }
+    def worker(record):
+        return {
+            'seq_id': record.id,
+            'ambiguous_codons': sequence_ambiguous_codon_counts(str(record.seq))[0],
+        }
     return parallel_map_ordered(items=records, worker=worker, threads=threads)
 
 
@@ -530,7 +535,6 @@ def _get_msa_block_layout(num_records):
 
 def _draw_msa_block(ax, records, msa_summary, start, end, wrap, font_size, y_offset, layout):
     block_len = end - start
-    num_records = len(records)
     block_codons = block_len // 3
     start_codon = start // 3
     tick_box_height = layout['tick_box_height']
@@ -676,13 +680,14 @@ def _write_serialized_plot(payload, outfile, plotformat):
             sys.stdout.buffer.flush()
         return
     if plotformat == 'svg':
-        with open(outfile, 'w', encoding='utf-8') as f:
+        with atomic_text_writer(outfile, encoding='utf-8') as f:
             f.write(payload)
             if not payload.endswith('\n'):
                 f.write('\n')
         return
-    with open(outfile, 'wb') as f:
-        f.write(payload)
+    with atomic_output_path(outfile) as temporary:
+        with open(temporary, 'wb') as f:
+            f.write(payload)
 
 
 def _plot_ambiguous_bar_chart(ax, records, top_n, title):
@@ -816,6 +821,8 @@ def _build_map_figure(records, summary, args):
     num_records = len(records)
     num_sites = len(summary['site_summaries'])
     height = max(base_height, 180 + max(1, num_records) * row_height)
+    if height > 20_000:
+        raise ValueError('Rendered map height exceeds the 20,000 pixel safety limit.')
     left_margin = min(0.42, max(0.12, label_width / max(1.0, float(width))))
     show_bar_chart = (top_n > 0) and (len(summary['sequence_ambiguous_counts']) > 0)
 
@@ -937,6 +944,8 @@ def _build_msa_figure(records, args):
     total_msa_height = (num_blocks * block_layout['total_height']) + (max(0, num_blocks - 1) * block_gap)
     unit_px = max(38.0, (float(row_height) / max(0.01, block_layout['row_panel_height'])) * 0.56)
     height = max(base_height, 130 + int(total_msa_height * unit_px))
+    if height > 20_000:
+        raise ValueError('Rendered MSA height exceeds the 20,000 pixel safety limit.')
     left_margin = min(0.42, max(0.14, label_width / max(1.0, float(width))))
     desired_nt_px = max(6.0, font_size * 0.58)
     grid_width_fraction = min(0.98 - left_margin, (wrap * desired_nt_px) / max(1.0, float(width)))

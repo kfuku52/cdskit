@@ -258,7 +258,6 @@ class TestAggregateMain:
         assert len(result) == 2
 
         # Verify longest were kept
-        lengths = {r.id: len(r.seq) for r in result}
         # seq1:3 becomes seq1 after removing :3
         seq1_result = [r for r in result if 'seq1' in r.id][0]
         assert len(seq1_result.seq) == 33

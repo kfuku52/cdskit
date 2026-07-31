@@ -1,4 +1,3 @@
-import json
 import re
 import sys
 from collections import Counter
@@ -9,6 +8,9 @@ from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
 from cdskit.util import (
+    atomic_output_paths,
+    atomic_write_json,
+    compile_safe_regex,
     parallel_map_ordered,
     read_seqs,
     resolve_threads,
@@ -547,11 +549,7 @@ def parse_csv_patterns(pattern_text):
 
 def validate_patterns(patterns, option_name):
     for pattern in patterns:
-        try:
-            re.compile(pattern)
-        except re.error as e:
-            txt = 'Invalid regex in {}: {} ({})'
-            raise Exception(txt.format(option_name, pattern, e))
+        compile_safe_regex(pattern, label=option_name)
 
 
 def select_indices_by_patterns(records, patterns):
@@ -582,6 +580,10 @@ def validate_max_exact_sequences(max_exact_sequences):
     if max_exact_sequences < 1:
         txt = '--max_exact_sequences should be >= 1, but got {}. Exiting.\n'
         raise Exception(txt.format(max_exact_sequences))
+    if max_exact_sequences > 22:
+        raise ValueError(
+            '--max_exact_sequences should be <= 22 to bound the 2^n exact-search memory use.'
+        )
 
 
 def extract_complete_codon_indices(codon_presence_matrix=None, kept_indices=None, support_masks=None):
@@ -668,8 +670,7 @@ def write_report(report_path, report_data):
     if report_path == '':
         return
     if report_path.lower().endswith('.json'):
-        with open(report_path, 'w', encoding='utf-8') as f:
-            json.dump(report_data, f, indent=2, ensure_ascii=False)
+        atomic_write_json(report_path, report_data, indent=2)
         return
 
     summary_keys = [
@@ -825,8 +826,7 @@ def maxalign_main(args):
         )
         for i in kept_indices
     ]
-    write_seqs(records=output_records, outfile=args.outfile, outseqformat=args.outseqformat)
-
+    report_data = None
     if report_path != '':
         steps = [build_step_snapshot(
             label='initial',
@@ -869,4 +869,20 @@ def maxalign_main(args):
             'removed_ids': removed_ids,
             'steps': steps,
         }
-        write_report(report_path=report_path, report_data=report_data)
+    output_paths = [
+        path
+        for path in (args.outfile, report_path)
+        if path not in ('', '-')
+    ]
+    with atomic_output_paths(output_paths) as staged_paths:
+        staged = dict(zip(output_paths, staged_paths))
+        write_seqs(
+            records=output_records,
+            outfile=staged.get(args.outfile, args.outfile),
+            outseqformat=args.outseqformat,
+        )
+        if report_data is not None:
+            write_report(
+                report_path=staged.get(report_path, report_path),
+                report_data=report_data,
+            )

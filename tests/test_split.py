@@ -224,8 +224,6 @@ class TestSplitMain:
         """Test split with split_01 test data."""
         input_path = data_dir / "split_01" / "input.fasta"
         expected_1st = data_dir / "split_01" / "output_1st_codon_positions.fasta"
-        expected_2nd = data_dir / "split_01" / "output_2nd_codon_positions.fasta"
-        expected_3rd = data_dir / "split_01" / "output_3rd_codon_positions.fasta"
 
         if not input_path.exists():
             pytest.skip("split_01 test data not found")

@@ -1,4 +1,3 @@
-import json
 import sys
 from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
@@ -7,6 +6,7 @@ from functools import partial
 import Bio.Data.CodonTable
 
 from cdskit.util import (
+    atomic_write_json,
     parallel_map_ordered,
     read_seqs,
     resolve_threads,
@@ -20,8 +20,8 @@ MISSING_CHARS = frozenset('-?.')
 GAP_ONLY_CHARS = frozenset('-?.NXnx')
 UNAMBIGUOUS_NT = frozenset('ACGTacgt')
 _DROP_MISSING_CHARS_TABLE = str.maketrans('', '', ''.join(sorted(MISSING_CHARS)))
-_STOP_CODON_CACHE = dict()
-_AMBIGUOUS_CODON_CLASS_CACHE = dict()
+_STOP_CODON_CACHE: dict = {}
+_AMBIGUOUS_CODON_CLASS_CACHE: dict = {}
 _PROCESS_PARALLEL_MIN_RECORDS = 2000
 
 
@@ -203,8 +203,7 @@ def write_validate_report(report_path, summary):
     if report_path == '':
         return
     if report_path.lower().endswith('.json'):
-        with open(report_path, 'w', encoding='utf-8') as f:
-            json.dump(summary, f, indent=2, ensure_ascii=False)
+        atomic_write_json(report_path, summary, indent=2)
         return
     count_values = {
         'num_non_triplet_sequences': len(summary['non_triplet_ids']),

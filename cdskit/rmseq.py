@@ -1,8 +1,14 @@
-import re
 import math
 from functools import partial
 
-from cdskit.util import parallel_map_ordered, read_seqs, resolve_threads, stop_if_not_seqtype, write_seqs
+from cdskit.util import (
+    compile_safe_regex,
+    parallel_map_ordered,
+    read_seqs,
+    resolve_threads,
+    stop_if_not_seqtype,
+    write_seqs,
+)
 
 
 def normalize_problematic_chars(problematic_chars):
@@ -38,7 +44,11 @@ def should_remove_record(record, seqname_pattern, problematic_percent, problemat
     if hasattr(seqname_pattern, 'fullmatch'):
         matched = seqname_pattern.fullmatch(record.id) is not None
     else:
-        matched = re.fullmatch(seqname_pattern, record.id) is not None
+        compiled = compile_safe_regex(
+            seqname_pattern,
+            label='regex in --seq_name_regex',
+        )
+        matched = compiled.fullmatch(record.id) is not None
     if matched:
         return True
 
@@ -60,11 +70,10 @@ def should_keep_record(record, seqname_pattern, problematic_percent, problematic
 
 
 def compile_seqname_regex(seqname_pattern):
-    try:
-        return re.compile(seqname_pattern)
-    except re.error as e:
-        txt = 'Invalid regex in --seq_name_regex: {} ({})'
-        raise Exception(txt.format(seqname_pattern, e))
+    return compile_safe_regex(
+        seqname_pattern,
+        label='regex in --seq_name_regex',
+    )
 
 
 def validate_problematic_percent(problematic_percent):

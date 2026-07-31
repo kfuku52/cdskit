@@ -28,14 +28,14 @@ Use `snake_case` for long options. For example:
 | `intersection` | `--ingff` | `--in_gff` |
 | `intersection` | `--outgff` | `--out_gff` |
 | `intersection` | `--fix_outrange_gff_records` | `--fix_out_of_range_gff_records` |
-| `label` | `--list_seqname_keys` | `--list_seq_name_keys` |
+| `accession2fasta`, `parsegb` | `--list_seqname_keys` | `--list_seq_name_keys` |
 | `localize` | `--no_model_download BOOL` | `--model_download BOOL` with the value inverted |
 | `mask` | `--maskchar` | `--mask_char` |
 | `maxalign` | `--keep` | `--keep_seq_name_regex` |
 | `maxalign` | `--missing_char` | `--missing_chars` |
 | `pad` | `--padchar` | `--pad_char` |
 | `pad` | `--nopseudo` | `--drop_pseudo yes` |
-| `parsegb` | `--annotate_seqname` | `--annotate_seq_name` |
+| `longestorf`, `longestcds` | `--annotate_seqname` | `--annotate_seq_name` |
 | `plot` | `--plotformat` | `--format` |
 | `printseq` | `--show_seqname` | `--show_seq_name` |
 | `rmseq` | `--problematic_char` | `--problematic_chars` |
@@ -60,8 +60,9 @@ Warning: --seqfile is deprecated; use --seq_file instead.
 ```
 
 Boolean arguments accept `yes/no`, `true/false`, `on/off`, and `1/0`.
-`--threads 0` selects all detected CPUs; positive values select an explicit
-worker count.
+Commands that expose `--threads` use `0` for CPU auto-detection and positive
+values for an explicit worker count. Commands without parallel work no longer
+advertise this option.
 
 Run the relevant command with `--help` to see its complete canonical option
 list. The warning is authoritative for less common renamed options.

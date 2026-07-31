@@ -59,32 +59,17 @@ class TestCLIHelpStrings:
         The --replace_chars argument has a help string containing special characters
         including %. This must be properly escaped or it causes errors in Python 3.14+.
         """
-        # Read the actual cdskit CLI file to check the help string
         cli_path = Path(__file__).parent.parent / "cdskit" / "cdskit"
+        result = subprocess.run(
+            [sys.executable, str(cli_path), "label", "--help"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
 
-        if cli_path.exists():
-            content = cli_path.read_text()
-
-            # Check if the help string for replace_chars exists
-            if '--replace_chars' in content:
-                # Find the line with the help string
-                for line in content.split('\n'):
-                    if 'replace_chars' in line and 'help=' in line:
-                        # Check for common problematic patterns
-                        # The % character before a letter can cause format string errors
-                        # unless properly escaped as %%
-                        import re
-                        # Find help string content
-                        help_match = re.search(r"help=['\"]([^'\"]+)['\"]", content)
-                        if help_match:
-                            help_text = help_match.group(1)
-                            # Check for unescaped % followed by letter/digit
-                            # This pattern would cause format string errors
-                            problematic = re.findall(r'%[a-zA-Z]', help_text)
-                            for p in problematic:
-                                if p not in ['%(default)s', '%(prog)s']:
-                                    # This is likely an unescaped % that would cause issues
-                                    pytest.fail(f"Potentially unescaped % in help: {p}")
+        assert "--replace_chars" in result.stdout
+        assert "!@#$%^&*+=/?<>|--_" in result.stdout
+        assert result.stderr == ""
 
     def test_argparse_special_chars_in_metavar(self):
         """Test that special characters in metavar don't cause issues."""
@@ -261,6 +246,10 @@ class TestCLIConsistency:
         monkeypatch.setattr('cdskit.cliutil.os.cpu_count', lambda: 6)
         assert resolve_threads(0) == 6
 
+    def test_threads_above_safety_limit_are_rejected(self):
+        with pytest.raises(ValueError, match='--threads should be <= 64'):
+            resolve_threads(65)
+
     def test_public_cli_legacy_option_warns_and_still_runs(self, tmp_path):
         cli_path = Path(__file__).parent.parent / 'cdskit' / 'cdskit'
         fasta = tmp_path / 'input.fasta'
@@ -275,6 +264,61 @@ class TestCLIConsistency:
 
         assert '--seqfile is deprecated; use --seq_file' in result.stderr
         assert 'Number of sequences: 1' in result.stdout
+
+    def test_cli_rejects_input_output_collision_without_modifying_input(self, tmp_path):
+        cli_path = Path(__file__).parent.parent / 'cdskit' / 'cdskit'
+        fasta = tmp_path / 'input.fasta'
+        original = '>seq1\nATGAAA\n'
+        fasta.write_text(original, encoding='utf-8')
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(cli_path),
+                'translate',
+                '--seq_file',
+                str(fasta),
+                '--out_file',
+                str(fasta),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 1
+        assert 'Input and output paths should be different' in result.stderr
+        assert fasta.read_text(encoding='utf-8') == original
+
+    def test_threaded_checkout_cli_runs_command_once(self, tmp_path):
+        cli_path = Path(__file__).parent.parent / 'cdskit' / 'cdskit'
+        fasta = tmp_path / 'input.fasta'
+        output = tmp_path / 'output.fasta'
+        fasta.write_text(
+            ''.join(f'>seq{i}\nATGAAA\n' for i in range(2_000)),
+            encoding='utf-8',
+        )
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(cli_path),
+                'translate',
+                '--seq_file',
+                str(fasta),
+                '--out_file',
+                str(output),
+                '--threads',
+                '2',
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+        assert result.stderr.count('cdskit translate: started') == 1
+        assert sum(line.startswith('>') for line in output.read_text().splitlines()) == 2_000
 
     def test_checkout_script_wrapper_runs_directly(self):
         script_path = (

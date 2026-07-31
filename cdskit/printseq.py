@@ -1,21 +1,29 @@
-import re
 from functools import partial
 
-from cdskit.util import parallel_map_ordered, read_seqs, resolve_threads, stop_if_not_seqtype
+from cdskit.util import (
+    compile_safe_regex,
+    parallel_map_ordered,
+    read_seqs,
+    resolve_threads,
+    stop_if_not_seqtype,
+)
 
 
 def record_matches_seqname(record, seqname_pattern):
     if hasattr(seqname_pattern, 'fullmatch'):
         return seqname_pattern.fullmatch(record.id) is not None
-    return re.fullmatch(seqname_pattern, record.id) is not None
+    compiled = compile_safe_regex(
+        seqname_pattern,
+        label='regex in --seq_name_regex',
+    )
+    return compiled.fullmatch(record.id) is not None
 
 
 def compile_seqname_regex(seqname_pattern):
-    try:
-        return re.compile(seqname_pattern)
-    except re.error as e:
-        txt = 'Invalid regex in --seq_name_regex: {} ({})'
-        raise Exception(txt.format(seqname_pattern, e))
+    return compile_safe_regex(
+        seqname_pattern,
+        label='regex in --seq_name_regex',
+    )
 
 
 def format_printseq_lines(record, show_seqname):

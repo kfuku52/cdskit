@@ -1,14 +1,16 @@
 import numpy as np
+import os
 import sys
 import re
 from collections import Counter
 from functools import partial
-from Bio.Seq import Seq
 
 from cdskit.util import (
+    atomic_output_paths,
     parallel_map_ordered,
     read_gff,
     read_seqs,
+    replace_record_sequence,
     resolve_threads,
     stop_if_not_dna,
     write_gff,
@@ -46,6 +48,43 @@ def vectorized_coordinate_update(
     """
     if len(justifications) == 0:
         return seq_gff_start_coordinates, seq_gff_end_coordinates
+
+    # Range-aware edits preserve coordinates in the retained part of a gap.
+    if isinstance(justifications[0], dict) and 'original_gap_length' in justifications[0]:
+        edits = sorted(
+            (
+                int(just['original_gap_start']) + 1,
+                int(just['original_gap_length']),
+                int(just['target_gap_length']),
+            )
+            for just in justifications
+        )
+
+        def apply_range_aware(coords):
+            updated = coords.copy()
+            cumulative_offset = 0
+            for original_start_1based, original_length, target_length in edits:
+                actual_start = original_start_1based + cumulative_offset
+                actual_old_end = actual_start + original_length - 1
+                actual_new_end = actual_start + target_length - 1
+                delta = target_length - original_length
+                inside = (
+                    (updated >= actual_start)
+                    & (updated <= actual_old_end)
+                )
+                if target_length == 0:
+                    updated[inside] = max(1, actual_start - 1)
+                elif delta < 0:
+                    updated[inside] = np.minimum(updated[inside], actual_new_end)
+                after = updated > actual_old_end
+                updated[after] += delta
+                cumulative_offset += delta
+            return updated
+
+        return (
+            apply_range_aware(seq_gff_start_coordinates),
+            apply_range_aware(seq_gff_end_coordinates),
+        )
 
     # Accept both legacy dict format and internal compact tuple format.
     # dict: {'original_edit_start': int, 'edit_length': int}
@@ -109,6 +148,12 @@ def validate_gapjust_args(gap_len, gap_just_min, gap_just_max):
     ]:
         if value is not None and value < 0:
             raise ValueError(f'{label} must be >= 0. Got {value}.')
+    maximum = int(os.environ.get('CDSKIT_MAX_GAP_LENGTH', '1000000'))
+    if gap_len > maximum:
+        raise ValueError(
+            '--gap_len exceeds the {} base safety limit. Set '
+            'CDSKIT_MAX_GAP_LENGTH to change it.'.format(maximum)
+        )
 
 
 def normalize_record_gap_lengths(record, target_gap_length, gap_just_min=None, gap_just_max=None):
@@ -136,7 +181,13 @@ def normalize_record_gap_lengths(record, target_gap_length, gap_just_min=None, g
         if justify_gap:
             rebuilt.append('N' * target_gap_length)
             edit_len = target_gap_length - gap_length
-            seq_justifications.append((start, edit_len))
+            seq_justifications.append({
+                'original_gap_start': start,
+                'original_gap_length': gap_length,
+                'target_gap_length': target_gap_length,
+                'original_edit_start': start,
+                'edit_length': edit_len,
+            })
             num_justifications += 1
             if (min_original_gap_length is None) or (gap_length < min_original_gap_length):
                 min_original_gap_length = gap_length
@@ -148,7 +199,7 @@ def normalize_record_gap_lengths(record, target_gap_length, gap_just_min=None, g
         cursor = end
 
     rebuilt.append(seq_str[cursor:])
-    record.seq = Seq(''.join(rebuilt))
+    replace_record_sequence(record, ''.join(rebuilt))
 
     return (
         seq_justifications,
@@ -303,9 +354,7 @@ def gapjust_main(args):
     if args.ingff is not None:
         stop_if_duplicate_sequence_ids(records=records)
 
-    summarize_gap_justifications(num_justifications, min_original_gap_length, max_original_gap_length)
-    write_seqs(records=records, outfile=args.outfile, outseqformat=args.outseqformat)
-
+    gff = None
     if args.ingff is not None:
         gff = read_gff(args.ingff)
         (
@@ -318,4 +367,40 @@ def gapjust_main(args):
             num_justified_end_coordinate,
             num_justified_gff_gene,
         )
-        write_gff(gff, args.outgff)
+        sequence_lengths = {record.id: len(record.seq) for record in records}
+        for row in gff['data']:
+            seq_len = sequence_lengths.get(str(row['seqid']))
+            if seq_len is None:
+                continue
+            start = int(row['start'])
+            end = int(row['end'])
+            if not (1 <= start <= end <= seq_len):
+                raise ValueError(
+                    'Gap-adjusted GFF coordinates are invalid for {}: {}-{} '
+                    '(sequence length {}).'.format(
+                        row['seqid'],
+                        start,
+                        end,
+                        seq_len,
+                    )
+                )
+
+    summarize_gap_justifications(
+        num_justifications,
+        min_original_gap_length,
+        max_original_gap_length,
+    )
+    output_paths = [
+        path
+        for path in (args.outfile, args.outgff if gff is not None else None)
+        if path not in (None, '', '-')
+    ]
+    with atomic_output_paths(output_paths) as staged_paths:
+        staged = dict(zip(output_paths, staged_paths))
+        write_seqs(
+            records=records,
+            outfile=staged.get(args.outfile, args.outfile),
+            outseqformat=args.outseqformat,
+        )
+        if gff is not None:
+            write_gff(gff, staged.get(args.outgff, args.outgff))

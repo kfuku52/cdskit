@@ -8,6 +8,7 @@ from cdskit.localize_learn import (
 )
 from cdskit.cliutil import CdskitArgumentParser, parse_bool
 from cdskit.tsvio import read_tsv, write_tsv
+from cdskit.util import atomic_write_json
 
 LINEAGE_COL_CANDIDATES = (
     'lineage_ids',
@@ -156,8 +157,7 @@ def split_uniprot_eukaryota_tsv(input_tsv, out_dir, out_prefix='', lineage_col='
         'output_paths': output_paths,
     }
     if report_json != '':
-        with open(report_json, 'w', encoding='utf-8') as out:
-            json.dump(report, out, indent=2)
+        atomic_write_json(report_json, report, indent=2)
     return report
 
 
@@ -294,7 +294,7 @@ def main(argv=None):
         lineage_col=args.lineage_col,
         report_json=args.report_json,
     )
-    print(json.dumps(report, indent=2))
+    print(json.dumps(report, indent=2, allow_nan=False))
 
 
 if __name__ == '__main__':

@@ -16,8 +16,8 @@ from cdskit.util import (
     write_seqs,
 )
 
-_CODON_TABLE_CACHE = dict()
-_CODON_SCAN_CACHE = dict()
+_CODON_TABLE_CACHE: dict = {}
+_CODON_SCAN_CACHE: dict = {}
 _REVCOMP_TABLE = str.maketrans(
     'ACGTRYMKWSBDHVN',
     'TGCAYRKMWSVHDBN',

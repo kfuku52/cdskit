@@ -3,13 +3,13 @@
 [![Run Tests](https://github.com/kfuku52/cdskit/actions/workflows/test.yml/badge.svg)](https://github.com/kfuku52/cdskit/actions/workflows/test.yml)
 [![GitHub release](https://img.shields.io/github/v/tag/kfuku52/cdskit?label=release)](https://github.com/kfuku52/cdskit/releases)
 [![Bioconda](https://img.shields.io/conda/vn/bioconda/cdskit.svg)](https://anaconda.org/bioconda/cdskit)
-[![Python](https://img.shields.io/badge/python-3.9%20%7C%203.10%20%7C%203.11%20%7C%203.12-blue)](https://github.com/kfuku52/cdskit)
+[![Python](https://img.shields.io/badge/python-3.10--3.14-blue)](https://github.com/kfuku52/cdskit)
 [![Platforms](https://img.shields.io/conda/pn/bioconda/cdskit.svg)](https://anaconda.org/bioconda/cdskit)
 [![Downloads](https://img.shields.io/conda/dn/bioconda/cdskit.svg)](https://anaconda.org/bioconda/cdskit)
 [![License](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
 
 ## Overview
-**CDSKIT** ([/sidieskit/](http://ipa-reader.xyz/?text=sidieskit&voice=Joanna)) is a Python program that processes DNA sequences, especially protein-coding sequences. Many functions of this program are designed to handle DNA sequences using codons (sets of three nucleotides) as the unit, and therefore, edits the coding sequences without causing a frameshift. [All sequence formats supported by Biopython](https://biopython.org/wiki/SeqIO) are available in this tool for both inputs and outputs.
+**CDSKIT** ([/sidieskit/](http://ipa-reader.xyz/?text=sidieskit&voice=Joanna)) is a Python program that processes DNA sequences, especially protein-coding sequences. Many functions of this program are designed to handle DNA sequences using codons (sets of three nucleotides) as the unit, and therefore, edits the coding sequences without causing a frameshift. Input and output format names follow [Biopython SeqIO](https://biopython.org/wiki/SeqIO), but transformed records can only be written to formats whose required annotations remain meaningful. In particular, translations and length-changing operations should normally use FASTA rather than FASTQ.
 
 ## Installation
 The latest version of CDSKIT is available from [Bioconda](https://anaconda.org/bioconda/cdskit). For users requiring a `conda` installation, please refer to [Miniforge](https://github.com/conda-forge/miniforge) for a lightweight conda environment.
@@ -101,11 +101,15 @@ seqkit seq input.fasta.gz | cdskit pad | cdskit mask | seqkit translate | cdskit
 ```
 
 ## Parallel execution
-All subcommands support `--threads INT` for multi-threaded processing.
+Commands that have independent record- or search-level work expose
+`--threads INT`. Small metadata-only commands intentionally run serially.
 
 - `--threads 1`: single-threaded (default)
 - `--threads 2` or larger: multi-threaded
 - `--threads 0`: auto-detect available CPU count
+
+For resource safety, cdskit caps worker counts at 64 by default. Set
+`CDSKIT_MAX_THREADS` to change that ceiling.
 
 ## CLI and TSV conventions
 

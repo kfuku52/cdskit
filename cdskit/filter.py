@@ -1,4 +1,4 @@
-import json
+import math
 import sys
 from functools import partial
 
@@ -10,6 +10,7 @@ from cdskit.codonutil import (
     has_internal_stop,
 )
 from cdskit.util import (
+    atomic_write_json,
     parallel_map_ordered,
     read_seqs,
     resolve_threads,
@@ -22,7 +23,7 @@ from cdskit.tsvio import json_cell, write_sectioned_tsv
 
 def validate_fraction(name, value):
     value = float(value)
-    if (value < 0.0) or (value > 1.0):
+    if (not math.isfinite(value)) or (value < 0.0) or (value > 1.0):
         txt = '{} should be between 0 and 1 inclusive. Exiting.\n'
         raise Exception(txt.format(name))
     return value
@@ -177,8 +178,7 @@ def write_filter_report(report_path, summary):
     if report_path == '':
         return
     if report_path.lower().endswith('.json'):
-        with open(report_path, 'w', encoding='utf-8') as f:
-            json.dump(summary, f, indent=2, ensure_ascii=False)
+        atomic_write_json(report_path, summary, indent=2)
         return
     rows = []
     for key in [

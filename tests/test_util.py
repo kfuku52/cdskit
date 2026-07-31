@@ -38,6 +38,18 @@ class TestReadSeqs:
         result = util.read_seqs(str(fasta_path), "fasta")
         assert len(result) == 0
 
+    def test_rejects_excessively_long_sequence_identifier(
+        self,
+        temp_dir,
+        monkeypatch,
+    ):
+        fasta_path = temp_dir / "long-id.fasta"
+        fasta_path.write_text(">identifier-too-long\nATG\n", encoding="utf-8")
+        monkeypatch.setenv("CDSKIT_MAX_SEQUENCE_ID_LENGTH", "8")
+
+        with pytest.raises(ValueError, match="identifier exceeds 8 characters"):
+            util.read_seqs(str(fasta_path), "fasta")
+
 
 class TestThreadHelpers:
     """Tests for thread-related utility helpers."""
@@ -56,6 +68,25 @@ class TestThreadHelpers:
         items = [5, 3, 1, 4, 2]
         result = util.parallel_map_ordered(items=items, worker=lambda x: x * 2, threads=3)
         assert result == [10, 6, 2, 8, 4]
+
+
+class TestSafeRegex:
+    def test_accepts_common_grouping_and_alternation(self):
+        compiled = util.compile_safe_regex(r"^(?:alpha|beta)-\d+$")
+        assert compiled.search("alpha-42")
+
+    @pytest.mark.parametrize(
+        "pattern",
+        [
+            r"(a+)+$",
+            r"(a|aa)+$",
+            r"(a?)*$",
+            r"(.*)\1$",
+        ],
+    )
+    def test_rejects_backtracking_prone_patterns(self, pattern):
+        with pytest.raises(ValueError, match="potentially unsafe"):
+            util.compile_safe_regex(pattern)
 
 
 class TestReadItemPerLineFile:
@@ -88,6 +119,87 @@ class TestWriteSeqs:
         result = list(Bio.SeqIO.parse(str(fasta_path), "fasta"))
         assert len(result) == 1
         assert str(result[0].seq) == "ATGAAATGA"
+
+    def test_failed_write_preserves_existing_output(self, temp_dir, monkeypatch):
+        fasta_path = temp_dir / "output.fasta"
+        fasta_path.write_text("sentinel\n", encoding="utf-8")
+        records = [SeqRecord(Seq("ATGAAATGA"), id="seq1", description="")]
+
+        def fail_after_partial_write(records, path, seqformat):
+            del records, seqformat
+            with open(path, "w", encoding="utf-8") as output:
+                output.write(">partial\nATG\n")
+            raise RuntimeError("simulated writer failure")
+
+        monkeypatch.setattr(util.Bio.SeqIO, "write", fail_after_partial_write)
+
+        with pytest.raises(RuntimeError, match="simulated writer failure"):
+            util.write_seqs(records, str(fasta_path), "fasta")
+
+        assert fasta_path.read_text(encoding="utf-8") == "sentinel\n"
+
+    def test_multi_output_backup_failure_restores_existing_outputs(
+        self,
+        temp_dir,
+        monkeypatch,
+    ):
+        first = temp_dir / "first.txt"
+        second = temp_dir / "second.txt"
+        first.write_text("old first\n", encoding="utf-8")
+        second.write_text("old second\n", encoding="utf-8")
+        real_replace = util.os.replace
+
+        def fail_on_second_backup(source, destination):
+            if str(source) == str(second) and str(destination).endswith(".bak"):
+                raise OSError("simulated backup failure")
+            return real_replace(source, destination)
+
+        monkeypatch.setattr(util.os, "replace", fail_on_second_backup)
+
+        with pytest.raises(OSError, match="simulated backup failure"):
+            with util.atomic_output_paths([first, second]) as temporary_paths:
+                for temporary, text in zip(
+                    temporary_paths,
+                    ("new first\n", "new second\n"),
+                ):
+                    with open(temporary, "w", encoding="utf-8") as output:
+                        output.write(text)
+
+        assert first.read_text(encoding="utf-8") == "old first\n"
+        assert second.read_text(encoding="utf-8") == "old second\n"
+
+    def test_multi_output_rollback_failure_retains_recovery_backup(
+        self,
+        temp_dir,
+        monkeypatch,
+    ):
+        first = temp_dir / "first.txt"
+        second = temp_dir / "second.txt"
+        first.write_text("old first\n", encoding="utf-8")
+        second.write_text("old second\n", encoding="utf-8")
+        real_replace = util.os.replace
+
+        def fail_backup_and_restore(source, destination):
+            source_text = str(source)
+            destination_text = str(destination)
+            if source_text == str(second) and destination_text.endswith(".bak"):
+                raise OSError("simulated backup failure")
+            if source_text.endswith(".bak") and destination_text == str(first):
+                raise OSError("simulated restore failure")
+            return real_replace(source, destination)
+
+        monkeypatch.setattr(util.os, "replace", fail_backup_and_restore)
+
+        with pytest.raises(RuntimeError, match="Recovery backups were retained"):
+            with util.atomic_output_paths([first, second]) as temporary_paths:
+                for temporary in temporary_paths:
+                    with open(temporary, "w", encoding="utf-8") as output:
+                        output.write("new\n")
+
+        backups = list(temp_dir.glob(".first.txt.*.bak"))
+        assert len(backups) == 1
+        assert backups[0].read_text(encoding="utf-8") == "old first\n"
+        assert second.read_text(encoding="utf-8") == "old second\n"
 
 
 class TestStopIfNotMultipleOfThree:

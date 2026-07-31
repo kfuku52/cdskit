@@ -1,0 +1,182 @@
+LOCUS       NM_001080339             906 bp    mRNA    linear   MAM 11-OCT-2020
+DEFINITION  Bos taurus lysozyme (renal amyloidosis) (LYZ1), mRNA.
+ACCESSION   NM_001080339 XM_001249625
+VERSION     NM_001080339.1
+KEYWORDS    RefSeq.
+SOURCE      Bos taurus (cattle)
+  ORGANISM  Bos taurus
+            Eukaryota; Metazoa; Chordata; Craniata; Vertebrata; Euteleostomi;
+            Mammalia; Eutheria; Laurasiatheria; Artiodactyla; Ruminantia;
+            Pecora; Bovidae; Bovinae; Bos.
+REFERENCE   1  (bases 1 to 906)
+  AUTHORS   Nonaka Y, Akieda D, Aizawa T, Watanabe N, Kamiya M, Kumaki Y,
+            Mizuguchi M, Kikukawa T, Demura M and Kawano K.
+  TITLE     X-ray crystallography and structural stability of digestive
+            lysozyme from cow stomach
+  JOURNAL   FEBS J 276 (8), 2192-2200 (2009)
+   PUBMED   19348005
+  REMARK    GeneRIF: In this investigation, we obtained the crystallographic
+            structure of recombinant bovine stomach lysozyme 2 (BSL2).
+REFERENCE   2  (bases 1 to 906)
+  AUTHORS   Irwin DM, White RT and Wilson AC.
+  TITLE     Characterization of the cow stomach lysozyme genes: repetitive DNA
+            and concerted evolution
+  JOURNAL   J Mol Evol 37 (4), 355-366 (1993)
+   PUBMED   8308905
+REFERENCE   3  (bases 1 to 906)
+  AUTHORS   Irwin DM and Wilson AC.
+  TITLE     Multiple cDNA sequences and the evolution of bovine stomach
+            lysozyme
+  JOURNAL   J Biol Chem 264 (19), 11387-11393 (1989)
+   PUBMED   2738070
+COMMENT     PROVISIONAL REFSEQ: This record has not yet been subject to final
+            NCBI review. The reference sequence was derived from M26245.1.
+            On Jan 16, 2007 this sequence version replaced XM_001249625.1.
+
+            ##Evidence-Data-START##
+            Transcript exon combination :: M26245.1, CK975923.1 [ECO:0000332]
+            RNAseq introns              :: single sample supports all introns
+                                           SAMN03145435, SAMN03145498
+                                           [ECO:0000348]
+            ##Evidence-Data-END##
+FEATURES             Location/Qualifiers
+     source          1..906
+                     /organism="Bos taurus"
+                     /mol_type="mRNA"
+                     /db_xref="taxon:9913"
+                     /chromosome="5"
+                     /map="5"
+     gene            1..906
+                     /gene="LYZ1"
+                     /gene_synonym="LYSOZYME; LYZ"
+                     /note="lysozyme (renal amyloidosis)"
+                     /db_xref="BGD:BT11901"
+                     /db_xref="GeneID:781349"
+     exon            1..158
+                     /gene="LYZ1"
+                     /gene_synonym="LYSOZYME; LYZ"
+                     /inference="alignment:Splign:2.1.0"
+     CDS             23..466
+                     /gene="LYZ1"
+                     /gene_synonym="LYSOZYME; LYZ"
+                     /EC_number="3.2.1.17"
+                     /note="1,4-beta-N-acetylmuramidase C; lysozyme C-1"
+                     /codon_start=1
+                     /product="lysozyme C-1 precursor"
+                     /protein_id="NP_001073808.1"
+                     /db_xref="BGD:BT11901"
+                     /db_xref="GeneID:781349"
+                     /translation="MKALIILGFLFLSVAVQGKVFERCELARTLKKLGLDGYKGVSLA
+                     NWLCLTKWESSYNTKATNYNPGSESTDYGIFQINSKWWCNDGKTPNAVDGCHVSCSEL
+                     MENEIAKAVACAKQIVSEQGITAWVAWKSHCRDHDVSSYVEGCTL"
+     sig_peptide     23..76
+                     /gene="LYZ1"
+                     /gene_synonym="LYSOZYME; LYZ"
+                     /inference="COORDINATES: ab initio prediction:SignalP:4.0"
+     mat_peptide     77..463
+                     /gene="LYZ1"
+                     /gene_synonym="LYSOZYME; LYZ"
+                     /product="lysozyme C-1"
+     exon            159..323
+                     /gene="LYZ1"
+                     /gene_synonym="LYSOZYME; LYZ"
+                     /inference="alignment:Splign:2.1.0"
+     exon            324..399
+                     /gene="LYZ1"
+                     /gene_synonym="LYSOZYME; LYZ"
+                     /inference="alignment:Splign:2.1.0"
+     exon            400..906
+                     /gene="LYZ1"
+                     /gene_synonym="LYSOZYME; LYZ"
+                     /inference="alignment:Splign:2.1.0"
+ORIGIN
+        1 gacatttgac ttctcagtca acatgaaggc tctcattatt ctggggtttc tcttcctttc
+       61 tgttgctgtc cagggcaagg tctttgagag atgtgagctt gccagaactc tgaagaaact
+      121 tggactggat ggctataagg gagtcagtct ggcaaactgg ctgtgtttga ccaaatggga
+      181 aagcagttat aacacaaaag ctacaaacta caatcctggc agtgaaagca ctgattatgg
+      241 gatatttcag atcaacagca aatggtggtg taatgatggc aaaaccccca acgcagttga
+      301 cggctgtcat gtatcctgca gcgaattaat ggaaaatgag atcgcgaaag ctgtagcgtg
+      361 tgccaagcag attgtcagtg agcaaggcat tacagcatgg gtggcatgga aaagtcactg
+      421 tcgagaccat gacgtcagca gttatgttga gggttgcacg ctgtaactgt ggagttatca
+      481 ttcttcagct cattttgtct ctttttcacg ttaaggaagt aatagttgaa tgaaagctta
+      541 taccaccatt ccttcaagca aacaatggtt ttacagaagc aggagcatat ggtcttctaa
+      601 gaagcttaat gtttatctaa tgtgttaatt atttgacact aggcctataa tatttttcag
+      661 tttgctagta aaactaatgc tggtgaatat ttgtctaaat tcttaattat ctaatatatc
+      721 tccagtatat tcagttctta attaaagcaa gaacatttat gcaccttgct gatcatgaag
+      781 gaatataaag agggattaga tgaactgttg ctttttctta atttcattag cattatgaca
+      841 aattcagaga cagatgagtc tgcaactatt gaaattaatt gctggttaac cacagatatg
+      901 aaatga
+//
+
+LOCUS       NM_001285711             447 bp    mRNA    linear   MAM 30-JUN-2020
+DEFINITION  Capra hircus serum lysozyme (S-LZ), mRNA.
+ACCESSION   NM_001285711 XM_005680194
+VERSION     NM_001285711.1
+KEYWORDS    RefSeq.
+SOURCE      Capra hircus (goat)
+  ORGANISM  Capra hircus
+            Eukaryota; Metazoa; Chordata; Craniata; Vertebrata; Euteleostomi;
+            Mammalia; Eutheria; Laurasiatheria; Artiodactyla; Ruminantia;
+            Pecora; Bovidae; Caprinae; Capra.
+COMMENT     PROVISIONAL REFSEQ: This record has not yet been subject to final
+            NCBI review. The reference sequence was derived from GQ903681.1.
+            On Oct 22, 2013 this sequence version replaced XM_005680194.1.
+
+            ##Evidence-Data-START##
+            Transcript exon combination :: GQ889414.1, GQ903681.1 [ECO:0000332]
+            RNAseq introns              :: single sample supports all introns
+                                           SAMN05462052, SAMN05462053
+                                           [ECO:0000348]
+            ##Evidence-Data-END##
+FEATURES             Location/Qualifiers
+     source          1..447
+                     /organism="Capra hircus"
+                     /mol_type="mRNA"
+                     /db_xref="taxon:9925"
+                     /chromosome="5"
+                     /map="5"
+     gene            1..447
+                     /gene="S-LZ"
+                     /gene_synonym="lysozyme; LYZ; S-LYZ; TGTLyz"
+                     /note="serum lysozyme"
+                     /db_xref="GeneID:100860864"
+     CDS             1..447
+                     /gene="S-LZ"
+                     /gene_synonym="lysozyme; LYZ; S-LYZ; TGTLyz"
+                     /codon_start=1
+                     /product="serum lysozyme precursor"
+                     /protein_id="NP_001272640.1"
+                     /db_xref="GeneID:100860864"
+                     /translation="MKALIILGLLLLSVAVQGKVFERCELARTLKRFGMDGFRGISLA
+                     NWMCLARWESSYNTQATNYNSGDRSTDYGIFQINSHWWCNDGKTPGAVNACHIPCSAL
+                     LQDDITQAVACAKRVVSDPQGIRAWVAWRSHCQNQDLTSYIQGCGV"
+     sig_peptide     1..54
+                     /gene="S-LZ"
+                     /gene_synonym="lysozyme; LYZ; S-LYZ; TGTLyz"
+                     /inference="COORDINATES: ab initio prediction:SignalP:4.0"
+     exon            1..136
+                     /gene="S-LZ"
+                     /gene_synonym="lysozyme; LYZ; S-LYZ; TGTLyz"
+                     /inference="alignment:Splign:2.0.8"
+     exon            137..301
+                     /gene="S-LZ"
+                     /gene_synonym="lysozyme; LYZ; S-LYZ; TGTLyz"
+                     /inference="alignment:Splign:2.0.8"
+     exon            302..380
+                     /gene="S-LZ"
+                     /gene_synonym="lysozyme; LYZ; S-LYZ; TGTLyz"
+                     /inference="alignment:Splign:2.0.8"
+     exon            381..447
+                     /gene="S-LZ"
+                     /gene_synonym="lysozyme; LYZ; S-LYZ; TGTLyz"
+                     /inference="alignment:Splign:2.0.8"
+ORIGIN
+        1 atgaaggctc tcattattct ggggcttctc ctcctttcgg tcgctgtcca aggcaaggtc
+       61 tttgagagat gtgagcttgc cagaactctg aaaagatttg gaatggatgg ctttagggga
+      121 atcagcctgg caaactggat gtgtttggcc agatgggaaa gcagttataa cacacaagct
+      181 acaaactaca atagtggaga cagaagcact gattatggga tatttcaaat caatagccac
+      241 tggtggtgta atgatggcaa aaccccagga gcagttaatg cctgtcacat accctgcagc
+      301 gctttgctgc aagatgacat cactcaagct gtagcatgtg caaagagggt tgtcagtgat
+      361 ccacaaggca ttagagcatg ggtggcatgg agaagtcatt gtcaaaacca agatctcacc
+      421 agttacattc agggttgtgg agtgtaa
+//

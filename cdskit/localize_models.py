@@ -51,6 +51,7 @@ PRETRAINED_LOCALIZE_MODELS = {
         'published': True,
     },
 }
+MAX_MODEL_DOWNLOAD_BYTES = 2 * 1024 * 1024 * 1024
 
 
 def _truthy(value):
@@ -65,6 +66,10 @@ def _alias_map():
         for alias in aliases:
             out[str(alias).strip().lower()] = spec
     return out
+
+
+def is_pretrained_localize_model_alias(model):
+    return str(model or '').strip().lower() in _alias_map()
 
 
 def known_pretrained_localize_models():
@@ -146,10 +151,20 @@ def _download_to_cache(spec, cache_path):
                 headers={'User-Agent': 'cdskit-localize-model-downloader'},
             )
             with urllib.request.urlopen(request, timeout=60) as inp:
+                content_length = inp.headers.get('Content-Length')
+                if (
+                    content_length is not None
+                    and int(content_length) > MAX_MODEL_DOWNLOAD_BYTES
+                ):
+                    raise ValueError('Pretrained model download exceeds the 2 GiB safety limit.')
+                downloaded = 0
                 while True:
                     chunk = inp.read(1024 * 1024)
                     if not chunk:
                         break
+                    downloaded += len(chunk)
+                    if downloaded > MAX_MODEL_DOWNLOAD_BYTES:
+                        raise ValueError('Pretrained model download exceeds the 2 GiB safety limit.')
                     out.write(chunk)
         _verify_checksum(tmp_path, spec)
         os.replace(tmp_path, cache_path)
@@ -172,12 +187,11 @@ def resolve_localize_model_path(model, allow_download=True):
     if model_text == '':
         raise ValueError('--model is required.')
 
-    path = Path(model_text).expanduser()
-    if path.exists():
-        return str(path)
-
     spec = _alias_map().get(model_text.lower())
     if spec is None:
+        path = Path(model_text).expanduser()
+        if path.exists():
+            return str(path)
         known = ', '.join(known_pretrained_localize_models())
         raise FileNotFoundError(
             'Localize model path not found: {}. Known pretrained model aliases: {}'.format(

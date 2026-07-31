@@ -2,10 +2,12 @@ import copy
 import sys
 
 from cdskit.util import (
+    atomic_output_paths,
     read_seqs,
-    resolve_threads,
+    replace_record_sequence,
     stop_if_not_dna,
     stop_if_not_multiple_of_three,
+    validate_distinct_paths,
     write_seqs,
 )
 
@@ -28,9 +30,9 @@ def split_record_by_codon_position(record):
     first_record = copy.copy(record)
     second_record = copy.copy(record)
     third_record = copy.copy(record)
-    first_record.seq = seq[0::3]
-    second_record.seq = seq[1::3]
-    third_record.seq = seq[2::3]
+    replace_record_sequence(first_record, seq[0::3])
+    replace_record_sequence(second_record, seq[1::3])
+    replace_record_sequence(third_record, seq[2::3])
     return first_record, second_record, third_record
 
 
@@ -44,7 +46,6 @@ def build_split_output_paths(prefix, outseqformat):
 
 def split_main(args):
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
-    _ = resolve_threads(getattr(args, 'threads', 1))
     stop_if_not_dna(records=records, label='--seq_file')
     stop_if_not_multiple_of_three(records)
     first_records = list()
@@ -57,9 +58,12 @@ def split_main(args):
         third_records.append(third_record)
     prefix_str = resolve_output_prefix(args)
     first_outfile, second_outfile, third_outfile = build_split_output_paths(prefix_str, args.outseqformat)
-    sys.stderr.write(f'Writing first codon positions.\n')
-    write_seqs(records=first_records, outfile=first_outfile, outseqformat=args.outseqformat)
-    sys.stderr.write(f'Writing second codon positions.\n')
-    write_seqs(records=second_records, outfile=second_outfile, outseqformat=args.outseqformat)
-    sys.stderr.write(f'Writing third codon positions.\n')
-    write_seqs(records=third_records, outfile=third_outfile, outseqformat=args.outseqformat)
+    outputs = (first_outfile, second_outfile, third_outfile)
+    validate_distinct_paths(inputs=[args.seqfile], outputs=outputs)
+    with atomic_output_paths(outputs) as staged:
+        sys.stderr.write('Writing first codon positions.\n')
+        write_seqs(records=first_records, outfile=staged[0], outseqformat=args.outseqformat)
+        sys.stderr.write('Writing second codon positions.\n')
+        write_seqs(records=second_records, outfile=staged[1], outseqformat=args.outseqformat)
+        sys.stderr.write('Writing third codon positions.\n')
+        write_seqs(records=third_records, outfile=staged[2], outseqformat=args.outseqformat)

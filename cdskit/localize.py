@@ -2,7 +2,10 @@ from functools import partial
 
 import numpy as np
 
-from cdskit.localize_models import resolve_localize_model_path
+from cdskit.localize_models import (
+    is_pretrained_localize_model_alias,
+    resolve_localize_model_path,
+)
 from cdskit.localize_model import (
     BROAD_FEATURE_NAMES,
     FEATURE_NAMES,
@@ -45,6 +48,21 @@ def _is_true_arg(value):
     if isinstance(value, bool):
         return value
     return str(value or '').strip().lower() in {'1', 'true', 't', 'yes', 'y', 'on'}
+
+
+def _configure_ml_threads(model, threads):
+    if str(model.get('model_type', '')) not in SINGLE_LABEL_BATCH_MODEL_TYPES:
+        return
+    try:
+        import torch
+    except ImportError:
+        return
+    torch.set_num_threads(max(1, int(threads)))
+    try:
+        torch.set_num_interop_threads(max(1, min(int(threads), 4)))
+    except RuntimeError:
+        # PyTorch permits configuring inter-op threads only before parallel work.
+        pass
 
 
 def _record_to_aa_sequence(record, codontable, seqtype):
@@ -366,7 +384,17 @@ def localize_main(args):
         model=args.model,
         allow_download=allow_model_download,
     )
-    model = load_localize_model(path=model_path)
+    allow_unsafe_model = _is_true_arg(
+        getattr(args, 'allow_unsafe_model', False)
+    ) or is_pretrained_localize_model_alias(args.model)
+    if allow_unsafe_model:
+        model = load_localize_model(path=model_path, allow_unsafe=True)
+    else:
+        model = load_localize_model(path=model_path)
+    if isinstance(model.get('localization_model'), dict):
+        model['localization_model']['_runtime_offline'] = (
+            not allow_model_download
+        )
     if str(model.get('model_type', '')) not in MULTILABEL_MODEL_TYPES:
         model_classes = tuple(model['localization_model']['class_order'])
         if model_classes != LOCALIZATION_CLASSES:
@@ -374,6 +402,7 @@ def localize_main(args):
             raise Exception(txt.format(','.join(LOCALIZATION_CLASSES), ','.join(model_classes)))
 
     threads = resolve_threads(getattr(args, 'threads', 1))
+    _configure_ml_threads(model=model, threads=threads)
     rows = _predict_records_batched_if_supported(
         records=records,
         codontable=args.codontable,

@@ -4,6 +4,52 @@ This project follows semantic versioning. Deprecated CLI spellings remain
 available for at least the 0.24 release series and print their canonical
 replacement to standard error.
 
+## 0.25.0 — 2026-07-31
+
+### Security
+
+- Made localize model loading safe by default. Legacy pickle-backed PyTorch
+  models now require the explicit `--allow_unsafe_model yes` opt-in; registered
+  pretrained aliases are checksum-verified before legacy loading is allowed.
+- Disabled pickle-backed NumPy archive loading, pinned remote TargetP and ESM
+  resources to immutable revisions, verified TargetP checksums, and bounded
+  model, dataset, UniProt, regex, image, sequence, thread, and gap inputs.
+- Hardened UniProt pagination and response validation and added timeouts to
+  external MMseqs invocations.
+
+### Fixed
+
+- Prevented commands from overwriting an input path or partially replacing
+  sequence, GFF, report, and multi-file outputs after failures.
+- Preserved or adjusted GFF coordinates correctly when gaps are shortened,
+  rejected out-of-range transformed features, and cleared stale sequence
+  annotations after length-changing operations.
+- Corrected ambiguous-codon masking, duplicate label allocation, label clipping,
+  padded-sequence counts, non-finite numeric arguments, malformed benchmark
+  rows, and probability validation.
+- Added provenance fingerprints to reusable TargetP and PyTorch caches so stale
+  artifacts are not silently accepted.
+
+### Changed
+
+- Moved the public CLI into import-safe `cdskit.cli:main`; the checkout script is
+  now a thin wrapper and installed packages use a console entry point.
+- Limited automatic thread selection to 64 workers by default. The limit can be
+  changed with `CDSKIT_MAX_THREADS`; options that did no parallel work were
+  removed.
+- Added `transformers` to the `ml` extra and recorded model/library provenance
+  in trained artifacts.
+- Raised the minimum supported Python version to 3.10 and declared support
+  through Python 3.14.
+
+### Testing
+
+- Added clean-checkout fixtures and regression coverage for transactional
+  outputs, unsafe model and archive rejection, cache provenance, path
+  collisions, CLI startup, label/gap/codon edge cases, and finite values.
+- Expanded CI across Linux, macOS, Windows, and Python 3.10–3.14, with Ruff,
+  mypy, coverage enforcement, distribution builds, and wheel-install checks.
+
 ## 0.24.0 — 2026-07-21
 
 ### Changed

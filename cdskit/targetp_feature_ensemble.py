@@ -1,10 +1,10 @@
-import json
 import os
 
 import numpy as np
 
 from cdskit.cliutil import CdskitArgumentParser, parse_bool
 from cdskit.tsvio import read_tsv
+from cdskit.util import atomic_text_writer, atomic_write_json
 
 from cdskit.localize_model import (
     FEATURE_NAMES,
@@ -901,13 +901,12 @@ def main(argv=None):
     out_dir = os.path.dirname(str(args.out_json))
     if out_dir != '':
         os.makedirs(out_dir, exist_ok=True)
-    with open(args.out_json, 'w', encoding='utf-8') as fh:
-        json.dump(out, fh, indent=2, sort_keys=True)
+    atomic_write_json(args.out_json, out, indent=2, sort_keys=True)
     md = _render_markdown(out)
     md_dir = os.path.dirname(str(args.out_md))
     if md_dir != '':
         os.makedirs(md_dir, exist_ok=True)
-    with open(args.out_md, 'w', encoding='utf-8') as fh:
+    with atomic_text_writer(args.out_md, encoding='utf-8') as fh:
         fh.write(md + '\n')
 
     print(md)

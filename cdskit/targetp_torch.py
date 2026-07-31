@@ -1,10 +1,12 @@
 import copy
+import hashlib
 import json
 import os
 import time
 
 import numpy as np
 
+from cdskit import __version__
 from cdskit.localize_bilstm import require_torch, resolve_torch_device
 from cdskit.localize_model import (
     FEATURE_NAMES,
@@ -12,6 +14,7 @@ from cdskit.localize_model import (
     normalize_organism_group,
     softmax,
 )
+from cdskit.util import atomic_write_json
 
 
 TARGETP_TORCH_MODEL_TYPE = 'targetp_torch_v1'
@@ -1433,15 +1436,17 @@ def save_torch_payload(path, payload):
     out_dir = os.path.dirname(path)
     if out_dir != '':
         os.makedirs(out_dir, exist_ok=True)
-    torch.save(payload, path)
+    from cdskit.util import atomic_output_path
+    with atomic_output_path(path) as temporary:
+        torch.save(payload, temporary)
 
 
 def load_torch_payload(path):
     torch, _ = require_torch()
     try:
-        return torch.load(path, map_location='cpu', weights_only=False)
+        return torch.load(path, map_location='cpu', weights_only=True)
     except TypeError:
-        return torch.load(path, map_location='cpu')
+        raise ValueError('This PyTorch version cannot perform safe checkpoint loading.')
 
 
 def _safe_fold_name(outer_fold, val_fold):
@@ -1463,6 +1468,30 @@ def _parse_fold_subset(value, available):
             raise ValueError('Fold {} is not available. Available folds: {}'.format(fold_id, available))
         out.append(fold_id)
     return out
+
+
+def _targetp_training_fingerprint(data, train_kwargs):
+    digest = hashlib.sha256()
+
+    def update_part(part):
+        digest.update(len(part).to_bytes(8, byteorder='big', signed=False))
+        digest.update(part)
+
+    update_part(__version__.encode('utf-8'))
+    update_part(
+        json.dumps(
+            dict(sorted(train_kwargs.items())),
+            sort_keys=True,
+            default=str,
+        ).encode('utf-8')
+    )
+    for key in ('x', 'y_cs', 'y_type', 'len_seq', 'org', 'fold', 'ids'):
+        array = np.ascontiguousarray(data[key])
+        update_part(key.encode('utf-8'))
+        update_part(str(array.dtype).encode('utf-8'))
+        update_part(str(array.shape).encode('utf-8'))
+        update_part(array.tobytes())
+    return digest.hexdigest()
 
 
 def parse_targetp_fold_pairs(value, available=None):
@@ -1515,6 +1544,14 @@ def run_targetp2_torch_nested_oof(
     threshold_grid_values = TARGETP_CLASS_THRESHOLD_GRID if threshold_grid is None else [
         float(value) for value in threshold_grid
     ]
+    training_fingerprint = _targetp_training_fingerprint(
+        data=data,
+        train_kwargs={
+            **train_kwargs,
+            'seed_offset': int(seed_offset),
+            'device': str(device),
+        },
+    )
 
     prob_sum = np.zeros((data['x'].shape[0], len(LOCALIZATION_CLASSES)), dtype=np.float64)
     prob_count = np.zeros((data['x'].shape[0],), dtype=np.int64)
@@ -1537,6 +1574,11 @@ def run_targetp2_torch_nested_oof(
             resumed_from_checkpoint = False
             if bool(reuse_cache) and os.path.exists(checkpoint):
                 payload = load_torch_payload(path=checkpoint)
+                if payload.get('training_fingerprint') != training_fingerprint:
+                    raise ValueError(
+                        'Checkpoint provenance does not match the current data and '
+                        'training configuration: {}'.format(checkpoint)
+                    )
                 requested_epochs = int(train_kwargs.get('epochs', TARGETP_TORCH_DEFAULTS['epochs']))
                 cached_epochs = len(payload.get('history', []))
                 if bool(payload.get('training_complete', False)) and cached_epochs >= requested_epochs:
@@ -1582,8 +1624,10 @@ def run_targetp2_torch_nested_oof(
                     epoch_checkpoint_path=checkpoint,
                     **train_kwargs
                 )
-                save_torch_payload(path=checkpoint, payload=payload)
                 used_cache = False
+            payload['training_fingerprint'] = training_fingerprint
+            if not used_cache:
+                save_torch_payload(path=checkpoint, payload=payload)
             localize_model = export_targetp2_torch_localize_model(model_payload=payload)
             prob = predict_targetp2_torch_encoded(
                 x=data['x'][test_mask],
@@ -1848,8 +1892,7 @@ def write_targetp2_torch_report(path, result, profile):
     }
     if 'val_threshold_metrics' in result:
         out['val_threshold_metrics'] = result['val_threshold_metrics']
-    with open(path, 'w', encoding='utf-8') as handle:
-        json.dump(out, handle, indent=2, sort_keys=True)
+    atomic_write_json(path, out, indent=2, sort_keys=True)
 
 
 def _normalize_targetp_score_rows(score_matrix):
@@ -1964,8 +2007,7 @@ def write_targetp2_torch_compose_report(path, result, profile):
         'metrics': result['metrics'],
         'replacements': result['replacements'],
     }
-    with open(path, 'w', encoding='utf-8') as handle:
-        json.dump(out, handle, indent=2, sort_keys=True)
+    atomic_write_json(path, out, indent=2, sort_keys=True)
 
 
 def class_probabilities_from_vector(prob_vec):

@@ -1,4 +1,9 @@
+import os
+
 import numpy as np
+
+
+DEFAULT_ESM_MODEL_REVISION = 'c731040fcd8d73dceaa04b0a8e6329b345b0f5df'
 
 
 def require_transformers():
@@ -78,6 +83,7 @@ def fit_esm_head_classifier(
     seed,
     use_class_weight,
     device,
+    model_revision=DEFAULT_ESM_MODEL_REVISION,
 ):
     torch, nn, AutoTokenizer, AutoModel = require_transformers()
     np.random.seed(int(seed))
@@ -103,13 +109,20 @@ def fit_esm_head_classifier(
         model_name=model_name,
         model_local_dir=model_local_dir,
     )
-    tokenizer = AutoTokenizer.from_pretrained(
-        str(model_source),
-        local_files_only=bool(local_files_only),
-    )
+    revision = None if source_type == 'local' else str(model_revision or '').strip()
+    if source_type != 'local' and revision == '':
+        raise ValueError('--esm_model_revision is required for a remote ESM model.')
+    common_kwargs = {
+        'local_files_only': bool(local_files_only),
+        'trust_remote_code': False,
+    }
+    if revision is not None:
+        common_kwargs['revision'] = revision
+    tokenizer = AutoTokenizer.from_pretrained(str(model_source), **common_kwargs)
     encoder = AutoModel.from_pretrained(
         str(model_source),
-        local_files_only=bool(local_files_only),
+        use_safetensors=True,
+        **common_kwargs,
     )
     encoder.eval()
     encoder.to(resolved_device)
@@ -191,6 +204,7 @@ def fit_esm_head_classifier(
     return {
         'class_order': list(class_order),
         'model_name': str(model_name),
+        'model_revision': str(revision or ''),
         'model_local_dir': str(model_local_dir),
         'model_source_type': str(source_type),
         'max_len': int(max_len),
@@ -213,18 +227,34 @@ def _get_runtime_esm_encoder_and_head(localization_model, device_text='cpu'):
         return cache[cache_key], resolved_device
 
     model_name = str(localization_model.get('model_name', ''))
+    model_revision = str(localization_model.get('model_revision', '')).strip()
     model_local_dir = str(localization_model.get('model_local_dir', ''))
-    model_source, local_files_only, _ = _resolve_model_source(
+    model_source, local_files_only, source_type = _resolve_model_source(
         model_name=model_name,
         model_local_dir=model_local_dir,
     )
+    offline = bool(localization_model.get('_runtime_offline', False)) or (
+        str(os.environ.get('CDSKIT_OFFLINE', '')).strip().lower()
+        in {'1', 'true', 't', 'yes', 'y', 'on'}
+    )
+    common_kwargs = {
+        'local_files_only': bool(local_files_only or offline),
+        'trust_remote_code': False,
+    }
+    if source_type != 'local':
+        if model_revision == '':
+            raise ValueError(
+                'Remote ESM model revision is missing from the model artifact.'
+            )
+        common_kwargs['revision'] = model_revision
     tokenizer = AutoTokenizer.from_pretrained(
         str(model_source),
-        local_files_only=bool(local_files_only),
+        **common_kwargs,
     )
     encoder = AutoModel.from_pretrained(
         str(model_source),
-        local_files_only=bool(local_files_only),
+        use_safetensors=True,
+        **common_kwargs,
     )
     encoder.eval()
     encoder.to(resolved_device)

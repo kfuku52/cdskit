@@ -4,6 +4,7 @@ from collections import Counter
 from functools import partial
 
 from cdskit.util import (
+    atomic_output_paths,
     parallel_map_ordered,
     read_gff,
     read_seqs,
@@ -104,8 +105,21 @@ def intersect_two_fasta_inputs(original_records1, args, threads=1):
     intersection_names = set(original_records1_names) & set(original_records2_names)
     intersection_records1 = filter_records_by_names(original_records1, intersection_names, threads=threads)
     intersection_records2 = filter_records_by_names(original_records2, intersection_names, threads=threads)
-    write_seqs(records=intersection_records1, outfile=args.outfile, outseqformat=args.outseqformat)
-    write_seqs(records=intersection_records2, outfile=args.outfile2, outseqformat=args.outseqformat2)
+    output_paths = [
+        path for path in (args.outfile, args.outfile2) if path != '-'
+    ]
+    with atomic_output_paths(output_paths) as staged_paths:
+        staged = dict(zip(output_paths, staged_paths))
+        write_seqs(
+            records=intersection_records1,
+            outfile=staged.get(args.outfile, args.outfile),
+            outseqformat=args.outseqformat,
+        )
+        write_seqs(
+            records=intersection_records2,
+            outfile=staged.get(args.outfile2, args.outfile2),
+            outseqformat=args.outseqformat2,
+        )
 
 
 def intersect_fasta_with_gff(original_records1, args, threads=1):
@@ -123,8 +137,20 @@ def intersect_fasta_with_gff(original_records1, args, threads=1):
         filtered_data = fix_out_of_range_gff_records(filtered_data, seqid_to_seq_len)
 
     intersection_gff = {'header': original_gff['header'], 'data': filtered_data}
-    write_seqs(records=intersection_records1, outfile=args.outfile, outseqformat=args.outseqformat)
-    write_gff(gff=intersection_gff, outfile=args.outgff)
+    output_paths = [
+        path for path in (args.outfile, args.outgff) if path != '-'
+    ]
+    with atomic_output_paths(output_paths) as staged_paths:
+        staged = dict(zip(output_paths, staged_paths))
+        write_seqs(
+            records=intersection_records1,
+            outfile=staged.get(args.outfile, args.outfile),
+            outseqformat=args.outseqformat,
+        )
+        write_gff(
+            gff=intersection_gff,
+            outfile=staged.get(args.outgff, args.outgff),
+        )
 
 
 def intersection_main(args):

@@ -1,11 +1,13 @@
 import csv
 
 import numpy as np
+import pytest
 
 from cdskit.targetp_benchmark import (
     TARGETP_LABEL_TO_LOCALIZATION,
     TARGETP_TABLE1_REFERENCE,
     TARGETP_YTYPE_TO_LABEL,
+    _read_targetp_npz,
     build_targetp_comparison_table,
     compute_prf_by_class,
     prepare_targetp_benchmark_tsv,
@@ -127,3 +129,17 @@ def test_targetp_label_mapping_constants_are_consistent():
         assert label in TARGETP_LABEL_TO_LOCALIZATION
         loc = TARGETP_LABEL_TO_LOCALIZATION[label]
         assert loc in TARGETP_TABLE1_REFERENCE
+
+
+def test_targetp_npz_rejects_pickle_backed_object_arrays(temp_dir):
+    npz_path = temp_dir / 'unsafe.npz'
+    np.savez(
+        npz_path,
+        ids=np.asarray(['A0A0001'], dtype=object),
+        fold=np.asarray([0], dtype=np.int32),
+        org=np.asarray([1], dtype=np.int32),
+        y_type=np.asarray([1], dtype=np.int32),
+    )
+
+    with pytest.raises(ValueError, match='Object arrays cannot be loaded'):
+        _read_targetp_npz(str(npz_path))

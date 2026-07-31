@@ -10,7 +10,6 @@ from cdskit.codonutil import (
 )
 from cdskit.util import (
     read_seqs,
-    resolve_threads,
     stop_if_invalid_codontable,
     stop_if_not_dna,
     stop_if_not_multiple_of_three,
@@ -105,7 +104,6 @@ def print_usage_table(summaries, codontable):
 
 def codonstats_main(args):
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
-    _ = resolve_threads(getattr(args, 'threads', 1))
     stop_if_not_dna(records=records, label='--seq_file')
     stop_if_not_multiple_of_three(records=records)
     stop_if_invalid_codontable(args.codontable)

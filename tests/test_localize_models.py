@@ -70,6 +70,31 @@ def test_cached_alias_returns_verified_cache_path(temp_dir, monkeypatch):
     assert resolve_localize_model_path('tiny') == str(cache_path)
 
 
+def test_registered_alias_wins_over_same_named_working_directory_file(
+    temp_dir,
+    monkeypatch,
+):
+    content = b'cached model bytes'
+    spec = {
+        'name': 'tiny',
+        'version': 'v1',
+        'filename': 'tiny.pt',
+        'aliases': ('tiny',),
+        'url': '',
+        'sha256': hashlib.sha256(content).hexdigest(),
+        'published': False,
+    }
+    monkeypatch.setitem(PRETRAINED_LOCALIZE_MODELS, 'tiny-v1', spec)
+    monkeypatch.setenv('CDSKIT_MODEL_DIR', str(temp_dir / 'cache'))
+    cache_path = localize_model_cache_dir() / 'localize' / 'tiny' / 'v1' / 'tiny.pt'
+    cache_path.parent.mkdir(parents=True)
+    cache_path.write_bytes(content)
+    (temp_dir / 'tiny').write_bytes(b'untrusted local shadow')
+    monkeypatch.chdir(temp_dir)
+
+    assert resolve_localize_model_path('tiny') == str(cache_path)
+
+
 def test_cached_alias_checksum_mismatch_is_rejected(temp_dir, monkeypatch):
     spec = {
         'name': 'bad',

@@ -217,7 +217,7 @@ seq3\tsource\tgene\t1\t6\t.\t+\t.\tID=gene2
 
         result_fasta = list(Bio.SeqIO.parse(str(output_fasta), "fasta"))
         assert [r.id for r in result_fasta] == ["seq_id_2"]
-        gff_lines = [l for l in output_gff.read_text().splitlines() if l and not l.startswith("#")]
+        gff_lines = [line for line in output_gff.read_text().splitlines() if line and not line.startswith("#")]
         assert len(gff_lines) == 1
         assert gff_lines[0].startswith("seq_id_2\t")
 
@@ -317,7 +317,7 @@ seq1\tsource\tgene\t3\t20\t.\t+\t.\tID=g_end_beyond
 
         intersection_main(args)
 
-        lines = [l.strip() for l in output_gff.read_text().splitlines() if l.strip() and not l.startswith("#")]
+        lines = [line.strip() for line in output_gff.read_text().splitlines() if line.strip() and not line.startswith("#")]
         assert len(lines) == 4
 
         fields = [line.split("\t") for line in lines]
@@ -355,7 +355,7 @@ seq1\tsource\tgene\t3\t20\t.\t+\t.\tID=g_end_beyond
         )
         intersection_main(args)
 
-        lines = [l.strip() for l in output_gff.read_text().splitlines() if l.strip() and not l.startswith("#")]
+        lines = [line.strip() for line in output_gff.read_text().splitlines() if line.strip() and not line.startswith("#")]
         assert len(lines) == 1
         assert "\t5\t5\t" in lines[0]
         assert "ID=snp1" in lines[0]

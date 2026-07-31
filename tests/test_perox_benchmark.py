@@ -492,7 +492,9 @@ def test_deeploc21_perox_benchmark_writes_attached_model(temp_dir):
         base_model=str(base_model_path),
         model_out=str(model_out),
     )
-    loaded = load_localize_model(str(model_out))
+    with pytest.raises(ValueError, match='unsafe pickle deserialization'):
+        load_localize_model(str(model_out))
+    loaded = load_localize_model(str(model_out), allow_unsafe=True)
 
     assert report['model_out'] == str(model_out)
     assert loaded['model_type'] == 'targetp_torch_v1'

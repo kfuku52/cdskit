@@ -1,4 +1,5 @@
 import argparse
+import math
 import os
 import sys
 
@@ -28,7 +29,7 @@ _COMMON_ARGUMENT_HELP = {
     'device': 'Computation device, such as cpu, cuda, or auto.',
     'random_state': 'Random seed passed to the estimator.',
     'seed': 'Random seed for reproducible processing.',
-    'threads': 'Number of worker threads; 0 uses all detected CPUs.',
+    'threads': 'Number of worker threads; 0 auto-detects CPUs up to the safety limit.',
     'verbose': 'Enable detailed progress output.',
 }
 
@@ -209,6 +210,17 @@ def parse_bool(value):
     )
 
 
+def finite_float(value):
+    """Parse a finite floating-point CLI value."""
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        raise argparse.ArgumentTypeError('expected a floating-point number')
+    if not math.isfinite(parsed):
+        raise argparse.ArgumentTypeError('expected a finite floating-point number')
+    return parsed
+
+
 def warn_deprecated_option(old_option, new_option, stream=None):
     if stream is None:
         stream = sys.stderr
@@ -221,14 +233,23 @@ def warn_deprecated_option(old_option, new_option, stream=None):
 
 
 def resolve_threads(threads):
-    """Resolve the shared thread convention: 0 means all detected CPUs."""
+    """Resolve threads; 0 auto-detects CPUs without exceeding the safety limit."""
     if threads is None:
         return 1
     value = int(threads)
     if value < 0:
         raise ValueError('--threads should be >= 0. 0 means auto-detect CPU count.')
+    maximum = int(os.environ.get('CDSKIT_MAX_THREADS', '64'))
+    if maximum < 1:
+        raise ValueError('CDSKIT_MAX_THREADS should be >= 1.')
     if value == 0:
-        return max(1, int(os.cpu_count() or 1))
+        return min(maximum, max(1, int(os.cpu_count() or 1)))
+    if value > maximum:
+        raise ValueError(
+            '--threads should be <= {}. Set CDSKIT_MAX_THREADS to raise the safety limit.'.format(
+                maximum
+            )
+        )
     return value
 
 
@@ -272,6 +293,8 @@ class CdskitArgumentParser(argparse.ArgumentParser):
         self._deprecated_aliases[old_option] = new_option
 
     def add_argument(self, *args, **kwargs):
+        if kwargs.get('type') is float:
+            kwargs['type'] = finite_float
         if (
             'help' not in kwargs
             and any(isinstance(value, str) and value.startswith('-') for value in args)

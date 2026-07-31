@@ -499,7 +499,7 @@ class TestHammerMain:
 
         hammer_main(args)
 
-        captured = capsys.readouterr()
+        capsys.readouterr()
         result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
 
         # Should have 4 sequences in output

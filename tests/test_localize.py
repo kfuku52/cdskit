@@ -362,6 +362,7 @@ class TestLocalizeMain:
             report=str(output_path),
             include_features=False,
             threads=1,
+            allow_unsafe_model=True,
         )
         localize_main(args)
 
@@ -399,6 +400,7 @@ class TestLocalizeMain:
             report=str(output_path),
             include_features=False,
             threads=1,
+            allow_unsafe_model=True,
         )
         localize_main(args)
 
@@ -450,6 +452,7 @@ class TestLocalizeMain:
             report=str(output_path),
             include_features=False,
             threads=1,
+            allow_unsafe_model=True,
         )
         localize_main(args)
 
@@ -712,9 +715,11 @@ def test_localize_learn_esm_head_head_only_mode(monkeypatch, temp_dir, mock_args
         seed,
         use_class_weight,
         device,
+        model_revision,
     ):
         captured['model_name'] = model_name
         captured['model_local_dir'] = model_local_dir
+        captured['model_revision'] = model_revision
         captured['max_len'] = max_len
         captured['pooling'] = pooling
         source_type = 'local' if str(model_local_dir).strip() != '' else 'huggingface'

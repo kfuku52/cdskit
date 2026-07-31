@@ -1,4 +1,3 @@
-import json
 import os
 import random
 from collections import Counter, defaultdict
@@ -25,6 +24,7 @@ from cdskit.targetp_external_eval import (
     read_tsv,
     write_tsv,
 )
+from cdskit.util import atomic_write_json
 from cdskit.targetp_feature_ensemble import (
     _metrics_from_prediction_indices,
     _prediction_indices_with_thresholds,
@@ -1074,8 +1074,7 @@ def write_external_augmented_feature_report(path, result, external_tsv=''):
     }
     if str(external_tsv).strip() != '':
         report['external_tsv'] = str(external_tsv)
-    with open(path, 'w', encoding='utf-8') as handle:
-        json.dump(report, handle, indent=2, sort_keys=True)
+    atomic_write_json(path, report, indent=2, sort_keys=True)
 
 
 def build_parser():

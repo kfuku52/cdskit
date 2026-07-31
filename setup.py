@@ -31,22 +31,40 @@ setup(
     },
     keywords='codon sequences',
     packages=find_packages(),
-    install_requires=['numpy', 'biopython', 'matplotlib'],
+    install_requires=[
+        'numpy>=1.23',
+        'biopython>=1.80',
+        'matplotlib>=3.6',
+    ],
     extras_require={
-        'test': ['pytest>=7', 'pytest-cov'],
-        'ml': ['torch', 'scikit-learn'],
+        'test': [
+            'build>=1',
+            'mypy>=1.10',
+            'pytest>=7',
+            'pytest-cov>=5',
+            'ruff>=0.6',
+        ],
+        'ml': [
+            'torch>=2.2,<3',
+            'scikit-learn>=1.4,<2',
+            'transformers>=4.40,<5',
+        ],
     },
-    python_requires='>=3.9',
+    python_requires='>=3.10',
     classifiers=[
-        'License :: OSI Approved :: BSD License',
         'Programming Language :: Python :: 3',
         'Programming Language :: Python :: 3 :: Only',
-        'Programming Language :: Python :: 3.9',
         'Programming Language :: Python :: 3.10',
         'Programming Language :: Python :: 3.11',
         'Programming Language :: Python :: 3.12',
+        'Programming Language :: Python :: 3.13',
+        'Programming Language :: Python :: 3.14',
         'Operating System :: OS Independent',
         'Topic :: Scientific/Engineering :: Bio-Informatics',
     ],
-    scripts=['cdskit/cdskit'],
+    entry_points={
+        'console_scripts': [
+            'cdskit=cdskit.cli:main',
+        ],
+    },
 )

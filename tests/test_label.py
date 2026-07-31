@@ -85,6 +85,19 @@ class TestLabelHelpers:
         assert records[0].description == ""
         assert records[1].description == ""
 
+    def test_uniquify_avoids_existing_suffix_and_respects_clip_len(self):
+        records = [
+            SeqRecord(Seq("ATG"), id="long_name", description=""),
+            SeqRecord(Seq("ATG"), id="long_name", description=""),
+            SeqRecord(Seq("ATG"), id="lon_1", description=""),
+        ]
+        clip_label_ids(records, clip_len=5)
+        uniquify_label_ids(records, clip_len=5)
+
+        ids = [record.id for record in records]
+        assert len(ids) == len(set(ids))
+        assert all(len(seq_id) <= 5 for seq_id in ids)
+
 
 class TestLabelMain:
     """Tests for label_main function."""

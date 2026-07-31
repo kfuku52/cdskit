@@ -16,8 +16,8 @@ from cdskit.util import (
     write_seqs,
 )
 
-_CODON_CLASS_CACHE = dict()
-_MASK_DECISION_CACHE = dict()
+_CODON_CLASS_CACHE: dict = {}
+_MASK_DECISION_CACHE: dict = {}
 _PROCESS_PARALLEL_MIN_RECORDS = 2000
 
 
@@ -92,7 +92,6 @@ def mask_sequence_string(nucseq, codontable, mask_triplet, mask_ambiguous, mask_
             return ''.join(out)
         return nucseq
 
-    stop_codons, forward_codons = get_codon_class_sets(codontable=codontable)
     mask_decision_cache = get_mask_decision_cache(
         codontable=codontable,
         mask_ambiguous=mask_ambiguous,
@@ -109,12 +108,15 @@ def mask_sequence_string(nucseq, codontable, mask_triplet, mask_ambiguous, mask_
                 should_mask = True
             elif codon_upper == '---':
                 should_mask = False
-            elif mask_stop and (codon_upper in stop_codons):
-                should_mask = True
-            elif mask_ambiguous and (codon_upper not in forward_codons) and (codon_upper not in stop_codons):
-                should_mask = True
             else:
-                should_mask = False
+                amino_acid = str(
+                    Bio.Seq.Seq(codon_upper).translate(table=codontable)
+                )
+                should_mask = should_mask_amino_acid(
+                    amino_acid,
+                    mask_ambiguous=mask_ambiguous,
+                    mask_stop=mask_stop,
+                )
             mask_decision_cache[codon_upper] = should_mask
         if should_mask:
             out.append(mask_triplet)

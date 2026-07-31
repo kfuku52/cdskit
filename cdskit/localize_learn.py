@@ -1,14 +1,17 @@
 import csv
 import io
+import math
 import re
 import time
 from collections import Counter
+from importlib.metadata import PackageNotFoundError, version as package_version
 from urllib import error as urllib_error
 from urllib import parse as urllib_parse
 from urllib import request as urllib_request
 
 import numpy as np
 
+from cdskit import __version__
 from cdskit.localize_model import (
     CTP_LTP_STAGE_CLASSES,
     FEATURE_NAMES,
@@ -31,10 +34,12 @@ from cdskit.localize_model import (
     write_rows_tsv,
 )
 from cdskit.tsvio import read_tsv, write_tsv
-from cdskit.util import stop_if_invalid_codontable
+from cdskit.util import atomic_output_paths, stop_if_invalid_codontable
 
 UNIPROT_SEARCH_URL = 'https://rest.uniprot.org/uniprotkb/search'
 UNIPROT_MAX_PAGE_SIZE = 500
+UNIPROT_MAX_PAGES = 10_000
+UNIPROT_MAX_RESPONSE_BYTES = 64 * 1024 * 1024
 UNIPROT_DEFAULT_FIELDS = ('accession', 'sequence', 'cc_subcellular_location')
 TWO_STAGE_CTP_LTP_GATE_GRID = [0.0, 0.10, 0.20, 0.30, 0.40, 0.50]
 TWO_STAGE_CTP_LTP_BETA_GRID = [0.0, 0.25, 0.50, 0.75, 1.0]
@@ -52,6 +57,13 @@ UNIPROT_PRESET_QUERIES = {
     ),
     'bacteria_hard_negative': 'taxonomy_id:2',
 }
+
+
+def _installed_package_version(name):
+    try:
+        return package_version(name)
+    except PackageNotFoundError:
+        return ''
 
 
 def read_training_tsv(path, required_columns=None, return_fieldnames=False):
@@ -105,12 +117,41 @@ def parse_uniprot_next_link(link_header):
     return match.group(1)
 
 
+def _validate_uniprot_url(url):
+    parsed = urllib_parse.urlparse(str(url))
+    if (
+        parsed.scheme != 'https'
+        or parsed.hostname != 'rest.uniprot.org'
+        or parsed.port not in (None, 443)
+        or parsed.path != '/uniprotkb/search'
+    ):
+        raise ValueError('Refusing unexpected UniProt pagination URL: {}'.format(url))
+
+
 def _fetch_url_text(url, timeout_sec, retries):
+    _validate_uniprot_url(url)
     last_exc = None
     for attempt in range(retries + 1):
         try:
             with urllib_request.urlopen(url, timeout=timeout_sec) as response:
-                body = response.read().decode('utf-8')
+                _validate_uniprot_url(response.geturl())
+                content_length = response.headers.get('Content-Length')
+                if (
+                    content_length is not None
+                    and int(content_length) > UNIPROT_MAX_RESPONSE_BYTES
+                ):
+                    raise ValueError('UniProt response exceeds the 64 MiB safety limit.')
+                chunks = []
+                total = 0
+                while True:
+                    chunk = response.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    total += len(chunk)
+                    if total > UNIPROT_MAX_RESPONSE_BYTES:
+                        raise ValueError('UniProt response exceeds the 64 MiB safety limit.')
+                    chunks.append(chunk)
+                body = b''.join(chunks).decode('utf-8')
                 link_header = response.headers.get('Link', '')
                 return body, link_header
         except urllib_error.URLError as exc:
@@ -128,19 +169,34 @@ def parse_uniprot_tsv_text(tsv_text, field_order):
         return rows
     reader = csv.reader(io.StringIO(tsv_text), delimiter='\t')
     try:
-        _ = next(reader)  # Skip header row from UniProt.
+        header = next(reader)
     except StopIteration:
         return rows
     num_field = len(field_order)
-    for raw_row in reader:
+    if len(header) != num_field or any(str(value).strip() == '' for value in header):
+        raise ValueError(
+            'Unexpected UniProt TSV header width: expected {} columns, got {}.'.format(
+                num_field,
+                len(header),
+            )
+        )
+    if len(set(header)) != len(header):
+        raise ValueError('UniProt TSV header contains duplicate columns.')
+    for line_number, raw_row in enumerate(reader, start=2):
         if len(raw_row) == 0:
             continue
-        row = dict()
-        for i, field_name in enumerate(field_order):
-            if i < len(raw_row):
-                row[field_name] = raw_row[i]
-            else:
-                row[field_name] = ''
+        if len(raw_row) != num_field:
+            raise ValueError(
+                'UniProt TSV row width mismatch at line {}: expected {}, got {}.'.format(
+                    line_number,
+                    num_field,
+                    len(raw_row),
+                )
+            )
+        row = {
+            field_name: raw_row[i]
+            for i, field_name in enumerate(field_order)
+        }
         rows.append(row)
     return rows
 
@@ -191,7 +247,18 @@ def fetch_uniprot_training_rows(
     all_rows = list()
     rng = np.random.default_rng(sampling_seed)
     seen_count = 0
+    visited_urls = set()
+    page_count = 0
     while next_url is not None:
+        _validate_uniprot_url(next_url)
+        if next_url in visited_urls:
+            raise ValueError('UniProt pagination loop detected.')
+        visited_urls.add(next_url)
+        page_count += 1
+        if page_count > UNIPROT_MAX_PAGES:
+            raise ValueError(
+                'UniProt pagination exceeds {} pages.'.format(UNIPROT_MAX_PAGES)
+            )
         body, link_header = _fetch_url_text(
             url=next_url,
             timeout_sec=timeout_sec,
@@ -480,6 +547,7 @@ def _fit_arch_specific_localization_model(
             seed=dl_train_params['seed'],
             use_class_weight=dl_train_params['use_class_weight'],
             device=dl_train_params['device'],
+            model_revision=dl_train_params['esm_model_revision'],
         )
     raise ValueError('Unsupported model_arch: {}'.format(model_arch))
 
@@ -1311,9 +1379,23 @@ def localize_learn_main(args):
     dl_seed = int(getattr(args, 'dl_seed', 1))
     dl_device = str(getattr(args, 'dl_device', 'auto')).strip().lower()
     esm_model_name = str(getattr(args, 'esm_model_name', 'facebook/esm2_t6_8M_UR50D')).strip()
+    from cdskit.localize_esm_head import DEFAULT_ESM_MODEL_REVISION
+    esm_model_revision = str(
+        getattr(args, 'esm_model_revision', DEFAULT_ESM_MODEL_REVISION)
+    ).strip()
     esm_model_local_dir = str(getattr(args, 'esm_model_local_dir', '')).strip()
     esm_pooling = str(getattr(args, 'esm_pooling', 'cls')).strip().lower()
     esm_max_len = int(getattr(args, 'esm_max_len', 200))
+    finite_values = {
+        '--dl_dropout': dl_dropout,
+        '--dl_lr': dl_lr,
+        '--dl_weight_decay': dl_weight_decay,
+        '--dl_aux_tp_weight': dl_aux_tp_weight,
+        '--dl_aux_ctp_ltp_weight': dl_aux_ctp_ltp_weight,
+    }
+    for option, value in finite_values.items():
+        if not math.isfinite(value):
+            raise ValueError('{} should be finite.'.format(option))
     if dl_seq_len < 1:
         raise ValueError('--dl_seq_len should be >= 1.')
     if dl_embed_dim < 1:
@@ -1464,6 +1546,7 @@ def localize_learn_main(args):
         'aux_ctp_ltp_weight': dl_aux_ctp_ltp_weight,
         'feature_fusion': dl_feature_fusion,
         'esm_model_name': esm_model_name,
+        'esm_model_revision': esm_model_revision,
         'esm_model_local_dir': esm_model_local_dir,
         'esm_pooling': esm_pooling,
         'esm_max_len': esm_max_len,
@@ -1517,6 +1600,9 @@ def localize_learn_main(args):
         'localization_model': localization_model,
         'perox_model': perox_model,
         'metadata': {
+            'cdskit_version': __version__,
+            'numpy_version': np.__version__,
+            'scikit_learn_version': _installed_package_version('scikit-learn'),
             'num_training_rows': int(len(rows)),
             'num_used_rows': int(x.shape[0]),
             'num_skipped_rows': int(skipped),
@@ -1693,6 +1779,7 @@ def localize_learn_main(args):
         model['metadata']['dl_device'] = str(dl_device)
     if model_arch == 'esm_head':
         model['metadata']['esm_model_name'] = str(esm_model_name)
+        model['metadata']['esm_model_revision'] = str(esm_model_revision)
         model['metadata']['esm_model_local_dir'] = str(esm_model_local_dir)
         model['metadata']['esm_pooling'] = str(esm_pooling)
         model['metadata']['esm_max_len'] = int(esm_max_len)
@@ -1704,7 +1791,6 @@ def localize_learn_main(args):
         model['metadata']['dl_seed'] = int(dl_seed)
         model['metadata']['dl_device'] = str(dl_device)
 
-    save_localize_model(model=model, path=args.model_out)
     report_rows = list()
     report_rows.append({
         'metric': 'num_training_rows',
@@ -1821,12 +1907,16 @@ def localize_learn_main(args):
         'value': int(model['metadata']['perox_counts'].get('no', 0)),
     })
 
-    if args.report != '':
-        if args.report.lower().endswith('.json'):
-            write_rows_json(rows=report_rows, output_path=args.report)
-        else:
-            write_rows_tsv(
-                rows=report_rows,
-                output_path=args.report,
-                fieldnames=['metric', 'value'],
-            )
+    outputs = [args.model_out] + ([args.report] if args.report else [])
+    with atomic_output_paths(outputs) as staged_outputs:
+        staged = dict(zip(outputs, staged_outputs))
+        save_localize_model(model=model, path=staged[args.model_out])
+        if args.report != '':
+            if args.report.lower().endswith('.json'):
+                write_rows_json(rows=report_rows, output_path=staged[args.report])
+            else:
+                write_rows_tsv(
+                    rows=report_rows,
+                    output_path=staged[args.report],
+                    fieldnames=['metric', 'value'],
+                )

@@ -1,0 +1,781 @@
+"""Command-line interface for cdskit."""
+
+import argparse
+import os
+import sys
+
+from datetime import datetime
+
+from cdskit import __version__
+from cdskit.cliutil import (
+    CdskitArgumentParser,
+    DeprecatedNegatedBooleanAction,
+    DeprecatedStoreTrueAction,
+    add_deprecated_aliases,
+    finite_float,
+    parse_bool,
+)
+
+# Main parser
+psr = CdskitArgumentParser(description='A toolkit to handle protein-coding DNA sequences in frame')
+psr.add_argument('--version', action='version', version='cdskit version ' + __version__)
+psr.add_argument('--debug', action='store_true', help='Show a full traceback when a command fails.')
+subparsers = psr.add_subparsers()
+
+add_deprecated_aliases(psr, {
+    '--seqfile': '--seq_file',
+    '--inseqformat': '--in_seq_format',
+    '--outfile': '--out_file',
+    '--outseqformat': '--out_seq_format',
+    '--codontable': '--codon_table',
+    '--ingff': '--in_gff',
+    '--outgff': '--out_gff',
+    '--seqfile2': '--seq_file_2',
+    '--inseqformat2': '--in_seq_format_2',
+    '--outfile2': '--out_file_2',
+    '--outseqformat2': '--out_seq_format_2',
+    '--seqnamefmt': '--seq_name_format',
+    '--list_seqname_keys': '--list_seq_name_keys',
+    '--annotate_seqname': '--annotate_seq_name',
+    '--show_seqname': '--show_seq_name',
+    '--seqname': '--seq_name_regex',
+    '--seq_name': '--seq_name_regex',
+    '--maskchar': '--mask_char',
+    '--ambiguouscodon': '--ambiguous_codon',
+    '--stopcodon': '--stop_codon',
+    '--padchar': '--pad_char',
+    '--missing_char': '--missing_chars',
+    '--problematic_char': '--problematic_chars',
+    '--fix_outrange_gff_records': '--fix_out_of_range_gff_records',
+    '--keep': '--keep_seq_name_regex',
+    '--seqtype': '--seq_type',
+    '--plotformat': '--format',
+})
+
+# Parent parser for shared options
+
+p_version = CdskitArgumentParser(add_help=False)
+p_version.add_argument('--version', action='version', version='cdskit version ' + __version__)
+p_version.add_argument('--debug', action='store_true', help='Show a full traceback when a command fails.')
+
+p_infile = CdskitArgumentParser(add_help=False)
+p_infile.add_argument('-s', '--seq_file', dest='seqfile', metavar='PATH', default='-', type=str, required=False, action='store',
+                 help='default=%(default)s: Input sequence file. Use "-" for STDIN.')
+p_infile.add_argument('-if', '--in_seq_format', dest='inseqformat', metavar='STR', default='fasta', type=str, required=False, action='store',
+                 help='default=%(default)s: Input sequence format. See Biopython documentation for available options. https://biopython.org/wiki/SeqIO')
+
+p_outfile = CdskitArgumentParser(add_help=False)
+p_outfile.add_argument('-o', '--out_file', dest='outfile', metavar='PATH', default='-', type=str, required=False, action='store',
+                 help='default=%(default)s: Output sequence file. Use "-" for STDOUT.')
+p_outfile.add_argument('-of', '--out_seq_format', dest='outseqformat', metavar='STR', default='fasta', type=str, required=False, action='store',
+                 help='default=%(default)s: Output sequence format. See Biopython documentation for available options. https://biopython.org/wiki/SeqIO')
+
+p_viz_outfile = CdskitArgumentParser(add_help=False)
+p_viz_outfile.add_argument('-o', '--out_file', dest='outfile', metavar='PATH', default='-', type=str, required=False, action='store',
+                 help='default=%(default)s: Output plot file. Use "-" for STDOUT.')
+
+p_codon = CdskitArgumentParser(add_help=False)
+p_codon.add_argument('-d', '--codon_table', dest='codontable', metavar='INT', default=1, type=int, required=False, action='store',
+                      help='default=%(default)s: Codon table ID. The standard code is "1". '
+                           'See here for details: https://www.ncbi.nlm.nih.gov/Taxonomy/Utils/wprintgc.cgi')
+
+p_gffio = CdskitArgumentParser(add_help=False)
+p_gffio.add_argument('--in_gff', dest='ingff', metavar='PATH', default=None, type=str, required=False, action='store',
+                     help='default=%(default)s: Input gff file.')
+p_gffio.add_argument('--out_gff', dest='outgff', metavar='PATH', default='out.gff', type=str, required=False, action='store',
+                     help='default=%(default)s: Output gff file.')
+
+p_threads = CdskitArgumentParser(add_help=False)
+p_threads.add_argument('--threads', metavar='INT', default=1, type=int, required=False, action='store',
+                       help='default=%(default)s: Number of worker threads for supported commands. 0 auto-detects CPUs up to the safety limit.')
+
+p_seqtype = CdskitArgumentParser(add_help=False)
+p_seqtype.add_argument(
+    '--seq_type', dest='seqtype',
+    metavar='dna|protein|auto',
+    default='auto',
+    type=str,
+    required=False,
+    action='store',
+    choices=['dna', 'protein', 'auto'],
+    help='default=%(default)s: Expected sequence type for input validation.',
+)
+
+
+
+def strtobool(val):
+    return parse_bool(val)
+
+def command_accession2fasta(args):
+    from cdskit.accession2fasta import accession2fasta_main
+    sys.stderr.write('cdskit accession2fasta: started at {}\n'.format(datetime.now()))
+    accession2fasta_main(args)
+    sys.stderr.write('cdskit accession2fasta: ended at {}\n'.format(datetime.now()))
+
+help_accession2fasta = 'Retrieving fasta sequences from a list of GenBank accessions. See `cdskit accession2fasta -h`'
+p_accession2fasta = subparsers.add_parser('accession2fasta', help=help_accession2fasta, parents=[p_version,p_outfile,p_threads])
+p_accession2fasta.add_argument('--accession_file', metavar='PATH', type=str, required=True, action='store',
+                               help='PATH to the accession-per-line text file.')
+p_accession2fasta.add_argument('--email', metavar='aaa@bbb.com', default='', type=str, required=False, action='store',
+                               help='default=%(default)s: Your email address. This is passed to the NCBI\'s E-utilities. '
+                                    'For details, see here: https://biopython.org/docs/1.75/api/Bio.Entrez.html')
+p_accession2fasta.add_argument('--extract_cds', metavar='yes|no', default='yes', type=strtobool, required=False, action='store',
+                               help='default=%(default)s: Whether to extract the CDS feature.')
+p_accession2fasta.add_argument('--ncbi_database', metavar='STR', default='nucleotide', type=str, required=False,
+                               action='store', choices=['nucleotide', ],
+                               help='default=%(default)s: NCBI database to search.')
+p_accession2fasta.add_argument('--seq_name_format', dest='seqnamefmt', metavar='STR', default='organism_accessions', type=str, required=False, action='store',
+                               help='default=%(default)s: Underline-separated list of output sequence name elements. '
+                                    'Try --list_seq_name_keys to check available values.')
+p_accession2fasta.add_argument('--list_seq_name_keys', dest='list_seqname_keys', metavar='yes|no', default='no', type=strtobool, required=False, action='store',
+                               help='default=%(default)s: Listing the keys (and values) available for --seq_name_format.')
+p_accession2fasta.set_defaults(handler=command_accession2fasta)
+
+
+def command_aggregate(args):
+    from cdskit.aggregate import aggregate_main
+    sys.stderr.write('cdskit aggregate: started at {}\n'.format(datetime.now()))
+    aggregate_main(args)
+    sys.stderr.write('cdskit aggregate: ended at {}\n'.format(datetime.now()))
+
+help_aggregate = 'Extracting the longest sequences combined with a sequence name regex. See `cdskit aggregate -h`'
+p_aggregate = subparsers.add_parser('aggregate', help=help_aggregate, parents=[p_version,p_infile,p_outfile,p_seqtype,p_threads])
+p_aggregate.add_argument('-m', '--mode', metavar='STR', default='longest', type=str, required=False, action='store',
+                         choices=['longest', ],
+                         help='default=%(default)s: Criterion to keep a sequence during aggregation.')
+p_aggregate.add_argument('-x', '--expression', metavar='REGEX', default=[], type=str, required=False, action='store',
+                         nargs='+',
+                         help='default=%(default)s: Regular expression(s) to aggregate sequences. If omitted, no aggregation by regex is applied.')
+p_aggregate.set_defaults(handler=command_aggregate)
+
+
+def command_backtrim(args):
+    from cdskit.backtrim import backtrim_main
+    sys.stderr.write('cdskit backtrim: started at {}\n'.format(datetime.now()))
+    backtrim_main(args)
+    sys.stderr.write('cdskit backtrim: ended at {}\n'.format(datetime.now()))
+
+help_backtrim = 'Back-translating a trimmed protein alignment. See `cdskit backtrim -h`'
+p_backtrim = subparsers.add_parser('backtrim', help=help_backtrim, parents=[p_version,p_infile,p_outfile,p_codon,p_threads])
+p_backtrim.add_argument('-a', '--trimmed_aa_aln', metavar='PATH', type=str, required=True, action='store',
+                        help='PATH to the trimmed amino acid alignment. '
+                             'In addition to this, please specify the untrimmed CDS alignment by --seq_file.')
+p_backtrim.set_defaults(handler=command_backtrim)
+
+
+def command_backalign(args):
+    from cdskit.backalign import backalign_main
+    sys.stderr.write('cdskit backalign: started at {}\n'.format(datetime.now()))
+    backalign_main(args)
+    sys.stderr.write('cdskit backalign: ended at {}\n'.format(datetime.now()))
+
+help_backalign = 'Back-aligning CDS based on an amino acid alignment. See `cdskit backalign -h`'
+p_backalign = subparsers.add_parser('backalign', help=help_backalign, parents=[p_version,p_infile,p_outfile,p_codon,p_threads])
+p_backalign.add_argument('-a', '--aa_aln', metavar='PATH', type=str, required=True, action='store',
+                         help='PATH to aligned amino acid sequences. '
+                              'In addition to this, please specify unaligned CDS by --seq_file.')
+p_backalign.set_defaults(handler=command_backalign)
+
+
+def command_gapjust(args):
+    from cdskit.gapjust import gapjust_main
+    sys.stderr.write('cdskit gapjust: started at {}\n'.format(datetime.now()))
+    gapjust_main(args)
+    sys.stderr.write('cdskit gapjust: ended at {}\n'.format(datetime.now()))
+
+help_gapjust = 'Adjusting consecutive Ns to the fixed length. See `cdskit gapjust -h`'
+p_gapjust = subparsers.add_parser('gapjust', help=help_gapjust, parents=[p_version,p_infile,p_outfile,p_gffio,p_threads])
+p_gapjust.add_argument('--gap_len', metavar='INT', default=100, type=int, required=False, action='store',
+                        help='default=%(default)s: Gap length. Ns will be added or removed to make the gap length fixed.')
+p_gapjust.add_argument('--gap_just_min', metavar='INT', default=None, type=int, required=False, action='store',
+                        help='default=%(default)s: Minimum gap length to be adjusted. Ns will be extended if the gap length is equal to or greater than this value.')
+p_gapjust.add_argument('--gap_just_max', metavar='INT', default=None, type=int, required=False, action='store',
+                        help='default=%(default)s: Maximum gap length to be adjusted. Ns will be shortened if the gap length is equal to or smaller than this value.')
+p_gapjust.set_defaults(handler=command_gapjust)
+
+
+def command_filter(args):
+    from cdskit.filter import filter_main
+    sys.stderr.write('cdskit filter: started at {}\n'.format(datetime.now()))
+    filter_main(args)
+    sys.stderr.write('cdskit filter: ended at {}\n'.format(datetime.now()))
+
+help_filter = 'Filtering CDS by sequence-level quality rules. See `cdskit filter -h`'
+p_filter = subparsers.add_parser('filter', help=help_filter, parents=[p_version,p_infile,p_outfile,p_codon,p_threads])
+p_filter.add_argument('--drop_non_triplet', metavar='yes|no', default=True, type=strtobool, required=False, action='store',
+                      help='default=%(default)s: Drop sequences whose lengths are not multiple of three.')
+p_filter.add_argument('--drop_internal_stop', metavar='yes|no', default=False, type=strtobool, required=False, action='store',
+                      help='default=%(default)s: Drop sequences with internal in-frame stop codons.')
+p_filter.add_argument('--min_clean_codon_fraction', metavar='FLOAT', default=0.5, type=finite_float, required=False, action='store',
+                      help='default=%(default)s: Minimum fraction of clean codons required to retain a sequence. Clean codons contain no missing, ambiguous, or stop codon.')
+p_filter.add_argument('--dedup', metavar='no|keep-first|keep-longest', default='no', type=str, required=False, action='store',
+                      choices=['no', 'keep-first', 'keep-longest'],
+                      help='default=%(default)s: How to resolve duplicate sequence IDs after quality filtering.')
+p_filter.add_argument('--report', metavar='PATH', default='', type=str, required=False, action='store',
+                      help='default=%(default)s: Optional report output path. If PATH ends with ".json", JSON is written; otherwise tab-separated TSV is written.')
+p_filter.set_defaults(handler=command_filter)
+
+
+def command_hammer(args):
+    from cdskit.hammer import hammer_main
+    sys.stderr.write('cdskit hammer: started at {}\n'.format(datetime.now()))
+    hammer_main(args)
+    sys.stderr.write('cdskit hammer: ended at {}\n'.format(datetime.now()))
+
+help_hammer = 'Removing less-occupied codon columns from a gappy alignment. See `cdskit hammer -h`'
+p_hammer = subparsers.add_parser('hammer', help=help_hammer, parents=[p_version,p_infile,p_outfile,p_codon,p_threads])
+p_hammer.add_argument('--nail', metavar='INT/all', default='4', type=str, required=False, action='store',
+                      help='default=%(default)s: Threshold number of "nail sequences" to hammer down. '
+                           'Codon columns are removed if there are no more than this number of non-missing sequences. '
+                           '"all" generates a completely no-gap output.')
+p_hammer.add_argument('--prevent_gap_only', metavar='yes|no', default='yes', type=strtobool, required=False, action='store',
+                       help='default=%(default)s: Whether to relax (decrease) --nail when a gap-only sequence is generated.')
+p_hammer.set_defaults(handler=command_hammer)
+
+def command_intersection(args):
+    from cdskit.intersection import intersection_main
+    sys.stderr.write('cdskit intersection: started at {}\n'.format(datetime.now()))
+    intersection_main(args)
+    sys.stderr.write('cdskit intersection: ended at {}\n'.format(datetime.now()))
+
+help_intersection = 'Dropping non-overlapping sequence labels between two sequences files or between a sequence file and a gff file. See `cdskit intersection -h`'
+p_intersection = subparsers.add_parser('intersection', help=help_intersection, parents=[p_version,p_infile,p_outfile,p_seqtype,p_threads])
+p_intersection_source = p_intersection.add_mutually_exclusive_group(required=True)
+p_intersection_source.add_argument('--seq_file_2', dest='seqfile2', metavar='PATH', default=None, type=str, action='store',
+                                   help='Input sequence file 2.')
+p_intersection_source.add_argument('--in_gff', dest='ingff', metavar='PATH', default=None, type=str, action='store',
+                                   help='Input GFF file.')
+p_intersection.add_argument('--out_gff', dest='outgff', metavar='PATH', default='out.gff', type=str, action='store',
+                            help='default=%(default)s: Output GFF file.')
+p_intersection.add_argument('--in_seq_format_2', dest='inseqformat2', metavar='STR', default='fasta', type=str, required=False, action='store',
+                            help='default=%(default)s: Input sequence format for --seq_file_2.')
+p_intersection.add_argument('--out_file_2', dest='outfile2', metavar='PATH', default='seqfile2.out', type=str, required=False, action='store',
+                            help='default=%(default)s: Output sequence file 2.')
+p_intersection.add_argument('--out_seq_format_2', dest='outseqformat2', metavar='STR', default='fasta', type=str, required=False,
+                            action='store',
+                            help='default=%(default)s: Output sequence format for --out_file_2.')
+p_intersection.add_argument('--fix_out_of_range_gff_records', dest='fix_outrange_gff_records', metavar='yes|no', default='yes', type=strtobool, required=False, action='store',
+                            help='default=%(default)s: Fix gff records that have coordinates out of the sequence range.')
+p_intersection.set_defaults(handler=command_intersection)
+
+
+def command_label(args):
+    from cdskit.label import label_main
+    sys.stderr.write('cdskit label: started at {}\n'.format(datetime.now()))
+    label_main(args)
+    sys.stderr.write('cdskit label: ended at {}\n'.format(datetime.now()))
+
+help_label = 'Modifying sequence labels. See `cdskit label -h`'
+p_label = subparsers.add_parser('label', help=help_label, parents=[p_version,p_infile,p_outfile,p_seqtype])
+p_label.add_argument('--replace_chars', metavar='FROM1FROM2...--TO', default='', type=str, required=False, action='store',
+                     help='default=%(default)s: Replace sequence label characters. For example, "!@#$%%^&*+=/?<>|--_" replaces various characters with underbar ("_").')
+p_label.add_argument('--clip_len', metavar='INT', default=0, type=int, required=False, action='store',
+                     help='default=%(default)s: Maximum length of sequence labels. Longer labels are truncated.')
+p_label.add_argument('--unique', metavar='yes|no', default='no', type=strtobool, required=False, action='store',
+                     help='default=%(default)s: Make sequence labels unique by adding suffix (_1, _2, ...).')
+p_label.set_defaults(handler=command_label)
+
+
+def run_longestorf(args, invoked_as, deprecated=False):
+    from cdskit.longestorf import longestorf_main
+    if deprecated:
+        sys.stderr.write(
+            'Warning: `cdskit longestcds` is deprecated and may be removed in a future release. '
+            'Use `cdskit longestorf` instead.\n'
+        )
+    sys.stderr.write(f'cdskit {invoked_as}: started at {datetime.now()}\n')
+    longestorf_main(args)
+    sys.stderr.write(f'cdskit {invoked_as}: ended at {datetime.now()}\n')
+
+
+def command_longestorf(args):
+    run_longestorf(args=args, invoked_as='longestorf', deprecated=False)
+
+
+def command_longestcds(args):
+    run_longestorf(args=args, invoked_as='longestcds', deprecated=True)
+
+
+help_longestorf = 'Finding the longest ORF from six-frame translation. See `cdskit longestorf -h`'
+p_longestorf = subparsers.add_parser('longestorf', help=help_longestorf, parents=[p_version,p_infile,p_outfile,p_codon,p_threads])
+p_longestorf.add_argument('--annotate_seq_name', dest='annotate_seqname', metavar='yes|no', default='no', type=strtobool, required=False, action='store',
+                          help='default=%(default)s: Whether to append strand/frame/coordinate metadata to FASTA headers.')
+p_longestorf.set_defaults(handler=command_longestorf)
+
+
+help_longestcds = 'Deprecated alias of longestorf. See `cdskit longestorf -h`'
+p_longestcds = subparsers.add_parser('longestcds', help=help_longestcds, parents=[p_version,p_infile,p_outfile,p_codon,p_threads])
+p_longestcds.add_argument('--annotate_seq_name', dest='annotate_seqname', metavar='yes|no', default='no', type=strtobool, required=False, action='store',
+                          help='default=%(default)s: Whether to append strand/frame/coordinate metadata to FASTA headers.')
+p_longestcds.set_defaults(handler=command_longestcds)
+
+
+def command_localize(args):
+    from cdskit.localize import localize_main
+    sys.stderr.write('cdskit localize: started at {}\n'.format(datetime.now()))
+    localize_main(args)
+    sys.stderr.write('cdskit localize: ended at {}\n'.format(datetime.now()))
+
+help_localize = 'Predict targeting peptide or compatible multi-label localization models from CDS/protein input. See `cdskit localize -h`'
+p_localize = subparsers.add_parser('localize', help=help_localize, parents=[p_version, p_infile, p_codon, p_threads])
+p_localize.add_argument('--model', metavar='PATH|ALIAS', type=str, required=True, action='store',
+                        help='PATH to a model file generated by `cdskit localize-learn` or `python -m cdskit.deeploc_benchmark`, or a pretrained model alias such as "targeting5" or "targeting5-perox-deeploc21-et-v1".')
+p_localize.add_argument('--model_download', metavar='yes|no', default='yes', type=strtobool, required=False, action='store',
+                        help='default=%(default)s: Allow automatic download when --model is a pretrained model alias.')
+p_localize.add_argument(
+    '--allow_unsafe_model',
+    metavar='yes|no',
+    default='no',
+    type=strtobool,
+    help='Allow pickle deserialization for an explicitly trusted legacy model path.',
+)
+p_localize.add_argument(
+    '--no_model_download',
+    dest='model_download',
+    metavar='yes|no',
+    type=strtobool,
+    action=DeprecatedNegatedBooleanAction,
+    replacement='--model_download',
+    help=argparse.SUPPRESS,
+)
+p_localize.add_argument('--report', metavar='PATH', default='-', type=str, required=False, action='store',
+                        help='default=%(default)s: Output report path. Use "-" for STDOUT. If PATH ends with ".json", JSON is written; otherwise tab-separated TSV is written.')
+p_localize.add_argument('--include_features', metavar='yes|no', default='no', type=strtobool, required=False, action='store',
+                        help='default=%(default)s: Include internal feature values in the output report.')
+p_localize.add_argument('--seq_type', dest='seqtype', metavar='dna|protein', default='dna', type=str, required=False, action='store',
+                        choices=['dna', 'protein'],
+                        help='default=%(default)s: Input sequence type. DNA input is translated as in-frame CDS; protein input is used directly.')
+p_localize.add_argument('--organism_group', metavar='unknown|plant|non_plant', default='unknown', type=str, required=False, action='store',
+                        choices=['unknown', 'plant', 'non_plant'],
+                        help='default=%(default)s: Optional organism group used to constrain plant-only cTP/lTP predictions.')
+p_localize.set_defaults(handler=command_localize)
+
+
+def command_localize_learn(args):
+    from cdskit.localize_learn import localize_learn_main
+    sys.stderr.write('cdskit localize-learn: started at {}\n'.format(datetime.now()))
+    localize_learn_main(args)
+    sys.stderr.write('cdskit localize-learn: ended at {}\n'.format(datetime.now()))
+
+help_localize_learn = 'Training a localization/peroxisome prediction model from tab-separated data. See `cdskit localize-learn -h`'
+p_localize_learn = subparsers.add_parser('localize-learn', help=help_localize_learn, parents=[p_version, p_codon])
+p_localize_learn.add_argument('--training_tsv', metavar='PATH', default='', type=str, required=False, action='store',
+                              help='default=%(default)s: Tab-separated training table path. Use this OR UniProt source options (--uniprot_query/--uniprot_preset).')
+p_localize_learn.add_argument('--uniprot_query', metavar='QUERY', default='', type=str, required=False, action='store',
+                              help='default=%(default)s: UniProt query for automatic training-data download. Example: "taxonomy_id:3702". Use this (optionally with --uniprot_preset) OR --training_tsv.')
+p_localize_learn.add_argument('--uniprot_preset', metavar='none|viridiplantae|eukaryota|metazoa|fungi|non_viridiplantae_euk|protist_core|bacteria_hard_negative', default='none', type=str, required=False, action='store',
+                              choices=['none', 'viridiplantae', 'eukaryota', 'metazoa', 'fungi',
+                                       'non_viridiplantae_euk', 'protist_core', 'bacteria_hard_negative'],
+                              help='default=%(default)s: Preset UniProt query scope. This can be combined with --uniprot_query by AND.')
+p_localize_learn.add_argument('--uniprot_reviewed', metavar='yes|no', default='yes', type=strtobool, required=False, action='store',
+                              help='default=%(default)s: Restrict UniProt download to reviewed entries (Swiss-Prot).')
+p_localize_learn.add_argument('--uniprot_exclude_fragments', metavar='yes|no', default='yes', type=strtobool, required=False, action='store',
+                              help='default=%(default)s: Exclude UniProt entries annotated as fragments from auto-downloaded training data.')
+p_localize_learn.add_argument('--uniprot_fields', metavar='STR', default='accession,sequence,cc_subcellular_location', type=str, required=False, action='store',
+                              help='default=%(default)s: Comma-separated UniProt fields to download.')
+p_localize_learn.add_argument('--uniprot_page_size', metavar='INT', default=500, type=int, required=False, action='store',
+                              help='default=%(default)s: UniProt rows per request page (max 500).')
+p_localize_learn.add_argument('--uniprot_max_rows', metavar='INT', default=0, type=int, required=False, action='store',
+                              help='default=%(default)s: Maximum number of downloaded rows. 0 means no hard limit.')
+p_localize_learn.add_argument('--uniprot_sampling', metavar='head|random', default='head', type=str, required=False, action='store',
+                              choices=['head', 'random'],
+                              help='default=%(default)s: Sampling mode when --uniprot_max_rows > 0. "head" takes first rows; "random" uses reservoir sampling across all query hits.')
+p_localize_learn.add_argument('--uniprot_sampling_seed', metavar='INT', default=1, type=int, required=False, action='store',
+                              help='default=%(default)s: Random seed used for --uniprot_sampling random.')
+p_localize_learn.add_argument('--uniprot_timeout_sec', metavar='INT', default=60, type=int, required=False, action='store',
+                              help='default=%(default)s: Timeout seconds per UniProt HTTP request.')
+p_localize_learn.add_argument('--uniprot_retries', metavar='INT', default=2, type=int, required=False, action='store',
+                              help='default=%(default)s: Number of retries for failed UniProt HTTP requests.')
+p_localize_learn.add_argument('--uniprot_out_tsv', metavar='PATH', default='', type=str, required=False, action='store',
+                              help='default=%(default)s: Optional path to save downloaded UniProt rows as TSV before training.')
+p_localize_learn.add_argument('--cv_folds', metavar='INT', default=0, type=int, required=False, action='store',
+                              help='default=%(default)s: Number of stratified cross-validation folds for model evaluation. 0 disables CV.')
+p_localize_learn.add_argument('--cv_seed', metavar='INT', default=1, type=int, required=False, action='store',
+                              help='default=%(default)s: Random seed for cross-validation fold assignment.')
+p_localize_learn.add_argument('--cv_fold_col', metavar='STR', default='', type=str, required=False, action='store',
+                              help='default=%(default)s: Optional fold-id column for fixed CV splits. When set, folds are derived from this column instead of random stratification.')
+p_localize_learn.add_argument('--model_arch', metavar='nearest_centroid|bilstm_attention|esm_head', default='nearest_centroid', type=str, required=False, action='store',
+                              choices=['nearest_centroid', 'bilstm_attention', 'esm_head'],
+                              help='default=%(default)s: Localization model architecture.')
+p_localize_learn.add_argument('--localize_strategy', metavar='single_stage|two_stage|two_stage_ctp_ltp', default='single_stage', type=str, required=False, action='store',
+                              choices=['single_stage', 'two_stage', 'two_stage_ctp_ltp'],
+                              help='default=%(default)s: Localization class strategy. "two_stage" predicts noTP vs TP first, then TP subclasses. "two_stage_ctp_ltp" adds a cTP-vs-lTP sub-model on top of two_stage.')
+p_localize_learn.add_argument('--localize_temperature_scale', metavar='yes|no', default='no', type=strtobool, required=False, action='store',
+                              help='default=%(default)s: Fit temperature scaling on out-of-fold probabilities (requires CV).')
+p_localize_learn.add_argument('--localize_threshold_tune', metavar='yes|no', default='no', type=strtobool, required=False, action='store',
+                              help='default=%(default)s: Tune class-specific decision thresholds from out-of-fold probabilities (requires CV).')
+p_localize_learn.add_argument('--localize_threshold_objective', metavar='overall|macro', default='macro', type=str, required=False, action='store',
+                              choices=['overall', 'macro'],
+                              help='default=%(default)s: Objective used by --localize_threshold_tune.')
+p_localize_learn.add_argument('--dl_seq_len', metavar='INT', default=200, type=int, required=False, action='store',
+                              help='default=%(default)s: N-terminal amino acid length used by bilstm_attention.')
+p_localize_learn.add_argument('--dl_embed_dim', metavar='INT', default=32, type=int, required=False, action='store',
+                              help='default=%(default)s: Embedding dimension for bilstm_attention.')
+p_localize_learn.add_argument('--dl_hidden_dim', metavar='INT', default=64, type=int, required=False, action='store',
+                              help='default=%(default)s: Hidden dimension per direction for bilstm_attention.')
+p_localize_learn.add_argument('--dl_num_layers', metavar='INT', default=1, type=int, required=False, action='store',
+                              help='default=%(default)s: Number of BiLSTM layers for bilstm_attention.')
+p_localize_learn.add_argument('--dl_dropout', metavar='FLOAT', default=0.2, type=finite_float, required=False, action='store',
+                              help='default=%(default)s: Dropout rate for bilstm_attention.')
+p_localize_learn.add_argument('--dl_epochs', metavar='INT', default=15, type=int, required=False, action='store',
+                              help='default=%(default)s: Number of training epochs for bilstm_attention.')
+p_localize_learn.add_argument('--dl_batch_size', metavar='INT', default=128, type=int, required=False, action='store',
+                              help='default=%(default)s: Mini-batch size for bilstm_attention.')
+p_localize_learn.add_argument('--dl_lr', metavar='FLOAT', default=1e-3, type=finite_float, required=False, action='store',
+                              help='default=%(default)s: Learning rate for bilstm_attention.')
+p_localize_learn.add_argument('--dl_weight_decay', metavar='FLOAT', default=1e-4, type=finite_float, required=False, action='store',
+                              help='default=%(default)s: Weight decay for bilstm_attention.')
+p_localize_learn.add_argument('--dl_class_weight', metavar='yes|no', default='yes', type=strtobool, required=False, action='store',
+                              help='default=%(default)s: Use inverse-frequency class weights for bilstm_attention.')
+p_localize_learn.add_argument('--dl_loss', metavar='ce|focal', default='ce', type=str, required=False, action='store',
+                              choices=['ce', 'focal'],
+                              help='default=%(default)s: Loss function for bilstm_attention training.')
+p_localize_learn.add_argument('--dl_balanced_batch', metavar='yes|no', default='no', type=strtobool, required=False, action='store',
+                              help='default=%(default)s: Use class-balanced mini-batch sampling for bilstm_attention training.')
+p_localize_learn.add_argument('--dl_aux_tp_weight', metavar='FLOAT', default=0.0, type=finite_float, required=False, action='store',
+                              help='default=%(default)s: Auxiliary loss weight for noTP-vs-TP head in bilstm_attention training.')
+p_localize_learn.add_argument('--dl_aux_ctp_ltp_weight', metavar='FLOAT', default=0.0, type=finite_float, required=False, action='store',
+                              help='default=%(default)s: Auxiliary loss weight for cTP-vs-lTP head in bilstm_attention training.')
+p_localize_learn.add_argument('--dl_feature_fusion', metavar='yes|no', default='yes', type=strtobool, required=False, action='store',
+                              help='default=%(default)s: Fuse handcrafted localization features into bilstm_attention training.')
+p_localize_learn.add_argument('--dl_seed', metavar='INT', default=1, type=int, required=False, action='store',
+                              help='default=%(default)s: Random seed for bilstm_attention training.')
+p_localize_learn.add_argument('--dl_device', metavar='auto|cpu|cuda|mps', default='auto', type=str, required=False, action='store',
+                              choices=['auto', 'cpu', 'cuda', 'mps'],
+                              help='default=%(default)s: Device for bilstm_attention training and evaluation.')
+p_localize_learn.add_argument('--esm_model_name', metavar='STR', default='facebook/esm2_t6_8M_UR50D', type=str, required=False, action='store',
+                              help='default=%(default)s: Hugging Face model id used by --model_arch esm_head.')
+p_localize_learn.add_argument(
+    '--esm_model_revision',
+    metavar='COMMIT',
+    default='c731040fcd8d73dceaa04b0a8e6329b345b0f5df',
+    type=str,
+    help='Pinned Hugging Face commit used by --model_arch esm_head.',
+)
+p_localize_learn.add_argument('--esm_model_local_dir', metavar='PATH', default='', type=str, required=False, action='store',
+                              help='default=%(default)s: Optional local directory for --model_arch esm_head. If empty, model files are auto-downloaded from Hugging Face.')
+p_localize_learn.add_argument('--esm_pooling', metavar='cls|mean', default='cls', type=str, required=False, action='store',
+                              choices=['cls', 'mean'],
+                              help='default=%(default)s: Sequence pooling method for --model_arch esm_head.')
+p_localize_learn.add_argument('--esm_max_len', metavar='INT', default=200, type=int, required=False, action='store',
+                              help='default=%(default)s: Maximum amino-acid length for --model_arch esm_head tokenization.')
+p_localize_learn.add_argument('--model_out', metavar='PATH', default='cdskit_localize_model.json', type=str, required=False, action='store',
+                              help='default=%(default)s: Output model path.')
+p_localize_learn.add_argument('--report', metavar='PATH', default='', type=str, required=False, action='store',
+                              help='default=%(default)s: Optional training report path. If PATH ends with ".json", JSON is written; otherwise tab-separated TSV is written.')
+p_localize_learn.add_argument('--seq_col', metavar='STR', default='sequence', type=str, required=False, action='store',
+                              help='default=%(default)s: Column name containing sequences.')
+p_localize_learn.add_argument('--seq_type', dest='seqtype', metavar='dna|protein|auto', default='auto', type=str, required=False, action='store',
+                              choices=['dna', 'protein', 'auto'],
+                              help='default=%(default)s: Sequence type interpretation for --seq_col.')
+p_localize_learn.add_argument('--label_mode', metavar='explicit|uniprot_cc', default='explicit', type=str, required=False, action='store',
+                              choices=['explicit', 'uniprot_cc'],
+                              help='default=%(default)s: Label extraction mode. "explicit" uses --localization_col/--perox_col (with UniProt source, these columns must exist in --uniprot_fields). "uniprot_cc" infers labels from UniProt location text.')
+p_localize_learn.add_argument('--localization_col', metavar='STR', default='localization', type=str, required=False, action='store',
+                              help='default=%(default)s: Localization class column for explicit mode or location text column for uniprot_cc mode.')
+p_localize_learn.add_argument('--perox_col', metavar='STR', default='peroxisome', type=str, required=False, action='store',
+                              help='default=%(default)s: Peroxisome yes/no column for explicit mode.')
+p_localize_learn.add_argument('--skip_ambiguous', metavar='yes|no', default='yes', type=strtobool, required=False, action='store',
+                              help='default=%(default)s: Skip entries with ambiguous multi-target annotations in uniprot_cc mode.')
+p_localize_learn.set_defaults(handler=command_localize_learn)
+
+
+def command_mask(args):
+    from cdskit.mask import mask_main
+    sys.stderr.write('cdskit mask: started at {}\n'.format(datetime.now()))
+    mask_main(args)
+    sys.stderr.write('cdskit mask: ended at {}\n'.format(datetime.now()))
+
+help_mask = 'Masking ambiguous and/or stop codons. See `cdskit mask -h`'
+p_mask = subparsers.add_parser('mask', help=help_mask, parents=[p_version,p_infile,p_outfile,p_codon,p_threads])
+p_mask.add_argument('-c', '--mask_char', dest='maskchar', metavar='CHAR', default='N', type=str, required=False, action='store',
+                    choices=['N', '-'],
+                    help='default=%(default)s: A character to be used to mask codons.')
+p_mask.add_argument('-a', '--ambiguous_codon', dest='ambiguouscodon', metavar='yes|no', default='yes', type=strtobool, required=False, action='store',
+                    help='default=%(default)s: Mask ambiguous codons. '
+                         'e.g., "AAN", which may code Asn or Lys in the standard genetic code.')
+p_mask.add_argument('-t', '--stop_codon', dest='stopcodon', metavar='yes|no', default='yes', type=strtobool, required=False, action='store',
+                    help='default=%(default)s: Mask stop codons.')
+p_mask.set_defaults(handler=command_mask)
+
+
+def command_trimcodon(args):
+    from cdskit.trimcodon import trimcodon_main
+    sys.stderr.write('cdskit trimcodon: started at {}\n'.format(datetime.now()))
+    trimcodon_main(args)
+    sys.stderr.write('cdskit trimcodon: ended at {}\n'.format(datetime.now()))
+
+help_trimcodon = 'Trimming aligned CDS codon columns by clean-codon fraction. See `cdskit trimcodon -h`'
+p_trimcodon = subparsers.add_parser('trimcodon', help=help_trimcodon, parents=[p_version,p_infile,p_outfile,p_codon])
+p_trimcodon.add_argument('--min_clean_fraction', metavar='FLOAT', default=0.5, type=finite_float, required=False, action='store',
+                         help='default=%(default)s: Minimum fraction of sequences with a clean codon to retain a site. Clean codons contain no missing, ambiguous, or stop codon.')
+p_trimcodon.add_argument('--report', metavar='PATH', default='', type=str, required=False, action='store',
+                         help='default=%(default)s: Optional report output path. If PATH ends with ".json", JSON is written; otherwise tab-separated TSV is written.')
+p_trimcodon.set_defaults(handler=command_trimcodon)
+
+
+def command_maxalign(args):
+    from cdskit.maxalign import maxalign_main
+    sys.stderr.write('cdskit maxalign: started at {}\n'.format(datetime.now()))
+    maxalign_main(args)
+    sys.stderr.write('cdskit maxalign: ended at {}\n'.format(datetime.now()))
+
+help_maxalign = 'Removing sequences to maximize codon-based alignment area. See `cdskit maxalign -h`'
+p_maxalign = subparsers.add_parser('maxalign', help=help_maxalign, parents=[p_version, p_infile, p_outfile, p_threads])
+p_maxalign.add_argument('--mode', metavar='auto|exact|greedy', default='auto', type=str, required=False, action='store',
+                        choices=['auto', 'exact', 'greedy'],
+                        help='default=%(default)s: Solver mode for maximizing alignment area.')
+p_maxalign.add_argument('--max_exact_sequences', metavar='INT', default=16, type=int, required=False, action='store',
+                        help='default=%(default)s: Maximum number of input sequences for exact search.')
+p_maxalign.add_argument('--missing_chars', dest='missing_char', metavar='STR', default='-?.', type=str, required=False, action='store',
+                        help='default=%(default)s: Characters treated as missing within a codon.')
+p_maxalign.add_argument('--keep_seq_name_regex', dest='keep', metavar='REGEX', default=[], type=str, required=False, action='store',
+                        nargs='+', help='default=%(default)s: Regex pattern(s) for sequence names that should not be dropped.')
+p_maxalign.add_argument('--max_removed', metavar='INT', default=None, type=int, required=False, action='store',
+                        help='default=%(default)s: Maximum number of input sequences that can be removed in total.')
+p_maxalign.add_argument('--report', metavar='PATH', default='', type=str, required=False, action='store',
+                        help='default=%(default)s: Optional report output path. If PATH ends with ".json", JSON is written; otherwise tab-separated TSV is written.')
+p_maxalign.set_defaults(handler=command_maxalign)
+
+
+def command_pad(args):
+    from cdskit.pad import pad_main
+    sys.stderr.write('cdskit pad: started at {}\n'.format(datetime.now()))
+    pad_main(args)
+    sys.stderr.write('cdskit pad: ended at {}\n'.format(datetime.now()))
+
+help_pad = 'Making nucleotide sequences in-frame by head and tail paddings. See `cdskit pad -h`'
+p_pad = subparsers.add_parser('pad', help=help_pad, parents=[p_version,p_infile,p_outfile,p_codon,p_threads])
+p_pad.add_argument('-c', '--pad_char', dest='padchar', metavar='CHAR', default='N', type=str, required=False, action='store',
+                   choices=['N', '-'],
+                   help='default=%(default)s: A character to be used to pad when the sequence length is not multiple of three.')
+p_pad.add_argument('--drop_pseudo', dest='nopseudo', metavar='yes|no', default=False, type=strtobool,
+                   help='default=%(default)s: Drop sequences that contain stop codon(s) even after padding to 5\'- or 3\'- terminal.')
+p_pad.add_argument(
+    '-n', '--nopseudo',
+    dest='nopseudo',
+    action=DeprecatedStoreTrueAction,
+    replacement='--drop_pseudo yes',
+    help=argparse.SUPPRESS,
+)
+p_pad.set_defaults(handler=command_pad)
+
+
+def command_parsegb(args):
+    from cdskit.parsegb import parsegb_main
+    sys.stderr.write('cdskit parsegb: started at {}\n'.format(datetime.now()))
+    parsegb_main(args)
+    sys.stderr.write('cdskit parsegb: ended at {}\n'.format(datetime.now()))
+
+help_parsegb = 'Converting the GenBank format. See `cdskit parsegb -h`'
+p_parsegb = subparsers.add_parser('parsegb', help=help_parsegb, parents=[p_version,p_outfile,p_threads])
+p_parsegb.add_argument('-s', '--seq_file', dest='seqfile', metavar='PATH', default='-', type=str, required=False, action='store',
+                       help='default=%(default)s: Input sequence file. Use "-" for STDIN.')
+p_parsegb.add_argument('-if', '--in_seq_format', dest='inseqformat', metavar='STR', default='genbank', type=str, required=False, action='store',
+                       help='default=%(default)s: Input sequence format for parsegb. Use "genbank" (or "gb").')
+p_parsegb.add_argument('--seq_name_format', dest='seqnamefmt', metavar='STR', default='organism_accessions', type=str, required=False, action='store',
+                       help='default=%(default)s: Underline-separated list of sequence name elements. '
+                            'Use --list_seq_name_keys to browse available values.')
+p_parsegb.add_argument('--list_seq_name_keys', dest='list_seqname_keys', metavar='yes|no', default='no', type=strtobool, required=False, action='store',
+                       help='default=%(default)s: Listing the keys (and values) available for --seq_name_format.')
+p_parsegb.add_argument('--extract_cds', metavar='yes|no', default='yes', type=strtobool, required=False, action='store',
+                       help='default=%(default)s: Whether to extract the CDS feature.')
+p_parsegb.set_defaults(handler=command_parsegb)
+
+
+def command_printseq(args):
+    from cdskit.printseq import printseq_main
+    sys.stderr.write('cdskit printseq: started at {}\n'.format(datetime.now()))
+    printseq_main(args)
+    sys.stderr.write('cdskit printseq: ended at {}\n'.format(datetime.now()))
+
+help_printseq = 'Print a subset of sequences with a regex. See `cdskit printseq -h`'
+p_printseq = subparsers.add_parser('printseq', help=help_printseq, parents=[p_version,p_infile,p_seqtype,p_threads])
+p_printseq.add_argument('-n', '--seq_name_regex', dest='seqname', default='', type=str, required=False, action='store',
+                        help='default=%(default)s: Name of the sequence to print. Regex is supported.')
+p_printseq.add_argument('--show_seq_name', dest='show_seqname', metavar='yes|no', default='yes', type=strtobool, required=False, action='store',
+                        help='default=%(default)s: Whether to show sequence name starting with ">". '
+                             '"no" prints sequences only.')
+p_printseq.set_defaults(handler=command_printseq)
+
+def command_rmseq(args):
+    from cdskit.rmseq import rmseq_main
+    sys.stderr.write('cdskit rmseq: started at {}\n'.format(datetime.now()))
+    rmseq_main(args)
+    sys.stderr.write('cdskit rmseq: ended at {}\n'.format(datetime.now()))
+
+help_rmseq = 'Removing a subset of sequences by using a sequence name regex and by detecting problematic sequence characters. See `cdskit rmseq -h`'
+p_rmseq = subparsers.add_parser('rmseq', help=help_rmseq, parents=[p_version,p_infile,p_outfile,p_seqtype,p_threads])
+p_rmseq.add_argument('--seq_name_regex', dest='seqname', default='', type=str, required=False, action='store',
+                        help='default=%(default)s: Names of sequences to remove. Regex is supported.')
+p_rmseq.add_argument('--problematic_chars', dest='problematic_char', default='NX-?', type=str, required=False, action='store',
+                        help='default=%(default)s: Problematic characters considered by --problematic_percent. Without separator.')
+p_rmseq.add_argument('--problematic_percent', default=0, type=finite_float, required=False, action='store',
+                        help='default=%(default)s: Sequences containing >= this percentage of --problematic_chars are removed.')
+p_rmseq.set_defaults(handler=command_rmseq)
+
+def command_split(args):
+    from cdskit.split import split_main
+    sys.stderr.write('cdskit split: started at {}\n'.format(datetime.now()))
+    split_main(args)
+    sys.stderr.write('cdskit split: ended at {}\n'.format(datetime.now()))
+
+help_split = 'Splitting 1st, 2nd, and 3rd codon positions. See `cdskit split -h`'
+p_split = subparsers.add_parser('split', help=help_split, parents=[p_version,p_infile,p_outfile])
+p_split.add_argument('--prefix', default='INFILE', type=str, required=False, action='store',
+                        help='default=%(default)s: Output prefix PATH. '
+                             'If this is INFILE and --out_file is set, --out_file is used as the prefix.')
+p_split.set_defaults(handler=command_split)
+
+
+def command_degeneracy(args):
+    from cdskit.degeneracy import degeneracy_main
+    sys.stderr.write('cdskit degeneracy: started at {}\n'.format(datetime.now()))
+    degeneracy_main(args)
+    sys.stderr.write('cdskit degeneracy: ended at {}\n'.format(datetime.now()))
+
+help_degeneracy = 'Extracting aligned 0/2/3/4-fold degenerate sites. See `cdskit degeneracy -h`'
+p_degeneracy = subparsers.add_parser('degeneracy', help=help_degeneracy, parents=[p_version,p_infile,p_outfile,p_codon])
+p_degeneracy.add_argument('--prefix', default='INFILE', type=str, required=False, action='store',
+                          help='default=%(default)s: Output prefix PATH. '
+                               'If this is INFILE and --out_file is set, --out_file is used as the prefix.')
+p_degeneracy.add_argument('--fold', metavar='INT', default=[0, 2, 3, 4], type=int, required=False, action='store',
+                          nargs='+', choices=[0, 2, 3, 4],
+                          help='default=%(default)s: Fold class(es) to write out.')
+p_degeneracy.add_argument('--report', metavar='PATH', default='', type=str, required=False, action='store',
+                          help='default=%(default)s: Optional report output path. If PATH ends with ".json", JSON is written; otherwise tab-separated TSV is written.')
+p_degeneracy.set_defaults(handler=command_degeneracy)
+
+def command_stats(args):
+    from cdskit.stats import stats_main
+    sys.stderr.write('cdskit stats: started at {}\n'.format(datetime.now()))
+    stats_main(args)
+    sys.stderr.write('cdskit stats: ended at {}\n'.format(datetime.now()))
+
+help_stats = 'Printing sequence statistics. See `cdskit stats -h`'
+p_stats = subparsers.add_parser('stats', help=help_stats, parents=[p_version,p_infile,p_threads])
+p_stats.set_defaults(handler=command_stats)
+
+
+def command_plot(args):
+    from cdskit.plot import plot_main
+    sys.stderr.write('cdskit plot: started at {}\n'.format(datetime.now()))
+    plot_main(args)
+    sys.stderr.write('cdskit plot: ended at {}\n'.format(datetime.now()))
+
+help_plot = 'Plotting alignment-level CDS summaries and alignment views. See `cdskit plot -h`'
+p_plot = subparsers.add_parser('plot', help=help_plot, parents=[p_version,p_infile,p_viz_outfile,p_codon,p_threads])
+p_plot.add_argument('--mode', metavar='summary|map|msa', default='summary', type=str, required=False, action='store',
+                    choices=['summary', 'map', 'msa'],
+                    help='default=%(default)s: Plot mode. "summary" draws site-level QC lines; "map" draws a sequence-by-site codon-state tile map; "msa" draws a nucleotide alignment with consensus codon/AA and an AA frequency logo.')
+p_plot.add_argument('--width', metavar='INT', default=1100, type=int, required=False, action='store',
+                    help='default=%(default)s: Figure width in pixels.')
+p_plot.add_argument('--height', metavar='INT', default=780, type=int, required=False, action='store',
+                    help='default=%(default)s: Figure height in pixels.')
+p_plot.add_argument('--format', metavar='pdf|svg|png', default='auto', type=str, required=False, action='store',
+                    dest='plotformat',
+                    choices=['auto', 'pdf', 'svg', 'png'],
+                    help='default=%(default)s: Output format. "auto" infers from --out_file extension, otherwise defaults to PDF.')
+p_plot.add_argument('--row_height', metavar='INT', default=18, type=int, required=False, action='store',
+                    help='default=%(default)s: Height of each sequence row in pixels when --mode=map or --mode=msa.')
+p_plot.add_argument('--label_width', metavar='INT', default=180, type=int, required=False, action='store',
+                    help='default=%(default)s: Width reserved for sequence labels when --mode=map or --mode=msa.')
+p_plot.add_argument('--wrap', metavar='INT', default=60, type=int, required=False, action='store',
+                    help='default=%(default)s: Number of alignment columns per block when --mode=msa. Must be a multiple of three.')
+p_plot.add_argument('--min_clean_fraction', metavar='FLOAT', default=0.5, type=finite_float, required=False, action='store',
+                    help='default=%(default)s: Minimum clean-codon fraction to show as the keep/remove cutoff. Clean codons contain no missing, ambiguous, or stop codon.')
+p_plot.add_argument('--title', metavar='STR', default='', type=str, required=False, action='store',
+                    help='default=%(default)s: Optional figure title.')
+p_plot.add_argument('--top_n', metavar='INT', default=0, type=int, required=False, action='store',
+                    help='default=%(default)s: Number of sequences to show in the ambiguous-codon bar chart for --mode=summary or --mode=map. Use 0 to hide it.')
+p_plot.set_defaults(handler=command_plot)
+
+
+def command_codonstats(args):
+    from cdskit.codonstats import codonstats_main
+    sys.stderr.write('cdskit codonstats: started at {}\n'.format(datetime.now()))
+    codonstats_main(args)
+    sys.stderr.write('cdskit codonstats: ended at {}\n'.format(datetime.now()))
+
+help_codonstats = 'Printing codon-aware per-sequence and usage statistics. See `cdskit codonstats -h`'
+p_codonstats = subparsers.add_parser('codonstats', help=help_codonstats, parents=[p_version,p_infile,p_codon])
+p_codonstats.add_argument('--mode', metavar='summary|usage|both', default='summary', type=str, required=False, action='store',
+                          choices=['summary', 'usage', 'both'],
+                          help='default=%(default)s: Output summary table, aggregate codon usage table, or both.')
+p_codonstats.set_defaults(handler=command_codonstats)
+
+
+def command_translate(args):
+    from cdskit.translate import translate_main
+    sys.stderr.write('cdskit translate: started at {}\n'.format(datetime.now()))
+    translate_main(args)
+    sys.stderr.write('cdskit translate: ended at {}\n'.format(datetime.now()))
+
+help_translate = 'Translating CDS nucleotide sequences to amino acids. See `cdskit translate -h`'
+p_translate = subparsers.add_parser('translate', help=help_translate, parents=[p_version,p_infile,p_outfile,p_codon,p_threads])
+p_translate.add_argument('--to_stop', metavar='yes|no', default='no', type=strtobool, required=False, action='store',
+                         help='default=%(default)s: Whether to stop translation at the first in-frame stop codon.')
+p_translate.set_defaults(handler=command_translate)
+
+
+def command_validate(args):
+    from cdskit.validate import validate_main
+    sys.stderr.write('cdskit validate: started at {}\n'.format(datetime.now()))
+    validate_main(args)
+    sys.stderr.write('cdskit validate: ended at {}\n'.format(datetime.now()))
+
+help_validate = 'Validating aligned CDS quality and reporting issues. See `cdskit validate -h`'
+p_validate = subparsers.add_parser('validate', help=help_validate, parents=[p_version,p_infile,p_codon,p_threads])
+p_validate.add_argument('--report', metavar='PATH', default='', type=str, required=False, action='store',
+                        help='default=%(default)s: Optional report output path. If PATH ends with ".json", JSON is written; otherwise tab-separated TSV is written.')
+p_validate.set_defaults(handler=command_validate)
+
+
+def main(argv=None):
+    args = psr.parse_args(argv)
+    if not hasattr(args, 'handler'):
+        psr.print_help()
+        return 0
+
+    try:
+        from cdskit.util import validate_distinct_paths
+
+        input_paths = [
+            getattr(args, name, None)
+            for name in (
+                'seqfile',
+                'seqfile2',
+                'ingff',
+                'training_tsv',
+                'trimmed_aa_aln',
+            )
+        ]
+        model_path = getattr(args, 'model', None)
+        if model_path and os.path.exists(os.path.expanduser(str(model_path))):
+            input_paths.append(model_path)
+        output_paths = [
+            getattr(args, name, None)
+            for name in (
+                'outfile',
+                'outfile2',
+                'outgff',
+                'report',
+                'model_out',
+                'uniprot_out_tsv',
+            )
+        ]
+        validate_distinct_paths(inputs=input_paths, outputs=output_paths)
+        args.handler(args)
+    except Exception as e:
+        if getattr(args, 'debug', False):
+            raise
+        txt = str(e)
+        if not txt:
+            txt = e.__class__.__name__
+        sys.stderr.write(txt.rstrip('\n') + '\n')
+        return 1
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

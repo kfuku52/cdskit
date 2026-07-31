@@ -33,6 +33,7 @@ from cdskit.localize_model import (
 from cdskit.localize_models import resolve_localize_model_path
 from cdskit.cliutil import CdskitArgumentParser, parse_bool, resolve_threads
 from cdskit.tsvio import read_tsv, write_tsv
+from cdskit.util import atomic_text_writer, atomic_write_json
 
 
 DEFAULT_TRAIN_TSV = 'data/localize_bench/deeploc21/deeploc21_localization_train_validation.tsv'
@@ -397,7 +398,7 @@ def binary_metrics(y_true, y_prob, threshold=0.5):
         else:
             metrics['auprc'] = None
             metrics['auroc'] = None
-    except Exception:
+    except ImportError:
         metrics['auprc'] = None
         metrics['auroc'] = None
     return metrics
@@ -766,6 +767,7 @@ def mmseqs_homology_report(
             stderr=subprocess.PIPE,
             text=True,
             check=False,
+            timeout=3600,
         )
         if completed.returncode != 0:
             return _empty_homology_report(
@@ -957,6 +959,7 @@ def mmseqs_cluster_assignments(
             stderr=subprocess.PIPE,
             text=True,
             check=False,
+            timeout=3600,
         )
         if completed.returncode != 0:
             return [_cluster_id_for_singletons(i) for i in range(len(rows))], {
@@ -1529,12 +1532,11 @@ def run_deeploc21_perox_benchmark(
 
     if report_json:
         Path(report_json).parent.mkdir(parents=True, exist_ok=True)
-        with open(report_json, 'w', encoding='utf-8') as out:
-            json.dump(report, out, indent=2, sort_keys=True)
+        atomic_write_json(report_json, report, indent=2, sort_keys=True)
 
     if report_md:
         Path(report_md).parent.mkdir(parents=True, exist_ok=True)
-        with open(report_md, 'w', encoding='utf-8') as out:
+        with atomic_text_writer(report_md, encoding='utf-8') as out:
             out.write(format_report_markdown(report))
 
     return report
@@ -1784,7 +1786,7 @@ def main(argv=None):
         cluster_oof_method=args.cluster_oof_method,
     )
     if not args.report_json:
-        print(json.dumps(report, indent=2, sort_keys=True))
+        print(json.dumps(report, indent=2, sort_keys=True, allow_nan=False))
 
 
 if __name__ == '__main__':

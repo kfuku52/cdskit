@@ -1,4 +1,5 @@
 import csv
+import hashlib
 import json
 import os
 
@@ -12,6 +13,29 @@ from cdskit.localize_learn import (
 )
 from cdskit.tsvio import read_tsv
 from cdskit.cliutil import CdskitArgumentParser, parse_bool
+from cdskit.util import atomic_output_path, atomic_text_writer, atomic_write_json
+
+TARGETP_SOURCE_COMMIT = '695c7b252298d3ec7a30491c8026e8839d41f678'
+TARGETP_DOWNLOAD_MAX_BYTES = 256 * 1024 * 1024
+TARGETP_DOWNLOADS = (
+    (
+        'https://services.healthtech.dtu.dk/services/TargetP-2.0/targetp.fasta',
+        'targetp_fasta',
+        '049f6300ad68f6e4c59d6fc3cb9f321f6ea8f9134d3b6496bc241d582cc09768',
+    ),
+    (
+        'https://services.healthtech.dtu.dk/services/TargetP-2.0/swissprot_annotated_proteins.tab',
+        'targetp_tab',
+        'daac14975a36522ce3c5b44c203f6cd7490e6f589ade11787281c9fc7c501d9f',
+    ),
+    (
+        'https://raw.githubusercontent.com/JJAlmagro/TargetP-2.0/{}/data/targetp_data.npz'.format(
+            TARGETP_SOURCE_COMMIT
+        ),
+        'targetp_npz',
+        'ac22792b2498ac16449c91835a6fb235be8654db83f7f4f621b479e85e462f24',
+    ),
+)
 
 TARGETP_LABEL_TO_LOCALIZATION = {
     'Other': 'noTP',
@@ -77,15 +101,15 @@ def _read_targetp_tab_rows(path):
 
 
 def _read_targetp_npz(path):
-    npz = np.load(path, allow_pickle=True)
-    required = ['ids', 'fold', 'org', 'y_type']
-    for key in required:
-        if key not in npz.files:
-            raise ValueError('TargetP npz is missing key: {}'.format(key))
-    ids = [str(v) for v in npz['ids'].tolist()]
-    folds = [int(v) for v in npz['fold'].tolist()]
-    orgs = [int(v) for v in npz['org'].tolist()]
-    y_types = [int(v) for v in npz['y_type'].tolist()]
+    with np.load(path, allow_pickle=False) as npz:
+        required = ['ids', 'fold', 'org', 'y_type']
+        for key in required:
+            if key not in npz.files:
+                raise ValueError('TargetP npz is missing key: {}'.format(key))
+        ids = [str(v) for v in npz['ids'].tolist()]
+        folds = [int(v) for v in npz['fold'].tolist()]
+        orgs = [int(v) for v in npz['org'].tolist()]
+        y_types = [int(v) for v in npz['y_type'].tolist()]
     if not (len(ids) == len(folds) == len(orgs) == len(y_types)):
         raise ValueError('Length mismatch among ids/fold/org/y_type in TargetP npz.')
     return ids, folds, orgs, y_types
@@ -208,8 +232,7 @@ def prepare_targetp_benchmark_tsv(
         report_dir = os.path.dirname(report_json_path)
         if report_dir != '':
             os.makedirs(report_dir, exist_ok=True)
-        with open(report_json_path, 'w', encoding='utf-8') as out:
-            json.dump(report, out, indent=2)
+        atomic_write_json(report_json_path, report, indent=2)
     return report
 
 
@@ -299,6 +322,7 @@ def run_cdskit_cv_on_targetp(
             'seed': 1,
             'device': 'cpu',
             'esm_model_name': 'facebook/esm2_t6_8M_UR50D',
+            'esm_model_revision': 'c731040fcd8d73dceaa04b0a8e6329b345b0f5df',
             'esm_model_local_dir': '',
             'esm_pooling': 'cls',
             'esm_max_len': 200,
@@ -325,13 +349,13 @@ def run_cdskit_cv_on_targetp(
         organism_groups = [str(row.get('organism_group', '')) for row in rows]
     soft_label_matrix = None
     if str(distill_oof_npz).strip() != '':
-        teacher = np.load(str(distill_oof_npz), allow_pickle=True)
-        if 'prob_matrix' not in teacher.files:
-            raise ValueError('distill_oof_npz is missing prob_matrix.')
-        teacher_classes = [str(v) for v in teacher['class_names'].tolist()]
-        if teacher_classes != list(LOCALIZATION_CLASSES):
-            raise ValueError('distill_oof_npz class_names do not match LOCALIZATION_CLASSES.')
-        soft_label_matrix = np.asarray(teacher['prob_matrix'], dtype=np.float32)
+        with np.load(str(distill_oof_npz), allow_pickle=False) as teacher:
+            if 'prob_matrix' not in teacher.files:
+                raise ValueError('distill_oof_npz is missing prob_matrix.')
+            teacher_classes = [str(v) for v in teacher['class_names'].tolist()]
+            if teacher_classes != list(LOCALIZATION_CLASSES):
+                raise ValueError('distill_oof_npz class_names do not match LOCALIZATION_CLASSES.')
+            soft_label_matrix = np.asarray(teacher['prob_matrix'], dtype=np.float32)
         if soft_label_matrix.shape != (len(class_labels), len(LOCALIZATION_CLASSES)):
             txt = 'distill_oof_npz shape mismatch: expected {}, got {}.'
             raise ValueError(txt.format((len(class_labels), len(LOCALIZATION_CLASSES)), soft_label_matrix.shape))
@@ -488,6 +512,11 @@ def build_parser():
     parser.add_argument('--dl_seed', default=1, type=int)
     parser.add_argument('--dl_device', default='cpu', choices=['cpu', 'cuda', 'mps', 'auto'], type=str)
     parser.add_argument('--esm_model_name', default='facebook/esm2_t6_8M_UR50D', type=str)
+    parser.add_argument(
+        '--esm_model_revision',
+        default='c731040fcd8d73dceaa04b0a8e6329b345b0f5df',
+        type=str,
+    )
     parser.add_argument('--esm_model_local_dir', default='', type=str)
     parser.add_argument('--esm_pooling', default='cls', choices=['cls', 'mean'], type=str)
     parser.add_argument('--esm_max_len', default=200, type=int)
@@ -505,18 +534,36 @@ def _download_if_requested(args):
         return
     from urllib import request as urllib_request
 
-    os.makedirs(os.path.dirname(args.targetp_fasta), exist_ok=True)
-    url_map = [
-        ('https://services.healthtech.dtu.dk/services/TargetP-2.0/targetp.fasta', args.targetp_fasta),
-        ('https://services.healthtech.dtu.dk/services/TargetP-2.0/swissprot_annotated_proteins.tab', args.targetp_tab),
-        ('https://raw.githubusercontent.com/JJAlmagro/TargetP-2.0/master/data/targetp_data.npz', args.targetp_npz),
-    ]
-    for url, path in url_map:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with urllib_request.urlopen(url, timeout=120) as resp:
-            body = resp.read()
-        with open(path, 'wb') as out:
-            out.write(body)
+    for url, destination_name, expected_sha256 in TARGETP_DOWNLOADS:
+        path = getattr(args, destination_name)
+        digest = hashlib.sha256()
+        downloaded = 0
+        with atomic_output_path(path) as temporary:
+            with urllib_request.urlopen(url, timeout=120) as resp, open(temporary, 'wb') as out:
+                content_length = resp.headers.get('Content-Length')
+                if (
+                    content_length is not None
+                    and int(content_length) > TARGETP_DOWNLOAD_MAX_BYTES
+                ):
+                    raise ValueError('TargetP download exceeds the 256 MiB safety limit.')
+                while True:
+                    chunk = resp.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    downloaded += len(chunk)
+                    if downloaded > TARGETP_DOWNLOAD_MAX_BYTES:
+                        raise ValueError('TargetP download exceeds the 256 MiB safety limit.')
+                    digest.update(chunk)
+                    out.write(chunk)
+            observed = digest.hexdigest()
+            if observed != expected_sha256:
+                raise ValueError(
+                    'TargetP download checksum mismatch for {}: expected {}, got {}.'.format(
+                        url,
+                        expected_sha256,
+                        observed,
+                    )
+                )
 
 
 def main(argv=None):
@@ -555,6 +602,7 @@ def main(argv=None):
             'seed': int(args.dl_seed),
             'device': str(args.dl_device),
             'esm_model_name': str(args.esm_model_name),
+            'esm_model_revision': str(args.esm_model_revision),
             'esm_model_local_dir': str(args.esm_model_local_dir),
             'esm_pooling': str(args.esm_pooling),
             'esm_max_len': int(args.esm_max_len),
@@ -578,17 +626,16 @@ def main(argv=None):
             md_dir = os.path.dirname(args.comparison_md)
             if md_dir != '':
                 os.makedirs(md_dir, exist_ok=True)
-            with open(args.comparison_md, 'w', encoding='utf-8') as out_md:
+            with atomic_text_writer(args.comparison_md, encoding='utf-8') as out_md:
                 out_md.write(comparison_md + '\n')
 
     if args.comparison_json != '':
         json_dir = os.path.dirname(args.comparison_json)
         if json_dir != '':
             os.makedirs(json_dir, exist_ok=True)
-        with open(args.comparison_json, 'w', encoding='utf-8') as out_json:
-            json.dump(out, out_json, indent=2)
+        atomic_write_json(args.comparison_json, out, indent=2)
 
-    print(json.dumps(out, indent=2))
+    print(json.dumps(out, indent=2, allow_nan=False))
 
 
 if __name__ == '__main__':

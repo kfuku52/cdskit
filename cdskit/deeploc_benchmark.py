@@ -1,4 +1,5 @@
 import csv
+import hashlib
 import json
 import os
 import warnings
@@ -8,6 +9,7 @@ import numpy as np
 
 from cdskit.cliutil import CdskitArgumentParser, parse_bool
 from cdskit.tsvio import read_tsv, write_tsv
+from cdskit.util import atomic_output_path, atomic_text_writer, atomic_write_json
 
 from cdskit.localize_model import (
     BROAD_FEATURE_NAMES,
@@ -41,6 +43,7 @@ DEEPLOC21_URLS = {
         'SortingSignalsSwissprot.csv'
     ),
 }
+DEEPLOC_DOWNLOAD_MAX_BYTES = 256 * 1024 * 1024
 
 DEEPLOC_LOCALIZATION_LABELS = (
     'nucleus',
@@ -156,7 +159,9 @@ def _to_bool01(value):
     text = str(value or '').strip().lower()
     if text in ['1', '1.0', 'true', 'yes', 'y']:
         return 1
-    return 0
+    if text in ['', '0', '0.0', 'false', 'no', 'n']:
+        return 0
+    raise ValueError('Invalid boolean value in DeepLoc input: {!r}.'.format(value))
 
 
 def _canonical_organism_group(value):
@@ -219,14 +224,30 @@ def download_deeploc21_data(out_dir, names=None, timeout_sec=120):
         url = DEEPLOC21_URLS[name]
         filename = os.path.basename(url)
         out_path = os.path.join(out_dir, filename)
-        with urllib_request.urlopen(url, timeout=int(timeout_sec)) as resp:
-            body = resp.read()
-        with open(out_path, 'wb') as out_file:
-            out_file.write(body)
+        downloaded = 0
+        digest = hashlib.sha256()
+        with atomic_output_path(out_path) as temporary:
+            with urllib_request.urlopen(url, timeout=int(timeout_sec)) as resp, open(temporary, 'wb') as out_file:
+                content_length = resp.headers.get('Content-Length')
+                if (
+                    content_length is not None
+                    and int(content_length) > DEEPLOC_DOWNLOAD_MAX_BYTES
+                ):
+                    raise ValueError('DeepLoc download exceeds the 256 MiB safety limit.')
+                while True:
+                    chunk = resp.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    downloaded += len(chunk)
+                    if downloaded > DEEPLOC_DOWNLOAD_MAX_BYTES:
+                        raise ValueError('DeepLoc download exceeds the 256 MiB safety limit.')
+                    digest.update(chunk)
+                    out_file.write(chunk)
         out[name] = {
             'url': url,
             'path': out_path,
-            'bytes': int(len(body)),
+            'bytes': int(downloaded),
+            'sha256': digest.hexdigest(),
         }
     return out
 
@@ -1084,13 +1105,12 @@ def run_deeploc21_benchmark(
         out_dir = os.path.dirname(comparison_json)
         if out_dir != '':
             os.makedirs(out_dir, exist_ok=True)
-        with open(comparison_json, 'w', encoding='utf-8') as out_json:
-            json.dump(result, out_json, indent=2, sort_keys=True)
+        atomic_write_json(comparison_json, result, indent=2, sort_keys=True)
     if str(comparison_md or '').strip() != '':
         out_dir = os.path.dirname(comparison_md)
         if out_dir != '':
             os.makedirs(out_dir, exist_ok=True)
-        with open(comparison_md, 'w', encoding='utf-8') as out_md:
+        with atomic_text_writer(comparison_md, encoding='utf-8') as out_md:
             out_md.write(render_deeploc_benchmark_markdown(result=result))
     return result
 
@@ -1190,9 +1210,8 @@ def main(argv=None):
     report_dir = os.path.dirname(args.report_json)
     if report_dir != '':
         os.makedirs(report_dir, exist_ok=True)
-    with open(args.report_json, 'w', encoding='utf-8') as out_json:
-        json.dump(out, out_json, indent=2, sort_keys=True)
-    print(json.dumps(out, indent=2, sort_keys=True))
+    atomic_write_json(args.report_json, out, indent=2, sort_keys=True)
+    print(json.dumps(out, indent=2, sort_keys=True, allow_nan=False))
 
 
 if __name__ == '__main__':

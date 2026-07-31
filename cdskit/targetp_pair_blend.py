@@ -973,7 +973,7 @@ def main(argv=None):
         'notp_specialist': notp_report,
         'reranker': reranker_report,
         'mtp_notp_specialist': mtp_notp_report,
-    }, indent=2, sort_keys=True))
+    }, indent=2, sort_keys=True, allow_nan=False))
     return model
 
 

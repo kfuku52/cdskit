@@ -1,8 +1,9 @@
 import csv
 import json
-import os
 import sys
 from collections.abc import Mapping
+
+from cdskit.util import atomic_text_writer
 
 
 TSV_ENCODING = 'utf-8'
@@ -76,22 +77,22 @@ def read_tsv(path, required_columns=None, return_fieldnames=False):
     return rows
 
 
-def _open_tsv_output(path):
-    if path == '-':
-        return sys.stdout, False
-    out_dir = os.path.dirname(str(path))
-    if out_dir != '':
-        os.makedirs(out_dir, exist_ok=True)
-    return open(path, 'w', encoding=TSV_ENCODING, newline=''), True
-
-
 def write_tsv(path, rows, fieldnames):
     fieldnames = validate_fieldnames(
         fieldnames=fieldnames,
         path=path,
         required_columns=None,
     )
-    out, should_close = _open_tsv_output(path)
+    if path == '-':
+        out_context = None
+        out = sys.stdout
+    else:
+        out_context = atomic_text_writer(
+            path,
+            encoding=TSV_ENCODING,
+            newline='',
+        )
+        out = out_context.__enter__()
     try:
         writer = csv.DictWriter(
             out,
@@ -122,8 +123,8 @@ def write_tsv(path, rows, fieldnames):
                 )
             writer.writerow({name: json_cell(row.get(name, '')) for name in fieldnames})
     finally:
-        if should_close:
-            out.close()
+        if out_context is not None:
+            out_context.__exit__(*sys.exc_info())
 
 
 def write_sectioned_tsv(
@@ -183,7 +184,12 @@ def write_sectioned_tsv(
 
 def json_cell(value):
     if isinstance(value, (dict, list, tuple)):
-        return json.dumps(value, ensure_ascii=False, separators=(',', ':'))
+        return json.dumps(
+            value,
+            ensure_ascii=False,
+            separators=(',', ':'),
+            allow_nan=False,
+        )
     if isinstance(value, bool):
         return 'yes' if value else 'no'
     if value is None:

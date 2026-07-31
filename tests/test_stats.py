@@ -2,8 +2,6 @@
 Tests for cdskit stats command.
 """
 
-import pytest
-
 import Bio.SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
@@ -160,12 +158,13 @@ class TestStatsMain:
         assert "Total length: 0" in captured.out
         assert "GC content: 0.0%" in captured.out
 
-    def test_stats_with_test_data(self, data_dir, mock_args, capsys):
-        """Test stats with stats_01 test data."""
-        input_path = data_dir / "stats_01" / "example_stats.fasta"
-
-        if not input_path.exists():
-            pytest.skip("stats_01 test data not found")
+    def test_stats_with_test_data(self, temp_dir, mock_args, capsys):
+        """Test stats with a checkout-independent fixture."""
+        input_path = temp_dir / "example_stats.fasta"
+        input_path.write_text(
+            '>seq1\nATGCGC\n>seq2\natgn--\n',
+            encoding='utf-8',
+        )
 
         args = mock_args(
             seqfile=str(input_path),

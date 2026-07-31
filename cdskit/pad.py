@@ -11,14 +11,15 @@ import sys
 from cdskit.util import (
     parallel_map_ordered,
     read_seqs,
+    replace_record_sequence,
     resolve_threads,
     stop_if_invalid_codontable,
     stop_if_not_dna,
     write_seqs,
 )
 
-_STOP_CODON_CACHE = {}
-_STOP_CODON_SCAN_CACHE = {}
+_STOP_CODON_CACHE: dict = {}
+_STOP_CODON_SCAN_CACHE: dict = {}
 _PROCESS_PARALLEL_MIN_RECORDS = 2000
 
 
@@ -220,18 +221,21 @@ def pad_main(args):
         )
         results = parallel_map_ordered(items=records, worker=worker, threads=threads)
     is_no_stop = []
-    seqnum_padded = 0
+    was_padded = []
     log_lines = list()
     for i, result in enumerate(results):
-        records[i].seq = Bio.Seq.Seq(result['new_seq'])
+        replace_record_sequence(records[i], result['new_seq'])
         if result['log'] != '':
             log_lines.append(result['log'])
         is_no_stop.append(result['is_no_stop'])
-        if result['was_padded']:
-            seqnum_padded += 1
+        was_padded.append(result['was_padded'])
     if len(log_lines) > 0:
         sys.stderr.write(''.join(log_lines))
     if args.nopseudo:
-        records = [records[i] for i in range(len(records)) if is_no_stop[i]]
+        retained = [i for i in range(len(records)) if is_no_stop[i]]
+        records = [records[i] for i in retained]
+        seqnum_padded = sum(was_padded[i] for i in retained)
+    else:
+        seqnum_padded = sum(was_padded)
     sys.stderr.write('Number of padded sequences: {:,} / {:,}\n'.format(seqnum_padded, len(records)))
     write_seqs(records=records, outfile=args.outfile, outseqformat=args.outseqformat)

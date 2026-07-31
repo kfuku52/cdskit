@@ -1,16 +1,24 @@
 #!/usr/bin/env python
 
-import re
 import sys
 from functools import partial
 
-from cdskit.util import parallel_map_ordered, read_seqs, resolve_threads, stop_if_not_seqtype, write_seqs
+from cdskit.util import (
+    compile_safe_regex,
+    parallel_map_ordered,
+    read_seqs,
+    resolve_threads,
+    stop_if_not_seqtype,
+    write_seqs,
+)
 
 
 def aggregate_name(name, expressions):
     aggregated = name
     for expr in expressions:
-        aggregated = re.sub(expr, '', aggregated)
+        if not hasattr(expr, 'sub'):
+            expr = compile_safe_regex(expr, label='regex in --expression')
+        aggregated = expr.sub('', aggregated)
     return aggregated
 
 
@@ -24,12 +32,10 @@ def select_aggregate_record(existing_record, candidate_record, mode):
 
 
 def validate_aggregate_expressions(expressions):
-    for expr in expressions:
-        try:
-            re.compile(expr)
-        except re.error as e:
-            txt = 'Invalid regex in --expression: {} ({})'
-            raise Exception(txt.format(expr, e))
+    return [
+        compile_safe_regex(expr, label='regex in --expression')
+        for expr in expressions
+    ]
 
 
 def aggregate_main(args):
@@ -39,7 +45,7 @@ def aggregate_main(args):
     else:
         sys.stderr.write('Regular expressions for aggregating sequences: ' + ' '.join(expressions) + '\n')
     sys.stderr.write('Criterion for aggregated sequences to retain: '+args.mode+'\n')
-    validate_aggregate_expressions(expressions)
+    expressions = validate_aggregate_expressions(expressions)
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
     stop_if_not_seqtype(
         records=records,

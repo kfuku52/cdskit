@@ -15,7 +15,7 @@ jobs:
       - name: Extract version from __init__.py
         id: get_version
         run: |
-          VERSION=$(grep -oP "__version__\s*=\s*'\K[0-9.]+" cdskit/__init__.py)
+          VERSION=$(python -c "from cdskit import __version__; print(__version__)")
           echo "Extracted version: $VERSION"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 

@@ -1,7 +1,7 @@
 import sys
 from collections import Counter
 
-from cdskit.util import read_seqs, resolve_threads, stop_if_not_seqtype, write_seqs
+from cdskit.util import read_seqs, stop_if_not_seqtype, write_seqs
 
 
 def parse_replace_chars(replace_chars):
@@ -46,19 +46,39 @@ def clip_label_ids(records, clip_len):
     return clip_count
 
 
-def uniquify_label_ids(records):
+def uniquify_label_ids(records, clip_len=0):
     nonunique_count = 0
     name_counts = Counter([record.id for record in records])
+    reserved = {
+        record.id
+        for record in records
+        if name_counts[record.id] == 1
+    }
     suffix_counts = {}
     for record in records:
         if name_counts[record.id] > 1:
             nonunique_count += 1
-            if record.id not in suffix_counts:
-                suffix_counts[record.id] = 1
-            else:
-                suffix_counts[record.id] += 1
-            record.id += '_{}'.format(suffix_counts[record.id])
+            original = record.id
+            suffix_counts.setdefault(original, 0)
+            while True:
+                suffix_counts[original] += 1
+                suffix = '_{}'.format(suffix_counts[original])
+                if clip_len:
+                    if len(suffix) > clip_len:
+                        raise ValueError(
+                            '--clip_len={} is too small to create unique labels.'.format(
+                                clip_len
+                            )
+                        )
+                    base = original[:clip_len - len(suffix)]
+                else:
+                    base = original
+                candidate = base + suffix
+                if candidate not in reserved:
+                    break
+            record.id = candidate
             record.description = ''
+            reserved.add(candidate)
     nonunique_names = [name for name in name_counts if name_counts[name] > 1]
     return nonunique_count, nonunique_names
 
@@ -89,7 +109,6 @@ def label_main(args):
         label='--seq_file',
     )
     validate_clip_len(args.clip_len)
-    _ = resolve_threads(getattr(args, 'threads', 1))
     if args.replace_chars != '':
         from_chars, to_char = parse_replace_chars(args.replace_chars)
         replace_count = apply_char_replacement(records=records, from_chars=from_chars, to_char=to_char)
@@ -98,7 +117,10 @@ def label_main(args):
         clip_count = clip_label_ids(records=records, clip_len=args.clip_len)
         sys.stderr.write('Number of clipped sequence labels: {:,}\n'.format(clip_count))
     if args.unique:
-        nonunique_count, nonunique_names = uniquify_label_ids(records)
+        nonunique_count, nonunique_names = uniquify_label_ids(
+            records,
+            clip_len=args.clip_len,
+        )
         sys.stderr.write('Number of resolved non-unique sequence labels: {:,}\n'.format(nonunique_count))
         sys.stderr.write('Non-unique sequence labels:\n{}\n'.format('\n'.join(nonunique_names)))
     write_seqs(records=records, outfile=args.outfile, outseqformat=args.outseqformat)

@@ -1,0 +1,56 @@
+>seq1
+AAAAAAAAAA
+>seq2
+TTTTTTTTTT
+>seq3
+GGGGGGGGGG
+>seq4
+CCCCCCCCCC
+>seq5
+ATATATATAT
+>seq6
+AGAGAGAGAG
+
+
+
+seq1	cdskit	gene	1	10	.	+	.	ID=gene1;Name=gene1
+seq1	cdskit	mRNA	1	10	.	+	.	ID=gene1-mRNA1;Parent=gene1;Name=gene1-mRNA1
+seq1	cdskit	exon	1	3	.	+	.	ID=gene1-mRNA1:exon1;Parent=gene1-mRNA1
+seq1	cdskit	exon	5	10	.	+	.	ID=gene1-mRNA1:exon2;Parent=gene1-mRNA1
+seq1	cdskit	CDS	1	3	.	+	0	ID=gene1-mRNA1-cds1;Parent=gene1-mRNA1
+seq1	cdskit	CDS	5	10	.	+	2	ID=gene1-mRNA1-cds2;Parent=gene1-mRNA1
+
+seq2	cdskit	gene	1	10	.	+	.	ID=gene2;Name=gene2
+seq2	cdskit	mRNA	1	10	.	+	.	ID=gene2-mRNA1;Parent=gene2;Name=gene2-mRNA1
+seq2	cdskit	exon	1	3	.	+	.	ID=gene2-mRNA1:exon1;Parent=gene2-mRNA1
+seq2	cdskit	exon	5	10	.	+	.	ID=gene2-mRNA1:exon2;Parent=gene2-mRNA1
+seq2	cdskit	CDS	1	3	.	+	0	ID=gene2-mRNA1-cds1;Parent=gene2-mRNA1
+seq2	cdskit	CDS	5	10	.	+	2	ID=gene2-mRNA1-cds2;Parent=gene2-mRNA1
+
+seq3	cdskit	gene	1	10	.	+	.	ID=gene3;Name=gene3
+seq3	cdskit	mRNA	1	10	.	+	.	ID=gene3-mRNA1;Parent=gene3;Name=gene3-mRNA1
+seq3	cdskit	exon	1	3	.	+	.	ID=gene3-mRNA1:exon1;Parent=gene3-mRNA1
+seq3	cdskit	exon	5	10	.	+	.	ID=gene3-mRNA1:exon2;Parent=gene3-mRNA1
+seq3	cdskit	CDS	1	3	.	+	0	ID=gene3-mRNA1-cds1;Parent=gene3-mRNA1
+seq3	cdskit	CDS	5	10	.	+	2	ID=gene3-mRNA1-cds2;Parent=gene3-mRNA1
+
+seq4	cdskit	gene	1	10	.	+	.	ID=gene4;Name=gene4
+seq4	cdskit	mRNA	1	10	.	+	.	ID=gene4-mRNA1;Parent=gene4;Name=gene4-mRNA1
+seq4	cdskit	exon	1	3	.	+	.	ID=gene4-mRNA1:exon1;Parent=gene4-mRNA1
+seq4	cdskit	exon	5	10	.	+	.	ID=gene4-mRNA1:exon2;Parent=gene4-mRNA1
+seq4	cdskit	CDS	1	3	.	+	0	ID=gene4-mRNA1-cds1;Parent=gene4-mRNA1
+seq4	cdskit	CDS	5	10	.	+	2	ID=gene4-mRNA1-cds2;Parent=gene4-mRNA1
+
+seq5	cdskit	gene	1	10	.	+	.	ID=gene5;Name=gene5
+seq5	cdskit	mRNA	1	10	.	+	.	ID=gene5-mRNA1;Parent=gene5;Name=gene5-mRNA1
+seq5	cdskit	exon	1	3	.	+	.	ID=gene5-mRNA1:exon1;Parent=gene5-mRNA1
+seq5	cdskit	exon	5	10	.	+	.	ID=gene5-mRNA1:exon2;Parent=gene5-mRNA1
+seq5	cdskit	CDS	1	3	.	+	0	ID=gene5-mRNA1-cds1;Parent=gene5-mRNA1
+seq5	cdskit	CDS	5	10	.	+	2	ID=gene5-mRNA1-cds2;Parent=gene5-mRNA1
+
+seq6	cdskit	gene	1	10	.	+	.	ID=gene6;Name=gene6
+seq6	cdskit	mRNA	1	10	.	+	.	ID=gene6-mRNA1;Parent=gene6;Name=gene6-mRNA1
+seq6	cdskit	exon	1	3	.	+	.	ID=gene6-mRNA1:exon1;Parent=gene6-mRNA1
+seq6	cdskit	exon	5	10	.	+	.	ID=gene6-mRNA1:exon2;Parent=gene6-mRNA1
+seq6	cdskit	CDS	1	3	.	+	0	ID=gene6-mRNA1-cds1;Parent=gene6-mRNA1
+seq6	cdskit	CDS	5	10	.	+	2	ID=gene6-mRNA1-cds2;Parent=gene6-mRNA1

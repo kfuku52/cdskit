@@ -16,7 +16,7 @@ from cdskit.util import (
 )
 
 _PROCESS_PARALLEL_MIN_RECORDS = 2000
-_CODON_TRANSLATOR_CACHE = dict()
+_CODON_TRANSLATOR_CACHE: dict = {}
 
 
 def get_codon_translator(codontable):
