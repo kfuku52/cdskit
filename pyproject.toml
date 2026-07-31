@@ -2,5 +2,10 @@
 requires = ["setuptools>=61", "wheel"]
 build-backend = "setuptools.build_meta"
 
+[tool.ruff.lint]
+# Keep CI behavior stable across Ruff releases. These are Ruff's traditional
+# correctness-focused defaults; broader style migrations should be opt-in.
+select = ["E4", "E7", "E9", "F"]
+
 [tool.ruff.lint.per-file-ignores]
 "cdskit/plot.py" = ["E402"]
