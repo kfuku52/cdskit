@@ -1,4 +1,5 @@
 import csv
+from types import SimpleNamespace
 
 import pytest
 
@@ -324,17 +325,21 @@ def test_prediction_threshold_calibration_reports_oracle_and_foldwise_metrics():
     assert all(fold['thresholds']['SP'] == pytest.approx(2.0) for fold in result['folds'])
 
 
-def test_mmseqs_similarity_filter_removes_hit_queries(temp_dir, monkeypatch):
-    bin_dir = temp_dir / 'bin'
-    bin_dir.mkdir()
-    mmseqs = bin_dir / 'mmseqs'
-    mmseqs.write_text(
-        '#!/bin/sh\n'
-        'printf "q0\\tt0\\t100\\t4\\t4\\t4\\t0\\t50\\n" > "$4"\n',
-        encoding='utf-8',
+def test_mmseqs_similarity_filter_removes_hit_queries(monkeypatch):
+    def fake_run(command, **kwargs):
+        del kwargs
+        with open(command[4], 'w', encoding='utf-8') as output:
+            output.write('q0\tt0\t100\t4\t4\t4\t0\t50\n')
+        return SimpleNamespace(returncode=0, stdout='', stderr='')
+
+    monkeypatch.setattr(
+        'cdskit.targetp_external_eval.shutil.which',
+        lambda executable: executable,
     )
-    mmseqs.chmod(0o755)
-    monkeypatch.setenv('PATH', str(bin_dir))
+    monkeypatch.setattr(
+        'cdskit.targetp_external_eval.subprocess.run',
+        fake_run,
+    )
 
     kept, report = filter_rows_by_mmseqs_similarity(
         rows=[

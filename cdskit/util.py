@@ -92,7 +92,8 @@ def atomic_output_path(path):
     os.close(fd)
     try:
         yield temporary
-        with open(temporary, 'rb') as handle:
+        # Windows rejects fsync on a read-only descriptor, so reopen read/write.
+        with open(temporary, 'rb+') as handle:
             os.fsync(handle.fileno())
         os.replace(temporary, destination)
     finally:
@@ -120,7 +121,7 @@ def atomic_output_paths(paths):
             temporary_paths.append(Path(temporary))
         yield [str(path) for path in temporary_paths]
         for temporary in temporary_paths:
-            with open(temporary, 'rb') as handle:
+            with open(temporary, 'rb+') as handle:
                 os.fsync(handle.fileno())
 
         committed = 0
