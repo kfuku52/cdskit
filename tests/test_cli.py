@@ -8,6 +8,7 @@ and don't cause errors (e.g., Issue #10 with % characters).
 import pytest
 import sys
 import argparse
+import os
 import subprocess
 from pathlib import Path
 from io import StringIO
@@ -324,9 +325,12 @@ class TestCLIConsistency:
         script_path = (
             Path(__file__).parent.parent / 'scripts' / 'split_eukaryota_presets.py'
         )
+        command = [str(script_path), '--help']
+        if os.name == 'nt':
+            command.insert(0, sys.executable)
 
         result = subprocess.run(
-            [str(script_path), '--help'],
+            command,
             check=True,
             capture_output=True,
             text=True,
