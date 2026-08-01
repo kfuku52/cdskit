@@ -45,9 +45,9 @@ setup(
             'ruff>=0.6',
         ],
         'ml': [
-            'torch>=2.2,<3',
-            'scikit-learn>=1.4,<2',
-            'transformers>=4.40,<5',
+            'torch>=2.2',
+            'scikit-learn>=1.4',
+            'transformers>=4.40',
         ],
     },
     python_requires='>=3.10',
