@@ -4,6 +4,15 @@ This project follows semantic versioning. Deprecated CLI spellings remain
 available for at least the 0.24 release series and print their canonical
 replacement to standard error.
 
+## 0.25.2 — 2026-08-06
+
+### Changed
+
+- Restricted automated Git tags, GitHub Releases, and downstream Bioconda
+  updates to major and minor versions whose patch component is zero.
+- Made release creation wait for the full test workflow and use its exact
+  tested commit.
+
 ## 0.25.1 — 2026-08-01
 
 ### Changed
