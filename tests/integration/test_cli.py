@@ -225,6 +225,41 @@ class TestCLIConsistency:
         assert 'Enable detailed progress output.' in help_text
         assert 'Set training tsv.' not in help_text
 
+    @pytest.mark.parametrize(
+        ('option', 'kwargs', 'expected'),
+        [
+            ('--input_dir', {}, 'Directory containing the input inputs.'),
+            ('--out_dir', {}, 'Directory where result outputs are written.'),
+            ('--align_mmseqs', {}, 'Path or command name for the align mmseqs executable.'),
+            ('--resume_state', {}, 'Path to the resume state file.'),
+            ('--strategy', {'choices': ('mean', 'max')}, 'Method or mode used for strategy.'),
+            (
+                '--fold_learning_rate',
+                {},
+                'Optimizer learning rate used for fold learning rate.',
+            ),
+            (
+                '--forest_n_estimators',
+                {},
+                'Number of estimators used for forest n estimators.',
+            ),
+            (
+                '--score_grid_step',
+                {},
+                'Step size used for the score grid step search grid.',
+            ),
+            ('--encoder_num_layers', {}, 'Training value for encoder num layers.'),
+            ('--num_replicates', {}, 'Number of replicates.'),
+            ('--num_dropout', {}, 'Number of dropout.'),
+            ('--custom_value', {}, 'Value used for custom value.'),
+        ],
+    )
+    def test_automatic_help_rule_categories(self, option, kwargs, expected):
+        parser = CdskitArgumentParser()
+        parser.add_argument(option, **kwargs)
+
+        assert expected in parser.format_help()
+
     def test_deprecated_long_option_is_accepted_with_warning(self, capsys):
         parser = CdskitArgumentParser()
         parser.add_argument('--seq_file')

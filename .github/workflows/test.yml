@@ -32,9 +32,9 @@ jobs:
           - {os: windows-latest, python-version: '3.14'}
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
@@ -50,34 +50,39 @@ jobs:
     name: ML and coverage / ubuntu-latest / Python 3.12
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
           cache: pip
           cache-dependency-path: setup.py
 
-      - name: Install test and ML dependencies
-        run: python -m pip install -e ".[test,coverage,ml]"
+      - name: Install test, ML, and security dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[test,coverage,ml,security]"
 
       - name: Test with coverage
-        run: python -m pytest -q -n 2 --dist=worksteal --cov=cdskit --cov-report=term-missing --cov-fail-under=70 --durations=20 --durations-min=0.05
+        run: python -m pytest -q -n 2 --dist=worksteal --cov=cdskit --cov-report=term-missing --cov-fail-under=75 --durations=20 --durations-min=0.05
+
+      - name: Audit resolved dependencies
+        run: python -m pip_audit --local --skip-editable
 
   quality:
     name: Ruff and mypy / ubuntu-latest / Python 3.12
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
           cache: pip
           cache-dependency-path: setup.py
 
-      - name: Install quality dependencies
-        run: python -m pip install -e ".[quality]"
+      - name: Install quality and security dependencies
+        run: python -m pip install -e ".[quality,security]"
 
       - name: Lint
         run: python -m ruff check cdskit scripts tests
@@ -85,13 +90,19 @@ jobs:
       - name: Type check
         run: python -m mypy cdskit/*.py --ignore-missing-imports --explicit-package-bases
 
+      - name: Reject new high-severity security findings
+        run: python -m bandit -q -r cdskit -lll
+
+      - name: Guard maximum cyclomatic complexity
+        run: python -m ruff check cdskit --select C901 --config lint.mccabe.max-complexity=38
+
   package:
     name: Build and wheel / ubuntu-latest / Python 3.12
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
           cache: pip

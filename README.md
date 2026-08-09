@@ -12,7 +12,11 @@
 **CDSKIT** ([/sidieskit/](http://ipa-reader.xyz/?text=sidieskit&voice=Joanna)) is a Python program that processes DNA sequences, especially protein-coding sequences. Many functions of this program are designed to handle DNA sequences using codons (sets of three nucleotides) as the unit, and therefore, edits the coding sequences without causing a frameshift. Input and output format names follow [Biopython SeqIO](https://biopython.org/wiki/SeqIO), but transformed records can only be written to formats whose required annotations remain meaningful. In particular, translations and length-changing operations should normally use FASTA rather than FASTQ.
 
 ## Installation
-The latest version of CDSKIT is available from [Bioconda](https://anaconda.org/bioconda/cdskit). For users requiring a `conda` installation, please refer to [Miniforge](https://github.com/conda-forge/miniforge) for a lightweight conda environment.
+Published stable versions of CDSKIT are available from
+[Bioconda](https://anaconda.org/bioconda/cdskit). The `master` branch can be
+newer than the latest Bioconda package. For users requiring a `conda`
+installation, please refer to [Miniforge](https://github.com/conda-forge/miniforge)
+for a lightweight conda environment.
 
 #### Install from Bioconda
 ```
@@ -31,10 +35,11 @@ pip install git+https://github.com/kfuku52/cdskit
 
 Pretrained `cdskit localize` TargetP-style `.pt` models run on CPU, but they
 need the optional machine-learning dependencies (`torch` and `scikit-learn`).
-For pip installs, use the `ml` extra when you want those models:
+CDSKIT is not published on PyPI. To install the GitHub development version
+with the `ml` extra, include the repository URL explicitly:
 
 ```
-pip install 'cdskit[ml]'
+pip install 'cdskit[ml] @ git+https://github.com/kfuku52/cdskit.git'
 ```
 
 ## Subcommands

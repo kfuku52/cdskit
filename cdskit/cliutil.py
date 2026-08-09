@@ -48,6 +48,76 @@ _FILE_SUFFIXES = (
     ('_prefix', 'file prefix'),
 )
 
+_PARAMETER_HELP_RULES = (
+    (('min_seq_id',), 'Minimum sequence-identity fraction used for {subject}.'),
+    (('coverage',), 'Minimum alignment-coverage fraction used for {subject}.'),
+    (('cov_mode',), 'Coverage calculation mode used for {subject}.'),
+    (('threads',), 'Number of worker threads used for {subject}.'),
+    (('model_name',), 'Pretrained model name or identifier used for {subject}.'),
+    (('seq_len', 'max_len'), 'Maximum sequence length used for {subject}.'),
+    (('learning_rate', 'lr'), 'Optimizer learning rate used for {subject}.'),
+    (
+        ('weight_decay', 'l2', 'l2_regularization'),
+        'Regularization strength used for {subject}.',
+    ),
+    (
+        ('max_iter', 'epochs', 'patience_epochs'),
+        'Number of training or optimization iterations for {subject}.',
+    ),
+    (('batch_size',), 'Number of examples in each {subject} batch.'),
+    (
+        ('hidden_dim', 'embed_dim', 'hidden_rnn', 'hidden_fc'),
+        'Hidden representation size used for {subject}.',
+    ),
+    (
+        ('n_filters', 'n_attention', 'attention_size'),
+        'Model capacity value used for {subject}.',
+    ),
+    (('grad_clip_norm',), 'Gradient clipping norm used for {subject}.'),
+    (('keep_prob',), 'Retention probability used for {subject}.'),
+    (('seed_offset',), 'Offset added to random seeds for {subject}.'),
+    (('temperature',), 'Temperature used for {subject}.'),
+    (('power',), 'Exponent used for {subject}.'),
+    (('alpha',), 'Interpolation weight used for {subject}.'),
+    (('base_index',), 'Zero-based model index used for {subject}.'),
+    (('timeout_sec',), 'Timeout in seconds for {subject}.'),
+)
+
+_SUFFIX_HELP_RULES = (
+    (('_max_frac', '_max_count'), 'Maximum limit used for {subject}.'),
+    (('_label',), 'Label stored for {subject}.'),
+    (
+        ('_seed', '_random_state', '_random_states'),
+        'Random seed value or values used for {subject}.',
+    ),
+    (('_n_estimators', 'n_estimators'), 'Number of estimators used for {subject}.'),
+    (
+        ('_score_min', '_score_max', '_score_step', '_score_steps'),
+        'Score-search range value used for {subject}.',
+    ),
+    (('_grid_step',), 'Step size used for the {subject} search grid.'),
+    (
+        ('_min_samples_leaf',),
+        'Minimum samples per estimator leaf for {subject}.',
+    ),
+    (('_max_features',), 'Maximum feature subset used for {subject}.'),
+    (
+        ('_classes', '_weights', '_grid', '_sizes', '_folds'),
+        'Values used for {subject}.',
+    ),
+)
+
+_FALLBACK_SUFFIX_HELP_RULES = (
+    (
+        ('_epochs', '_batch_size', '_num_layers', '_num_filters'),
+        'Training value for {subject}.',
+    ),
+    (
+        ('_rate', '_weight', '_fraction', '_dropout', '_alpha'),
+        'Numeric value used for {subject}.',
+    ),
+)
+
 
 def _humanize_option_name(name):
     return ' '.join(_TOKEN_LABELS.get(token, token) for token in name.split('_'))
@@ -55,6 +125,52 @@ def _humanize_option_name(name):
 
 def _matches_parameter(name, *parameters):
     return any(name == value or name.endswith('_' + value) for value in parameters)
+
+
+def _file_argument_help(name):
+    for suffix, file_kind in _FILE_SUFFIXES:
+        if not name.endswith(suffix):
+            continue
+        stem = name[:-len(suffix)].strip('_')
+        output = (
+            stem == 'out'
+            or stem.startswith('out_')
+            or stem.endswith('_out')
+            or '_out_' in stem
+            or 'report' in stem
+            or 'comparison' in stem
+            or name.endswith('_prefix')
+        )
+        if stem == 'out':
+            stem = ''
+        else:
+            stem = stem.removeprefix('out_').removesuffix('_out').strip('_')
+        purpose = _humanize_option_name(stem) if stem else 'result'
+        if file_kind == 'directory':
+            if output:
+                return 'Directory where {} outputs are written.'.format(purpose)
+            return 'Directory containing the {} inputs.'.format(purpose)
+        if output:
+            return 'Path for the output {} {}.'.format(purpose, file_kind)
+        return 'Path to the {} {}.'.format(purpose, file_kind)
+    return None
+
+
+def _rule_argument_help(name, subject):
+    for parameters, template in _PARAMETER_HELP_RULES:
+        if _matches_parameter(name, *parameters):
+            return template.format(subject=subject)
+    for suffixes, template in _SUFFIX_HELP_RULES:
+        if name.endswith(suffixes):
+            return template.format(subject=subject)
+    return None
+
+
+def _fallback_suffix_argument_help(name, subject):
+    for suffixes, template in _FALLBACK_SUFFIX_HELP_RULES:
+        if name.endswith(suffixes):
+            return template.format(subject=subject)
+    return None
 
 
 def _automatic_argument_help(option, kwargs):
@@ -73,30 +189,9 @@ def _automatic_argument_help(option, kwargs):
     if kwargs.get('type') is parse_bool:
         return 'Enable or disable {}.'.format(subject)
 
-    for suffix, file_kind in _FILE_SUFFIXES:
-        if name.endswith(suffix):
-            stem = name[:-len(suffix)].strip('_')
-            output = (
-                stem == 'out'
-                or stem.startswith('out_')
-                or stem.endswith('_out')
-                or '_out_' in stem
-                or 'report' in stem
-                or 'comparison' in stem
-                or name.endswith('_prefix')
-            )
-            if stem == 'out':
-                stem = ''
-            else:
-                stem = stem.removeprefix('out_').removesuffix('_out').strip('_')
-            purpose = _humanize_option_name(stem) if stem else 'result'
-            if file_kind == 'directory':
-                if output:
-                    return 'Directory where {} outputs are written.'.format(purpose)
-                return 'Directory containing the {} inputs.'.format(purpose)
-            if output:
-                return 'Path for the output {} {}.'.format(purpose, file_kind)
-            return 'Path to the {} {}.'.format(purpose, file_kind)
+    file_help = _file_argument_help(name)
+    if file_help is not None:
+        return file_help
 
     if name == 'mmseqs' or name.endswith('_mmseqs'):
         return 'Path or command name for the {} executable.'.format(subject)
@@ -113,86 +208,18 @@ def _automatic_argument_help(option, kwargs):
         return 'Method or mode used for {}.'.format(subject)
     if 'threshold' in name:
         return 'Decision threshold or candidate thresholds for {}.'.format(subject)
-    if _matches_parameter(name, 'min_seq_id'):
-        return 'Minimum sequence-identity fraction used for {}.'.format(subject)
-    if _matches_parameter(name, 'coverage'):
-        return 'Minimum alignment-coverage fraction used for {}.'.format(subject)
-    if _matches_parameter(name, 'cov_mode'):
-        return 'Coverage calculation mode used for {}.'.format(subject)
-    if _matches_parameter(name, 'threads'):
-        return 'Number of worker threads used for {}.'.format(subject)
-    if _matches_parameter(name, 'model_name'):
-        return 'Pretrained model name or identifier used for {}.'.format(subject)
-    if _matches_parameter(name, 'seq_len', 'max_len'):
-        return 'Maximum sequence length used for {}.'.format(subject)
-    if _matches_parameter(name, 'learning_rate', 'lr'):
-        return 'Optimizer learning rate used for {}.'.format(subject)
-    if _matches_parameter(name, 'weight_decay', 'l2', 'l2_regularization'):
-        return 'Regularization strength used for {}.'.format(subject)
-    if _matches_parameter(name, 'max_iter', 'epochs', 'patience_epochs'):
-        return 'Number of training or optimization iterations for {}.'.format(subject)
-    if _matches_parameter(name, 'batch_size'):
-        return 'Number of examples in each {} batch.'.format(subject)
-    if _matches_parameter(name, 'hidden_dim', 'embed_dim', 'hidden_rnn', 'hidden_fc'):
-        return 'Hidden representation size used for {}.'.format(subject)
-    if _matches_parameter(name, 'n_filters', 'n_attention', 'attention_size'):
-        return 'Model capacity value used for {}.'.format(subject)
-    if _matches_parameter(name, 'grad_clip_norm'):
-        return 'Gradient clipping norm used for {}.'.format(subject)
-    if _matches_parameter(name, 'keep_prob'):
-        return 'Retention probability used for {}.'.format(subject)
-    if _matches_parameter(name, 'seed_offset'):
-        return 'Offset added to random seeds for {}.'.format(subject)
-    if _matches_parameter(name, 'temperature'):
-        return 'Temperature used for {}.'.format(subject)
-    if _matches_parameter(name, 'power'):
-        return 'Exponent used for {}.'.format(subject)
-    if _matches_parameter(name, 'alpha'):
-        return 'Interpolation weight used for {}.'.format(subject)
-    if _matches_parameter(name, 'base_index'):
-        return 'Zero-based model index used for {}.'.format(subject)
-    if name.endswith(('_max_frac', '_max_count')):
-        return 'Maximum limit used for {}.'.format(subject)
-    if name.endswith('_label'):
-        return 'Label stored for {}.'.format(subject)
-    if name.endswith(('_seed', '_random_state', '_random_states')):
-        return 'Random seed value or values used for {}.'.format(subject)
-    if name.endswith(('_learning_rate', '_lr')):
-        return 'Optimizer learning rate used for {}.'.format(subject)
-    if name.endswith(('_weight_decay', '_l2', '_l2_regularization')):
-        return 'Regularization strength used for {}.'.format(subject)
-    if name.endswith(('_max_iter', '_epochs', '_patience_epochs')):
-        return 'Number of training or optimization iterations for {}.'.format(subject)
-    if name.endswith(('_n_estimators', 'n_estimators')):
-        return 'Number of estimators used for {}.'.format(subject)
-    if name.endswith(('_seq_len', '_max_len')):
-        return 'Maximum sequence length used for {}.'.format(subject)
-    if name.endswith(('_score_min', '_score_max', '_score_step', '_score_steps')):
-        return 'Score-search range value used for {}.'.format(subject)
-    if name.endswith('_grid_step'):
-        return 'Step size used for the {} search grid.'.format(subject)
-    if name.endswith('_min_samples_leaf'):
-        return 'Minimum samples per estimator leaf for {}.'.format(subject)
-    if name.endswith('_max_features'):
-        return 'Maximum feature subset used for {}.'.format(subject)
-    if _matches_parameter(name, 'timeout_sec'):
-        return 'Timeout in seconds for {}.'.format(subject)
-    if name.endswith(('_hidden_dim', '_embed_dim', '_hidden_rnn', '_hidden_fc')):
-        return 'Hidden representation size used for {}.'.format(subject)
-    if name.endswith(('_n_filters', '_n_attention', '_attention_size')):
-        return 'Model capacity value used for {}.'.format(subject)
-    if name.endswith(('_classes', '_weights', '_grid', '_sizes', '_folds')):
-        return 'Values used for {}.'.format(subject)
+    rule_help = _rule_argument_help(name, subject)
+    if rule_help is not None:
+        return rule_help
     if name.startswith('num_'):
         return 'Number of {}.'.format(_humanize_option_name(name[4:]))
     if name.startswith('max_'):
         return 'Maximum value allowed for {}.'.format(_humanize_option_name(name[4:]))
     if name.startswith('min_'):
         return 'Minimum value allowed for {}.'.format(_humanize_option_name(name[4:]))
-    if name.endswith(('_epochs', '_batch_size', '_num_layers', '_num_filters')):
-        return 'Training value for {}.'.format(subject)
-    if name.endswith(('_rate', '_weight', '_fraction', '_dropout', '_alpha')):
-        return 'Numeric value used for {}.'.format(subject)
+    fallback_help = _fallback_suffix_argument_help(name, subject)
+    if fallback_help is not None:
+        return fallback_help
     return 'Value used for {}.'.format(subject)
 
 

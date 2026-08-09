@@ -21,6 +21,7 @@ python -m pip install -e ".[test]"
 python -m pip install -e ".[test,coverage,ml]"
 python -m pip install -e ".[quality]"
 python -m pip install -e ".[build]"
+python -m pip install -e ".[security]"
 ```
 
 `.[dev]` installs all of these groups for a complete development environment.
@@ -51,8 +52,22 @@ Run the same parallel coverage check used by CI:
 
 ```bash
 python -m pytest -q -n 2 --dist=worksteal \
-  --cov=cdskit --cov-report=term-missing --cov-fail-under=70
+  --cov=cdskit --cov-report=term-missing --cov-fail-under=75
 ```
+
+Run the security and complexity guards used by CI:
+
+```bash
+python -m pip_audit --local --skip-editable
+python -m bandit -q -r cdskit -lll
+python -m ruff check cdskit --select C901 \
+  --config lint.mccabe.max-complexity=38
+```
+
+Dependency minimums express API compatibility, not a recommendation to retain
+old releases indefinitely. Use a freshly resolved environment for production
+work so patched versions satisfying the declared ranges are installed. GitHub
+Actions repeats the dependency and source-security audit every Monday.
 
 For a short feedback loop after a failure, use `--lf` to rerun failures or
 `-f` to stop on the first failure and restart when a test file changes.

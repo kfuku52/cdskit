@@ -1,14 +1,18 @@
 import csv
+import hashlib
+import io
 import json
 import sys
 from types import SimpleNamespace
 
 import pytest
 
+import cdskit.deeploc_benchmark as deeploc_benchmark
 from cdskit.deeploc_benchmark import (
     DEEPLOC_LOCALIZATION_LABELS,
     DEEPLOC_MEMBRANE_LABELS,
     compute_multilabel_metrics,
+    download_deeploc21_data,
     evaluate_deeploc21_task_cv,
     fit_deeploc_multilabel_model,
     prepare_all_deeploc21,
@@ -52,6 +56,90 @@ def _write_prepared_localization_tsv(path, rows):
             for label in DEEPLOC_LOCALIZATION_LABELS:
                 out_row[label] = 'yes' if label in active else 'no'
             writer.writerow(out_row)
+
+
+class _FakeDownloadResponse:
+    def __init__(self, payload, url):
+        self._stream = io.BytesIO(payload)
+        self._url = url
+        self.headers = {'Content-Length': str(len(payload))}
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        return False
+
+    def geturl(self):
+        return self._url
+
+    def read(self, size=-1):
+        return self._stream.read(size)
+
+
+def test_download_deeploc21_data_verifies_url_and_checksum(temp_dir, monkeypatch):
+    name = 'hpa_test'
+    url = deeploc_benchmark.DEEPLOC21_URLS[name]
+    payload = b'pinned deeploc fixture\n'
+    expected = hashlib.sha256(payload).hexdigest()
+    requests = []
+
+    def fake_urlopen(request, timeout):
+        requests.append((request, timeout))
+        return _FakeDownloadResponse(payload=payload, url=url)
+
+    monkeypatch.setitem(deeploc_benchmark.DEEPLOC21_SHA256, name, expected)
+    monkeypatch.setattr(deeploc_benchmark.urllib_request, 'urlopen', fake_urlopen)
+
+    report = download_deeploc21_data(
+        out_dir=str(temp_dir),
+        names=[name],
+        timeout_sec=17,
+    )
+
+    output_path = temp_dir / 'hpa_testset.csv'
+    assert output_path.read_bytes() == payload
+    assert report[name]['sha256'] == expected
+    assert report[name]['bytes'] == len(payload)
+    assert requests[0][0].full_url == url
+    assert requests[0][0].get_header('User-agent') == 'cdskit-deeploc-downloader'
+    assert requests[0][1] == 17
+
+
+def test_download_deeploc21_data_rejects_checksum_mismatch(temp_dir, monkeypatch):
+    name = 'hpa_test'
+    url = deeploc_benchmark.DEEPLOC21_URLS[name]
+    payload = b'changed upstream data\n'
+    monkeypatch.setattr(
+        deeploc_benchmark.urllib_request,
+        'urlopen',
+        lambda request, timeout: _FakeDownloadResponse(payload=payload, url=url),
+    )
+
+    with pytest.raises(ValueError, match='checksum mismatch'):
+        download_deeploc21_data(out_dir=str(temp_dir), names=[name])
+
+    assert not (temp_dir / 'hpa_testset.csv').exists()
+
+
+def test_download_deeploc21_data_rejects_redirect(temp_dir, monkeypatch):
+    name = 'hpa_test'
+    payload = b'pinned deeploc fixture\n'
+    expected = hashlib.sha256(payload).hexdigest()
+    monkeypatch.setitem(deeploc_benchmark.DEEPLOC21_SHA256, name, expected)
+    monkeypatch.setattr(
+        deeploc_benchmark.urllib_request,
+        'urlopen',
+        lambda request, timeout: _FakeDownloadResponse(
+            payload=payload,
+            url='https://example.com/untrusted.csv',
+        ),
+    )
+
+    with pytest.raises(ValueError, match='unexpected DeepLoc'):
+        download_deeploc21_data(out_dir=str(temp_dir), names=[name])
+
+    assert not (temp_dir / 'hpa_testset.csv').exists()
 
 
 def test_prepare_deeploc21_localization_maps_plastid_to_chloroplast(temp_dir):

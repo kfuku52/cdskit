@@ -239,6 +239,23 @@ def _sample_balanced_batch_indices(observed_classes, pools, cursors, batch_size,
     return batch
 
 
+def _epoch_batch_indices(y, indices, balanced_batch, n_batch, batch_size, rng):
+    if balanced_batch:
+        observed_classes, pools, cursors = _init_class_sampling_pools(y=y, rng=rng)
+        for _ in range(n_batch):
+            yield _sample_balanced_batch_indices(
+                observed_classes=observed_classes,
+                pools=pools,
+                cursors=cursors,
+                batch_size=batch_size,
+                rng=rng,
+            )
+        return
+    rng.shuffle(indices)
+    for start in range(0, indices.shape[0], batch_size):
+        yield indices[start:start + batch_size]
+
+
 def _resolve_loss_function(torch, nn, weight_tensor, loss_name='ce', focal_gamma=2.0):
     loss_name = str(loss_name).strip().lower()
     if loss_name == 'ce':
@@ -507,58 +524,15 @@ def fit_bilstm_attention_classifier(
             aux_tp_head.train()
         if aux_ctp_ltp_head is not None:
             aux_ctp_ltp_head.train()
-        if balanced_batch:
-            observed_classes, pools, cursors = _init_class_sampling_pools(y=y, rng=rng)
-            for _ in range(n_batch):
-                batch_idx = _sample_balanced_batch_indices(
-                    observed_classes=observed_classes,
-                    pools=pools,
-                    cursors=cursors,
-                    batch_size=batch_size,
-                    rng=rng,
-                )
-                xb = torch.as_tensor(
-                    x[batch_idx, :],
-                    dtype=torch.long,
-                    device=resolved_device,
-                )
-                yb = torch.as_tensor(
-                    y[batch_idx],
-                    dtype=torch.long,
-                    device=resolved_device,
-                )
-                fb = None
-                if feature_x is not None:
-                    fb = torch.as_tensor(
-                        feature_x[batch_idx, :],
-                        dtype=torch.float32,
-                        device=resolved_device,
-                    )
-                mask = (xb != PAD_INDEX)
-                optimizer.zero_grad(set_to_none=True)
-                if use_extra_loss:
-                    logits, rep = model(
-                        tokens=xb,
-                        mask=mask,
-                        feature_vec=fb,
-                        return_representation=True,
-                    )
-                    loss = _compute_total_loss(
-                        batch_idx=batch_idx,
-                        logits=logits,
-                        yb=yb,
-                        representation=rep,
-                    )
-                else:
-                    logits = model(tokens=xb, mask=mask, feature_vec=fb)
-                    loss = loss_fn(logits, yb)
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(parameters, max_norm=1.0)
-                optimizer.step()
-            continue
-        rng.shuffle(indices)
-        for start in range(0, indices.shape[0], batch_size):
-            batch_idx = indices[start:start + batch_size]
+        batches = _epoch_batch_indices(
+            y=y,
+            indices=indices,
+            balanced_batch=balanced_batch,
+            n_batch=n_batch,
+            batch_size=batch_size,
+            rng=rng,
+        )
+        for batch_idx in batches:
             xb = torch.as_tensor(
                 x[batch_idx, :],
                 dtype=torch.long,

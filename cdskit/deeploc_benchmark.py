@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 import warnings
+from urllib import parse as urllib_parse
 from urllib import request as urllib_request
 
 import numpy as np
@@ -41,6 +42,18 @@ DEEPLOC21_URLS = {
     'sorting_signals': (
         'https://services.healthtech.dtu.dk/services/DeepLoc-2.1/data/'
         'SortingSignalsSwissprot.csv'
+    ),
+}
+DEEPLOC21_SHA256 = {
+    'localization_train_validation': (
+        '29a07b293fed2994a966b70bdcd6bacc59915b8b01fa200cb2b07d8db18384a2'
+    ),
+    'membrane_train_validation': (
+        '2d878da32a06092f880262048e3c1eb692721c274b0a458fcc712a0dcbd80c71'
+    ),
+    'hpa_test': '557553bcd35e3dcb59bbfe90e1fd63341549f0a693c0e725d6c2c8387a463b37',
+    'sorting_signals': (
+        '97338dbec94305d60b8f28d0a89386966ba5345f349fd9e1446572b6644d5ede'
     ),
 }
 DEEPLOC_DOWNLOAD_MAX_BYTES = 256 * 1024 * 1024
@@ -213,6 +226,23 @@ def _summarize_label_rows(rows, labels, label_list_col):
     }
 
 
+def _validate_deeploc21_url(url, expected_url):
+    parsed = urllib_parse.urlparse(str(url))
+    expected = urllib_parse.urlparse(str(expected_url))
+    if (
+        parsed.scheme != 'https'
+        or parsed.hostname != 'services.healthtech.dtu.dk'
+        or parsed.port not in (None, 443)
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query != ''
+        or parsed.fragment != ''
+        or parsed.path != expected.path
+        or str(url) != str(expected_url)
+    ):
+        raise ValueError('Refusing unexpected DeepLoc 2.1 URL: {}'.format(url))
+
+
 def download_deeploc21_data(out_dir, names=None, timeout_sec=120):
     if names is None:
         names = sorted(DEEPLOC21_URLS.keys())
@@ -222,12 +252,22 @@ def download_deeploc21_data(out_dir, names=None, timeout_sec=120):
         if name not in DEEPLOC21_URLS:
             raise ValueError('Unsupported DeepLoc 2.1 dataset name: {}'.format(name))
         url = DEEPLOC21_URLS[name]
+        _validate_deeploc21_url(url=url, expected_url=DEEPLOC21_URLS[name])
+        expected_sha256 = DEEPLOC21_SHA256[name]
         filename = os.path.basename(url)
         out_path = os.path.join(out_dir, filename)
         downloaded = 0
         digest = hashlib.sha256()
         with atomic_output_path(out_path) as temporary:
-            with urllib_request.urlopen(url, timeout=int(timeout_sec)) as resp, open(temporary, 'wb') as out_file:
+            request = urllib_request.Request(
+                url,
+                headers={'User-Agent': 'cdskit-deeploc-downloader'},
+            )
+            with urllib_request.urlopen(request, timeout=int(timeout_sec)) as resp, open(temporary, 'wb') as out_file:
+                _validate_deeploc21_url(
+                    url=resp.geturl(),
+                    expected_url=url,
+                )
                 content_length = resp.headers.get('Content-Length')
                 if (
                     content_length is not None
@@ -243,11 +283,20 @@ def download_deeploc21_data(out_dir, names=None, timeout_sec=120):
                         raise ValueError('DeepLoc download exceeds the 256 MiB safety limit.')
                     digest.update(chunk)
                     out_file.write(chunk)
+            observed_sha256 = digest.hexdigest()
+            if observed_sha256 != expected_sha256:
+                raise ValueError(
+                    'DeepLoc download checksum mismatch for {}: expected {}, got {}.'.format(
+                        url,
+                        expected_sha256,
+                        observed_sha256,
+                    )
+                )
         out[name] = {
             'url': url,
             'path': out_path,
             'bytes': int(downloaded),
-            'sha256': digest.hexdigest(),
+            'sha256': observed_sha256,
         }
     return out
 

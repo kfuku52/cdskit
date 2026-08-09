@@ -16,14 +16,28 @@ jobs:
       (github.event_name == 'workflow_run' &&
        github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.event == 'push' &&
-       github.event.workflow_run.head_branch == 'master')
+       github.event.workflow_run.head_branch == 'master' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout tested commit
-        uses: actions/checkout@v7
+      - name: Checkout trusted default branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+          ref: refs/heads/master
+
+      - name: Verify checkout is the tested commit
+        if: github.event_name == 'workflow_run'
+        shell: bash
+        env:
+          TESTED_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          CHECKED_OUT_SHA=$(git rev-parse HEAD)
+          if [ "$CHECKED_OUT_SHA" != "$TESTED_SHA" ]; then
+            echo "master moved after the tested run: checked out $CHECKED_OUT_SHA, tested $TESTED_SHA."
+            echo "The newer master run will perform the release after it succeeds."
+            exit 1
+          fi
 
       - name: Read and classify version
         id: version

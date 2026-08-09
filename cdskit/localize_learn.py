@@ -1328,64 +1328,25 @@ def evaluate_cross_validation(
     }
 
 
-def localize_learn_main(args):
-    stop_if_invalid_codontable(codontable=args.codontable, label='--codon_table')
-    training_tsv = getattr(args, 'training_tsv', '')
-    uniprot_query = getattr(args, 'uniprot_query', '')
-    uniprot_preset = getattr(args, 'uniprot_preset', 'none')
-    uniprot_reviewed = getattr(args, 'uniprot_reviewed', True)
-    uniprot_exclude_fragments = getattr(args, 'uniprot_exclude_fragments', True)
-    uniprot_fields_text = getattr(args, 'uniprot_fields', ','.join(UNIPROT_DEFAULT_FIELDS))
-    uniprot_page_size = getattr(args, 'uniprot_page_size', UNIPROT_MAX_PAGE_SIZE)
-    uniprot_max_rows = getattr(args, 'uniprot_max_rows', 0)
-    uniprot_sampling = getattr(args, 'uniprot_sampling', 'head')
-    uniprot_sampling_seed = int(getattr(args, 'uniprot_sampling_seed', 1))
-    uniprot_timeout_sec = getattr(args, 'uniprot_timeout_sec', 60)
-    uniprot_retries = getattr(args, 'uniprot_retries', 2)
-    uniprot_out_tsv = getattr(args, 'uniprot_out_tsv', '')
-    cv_folds = int(getattr(args, 'cv_folds', 0))
-    cv_seed = int(getattr(args, 'cv_seed', 1))
-    cv_fold_col = str(getattr(args, 'cv_fold_col', '')).strip()
-    model_arch = str(getattr(args, 'model_arch', 'nearest_centroid')).strip().lower()
-    if model_arch not in ['nearest_centroid', 'bilstm_attention', 'esm_head']:
-        raise ValueError('Unsupported --model_arch: {}'.format(model_arch))
-    localize_strategy = str(getattr(args, 'localize_strategy', 'single_stage')).strip().lower()
-    if localize_strategy not in ['single_stage', 'two_stage', 'two_stage_ctp_ltp']:
-        txt = '--localize_strategy should be single_stage, two_stage, or two_stage_ctp_ltp.'
-        raise ValueError(txt)
-    localize_temperature_scale = bool(getattr(args, 'localize_temperature_scale', False))
-    localize_threshold_tune = bool(getattr(args, 'localize_threshold_tune', False))
-    localize_threshold_objective = str(
-        getattr(args, 'localize_threshold_objective', 'macro')
-    ).strip().lower()
-    if localize_threshold_objective not in ['overall', 'macro']:
-        raise ValueError('--localize_threshold_objective should be overall or macro.')
-
-    dl_seq_len = int(getattr(args, 'dl_seq_len', 200))
-    dl_embed_dim = int(getattr(args, 'dl_embed_dim', 32))
-    dl_hidden_dim = int(getattr(args, 'dl_hidden_dim', 64))
-    dl_num_layers = int(getattr(args, 'dl_num_layers', 1))
-    dl_dropout = float(getattr(args, 'dl_dropout', 0.2))
-    dl_epochs = int(getattr(args, 'dl_epochs', 15))
-    dl_batch_size = int(getattr(args, 'dl_batch_size', 128))
-    dl_lr = float(getattr(args, 'dl_lr', 1.0e-3))
-    dl_weight_decay = float(getattr(args, 'dl_weight_decay', 1.0e-4))
-    dl_class_weight = bool(getattr(args, 'dl_class_weight', True))
-    dl_loss = str(getattr(args, 'dl_loss', 'ce')).strip().lower()
-    dl_balanced_batch = bool(getattr(args, 'dl_balanced_batch', False))
-    dl_aux_tp_weight = float(getattr(args, 'dl_aux_tp_weight', 0.0))
-    dl_aux_ctp_ltp_weight = float(getattr(args, 'dl_aux_ctp_ltp_weight', 0.0))
-    dl_feature_fusion = bool(getattr(args, 'dl_feature_fusion', True))
-    dl_seed = int(getattr(args, 'dl_seed', 1))
-    dl_device = str(getattr(args, 'dl_device', 'auto')).strip().lower()
-    esm_model_name = str(getattr(args, 'esm_model_name', 'facebook/esm2_t6_8M_UR50D')).strip()
-    from cdskit.localize_esm_head import DEFAULT_ESM_MODEL_REVISION
-    esm_model_revision = str(
-        getattr(args, 'esm_model_revision', DEFAULT_ESM_MODEL_REVISION)
-    ).strip()
-    esm_model_local_dir = str(getattr(args, 'esm_model_local_dir', '')).strip()
-    esm_pooling = str(getattr(args, 'esm_pooling', 'cls')).strip().lower()
-    esm_max_len = int(getattr(args, 'esm_max_len', 200))
+def _validate_deep_learning_options(
+    model_arch,
+    cv_folds,
+    cv_fold_col,
+    dl_seq_len,
+    dl_embed_dim,
+    dl_hidden_dim,
+    dl_num_layers,
+    dl_dropout,
+    dl_epochs,
+    dl_batch_size,
+    dl_lr,
+    dl_weight_decay,
+    dl_loss,
+    dl_aux_tp_weight,
+    dl_aux_ctp_ltp_weight,
+    esm_pooling,
+    esm_max_len,
+):
     finite_values = {
         '--dl_dropout': dl_dropout,
         '--dl_lr': dl_lr,
@@ -1435,20 +1396,35 @@ def localize_learn_main(args):
     if (cv_fold_col == '') and (cv_folds == 1):
         raise ValueError('--cv_folds should be 0 (disabled) or >= 2.')
 
-    has_training_tsv = (str(training_tsv).strip() != '')
-    resolved_uniprot_query, preset_name = resolve_uniprot_query(
+
+def _load_training_rows(args, cv_fold_col):
+    training_tsv = getattr(args, 'training_tsv', '')
+    uniprot_query = getattr(args, 'uniprot_query', '')
+    uniprot_preset = getattr(args, 'uniprot_preset', 'none')
+    source = {
+        'has_training_tsv': str(training_tsv).strip() != '',
+        'uniprot_reviewed': getattr(args, 'uniprot_reviewed', True),
+        'uniprot_exclude_fragments': getattr(args, 'uniprot_exclude_fragments', True),
+        'uniprot_sampling': getattr(args, 'uniprot_sampling', 'head'),
+        'uniprot_sampling_seed': int(getattr(args, 'uniprot_sampling_seed', 1)),
+    }
+    resolved_query, preset_name = resolve_uniprot_query(
         uniprot_query=uniprot_query,
         uniprot_preset=uniprot_preset,
     )
-    has_uniprot_source = (str(resolved_uniprot_query).strip() != '')
-    if has_training_tsv and has_uniprot_source:
-        txt = 'Use either --training_tsv or --uniprot_query/--uniprot_preset, not both.'
-        raise Exception(txt)
-    if (not has_training_tsv) and (not has_uniprot_source):
-        txt = 'Either --training_tsv or --uniprot_query/--uniprot_preset should be specified.'
-        raise Exception(txt)
+    source['resolved_uniprot_query'] = resolved_query
+    source['preset_name'] = preset_name
+    has_uniprot_source = str(resolved_query).strip() != ''
+    if source['has_training_tsv'] and has_uniprot_source:
+        raise Exception(
+            'Use either --training_tsv or --uniprot_query/--uniprot_preset, not both.'
+        )
+    if (not source['has_training_tsv']) and (not has_uniprot_source):
+        raise Exception(
+            'Either --training_tsv or --uniprot_query/--uniprot_preset should be specified.'
+        )
 
-    if has_training_tsv:
+    if source['has_training_tsv']:
         required_columns = [args.seq_col]
         if args.label_mode == 'explicit':
             required_columns.extend([args.localization_col, args.perox_col])
@@ -1468,52 +1444,151 @@ def localize_learn_main(args):
                 'localization',
             ]
             if not any(name in input_fieldnames for name in location_candidates):
+                expected = ', '.join(dict.fromkeys(location_candidates))
                 raise ValueError(
-                    'Missing required localization text column in {}: expected one of {}.'.format(
-                        training_tsv,
-                        ', '.join(dict.fromkeys(location_candidates)),
-                    )
+                    'Missing required localization text column in {}: '
+                    'expected one of {}.'.format(training_tsv, expected)
                 )
-    else:
-        fields = parse_uniprot_fields(field_text=uniprot_fields_text)
-        if args.seq_col not in fields:
-            fields.append(args.seq_col)
-        if args.label_mode == 'explicit':
-            missing = list()
-            if args.localization_col not in fields:
-                missing.append(args.localization_col)
-            if args.perox_col not in fields:
-                missing.append(args.perox_col)
-            if len(missing) > 0:
-                txt = (
-                    'In --label_mode explicit with UniProt source, '
-                    '--uniprot_fields should include: {}.'
-                )
-                raise ValueError(txt.format(', '.join(missing)))
-        else:
-            # Keep UniProt request valid with default CLI arguments.
-            if 'cc_subcellular_location' not in fields:
-                fields.append('cc_subcellular_location')
-        rows = fetch_uniprot_training_rows(
-            query=resolved_uniprot_query,
-            fields=fields,
-            reviewed=uniprot_reviewed,
-            exclude_fragments=uniprot_exclude_fragments,
-            page_size=uniprot_page_size,
-            max_rows=uniprot_max_rows,
-            timeout_sec=uniprot_timeout_sec,
-            retries=uniprot_retries,
-            sampling_mode=uniprot_sampling,
-            sampling_seed=uniprot_sampling_seed,
-        )
-        if len(rows) == 0:
-            raise Exception('No row was downloaded from UniProt. Exiting.')
-        if str(uniprot_out_tsv).strip() != '':
-            write_uniprot_rows_tsv(
-                rows=rows,
-                fields=fields,
-                out_path=uniprot_out_tsv,
+        return rows, source
+
+    fields = parse_uniprot_fields(
+        field_text=getattr(args, 'uniprot_fields', ','.join(UNIPROT_DEFAULT_FIELDS))
+    )
+    if args.seq_col not in fields:
+        fields.append(args.seq_col)
+    if args.label_mode == 'explicit':
+        missing = [
+            column
+            for column in (args.localization_col, args.perox_col)
+            if column not in fields
+        ]
+        if missing:
+            raise ValueError(
+                'In --label_mode explicit with UniProt source, '
+                '--uniprot_fields should include: {}.'.format(', '.join(missing))
             )
+    elif 'cc_subcellular_location' not in fields:
+        # Keep UniProt request valid with default CLI arguments.
+        fields.append('cc_subcellular_location')
+    rows = fetch_uniprot_training_rows(
+        query=resolved_query,
+        fields=fields,
+        reviewed=source['uniprot_reviewed'],
+        exclude_fragments=source['uniprot_exclude_fragments'],
+        page_size=getattr(args, 'uniprot_page_size', UNIPROT_MAX_PAGE_SIZE),
+        max_rows=getattr(args, 'uniprot_max_rows', 0),
+        timeout_sec=getattr(args, 'uniprot_timeout_sec', 60),
+        retries=getattr(args, 'uniprot_retries', 2),
+        sampling_mode=source['uniprot_sampling'],
+        sampling_seed=source['uniprot_sampling_seed'],
+    )
+    if not rows:
+        raise Exception('No row was downloaded from UniProt. Exiting.')
+    uniprot_out_tsv = getattr(args, 'uniprot_out_tsv', '')
+    if str(uniprot_out_tsv).strip() != '':
+        write_uniprot_rows_tsv(
+            rows=rows,
+            fields=fields,
+            out_path=uniprot_out_tsv,
+        )
+    return rows, source
+
+
+def _resolve_cross_validation(
+    cv_folds,
+    cv_fold_col,
+    fold_ids,
+    localize_temperature_scale,
+    localize_threshold_tune,
+):
+    effective_cv_folds = int(cv_folds)
+    predefined_folds_active = cv_fold_col != ''
+    if predefined_folds_active:
+        unique_folds = sorted(set(fold_ids))
+        if len(unique_folds) < 2:
+            raise ValueError('--cv_fold_col should contain at least 2 unique fold ids.')
+        if cv_folds not in [0, len(unique_folds)]:
+            raise ValueError(
+                'When --cv_fold_col is used, --cv_folds should be 0 or match '
+                'the number of unique fold ids ({}).'.format(len(unique_folds))
+            )
+        effective_cv_folds = len(unique_folds)
+    if (localize_temperature_scale or localize_threshold_tune) and (
+        effective_cv_folds < 2
+    ):
+        raise ValueError(
+            '--localize_temperature_scale/--localize_threshold_tune requires '
+            'cross validation (--cv_folds >= 2 or --cv_fold_col).'
+        )
+    return effective_cv_folds, predefined_folds_active
+
+
+def localize_learn_main(args):
+    stop_if_invalid_codontable(codontable=args.codontable, label='--codon_table')
+    cv_folds = int(getattr(args, 'cv_folds', 0))
+    cv_seed = int(getattr(args, 'cv_seed', 1))
+    cv_fold_col = str(getattr(args, 'cv_fold_col', '')).strip()
+    model_arch = str(getattr(args, 'model_arch', 'nearest_centroid')).strip().lower()
+    if model_arch not in ['nearest_centroid', 'bilstm_attention', 'esm_head']:
+        raise ValueError('Unsupported --model_arch: {}'.format(model_arch))
+    localize_strategy = str(getattr(args, 'localize_strategy', 'single_stage')).strip().lower()
+    if localize_strategy not in ['single_stage', 'two_stage', 'two_stage_ctp_ltp']:
+        txt = '--localize_strategy should be single_stage, two_stage, or two_stage_ctp_ltp.'
+        raise ValueError(txt)
+    localize_temperature_scale = bool(getattr(args, 'localize_temperature_scale', False))
+    localize_threshold_tune = bool(getattr(args, 'localize_threshold_tune', False))
+    localize_threshold_objective = str(
+        getattr(args, 'localize_threshold_objective', 'macro')
+    ).strip().lower()
+    if localize_threshold_objective not in ['overall', 'macro']:
+        raise ValueError('--localize_threshold_objective should be overall or macro.')
+
+    dl_seq_len = int(getattr(args, 'dl_seq_len', 200))
+    dl_embed_dim = int(getattr(args, 'dl_embed_dim', 32))
+    dl_hidden_dim = int(getattr(args, 'dl_hidden_dim', 64))
+    dl_num_layers = int(getattr(args, 'dl_num_layers', 1))
+    dl_dropout = float(getattr(args, 'dl_dropout', 0.2))
+    dl_epochs = int(getattr(args, 'dl_epochs', 15))
+    dl_batch_size = int(getattr(args, 'dl_batch_size', 128))
+    dl_lr = float(getattr(args, 'dl_lr', 1.0e-3))
+    dl_weight_decay = float(getattr(args, 'dl_weight_decay', 1.0e-4))
+    dl_class_weight = bool(getattr(args, 'dl_class_weight', True))
+    dl_loss = str(getattr(args, 'dl_loss', 'ce')).strip().lower()
+    dl_balanced_batch = bool(getattr(args, 'dl_balanced_batch', False))
+    dl_aux_tp_weight = float(getattr(args, 'dl_aux_tp_weight', 0.0))
+    dl_aux_ctp_ltp_weight = float(getattr(args, 'dl_aux_ctp_ltp_weight', 0.0))
+    dl_feature_fusion = bool(getattr(args, 'dl_feature_fusion', True))
+    dl_seed = int(getattr(args, 'dl_seed', 1))
+    dl_device = str(getattr(args, 'dl_device', 'auto')).strip().lower()
+    esm_model_name = str(getattr(args, 'esm_model_name', 'facebook/esm2_t6_8M_UR50D')).strip()
+    from cdskit.localize_esm_head import DEFAULT_ESM_MODEL_REVISION
+    esm_model_revision = str(
+        getattr(args, 'esm_model_revision', DEFAULT_ESM_MODEL_REVISION)
+    ).strip()
+    esm_model_local_dir = str(getattr(args, 'esm_model_local_dir', '')).strip()
+    esm_pooling = str(getattr(args, 'esm_pooling', 'cls')).strip().lower()
+    esm_max_len = int(getattr(args, 'esm_max_len', 200))
+    _validate_deep_learning_options(
+        model_arch=model_arch,
+        cv_folds=cv_folds,
+        cv_fold_col=cv_fold_col,
+        dl_seq_len=dl_seq_len,
+        dl_embed_dim=dl_embed_dim,
+        dl_hidden_dim=dl_hidden_dim,
+        dl_num_layers=dl_num_layers,
+        dl_dropout=dl_dropout,
+        dl_epochs=dl_epochs,
+        dl_batch_size=dl_batch_size,
+        dl_lr=dl_lr,
+        dl_weight_decay=dl_weight_decay,
+        dl_loss=dl_loss,
+        dl_aux_tp_weight=dl_aux_tp_weight,
+        dl_aux_ctp_ltp_weight=dl_aux_ctp_ltp_weight,
+        esm_pooling=esm_pooling,
+        esm_max_len=esm_max_len,
+    )
+
+    rows, source = _load_training_rows(args=args, cv_fold_col=cv_fold_col)
 
     x, aa_sequences, class_labels, perox_labels, skipped, fold_ids = build_training_matrix(
         rows=rows,
@@ -1572,27 +1647,13 @@ def localize_learn_main(args):
         labels=perox_labels,
     )
 
-    effective_cv_folds = int(cv_folds)
-    predefined_folds_active = (cv_fold_col != '')
-    if predefined_folds_active:
-        unique_folds = sorted(set(fold_ids))
-        if len(unique_folds) < 2:
-            raise ValueError('--cv_fold_col should contain at least 2 unique fold ids.')
-        if cv_folds not in [0, len(unique_folds)]:
-            txt = (
-                'When --cv_fold_col is used, --cv_folds should be 0 or match '
-                'the number of unique fold ids ({}).'
-            )
-            raise ValueError(txt.format(len(unique_folds)))
-        effective_cv_folds = int(len(unique_folds))
-    elif cv_folds == 1:
-        raise ValueError('--cv_folds should be 0 (disabled) or >= 2.')
-    if (localize_temperature_scale or localize_threshold_tune) and (effective_cv_folds < 2):
-        txt = (
-            '--localize_temperature_scale/--localize_threshold_tune requires '
-            'cross validation (--cv_folds >= 2 or --cv_fold_col).'
-        )
-        raise ValueError(txt)
+    effective_cv_folds, predefined_folds_active = _resolve_cross_validation(
+        cv_folds=cv_folds,
+        cv_fold_col=cv_fold_col,
+        fold_ids=fold_ids,
+        localize_temperature_scale=localize_temperature_scale,
+        localize_threshold_tune=localize_threshold_tune,
+    )
 
     model = {
         'model_type': model_type,
@@ -1617,13 +1678,21 @@ def localize_learn_main(args):
             'localize_temperature_scale': bool(localize_temperature_scale),
             'localize_threshold_tune': bool(localize_threshold_tune),
             'localize_threshold_objective': str(localize_threshold_objective),
-            'data_source': 'training_tsv' if has_training_tsv else 'uniprot_query',
-            'uniprot_query': '' if has_training_tsv else str(resolved_uniprot_query),
-            'uniprot_preset': '' if has_training_tsv else preset_name,
-            'uniprot_reviewed': bool(uniprot_reviewed),
-            'uniprot_exclude_fragments': bool(uniprot_exclude_fragments),
-            'uniprot_sampling': str(uniprot_sampling),
-            'uniprot_sampling_seed': int(uniprot_sampling_seed),
+            'data_source': (
+                'training_tsv' if source['has_training_tsv'] else 'uniprot_query'
+            ),
+            'uniprot_query': (
+                ''
+                if source['has_training_tsv']
+                else str(source['resolved_uniprot_query'])
+            ),
+            'uniprot_preset': (
+                '' if source['has_training_tsv'] else source['preset_name']
+            ),
+            'uniprot_reviewed': bool(source['uniprot_reviewed']),
+            'uniprot_exclude_fragments': bool(source['uniprot_exclude_fragments']),
+            'uniprot_sampling': str(source['uniprot_sampling']),
+            'uniprot_sampling_seed': int(source['uniprot_sampling_seed']),
             'cv_fold_col': cv_fold_col,
             'cv_predefined_folds': bool(predefined_folds_active),
             'class_counts': dict(Counter(class_labels)),

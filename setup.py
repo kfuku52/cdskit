@@ -29,6 +29,10 @@ QUALITY_REQUIRES = [
 BUILD_REQUIRES = [
     'build>=1',
 ]
+SECURITY_REQUIRES = [
+    'bandit>=1.9',
+    'pip-audit>=2.10',
+]
 ML_REQUIRES = [
     'torch>=2.2',
     'scikit-learn>=1.4',
@@ -61,12 +65,14 @@ setup(
         'coverage': COVERAGE_REQUIRES,
         'quality': QUALITY_REQUIRES,
         'build': BUILD_REQUIRES,
+        'security': SECURITY_REQUIRES,
         'ml': ML_REQUIRES,
         'dev': (
             TEST_REQUIRES
             + COVERAGE_REQUIRES
             + QUALITY_REQUIRES
             + BUILD_REQUIRES
+            + SECURITY_REQUIRES
             + ML_REQUIRES
         ),
     },

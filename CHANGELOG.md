@@ -4,7 +4,16 @@ This project follows semantic versioning. Deprecated CLI spellings remain
 available for at least the 0.24 release series and print their canonical
 replacement to standard error.
 
-## Unreleased
+## 0.26.0 — 2026-08-09
+
+### Security
+
+- Hardened the privileged release workflow by checking out only the trusted
+  default branch, verifying it matches the successful test run, and pinning
+  third-party actions to reviewed commit SHAs.
+- Pinned DeepLoc 2.1 benchmark inputs by URL and SHA-256, and added per-change
+  and weekly checks for known dependency vulnerabilities and new high-severity
+  Bandit findings.
 
 ### Performance
 
@@ -29,6 +38,9 @@ replacement to standard error.
   development suite.
 - Parallelized only the measured-beneficial coverage run, split CI quality and
   package checks into concurrent jobs, and enabled pip dependency caching.
+- Added mocked ESM-head training and inference coverage, legacy SVG rendering
+  coverage, reduced the maximum function complexity from 68 to 38, and added
+  a regression guard at the new ceiling.
 
 ### Fixed
 
@@ -39,6 +51,8 @@ replacement to standard error.
   legacy same-site gap edit ordering, and incomplete-codon statistics.
 - Exposed the hot-path benchmark as the packaged
   `python -m cdskit.benchmark_hotpaths` module.
+- Corrected GitHub development installation instructions so the optional ML
+  extra no longer assumes that cdskit is published on PyPI.
 
 ## 0.25.2 — 2026-08-06
 
