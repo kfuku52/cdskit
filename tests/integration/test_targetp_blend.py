@@ -406,6 +406,7 @@ def test_build_targetp_pair_blend_runtime_model_accepts_scalar_alpha():
     assert pred['perox_probability_yes'] == pytest.approx(0.75)
 
 
+@pytest.mark.ml
 def test_targetp_pair_blend_cli_writes_model(temp_dir):
     pytest.importorskip('torch')
 
@@ -457,6 +458,7 @@ def test_targetp_pair_blend_cli_writes_model(temp_dir):
     assert pred['predicted_class'] == 'mTP'
 
 
+@pytest.mark.ml
 def test_targetp_mtp_notp_specialist_accepts_none_class_weight():
     pytest.importorskip('sklearn')
 

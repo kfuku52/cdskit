@@ -116,8 +116,7 @@ class TestPadMain:
         expected_path = data_dir / "pad_01" / "output.fasta"
         output_path = temp_dir / "output.fasta"
 
-        if not input_path.exists():
-            pytest.skip("pad_01 test data not found")
+        assert input_path.exists(), "required tracked fixture pad_01 is missing"
 
         args = mock_args(
             seqfile=str(input_path),
@@ -225,8 +224,7 @@ class TestPadMain:
         expected_path = data_dir / "pad_02" / "output.fasta"
         output_path = temp_dir / "output.fasta"
 
-        if not input_path.exists():
-            pytest.skip("pad_02 test data not found")
+        assert input_path.exists(), "required tracked fixture pad_02 is missing"
 
         args = mock_args(
             seqfile=str(input_path),

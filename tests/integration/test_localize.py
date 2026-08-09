@@ -3,6 +3,8 @@ Tests for cdskit localize and localize-learn commands.
 """
 
 import csv
+import sys
+from types import ModuleType
 from urllib import parse as urllib_parse
 
 import Bio.SeqIO
@@ -34,14 +36,6 @@ from cdskit.localize_model import (
     predict_localization_and_peroxisome,
     save_localize_model,
 )
-
-
-try:
-    import torch  # noqa: F401
-    import torch.nn  # noqa: F401
-    HAS_TORCH = True
-except Exception:
-    HAS_TORCH = False
 
 
 AA_TO_CODON = {
@@ -692,8 +686,9 @@ class TestLocalizeMain:
         assert pred_map['seq_mtp']['predicted_class'] == 'mTP'
         assert pred_map['seq_perox']['perox_signal_type'] in ['PTS1', 'PTS2', 'none']
 
-    @pytest.mark.skipif(not HAS_TORCH, reason='torch is required for .pt model loading')
+    @pytest.mark.ml
     def test_localize_pt_model_uses_sklearn_binary_perox_head(self, temp_dir, mock_args):
+        pytest.importorskip('torch')
         model_path = temp_dir / 'localize_with_perox_head.pt'
         model = {
             'model_type': 'targetp_feature_ensemble_v1',
@@ -783,8 +778,10 @@ class TestLocalizeMain:
         assert 'Internal stop codon' in str(exc_info.value)
 
 
-@pytest.mark.skipif(not HAS_TORCH, reason='torch is required for bilstm_attention test')
+@pytest.mark.ml
+@pytest.mark.slow
 def test_localize_learn_and_predict_bilstm_attention(temp_dir, mock_args):
+    pytest.importorskip('torch')
     train_tsv = temp_dir / 'train_localize_bilstm.tsv'
     model_path = temp_dir / 'localize_model_bilstm.pt'
     build_training_table_for_cv(train_tsv)
@@ -867,8 +864,10 @@ def test_localize_learn_and_predict_bilstm_attention(temp_dir, mock_args):
     assert sum(pred_probs.values()) == pytest.approx(1.0, abs=1.0e-6)
 
 
-@pytest.mark.skipif(not HAS_TORCH, reason='torch is required for bilstm_attention test')
+@pytest.mark.ml
+@pytest.mark.slow
 def test_localize_learn_bilstm_cross_validation_metrics(temp_dir, mock_args):
+    pytest.importorskip('torch')
     train_tsv = temp_dir / 'train_localize_bilstm_cv.tsv'
     model_path = temp_dir / 'localize_model_bilstm_cv.pt'
     report_path = temp_dir / 'localize_report_bilstm_cv.tsv'
@@ -915,8 +914,9 @@ def test_localize_learn_bilstm_cross_validation_metrics(temp_dir, mock_args):
     assert 0.0 <= metrics['cv_perox_accuracy_mean'] <= 1.0
 
 
-@pytest.mark.skipif(not HAS_TORCH, reason='torch is required for bilstm_attention test')
+@pytest.mark.ml
 def test_bilstm_attention_accepts_distillation_soft_labels():
+    pytest.importorskip('torch')
     from cdskit.localize_bilstm import fit_bilstm_attention_classifier
 
     aa_sequences = [
@@ -964,9 +964,9 @@ def test_bilstm_attention_accepts_distillation_soft_labels():
     assert model['distill_temperature'] == pytest.approx(2.0)
 
 
-@pytest.mark.skipif(not HAS_TORCH, reason='torch is required for esm_head model save/load')
+@pytest.mark.ml
 def test_localize_learn_esm_head_head_only_mode(monkeypatch, temp_dir, mock_args):
-    import torch
+    torch = pytest.importorskip('torch')
     import cdskit.localize_esm_head as esm_module
 
     train_tsv = temp_dir / 'train_localize_esm.tsv'
@@ -1798,10 +1798,13 @@ def test_localize_main_batches_targetp_torch_runtime(monkeypatch, temp_dir, mock
         'cdskit.localize.load_localize_model',
         lambda path: model,
     )
-    monkeypatch.setattr(
-        'cdskit.targetp_torch.predict_targetp2_torch_batch',
-        fake_predict_targetp2_torch_batch,
-    )
+    targetp_torch_module = ModuleType('cdskit.targetp_torch')
+    targetp_torch_module.predict_targetp2_torch_batch = fake_predict_targetp2_torch_batch
+    torch_module = ModuleType('torch')
+    torch_module.set_num_threads = lambda threads: None
+    torch_module.set_num_interop_threads = lambda threads: None
+    monkeypatch.setitem(sys.modules, 'cdskit.targetp_torch', targetp_torch_module)
+    monkeypatch.setitem(sys.modules, 'torch', torch_module)
     report_path = temp_dir / 'targetp_torch_report.tsv'
     args = mock_args(
         seqfile=str(seq_path),
@@ -2448,9 +2451,10 @@ def test_localize_learn_cross_validation_metrics(temp_dir, mock_args):
         assert 0.0 <= metrics['cv_class_accuracy_{}'.format(class_name)] <= 1.0
 
 
+@pytest.mark.ml
+@pytest.mark.slow
 def test_localize_learn_cross_validation_allows_missing_classes(temp_dir, mock_args):
-    if not HAS_TORCH:
-        pytest.skip('torch is not available')
+    pytest.importorskip('torch')
     train_tsv = temp_dir / 'train_localize_small.tsv'
     model_path = temp_dir / 'localize_model_small.json'
     rows = [

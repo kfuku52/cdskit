@@ -398,8 +398,7 @@ class TestBacktrimMain:
         expected_path = data_dir / "backtrim_01" / "out.fasta"
         output_path = temp_dir / "output.fasta"
 
-        if not cdn_path.exists():
-            pytest.skip("backtrim_01 test data not found")
+        assert cdn_path.exists(), "required tracked fixture backtrim_01 is missing"
 
         args = mock_args(
             seqfile=str(cdn_path),
@@ -424,8 +423,7 @@ class TestBacktrimMain:
         expected_path = data_dir / "backtrim_02" / "trimmed_codon.fasta"
         output_path = temp_dir / "output.fasta"
 
-        if not cdn_path.exists():
-            pytest.skip("backtrim_02 test data not found")
+        assert cdn_path.exists(), "required tracked fixture backtrim_02 is missing"
 
         args = mock_args(
             seqfile=str(cdn_path),

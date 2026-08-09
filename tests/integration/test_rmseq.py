@@ -223,8 +223,7 @@ class TestRmseqMain:
         input_path = data_dir / "rmseq_01" / "input.fasta"
         output_path = temp_dir / "output.fasta"
 
-        if not input_path.exists():
-            pytest.skip("rmseq_01 test data not found")
+        assert input_path.exists(), "required tracked fixture rmseq_01 is missing"
 
         input_records = list(Bio.SeqIO.parse(str(input_path), "fasta"))
 
@@ -311,8 +310,8 @@ class TestRmseqMain:
         expected_path = data_dir / "rmseq_01" / "output.fasta"
         output_path = temp_dir / "output.fasta"
 
-        if not input_path.exists() or not expected_path.exists():
-            pytest.skip("rmseq_01 test data not found")
+        assert input_path.exists(), "required tracked fixture rmseq_01 input is missing"
+        assert expected_path.exists(), "required tracked fixture rmseq_01 output is missing"
 
         args = mock_args(
             seqfile=str(input_path),

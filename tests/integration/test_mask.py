@@ -285,8 +285,7 @@ class TestMaskMain:
         input_path = data_dir / "example_mask.fasta"
         output_path = temp_dir / "output.fasta"
 
-        if not input_path.exists():
-            pytest.skip("example_mask.fasta not found")
+        assert input_path.exists(), "required tracked fixture example_mask.fasta is missing"
 
         args = mock_args(
             seqfile=str(input_path),
@@ -394,8 +393,7 @@ class TestMaskMain:
         input_path = data_dir / "example_mask.fasta"
         output_path = temp_dir / "output.fasta"
 
-        if not input_path.exists():
-            pytest.skip("example_mask.fasta not found")
+        assert input_path.exists(), "required tracked fixture example_mask.fasta is missing"
 
         args = mock_args(
             seqfile=str(input_path),

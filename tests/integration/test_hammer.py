@@ -188,8 +188,7 @@ class TestHammerMain:
         input_path = data_dir / "hammer_01" / "alignment.fasta"
         output_path = temp_dir / "output.fasta"
 
-        if not input_path.exists():
-            pytest.skip("hammer_01 test data not found")
+        assert input_path.exists(), "required tracked fixture hammer_01 is missing"
 
         args = mock_args(
             seqfile=str(input_path),
@@ -349,14 +348,12 @@ class TestHammerMain:
         input_path = data_dir / "example_hammer.fasta"
         output_path = temp_dir / "output.fasta"
 
-        if not input_path.exists():
-            pytest.skip("example_hammer.fasta not found")
+        assert input_path.exists(), "required tracked fixture example_hammer.fasta is missing"
 
         # Check if input sequences are aligned before running
         input_records = list(Bio.SeqIO.parse(str(input_path), "fasta"))
         lengths = set(len(r.seq) for r in input_records)
-        if len(lengths) > 1:
-            pytest.skip("example_hammer.fasta contains unaligned sequences")
+        assert len(lengths) == 1, "tracked example_hammer.fasta must remain aligned"
 
         args = mock_args(
             seqfile=str(input_path),

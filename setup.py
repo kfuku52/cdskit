@@ -15,6 +15,26 @@ if match is None:
 version = str(ast.literal_eval(match.group(1)))
 long_description = README_FILE.read_text(encoding='utf-8')
 
+TEST_REQUIRES = [
+    'pytest>=7',
+]
+COVERAGE_REQUIRES = [
+    'pytest-cov>=5',
+    'pytest-xdist>=3',
+]
+QUALITY_REQUIRES = [
+    'mypy>=1.10',
+    'ruff>=0.6',
+]
+BUILD_REQUIRES = [
+    'build>=1',
+]
+ML_REQUIRES = [
+    'torch>=2.2',
+    'scikit-learn>=1.4',
+    'transformers>=4.40',
+]
+
 setup(
     name='cdskit',
     version=version,
@@ -37,18 +57,18 @@ setup(
         'matplotlib>=3.6',
     ],
     extras_require={
-        'test': [
-            'build>=1',
-            'mypy>=1.10',
-            'pytest>=7',
-            'pytest-cov>=5',
-            'ruff>=0.6',
-        ],
-        'ml': [
-            'torch>=2.2',
-            'scikit-learn>=1.4',
-            'transformers>=4.40',
-        ],
+        'test': TEST_REQUIRES,
+        'coverage': COVERAGE_REQUIRES,
+        'quality': QUALITY_REQUIRES,
+        'build': BUILD_REQUIRES,
+        'ml': ML_REQUIRES,
+        'dev': (
+            TEST_REQUIRES
+            + COVERAGE_REQUIRES
+            + QUALITY_REQUIRES
+            + BUILD_REQUIRES
+            + ML_REQUIRES
+        ),
     },
     python_requires='>=3.10',
     classifiers=[

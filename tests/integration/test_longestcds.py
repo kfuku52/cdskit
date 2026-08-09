@@ -2,15 +2,12 @@
 Tests for cdskit longestcds command.
 """
 
-from pathlib import Path
-import subprocess
-
 import Bio.SeqIO
 import pytest
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
-import sys
+from cdskit.cli import main as cli_main
 from cdskit.longestcds import longestcds_main
 
 
@@ -241,54 +238,46 @@ class TestLongestCdsMain:
 class TestLongestCommandAliases:
     """Tests for longestorf canonical command and longestcds alias behavior."""
 
-    def test_longestcds_cli_warns_deprecated_alias(self, temp_dir):
+    def test_longestcds_cli_warns_deprecated_alias(self, temp_dir, capsys):
         input_path = temp_dir / "input.fasta"
         output_path = temp_dir / "output.fasta"
-        cli_path = Path(__file__).parent.parent / "cdskit" / "cdskit"
         records = [SeqRecord(Seq("GGGATGAAATAGCCC"), id="seq1", description="")]
         Bio.SeqIO.write(records, str(input_path), "fasta")
 
-        completed = subprocess.run(
+        return_code = cli_main(
             [
-                sys.executable,
-                str(cli_path),
                 "longestcds",
                 "--seq_file",
                 str(input_path),
                 "--out_file",
                 str(output_path),
-            ],
-            check=True,
-            capture_output=True,
-            text=True,
+            ]
         )
+        captured = capsys.readouterr()
 
-        assert "deprecated" in completed.stderr.lower()
+        assert return_code == 0
+        assert "deprecated" in captured.err.lower()
         result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
         assert str(result[0].seq) == "ATGAAATAG"
 
-    def test_longestorf_cli_is_canonical_without_deprecation_warning(self, temp_dir):
+    def test_longestorf_cli_is_canonical_without_deprecation_warning(self, temp_dir, capsys):
         input_path = temp_dir / "input.fasta"
         output_path = temp_dir / "output.fasta"
-        cli_path = Path(__file__).parent.parent / "cdskit" / "cdskit"
         records = [SeqRecord(Seq("GGGATGAAATAGCCC"), id="seq1", description="")]
         Bio.SeqIO.write(records, str(input_path), "fasta")
 
-        completed = subprocess.run(
+        return_code = cli_main(
             [
-                sys.executable,
-                str(cli_path),
                 "longestorf",
                 "--seq_file",
                 str(input_path),
                 "--out_file",
                 str(output_path),
-            ],
-            check=True,
-            capture_output=True,
-            text=True,
+            ]
         )
+        captured = capsys.readouterr()
 
-        assert "deprecated" not in completed.stderr.lower()
+        assert return_code == 0
+        assert "deprecated" not in captured.err.lower()
         result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
         assert str(result[0].seq) == "ATGAAATAG"

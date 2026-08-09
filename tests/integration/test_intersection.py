@@ -418,8 +418,7 @@ seq1\tsource\tgene\t3\t20\t.\t+\t.\tID=g_end_beyond
         output1_path = temp_dir / "output1.fasta"
         output2_path = temp_dir / "output2.fasta"
 
-        if not input1_path.exists():
-            pytest.skip("intersection_01 test data not found")
+        assert input1_path.exists(), "required tracked fixture intersection_01 is missing"
 
         args = mock_args(
             seqfile=str(input1_path),

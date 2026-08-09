@@ -24,6 +24,11 @@ replacement to standard error.
 
 - Added batching and workload-selection regression coverage plus a reusable
   CPU hot-path benchmark runner.
+- Split unit, integration, and optional-ML tests; centralized immutable
+  fixtures; added strict pytest markers; and introduced a dependency-light
+  development suite.
+- Parallelized only the measured-beneficial coverage run, split CI quality and
+  package checks into concurrent jobs, and enabled pip dependency caching.
 
 ### Fixed
 

@@ -443,8 +443,7 @@ class TestGapjustMain:
         output_fasta = temp_dir / "output.fasta"
         output_gff = temp_dir / "output.gff"
 
-        if not input_fasta.exists():
-            pytest.skip("gapjust_01 test data not found")
+        assert input_fasta.exists(), "required tracked fixture gapjust_01 is missing"
 
         args = mock_args(
             seqfile=str(input_fasta),
@@ -465,13 +464,12 @@ class TestGapjustMain:
         expected_fasta = data_dir / "gapjust_01" / "output.fasta"
         output_fasta = temp_dir / "output.fasta"
 
-        if not input_fasta.exists() or not expected_fasta.exists():
-            pytest.skip("gapjust_01 test data not found")
+        assert input_fasta.exists(), "required tracked fixture gapjust_01 input is missing"
+        assert expected_fasta.exists(), "required tracked fixture gapjust_01 output is missing"
 
         # Read expected to determine gap length
         expected = list(Bio.SeqIO.parse(str(expected_fasta), "fasta"))
-        if not expected:
-            pytest.skip("Expected output is empty")
+        assert expected, "required tracked fixture gapjust_01 output is empty"
 
         # Determine gap length from expected output
         # Count N stretches and their lengths
@@ -652,8 +650,8 @@ class TestGapjustMain:
         output_fasta = temp_dir / "output.fasta"
         output_gff = temp_dir / "output.gff"
 
-        if not input_fasta.exists() or not input_gff.exists():
-            pytest.skip("gapjust_01 test data not found")
+        assert input_fasta.exists(), "required tracked fixture gapjust_01 input is missing"
+        assert input_gff.exists(), "required tracked fixture gapjust_01 GFF is missing"
 
         args = mock_args(
             seqfile=str(input_fasta),

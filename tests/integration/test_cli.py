@@ -14,6 +14,7 @@ from pathlib import Path
 from io import StringIO
 from unittest.mock import patch
 
+from cdskit.cli import main as cli_main
 from cdskit.cliutil import CdskitArgumentParser, parse_bool, resolve_threads
 
 class TestCLIHelpStrings:
@@ -54,23 +55,20 @@ class TestCLIHelpStrings:
         assert "ValueError" not in output
         assert "badly formed" not in output
 
-    def test_label_replace_chars_help_format(self):
+    def test_label_replace_chars_help_format(self, capsys):
         """Test the specific help string format from Issue #10.
 
         The --replace_chars argument has a help string containing special characters
         including %. This must be properly escaped or it causes errors in Python 3.14+.
         """
-        cli_path = Path(__file__).parent.parent / "cdskit" / "cdskit"
-        result = subprocess.run(
-            [sys.executable, str(cli_path), "label", "--help"],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
+        with pytest.raises(SystemExit) as exc_info:
+            cli_main(["label", "--help"])
+        captured = capsys.readouterr()
 
-        assert "--replace_chars" in result.stdout
-        assert "!@#$%^&*+=/?<>|--_" in result.stdout
-        assert result.stderr == ""
+        assert exc_info.value.code == 0
+        assert "--replace_chars" in captured.out
+        assert "!@#$%^&*+=/?<>|--_" in captured.out
+        assert captured.err == ""
 
     def test_argparse_special_chars_in_metavar(self):
         """Test that special characters in metavar don't cause issues."""
@@ -149,11 +147,12 @@ class TestCLIModuleImport:
         assert callable(write_seqs)
         assert callable(stop_if_not_multiple_of_three)
 
+    @pytest.mark.subprocess
     def test_root_version_option(self):
         """Test that cdskit --version works without a subcommand."""
         from cdskit import __version__
 
-        cli_path = Path(__file__).parent.parent / "cdskit" / "cdskit"
+        cli_path = Path(__file__).resolve().parents[2] / "cdskit" / "cdskit"
         result = subprocess.run(
             [sys.executable, str(cli_path), "--version"],
             check=True,
@@ -251,48 +250,38 @@ class TestCLIConsistency:
         with pytest.raises(ValueError, match='--threads should be <= 64'):
             resolve_threads(65)
 
-    def test_public_cli_legacy_option_warns_and_still_runs(self, tmp_path):
-        cli_path = Path(__file__).parent.parent / 'cdskit' / 'cdskit'
+    def test_public_cli_legacy_option_warns_and_still_runs(self, tmp_path, capsys):
         fasta = tmp_path / 'input.fasta'
         fasta.write_text('>seq1\nATGAAA\n', encoding='utf-8')
 
-        result = subprocess.run(
-            [sys.executable, str(cli_path), 'stats', '--seqfile', str(fasta)],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
+        return_code = cli_main(['stats', '--seqfile', str(fasta)])
+        captured = capsys.readouterr()
 
-        assert '--seqfile is deprecated; use --seq_file' in result.stderr
-        assert 'Number of sequences: 1' in result.stdout
+        assert return_code == 0
+        assert '--seqfile is deprecated; use --seq_file' in captured.err
+        assert 'Number of sequences: 1' in captured.out
 
-    def test_cli_rejects_input_output_collision_without_modifying_input(self, tmp_path):
-        cli_path = Path(__file__).parent.parent / 'cdskit' / 'cdskit'
+    def test_cli_rejects_input_output_collision_without_modifying_input(self, tmp_path, capsys):
         fasta = tmp_path / 'input.fasta'
         original = '>seq1\nATGAAA\n'
         fasta.write_text(original, encoding='utf-8')
 
-        result = subprocess.run(
+        return_code = cli_main(
             [
-                sys.executable,
-                str(cli_path),
                 'translate',
                 '--seq_file',
                 str(fasta),
                 '--out_file',
                 str(fasta),
-            ],
-            check=False,
-            capture_output=True,
-            text=True,
+            ]
         )
+        captured = capsys.readouterr()
 
-        assert result.returncode == 1
-        assert 'Input and output paths should be different' in result.stderr
+        assert return_code == 1
+        assert 'Input and output paths should be different' in captured.err
         assert fasta.read_text(encoding='utf-8') == original
 
-    def test_threaded_checkout_cli_runs_command_once(self, tmp_path):
-        cli_path = Path(__file__).parent.parent / 'cdskit' / 'cdskit'
+    def test_threaded_checkout_cli_runs_command_once(self, tmp_path, capsys):
         fasta = tmp_path / 'input.fasta'
         output = tmp_path / 'output.fasta'
         fasta.write_text(
@@ -300,10 +289,8 @@ class TestCLIConsistency:
             encoding='utf-8',
         )
 
-        result = subprocess.run(
+        return_code = cli_main(
             [
-                sys.executable,
-                str(cli_path),
                 'translate',
                 '--seq_file',
                 str(fasta),
@@ -311,19 +298,18 @@ class TestCLIConsistency:
                 str(output),
                 '--threads',
                 '2',
-            ],
-            check=True,
-            capture_output=True,
-            text=True,
-            timeout=30,
+            ]
         )
+        captured = capsys.readouterr()
 
-        assert result.stderr.count('cdskit translate: started') == 1
+        assert return_code == 0
+        assert captured.err.count('cdskit translate: started') == 1
         assert sum(line.startswith('>') for line in output.read_text().splitlines()) == 2_000
 
+    @pytest.mark.subprocess
     def test_checkout_script_wrapper_runs_directly(self):
         script_path = (
-            Path(__file__).parent.parent / 'scripts' / 'split_eukaryota_presets.py'
+            Path(__file__).resolve().parents[2] / 'scripts' / 'split_eukaryota_presets.py'
         )
         command = [str(script_path), '--help']
         if os.name == 'nt':

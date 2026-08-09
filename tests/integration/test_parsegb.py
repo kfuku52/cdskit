@@ -173,8 +173,7 @@ class TestParsegbMain:
         expected_path = data_dir / "parsegb_01" / "output.fasta"
         output_path = temp_dir / "output.fasta"
 
-        if not input_path.exists():
-            pytest.skip("parsegb_01 test data not found")
+        assert input_path.exists(), "required tracked fixture parsegb_01 is missing"
 
         args = mock_args(
             seqfile=str(input_path),

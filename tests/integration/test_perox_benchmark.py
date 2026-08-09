@@ -1,4 +1,6 @@
 import csv
+import sys
+from types import ModuleType
 
 import numpy as np
 import pytest
@@ -208,7 +210,15 @@ def test_predict_localization_uses_sklearn_binary_perox_head():
     assert pred['perox_signal_type'] == 'PTS1'
 
 
-def test_binary_metrics_and_threshold_tuning():
+def test_binary_metrics_and_threshold_tuning(monkeypatch):
+    sklearn_module = ModuleType('sklearn')
+    metrics_module = ModuleType('sklearn.metrics')
+    metrics_module.average_precision_score = lambda y_true, y_prob: 1.0
+    metrics_module.roc_auc_score = lambda y_true, y_prob: 1.0
+    sklearn_module.metrics = metrics_module
+    monkeypatch.setitem(sys.modules, 'sklearn', sklearn_module)
+    monkeypatch.setitem(sys.modules, 'sklearn.metrics', metrics_module)
+
     y_true = np.asarray([0, 0, 1, 1], dtype=np.int64)
     y_prob = np.asarray([0.1, 0.2, 0.7, 0.9], dtype=np.float64)
 
@@ -217,6 +227,8 @@ def test_binary_metrics_and_threshold_tuning():
 
     assert 0.0 < threshold < 1.0
     assert metrics['f1'] == pytest.approx(1.0)
+    assert metrics['auprc'] == pytest.approx(1.0)
+    assert metrics['auroc'] == pytest.approx(1.0)
     assert metrics['tp'] == 2
     assert metrics['tn'] == 2
 
@@ -392,6 +404,8 @@ def test_hash_stratified_split_keeps_exact_duplicate_sequences_together():
     assert report['exact_sequence_overlap_count'] == 0
 
 
+@pytest.mark.ml
+@pytest.mark.slow
 def test_cluster_oof_perox_benchmark_singleton(temp_dir):
     pytest.importorskip('sklearn')
     path = temp_dir / 'perox.tsv'
@@ -429,6 +443,7 @@ def test_read_uniprot_exp_cc_rows_filters_similarity_and_overlap(temp_dir):
     assert skipped['non_experimental'] == 1
 
 
+@pytest.mark.ml
 def test_deeploc21_perox_benchmark_fixture(temp_dir):
     pytest.importorskip('sklearn')
 
@@ -469,6 +484,7 @@ def test_deeploc21_perox_benchmark_fixture(temp_dir):
     assert (temp_dir / 'predictions.external.tsv').exists()
 
 
+@pytest.mark.ml
 def test_deeploc21_perox_benchmark_writes_attached_model(temp_dir):
     pytest.importorskip('sklearn')
     pytest.importorskip('torch')
@@ -507,6 +523,7 @@ def test_deeploc21_perox_benchmark_writes_attached_model(temp_dir):
     assert model_out.exists()
 
 
+@pytest.mark.ml
 def test_deeploc21_perox_benchmark_uniprot_external_format(temp_dir):
     pytest.importorskip('sklearn')
 
@@ -530,6 +547,7 @@ def test_deeploc21_perox_benchmark_uniprot_external_format(temp_dir):
     assert report['metrics']['external_final_model']['rows'] == 1
 
 
+@pytest.mark.ml
 def test_deeploc21_perox_benchmark_hash_stratified_validation(temp_dir):
     pytest.importorskip('sklearn')
 
@@ -555,6 +573,7 @@ def test_deeploc21_perox_benchmark_hash_stratified_validation(temp_dir):
     assert 'hash-stratified' in report['threshold_selection']['tuned_on']
 
 
+@pytest.mark.ml
 def test_deeploc21_perox_benchmark_can_exclude_external_from_train(temp_dir):
     pytest.importorskip('sklearn')
 

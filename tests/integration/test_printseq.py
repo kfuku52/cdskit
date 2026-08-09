@@ -144,8 +144,7 @@ class TestPrintseqMain:
         """Test printseq with example_printseq.fasta from wiki."""
         input_path = data_dir / "example_printseq.fasta"
 
-        if not input_path.exists():
-            pytest.skip("example_printseq.fasta not found")
+        assert input_path.exists(), "required tracked fixture example_printseq.fasta is missing"
 
         args = mock_args(
             seqfile=str(input_path),

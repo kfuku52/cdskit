@@ -396,6 +396,8 @@ def test_run_deeploc_benchmark_writes_model_and_localize_predicts(temp_dir):
     assert 'p_peroxisome' in rows[0]
 
 
+@pytest.mark.ml
+@pytest.mark.slow
 def test_run_deeploc_benchmark_writes_cnn_model_and_localize_predicts(temp_dir):
     pytest.importorskip('torch')
     prepared_dir = temp_dir / 'prepared'

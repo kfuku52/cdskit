@@ -225,8 +225,7 @@ class TestSplitMain:
         input_path = data_dir / "split_01" / "input.fasta"
         expected_1st = data_dir / "split_01" / "output_1st_codon_positions.fasta"
 
-        if not input_path.exists():
-            pytest.skip("split_01 test data not found")
+        assert input_path.exists(), "required tracked fixture split_01 is missing"
 
         args = mock_args(
             seqfile=str(input_path),

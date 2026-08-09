@@ -227,6 +227,19 @@ python -m cdskit.benchmark_hotpaths
 python -m cdskit.benchmark_hotpaths --full
 ```
 
+## Development and tests
+
+The dependency-light development loop runs unit and integration tests without
+loading optional ML frameworks:
+
+```bash
+python -m pip install -e ".[test]"
+python -m pytest -q tests/unit tests/integration -m "not ml and not subprocess"
+```
+
+See [TESTING.md](TESTING.md) for the ML, coverage, quality, package, and focused
+rerun commands, plus the test layout and fixture conventions.
+
 ## Citation
 There is no published paper on CDSKIT itself, but we used and cited CDSKIT in several papers including [Fukushima & Pollock (2023, Nat Ecol Evol 7: 155-170)](https://www.nature.com/articles/s41559-022-01932-7).
 
