@@ -11,6 +11,7 @@ from cdskit.util import (
     parallel_map_ordered,
     read_seqs,
     resolve_threads,
+    should_use_process_pool,
     stop_if_invalid_codontable,
     stop_if_not_dna,
     write_seqs,
@@ -22,7 +23,6 @@ _REVCOMP_TABLE = str.maketrans(
     'ACGTRYMKWSBDHVN',
     'TGCAYRKMWSVHDBN',
 )
-_PROCESS_PARALLEL_MIN_RECORDS = 2000
 
 
 @dataclass
@@ -464,7 +464,7 @@ def longestcds_main(args):
         return
 
     candidates = None
-    if (threads > 1) and (len(records) >= _PROCESS_PARALLEL_MIN_RECORDS):
+    if should_use_process_pool(records=records, threads=threads):
         try:
             seq_strings = [str(record.seq) for record in records]
             candidates = choose_candidates_process_parallel(

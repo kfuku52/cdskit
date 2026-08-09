@@ -27,11 +27,12 @@ def classify_alignment_columns(records, codontable):
     counts_by_fold = {0: 0, 2: 0, 3: 0, 4: 0}
     num_conflict_sites = 0
     num_unassigned_sites = 0
+    seq_strings = [str(record.seq) for record in records]
     for codon_start in range(0, len(records[0].seq), 3):
         fold_values_by_position = [list(), list(), list()]
-        for record in records:
+        for seq_str in seq_strings:
             folds = degeneracy_fold_by_position(
-                codon=str(record.seq)[codon_start:codon_start + 3],
+                codon=seq_str[codon_start:codon_start + 3],
                 codontable=codontable,
             )
             if folds is None:

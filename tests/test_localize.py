@@ -11,18 +11,26 @@ import pytest
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
-from cdskit.localize import localize_main
+from cdskit.localize import (
+    _predict_records_batched_if_supported,
+    _predict_single_record,
+    localize_main,
+)
 import cdskit.localize_learn as localize_learn_module
 from cdskit.localize_learn import localize_learn_main, read_training_tsv
 from cdskit.localize_model import (
     FEATURE_NAMES,
     LOCALIZATION_CLASSES,
+    _apply_targetp_specialist_postprocess,
     _targetp_probability_sequence_feature_vector,
     _targetp_reranker_feature_vector,
+    apply_targetp_specialist_postprocess_batch,
     extract_targetp_feature_ensemble_features,
     infer_labels_from_uniprot_cc,
     load_localize_model,
     postprocess_localization_probabilities,
+    predict_perox_batch,
+    predict_targetp_feature_ensemble_batch,
     predict_localization_and_peroxisome,
     save_localize_model,
 )
@@ -83,8 +91,278 @@ class ConstantMulticlassScore:
         return np.tile(self.probs.reshape((1, -1)), (n_rows, 1))
 
 
+class CountingBinaryScore(ConstantBinaryScore):
+    def __init__(self, score):
+        super().__init__(score)
+        self.calls = 0
+
+    def predict_proba(self, x):
+        self.calls += 1
+        return super().predict_proba(x)
+
+
 def aa_to_cds(aa_seq):
     return ''.join([AA_TO_CODON[aa] for aa in aa_seq])
+
+
+def test_perox_sklearn_head_is_called_once_for_a_batch():
+    classifier = CountingBinaryScore(0.73)
+    probabilities = predict_perox_batch(
+        feature_matrix=np.zeros((4, len(FEATURE_NAMES)), dtype=np.float64),
+        perox_model={
+            'mode': 'sklearn_binary',
+            'classifier': classifier,
+            'positive_class': 1,
+            'feature_profile': 'localize_features_v1',
+        },
+        aa_sequences=['MAAA'] * 4,
+    )
+
+    assert classifier.calls == 1
+    np.testing.assert_allclose(probabilities, np.full((4,), 0.73))
+
+
+def test_targetp_feature_classifier_is_called_once_for_a_batch():
+    sequences = ['M' + ('A' * 30), 'M' + ('R' * 30), 'M' + ('S' * 30)]
+    feature_dim = extract_targetp_feature_ensemble_features(sequences[0]).shape[0]
+    classifier = CountingBinaryScore(0.61)
+    probability_matrix = predict_targetp_feature_ensemble_batch(
+        aa_sequences=sequences,
+        localization_model={
+            'classifier': None,
+            'binary_classifiers': [classifier] + [ConstantBinaryScore(0.1)] * 4,
+            'class_order': list(LOCALIZATION_CLASSES),
+            'feature_dim': int(feature_dim),
+        },
+    )
+
+    assert classifier.calls == 1
+    assert probability_matrix.shape == (3, len(LOCALIZATION_CLASSES))
+
+
+def test_targetp_specialist_batch_matches_recordwise_predictions():
+    sequences = ['M' + ('A' * 40), 'M' + ('R' * 40), 'M' + ('S' * 40)]
+    base_matrix = np.asarray([
+        [0.55, 0.10, 0.10, 0.20, 0.05],
+        [0.10, 0.65, 0.05, 0.15, 0.05],
+        [0.05, 0.05, 0.10, 0.45, 0.35],
+    ], dtype=np.float64)
+    prob_a = np.clip(base_matrix + 0.01, 0.0, 1.0)
+    prob_a /= prob_a.sum(axis=1, keepdims=True)
+    prob_b = np.clip(base_matrix - 0.01, 0.0, 1.0)
+    prob_b /= prob_b.sum(axis=1, keepdims=True)
+    localization_model = {
+        'class_thresholds': {name: 1.0 for name in LOCALIZATION_CLASSES},
+        'targetp_specialist_postprocess': {
+            'enabled': True,
+            'reranker_models': [ConstantMulticlassScore([0.1, 0.1, 0.1, 0.2, 0.5])],
+            'reranker_threshold': 0.8,
+            'mtp_notp_models': [ConstantBinaryScore(0.2)],
+            'sp_models': [ConstantBinaryScore(0.1)],
+            'ltp_models': [ConstantBinaryScore(0.8)],
+            'ltp_mass_threshold': 0.2,
+            'ltp_threshold': 0.5,
+            'notp_models': [ConstantBinaryScore(0.1)],
+        },
+    }
+
+    batch_classes = apply_targetp_specialist_postprocess_batch(
+        aa_sequences=sequences,
+        base_prob_matrix=base_matrix,
+        prob_a_matrix=prob_a,
+        prob_b_matrix=prob_b,
+        localization_model=localization_model,
+        organism_group='plant',
+    )
+    recordwise_classes = []
+    for row_i, sequence in enumerate(sequences):
+        def to_probs(matrix):
+            return {
+                name: float(matrix[row_i, class_i])
+                for class_i, name in enumerate(LOCALIZATION_CLASSES)
+            }
+        pred_class, _ = _apply_targetp_specialist_postprocess(
+            aa_seq=sequence,
+            base_probs=to_probs(base_matrix),
+            prob_a=to_probs(prob_a),
+            prob_b=to_probs(prob_b),
+            localization_model=localization_model,
+            organism_group='plant',
+        )
+        recordwise_classes.append(pred_class)
+
+    assert batch_classes == recordwise_classes
+
+
+def test_targetp_blend_batch_matches_nonplant_zero_mass_fallback():
+    class_order = list(LOCALIZATION_CLASSES)
+    model = {
+        'model_type': 'targetp_blend_v1',
+        'feature_names': [],
+        'localization_model': {
+            'base_models': [
+                {
+                    'model_type': 'nearest_centroid_v1',
+                    'localization_model': {
+                        'mode': 'constant',
+                        'class_order': class_order,
+                        'class_label': 'cTP',
+                    },
+                },
+                {
+                    'model_type': 'nearest_centroid_v1',
+                    'localization_model': {
+                        'mode': 'constant',
+                        'class_order': class_order,
+                        'class_label': 'SP',
+                    },
+                },
+            ],
+            'alpha_by_class': 0.5,
+        },
+        'perox_model': {'mode': 'constant', 'yes_probability': 0.0},
+    }
+    record = SeqRecord(Seq('MAVLLLLAVAVAAAA'), id='seq1', description='')
+
+    recordwise = _predict_single_record(
+        record=record,
+        codontable=1,
+        seqtype='protein',
+        model=model,
+        include_features=False,
+        organism_group='non_plant',
+    )
+    batched = _predict_records_batched_if_supported(
+        records=[record],
+        codontable=1,
+        seqtype='protein',
+        model=model,
+        include_features=False,
+        organism_group='non_plant',
+    )
+
+    assert batched == [recordwise]
+    assert recordwise['predicted_class'] == 'noTP'
+    assert recordwise['p_noTP'] == pytest.approx(0.5)
+    assert recordwise['p_SP'] == pytest.approx(0.5)
+
+
+def test_targetp_blend_batch_zero_fills_missing_base_classes():
+    model = {
+        'model_type': 'targetp_blend_v1',
+        'feature_names': [],
+        'localization_model': {
+            'base_models': [
+                {
+                    'model_type': 'nearest_centroid_v1',
+                    'localization_model': {
+                        'mode': 'constant',
+                        'class_order': ['SP'],
+                        'class_label': 'SP',
+                    },
+                },
+                {
+                    'model_type': 'nearest_centroid_v1',
+                    'localization_model': {
+                        'mode': 'constant',
+                        'class_order': ['noTP'],
+                        'class_label': 'noTP',
+                    },
+                },
+            ],
+            'alpha_by_class': 0.5,
+        },
+        'perox_model': {'mode': 'constant', 'yes_probability': 0.0},
+    }
+    record = SeqRecord(Seq('MAVLLLLAVAVAAAA'), id='seq1', description='')
+
+    recordwise = _predict_single_record(record, 1, 'protein', model, False)
+    batched = _predict_records_batched_if_supported(
+        [record],
+        1,
+        'protein',
+        model,
+        False,
+    )
+
+    assert batched == [recordwise]
+
+
+def test_targetp_specialist_batch_matches_nonplant_zero_mass_fallback():
+    sequence = 'MAVLLLLAVAVAAAA'
+    base_matrix = np.asarray([[0.1, 0.8, 0.1, 0.0, 0.0]], dtype=np.float64)
+    localization_model = {
+        'class_thresholds': {},
+        'targetp_specialist_postprocess': {
+            'reranker_models': [
+                ConstantMulticlassScore([0.0, 0.0, 0.0, 0.6, 0.4])
+            ],
+            'reranker_threshold': 0.5,
+        },
+    }
+
+    base_probs = {
+        name: float(base_matrix[0, class_i])
+        for class_i, name in enumerate(LOCALIZATION_CLASSES)
+    }
+    recordwise, _ = _apply_targetp_specialist_postprocess(
+        aa_seq=sequence,
+        base_probs=base_probs,
+        prob_a=base_probs,
+        prob_b=base_probs,
+        localization_model=localization_model,
+        organism_group='non_plant',
+    )
+    batched = apply_targetp_specialist_postprocess_batch(
+        aa_sequences=[sequence],
+        base_prob_matrix=base_matrix,
+        prob_a_matrix=base_matrix,
+        prob_b_matrix=base_matrix,
+        localization_model=localization_model,
+        organism_group='non_plant',
+    )
+
+    assert recordwise == 'noTP'
+    assert batched == [recordwise]
+
+
+def test_targetp_specialist_batch_falls_back_from_invalid_class_threshold():
+    sequence = 'MAVLLLLAVAVAAAA'
+    base_matrix = np.asarray([[0.6, 0.1, 0.1, 0.1, 0.1]], dtype=np.float64)
+    localization_model = {
+        'class_thresholds': {},
+        'targetp_specialist_postprocess': {
+            'reranker_models': [
+                ConstantMulticlassScore([0.05, 0.75, 0.08, 0.07, 0.05])
+            ],
+            'reranker_threshold': 0.5,
+            'reranker_thresholds': {'SP': 'not-a-number'},
+        },
+    }
+    base_probs = {
+        name: float(base_matrix[0, class_i])
+        for class_i, name in enumerate(LOCALIZATION_CLASSES)
+    }
+
+    recordwise, _ = _apply_targetp_specialist_postprocess(
+        aa_seq=sequence,
+        base_probs=base_probs,
+        prob_a=base_probs,
+        prob_b=base_probs,
+        localization_model=localization_model,
+        organism_group='plant',
+    )
+    batched = apply_targetp_specialist_postprocess_batch(
+        aa_sequences=[sequence],
+        base_prob_matrix=base_matrix,
+        prob_a_matrix=base_matrix,
+        prob_b_matrix=base_matrix,
+        localization_model=localization_model,
+        organism_group='plant',
+    )
+
+    assert recordwise == 'SP'
+    assert batched == [recordwise]
 
 
 def test_training_tsv_requires_explicit_peroxisome_column(temp_dir):

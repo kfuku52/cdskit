@@ -3,8 +3,8 @@ import sys
 from functools import partial
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
-from cdskit.translate import translate_sequence_string
 
+from cdskit.translate import translate_sequence_codes
 from cdskit.util import (
     parallel_map_ordered,
     read_seqs,
@@ -18,7 +18,7 @@ from cdskit.util import (
 
 GAP_ONLY_CHARS = frozenset('-NXnxn?.')
 GAP_ONLY_CHARS_BYTES = np.array([ch.encode('ascii') for ch in sorted(GAP_ONLY_CHARS)], dtype='S1')
-AA_MISSING_CHARS = np.array([b'-', b'?', b'X', b'*'], dtype='S1')
+AA_MISSING_CODES = np.array([ord('-'), ord('?'), ord('X'), ord('*')], dtype=np.uint8)
 
 
 def codon_is_gap_like(codon):
@@ -60,22 +60,19 @@ def build_codon_gap_like_matrix(records):
     return np.isin(codon_matrix, GAP_ONLY_CHARS_BYTES).all(axis=2)
 
 
-def translate_record_to_aa_string(record, codontable):
-    return translate_sequence_string(
-        seq_str=str(record.seq),
-        codontable=codontable,
-        to_stop=False,
-    )
-
-
 def build_non_missing_site(records, codontable, threads):
-    worker = partial(translate_record_to_aa_string, codontable=codontable)
-    aa_strings = parallel_map_ordered(items=records, worker=worker, threads=threads)
-    aa_len = len(aa_strings[0])
-    aa_bytes = b''.join([aa_seq.encode('ascii') for aa_seq in aa_strings])
-    aa_matrix = np.frombuffer(aa_bytes, dtype='S1').reshape(len(aa_strings), aa_len)
-    missing_site = np.isin(aa_matrix, AA_MISSING_CHARS).sum(axis=0)
-    return len(records) - missing_site
+    del threads
+    num_records = len(records)
+    if num_records == 0:
+        return np.zeros(0, dtype=int)
+    seq_len = len(records[0].seq)
+    if seq_len == 0:
+        return np.zeros(0, dtype=int)
+    amino_acids = translate_sequence_codes(
+        seq_str=''.join(str(record.seq) for record in records),
+        codontable=codontable,
+    ).reshape(num_records, seq_len // 3)
+    return (~np.isin(amino_acids, AA_MISSING_CODES)).sum(axis=0)
 
 
 def select_codon_site_indices(non_missing_site, nail_value, max_len, prevent_gap_only, codon_gap_like_matrix, original_records):

@@ -2,7 +2,13 @@ import copy
 import math
 import sys
 
-from cdskit.codonutil import codon_has_missing, codon_is_ambiguous, codon_is_clean, codon_is_stop
+from cdskit.codonutil import (
+    CODON_AMBIGUOUS,
+    CODON_CLEAN,
+    CODON_MISSING,
+    CODON_STOP,
+    classify_codon,
+)
 from cdskit.util import (
     atomic_write_json,
     read_seqs,
@@ -33,16 +39,17 @@ def summarize_codon_site(seq_strings, codon_site, codontable):
     end = start + 3
     for seq_str in seq_strings:
         codon = seq_str[start:end]
-        if codon_is_clean(codon=codon, codontable=codontable):
+        state = classify_codon(codon=codon, codontable=codontable)
+        if state == CODON_CLEAN:
             clean += 1
             continue
-        if codon_has_missing(codon):
+        if state == CODON_MISSING:
             missing += 1
             continue
-        if codon_is_ambiguous(codon):
+        if state == CODON_AMBIGUOUS:
             ambiguous += 1
             continue
-        if codon_is_stop(codon=codon, codontable=codontable):
+        if state == CODON_STOP:
             stop += 1
             continue
     return {

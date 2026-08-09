@@ -7,7 +7,29 @@ import Bio.SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
-from cdskit.codonstats import codonstats_main
+from cdskit.codonstats import codonstats_main, summarize_record
+
+
+@pytest.mark.parametrize(
+    'sequence,expected_complete,expected_missing,expected_ambiguous',
+    [
+        ('?', 0, 1, 0),
+        ('N', 0, 0, 0),
+        ('ATG?', 1, 1, 0),
+        ('ATGN', 1, 0, 0),
+    ],
+)
+def test_summarize_record_ignores_partial_codon_for_complete_counts(
+    sequence,
+    expected_complete,
+    expected_missing,
+    expected_ambiguous,
+):
+    summary = summarize_record(SeqRecord(Seq(sequence), id='seq1'), codontable=1)
+
+    assert summary['codons_complete'] == expected_complete
+    assert summary['codons_missing'] == expected_missing
+    assert summary['codons_ambiguous'] == expected_ambiguous
 
 
 class TestCodonstatsMain:

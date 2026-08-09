@@ -1,11 +1,9 @@
 import numpy as np
 import sys
 from collections import Counter
-from functools import partial
 
 from cdskit.util import (
     atomic_output_paths,
-    parallel_map_ordered,
     read_gff,
     read_seqs,
     resolve_threads,
@@ -13,9 +11,6 @@ from cdskit.util import (
     write_gff,
     write_seqs,
 )
-
-
-_INTERSECTION_PARALLEL_MIN_RECORDS = 5000
 
 
 def stop_if_duplicate_sequence_ids(records, label='--seq_file'):
@@ -33,23 +28,9 @@ def stop_if_duplicate_sequence_ids(records, label='--seq_file'):
     raise Exception(txt.format(label, shown))
 
 
-def filter_record_chunk_by_names(record_chunk, names):
-    return [record for record in record_chunk if record.id in names]
-
-
 def filter_records_by_names(records, names, threads=1):
-    if (threads <= 1) or (len(records) < _INTERSECTION_PARALLEL_MIN_RECORDS):
-        return [record for record in records if record.id in names]
-
-    max_workers = min(threads, len(records))
-    chunk_size = max(1, (len(records) + max_workers - 1) // max_workers)
-    record_chunks = [records[i:i + chunk_size] for i in range(0, len(records), chunk_size)]
-    worker = partial(filter_record_chunk_by_names, names=names)
-    chunk_results = parallel_map_ordered(items=record_chunks, worker=worker, threads=max_workers)
-    filtered_records = list()
-    for chunk in chunk_results:
-        filtered_records.extend(chunk)
-    return filtered_records
+    del threads
+    return [record for record in records if record.id in names]
 
 
 def fix_out_of_range_gff_records(filtered_data, seqid_to_seq_len):

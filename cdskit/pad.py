@@ -13,6 +13,7 @@ from cdskit.util import (
     read_seqs,
     replace_record_sequence,
     resolve_threads,
+    should_use_process_pool,
     stop_if_invalid_codontable,
     stop_if_not_dna,
     write_seqs,
@@ -20,7 +21,6 @@ from cdskit.util import (
 
 _STOP_CODON_CACHE: dict = {}
 _STOP_CODON_SCAN_CACHE: dict = {}
-_PROCESS_PARALLEL_MIN_RECORDS = 2000
 
 
 def get_stop_codons(codon_table):
@@ -202,7 +202,7 @@ def pad_main(args):
     stop_if_invalid_codontable(args.codontable)
     threads = resolve_threads(getattr(args, 'threads', 1))
     results = None
-    if (threads > 1) and (len(records) >= _PROCESS_PARALLEL_MIN_RECORDS):
+    if should_use_process_pool(records=records, threads=threads):
         try:
             payloads = [(record.name, str(record.seq)) for record in records]
             results = process_padding_payloads_process_parallel(

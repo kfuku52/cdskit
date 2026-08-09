@@ -64,7 +64,7 @@ def aggregate_main(args):
     )
     uniq = {}
     for record, newname in zip(records, aggregated_names):
-        if newname in uniq.keys():
+        if newname in uniq:
             uniq[newname] = select_aggregate_record(
                 existing_record=uniq[newname],
                 candidate_record=record,

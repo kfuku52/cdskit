@@ -69,6 +69,41 @@ class TestThreadHelpers:
         result = util.parallel_map_ordered(items=items, worker=lambda x: x * 2, threads=3)
         assert result == [10, 6, 2, 8, 4]
 
+    def test_process_pool_selection_uses_total_residues_not_record_count(self):
+        few_long = [SeqRecord(Seq('A' * 80), id='a'), SeqRecord(Seq('C' * 80), id='b')]
+        many_short = [SeqRecord(Seq('ATG'), id=str(i)) for i in range(100)]
+
+        assert util.should_use_process_pool(
+            few_long,
+            threads=4,
+            min_total_residues=100,
+        )
+        assert not util.should_use_process_pool(
+            many_short,
+            threads=4,
+            min_total_residues=1_000,
+        )
+
+    def test_iter_seq_chunks_preserves_order_and_bounds_memory(self, temp_dir):
+        fasta_path = temp_dir / 'chunked.fasta'
+        Bio.SeqIO.write(
+            [SeqRecord(Seq('ATG' * 4), id=f'seq{i}', description='') for i in range(5)],
+            str(fasta_path),
+            'fasta',
+        )
+
+        chunks = list(util.iter_seq_chunks(
+            str(fasta_path),
+            'fasta',
+            max_chunk_records=2,
+            max_chunk_residues=24,
+        ))
+
+        assert [len(chunk) for chunk in chunks] == [2, 2, 1]
+        assert [record.id for chunk in chunks for record in chunk] == [
+            'seq0', 'seq1', 'seq2', 'seq3', 'seq4'
+        ]
+
 
 class TestSafeRegex:
     def test_accepts_common_grouping_and_alternation(self):

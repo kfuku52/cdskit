@@ -2,7 +2,7 @@ import os
 
 import numpy as np
 
-from cdskit.cliutil import CdskitArgumentParser, parse_bool
+from cdskit.cliutil import CdskitArgumentParser, parse_bool, resolve_threads
 from cdskit.tsvio import read_tsv
 from cdskit.util import atomic_text_writer, atomic_write_json
 
@@ -42,6 +42,7 @@ TARGETP_FEATURE_BINARY_MODEL_KINDS = frozenset([
     'binary_extra_trees',
     'extra_trees_ovr',
 ])
+_SKLEARN_N_JOBS = 1
 
 
 def read_training_rows(path, required_columns=None):
@@ -90,7 +91,7 @@ def make_targetp_feature_classifier(
             class_weight=None if str(class_weight).strip().lower() == 'none' else class_weight,
             max_features=max_features,
             min_samples_leaf=int(min_samples_leaf),
-            n_jobs=1,
+            n_jobs=_SKLEARN_N_JOBS,
         )
     if model_kind == 'random_forest':
         from sklearn.ensemble import RandomForestClassifier
@@ -100,7 +101,7 @@ def make_targetp_feature_classifier(
             class_weight=None if str(class_weight).strip().lower() == 'none' else class_weight,
             max_features=max_features,
             min_samples_leaf=int(min_samples_leaf),
-            n_jobs=1,
+            n_jobs=_SKLEARN_N_JOBS,
         )
     raise ValueError('Unsupported targetp feature model_kind: {}'.format(model_kind))
 
@@ -666,6 +667,7 @@ def build_parser():
     parser.add_argument('--class_weight', default=TARGETP_FEATURE_ENSEMBLE_DEFAULTS['class_weight'], type=str)
     parser.add_argument('--max_features', default=TARGETP_FEATURE_ENSEMBLE_DEFAULTS['max_features'], type=str)
     parser.add_argument('--min_samples_leaf', default=TARGETP_FEATURE_ENSEMBLE_DEFAULTS['min_samples_leaf'], type=int)
+    parser.add_argument('--threads', default=1, type=int, help='Number of CPU workers used by tree ensembles; 0 auto-detects CPUs.')
     parser.add_argument('--threshold_grid', default='0.05,0.075,0.1,0.15,0.2,0.3,0.4,0.5,0.65,0.8,1.0,1.25,1.5,2.0,3.0,5.0', type=str)
     parser.add_argument('--blend_oof_npz', default='', type=str)
     parser.add_argument('--blend_label', default='blend_model', type=str)
@@ -684,7 +686,9 @@ def _to_bool_yes_no(value):
 
 
 def main(argv=None):
+    global _SKLEARN_N_JOBS
     args = build_parser().parse_args(argv)
+    _SKLEARN_N_JOBS = resolve_threads(args.threads)
     class_names = list(LOCALIZATION_CLASSES)
     fallback_true_idx = _read_true_idx_from_training_tsv(
         training_tsv=args.training_tsv,

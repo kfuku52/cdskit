@@ -68,6 +68,12 @@ AA_HYDROPATHY = {
     'W': -0.9,
     'Y': -1.3,
 }
+CANONICAL_AA_CHARS = frozenset(AA_HYDROPATHY) | {'X'}
+_CANONICAL_AA_TRANSLATION = str.maketrans({
+    chr(code): 'X'
+    for code in range(128)
+    if chr(code) not in CANONICAL_AA_CHARS
+})
 
 
 def _chars_to_ord_tuple(chars):
@@ -258,6 +264,31 @@ def normalize_class_probabilities(class_probs):
     return out_probs
 
 
+def normalize_localization_probability_matrix(probability_matrix, organism_group=''):
+    """Normalize localization rows with the same fallbacks as scalar inference."""
+    probabilities = np.asarray(probability_matrix, dtype=np.float64).copy()
+    if probabilities.ndim != 2 or probabilities.shape[1] != len(LOCALIZATION_CLASSES):
+        raise ValueError(
+            'Localization probability matrix should have {} columns.'.format(
+                len(LOCALIZATION_CLASSES)
+            )
+        )
+    probabilities = np.clip(
+        np.nan_to_num(probabilities, nan=0.0, posinf=0.0, neginf=0.0),
+        a_min=0.0,
+        a_max=None,
+    )
+    if normalize_organism_group(organism_group) == 'non_plant':
+        probabilities[:, LOCALIZATION_CLASSES.index('cTP')] = 0.0
+        probabilities[:, LOCALIZATION_CLASSES.index('lTP')] = 0.0
+    totals = np.sum(probabilities, axis=1, keepdims=True)
+    nonempty = totals[:, 0] > 0.0
+    probabilities[nonempty] /= totals[nonempty]
+    probabilities[~nonempty, :] = 0.0
+    probabilities[~nonempty, LOCALIZATION_CLASSES.index('noTP')] = 1.0
+    return probabilities
+
+
 def normalize_organism_group(value):
     txt = str(value or '').strip().lower()
     txt = re.sub(r'[\s\-]+', '_', txt)
@@ -436,17 +467,12 @@ def to_canonical_aa_sequence(aa_seq):
         aa_seq = aa_seq[:-1]
     if '*' in aa_seq:
         raise Exception('Internal stop codon detected in translated peptide sequence. Exiting.')
-    out = list()
-    for ch in aa_seq:
-        if ch in AA_HYDROPATHY:
-            out.append(ch)
-        elif ch == 'X':
-            out.append('X')
-        elif ch in '-?.':
-            out.append('X')
-        else:
-            out.append('X')
-    return ''.join(out)
+    if not set(aa_seq).difference(CANONICAL_AA_CHARS):
+        return aa_seq
+    translated = aa_seq.translate(_CANONICAL_AA_TRANSLATION)
+    if set(translated).difference(CANONICAL_AA_CHARS):
+        return ''.join(ch if ch in CANONICAL_AA_CHARS else 'X' for ch in translated)
+    return translated
 
 
 def translate_inframe_cds_to_aa(cds_seq, codontable, seq_id=''):
@@ -1152,6 +1178,77 @@ def _predict_sklearn_binary_perox(feature_vec, perox_model):
     return pred, {'yes': p_yes, 'no': 1.0 - p_yes}
 
 
+def predict_perox_batch(feature_matrix, perox_model, aa_sequences=None, organism_group=''):
+    """Predict the peroxisome head with one estimator call per batch."""
+    feature_matrix = np.asarray(feature_matrix, dtype=np.float64)
+    if feature_matrix.ndim != 2:
+        raise ValueError('feature_matrix should be two-dimensional.')
+    num_rows = feature_matrix.shape[0]
+    mode = str(perox_model.get('mode', '')).strip().lower()
+    if mode == 'constant':
+        p_yes = _clamp_probability(perox_model['yes_probability'])
+        return np.full((num_rows,), p_yes, dtype=np.float64)
+    if mode == 'sklearn_binary':
+        if aa_sequences is None:
+            aa_sequences = [None] * num_rows
+        if len(aa_sequences) != num_rows:
+            raise ValueError('aa_sequences and feature_matrix row counts should match.')
+        model_features = np.asarray([
+            _perox_feature_vector_for_model(
+                feature_vec=feature_matrix[i],
+                perox_model=perox_model,
+                aa_seq=aa_sequences[i],
+                organism_group=organism_group,
+            )
+            for i in range(num_rows)
+        ], dtype=np.float64)
+        classifier = perox_model.get('classifier', None)
+        if classifier is None or not hasattr(classifier, 'predict_proba'):
+            raise ValueError('sklearn_binary perox_model requires a classifier with predict_proba.')
+        with _targetp_sklearn_single_thread_context():
+            proba = np.asarray(classifier.predict_proba(model_features), dtype=np.float64)
+        if proba.ndim != 2 or proba.shape[0] != num_rows:
+            raise ValueError('perox_model classifier returned invalid probability shape.')
+        classes = list(getattr(classifier, 'classes_', perox_model.get('classes', [0, 1])))
+        positive_class = perox_model.get('positive_class', 1)
+        positive_col = next((
+            i for i, class_value in enumerate(classes)
+            if class_value == positive_class
+            or str(class_value).strip().lower() in ['1', 'yes', 'true']
+        ), None)
+        if positive_col is None:
+            if proba.shape[1] == 1 and len(classes) == 1:
+                value = 1.0 if str(classes[0]).strip().lower() in ['1', 'yes', 'true'] else 0.0
+                return np.full((num_rows,), value, dtype=np.float64)
+            raise ValueError('Could not find positive class in perox_model classifier.')
+        return np.clip(
+            np.nan_to_num(
+                proba[:, int(positive_col)],
+                nan=0.0,
+                posinf=0.0,
+                neginf=0.0,
+            ),
+            0.0,
+            1.0,
+        )
+
+    mean = np.asarray(perox_model['mean'], dtype=np.float64)
+    std = np.asarray(perox_model['std'], dtype=np.float64)
+    centroids = np.asarray(perox_model['centroids'], dtype=np.float64)
+    log_priors = np.asarray(perox_model['log_priors'], dtype=np.float64)
+    z = (feature_matrix - mean) / std
+    logits = -0.5 * np.sum(
+        (z[:, np.newaxis, :] - centroids[np.newaxis, :, :]) ** 2,
+        axis=2,
+    ) + log_priors[np.newaxis, :]
+    logits -= np.max(logits, axis=1, keepdims=True)
+    probabilities = np.exp(logits)
+    probabilities /= np.sum(probabilities, axis=1, keepdims=True)
+    class_order = list(perox_model['class_order'])
+    yes_col = class_order.index('yes') if 'yes' in class_order else -1
+    return probabilities[:, yes_col] if yes_col >= 0 else np.zeros(num_rows, dtype=np.float64)
+
+
 def predict_perox(feature_vec, perox_model, aa_seq=None, organism_group=''):
     if perox_model.get('mode') == 'constant':
         p_yes = _clamp_probability(perox_model['yes_probability'])
@@ -1798,6 +1895,17 @@ def _targetp_predict_sklearn_proba(model, features):
 
 
 def predict_targetp_feature_ensemble_localization(aa_seq, localization_model, organism_group=''):
+    prob_matrix = predict_targetp_feature_ensemble_batch(
+        aa_sequences=[aa_seq],
+        localization_model=localization_model,
+        organism_group=organism_group,
+    )
+    probs = _vector_to_class_probs(prob_matrix[0])
+    pred_idx = int(np.argmax(prob_matrix[0]))
+    return LOCALIZATION_CLASSES[pred_idx], probs
+
+
+def predict_targetp_feature_ensemble_batch(aa_sequences, localization_model, organism_group=''):
     classifier = localization_model.get('classifier', None)
     binary_classifiers = localization_model.get('binary_classifiers', None)
     has_multiclass = classifier is not None and hasattr(classifier, 'predict_proba')
@@ -1807,15 +1915,20 @@ def predict_targetp_feature_ensemble_localization(aa_seq, localization_model, or
     class_order = list(localization_model.get('class_order', LOCALIZATION_CLASSES))
     if class_order != list(LOCALIZATION_CLASSES):
         raise ValueError('targetp_feature_ensemble_v1 class_order should match LOCALIZATION_CLASSES.')
-    feature_vec = extract_targetp_feature_ensemble_features(
-        aa_seq=aa_seq,
-        organism_group=organism_group,
-    )
-    expected_dim = int(localization_model.get('feature_dim', feature_vec.shape[0]))
-    if feature_vec.shape[0] != expected_dim:
+    feature_matrix = np.asarray([
+        extract_targetp_feature_ensemble_features(
+            aa_seq=aa_seq,
+            organism_group=organism_group,
+        )
+        for aa_seq in aa_sequences
+    ], dtype=np.float64)
+    if len(aa_sequences) == 0:
+        return np.zeros((0, len(class_order)), dtype=np.float64)
+    expected_dim = int(localization_model.get('feature_dim', feature_matrix.shape[1]))
+    if feature_matrix.shape[1] != expected_dim:
         txt = 'TargetP feature count mismatch: expected {}, got {}.'
-        raise ValueError(txt.format(expected_dim, int(feature_vec.shape[0])))
-    prob_vec = np.zeros((len(class_order),), dtype=np.float64)
+        raise ValueError(txt.format(expected_dim, int(feature_matrix.shape[1])))
+    prob_matrix = np.zeros((len(aa_sequences), len(class_order)), dtype=np.float64)
     if has_binary:
         if len(binary_classifiers) != len(class_order):
             raise ValueError('targetp_feature_ensemble_v1 binary_classifiers should match class_order.')
@@ -1823,36 +1936,44 @@ def predict_targetp_feature_ensemble_localization(aa_seq, localization_model, or
             if binary_classifier is None or not hasattr(binary_classifier, 'predict_proba'):
                 raise ValueError('targetp_feature_ensemble_v1 binary classifier should support predict_proba.')
             proba = np.asarray(
-                _targetp_predict_sklearn_proba(
-                    binary_classifier,
-                    feature_vec.reshape((1, -1)),
-                ),
+                _targetp_predict_sklearn_proba(binary_classifier, feature_matrix),
                 dtype=np.float64,
             )
             classes = [int(cls) for cls in list(getattr(binary_classifier, 'classes_', []))]
             if 1 in classes:
-                prob_vec[class_i] = float(proba[0, classes.index(1)])
+                prob_matrix[:, class_i] = proba[:, classes.index(1)]
     else:
         proba = np.asarray(
-            _targetp_predict_sklearn_proba(
-                classifier,
-                feature_vec.reshape((1, -1)),
-            ),
+            _targetp_predict_sklearn_proba(classifier, feature_matrix),
             dtype=np.float64,
         )
         classes = getattr(classifier, 'classes_', list(range(len(class_order))))
         class_to_col = {int(cls): i for i, cls in enumerate(list(classes))}
         for class_i in range(len(class_order)):
             if class_i in class_to_col:
-                prob_vec[class_i] = float(proba[0, class_to_col[class_i]])
-    probs = _vector_to_class_probs(prob_vec)
-    pred_idx = int(np.argmax([probs[class_name] for class_name in LOCALIZATION_CLASSES]))
-    return LOCALIZATION_CLASSES[pred_idx], probs
+                prob_matrix[:, class_i] = proba[:, class_to_col[class_i]]
+    prob_matrix = np.clip(prob_matrix, 0.0, None)
+    row_sums = np.sum(prob_matrix, axis=1, keepdims=True)
+    empty_rows = row_sums[:, 0] <= 0.0
+    row_sums[empty_rows, 0] = 1.0
+    prob_matrix /= row_sums
+    prob_matrix[empty_rows, 0] = 1.0
+    return prob_matrix
 
 
 def _predict_binary_ensemble_score(feature_vec, models, weights=None):
+    scores = _predict_binary_ensemble_scores(
+        feature_matrix=np.asarray(feature_vec, dtype=np.float64).reshape((1, -1)),
+        models=models,
+        weights=weights,
+    )
+    return float(scores[0]) if scores.shape[0] else 0.0
+
+
+def _predict_binary_ensemble_scores(feature_matrix, models, weights=None):
+    feature_matrix = np.asarray(feature_matrix, dtype=np.float64)
     if not isinstance(models, list) or len(models) == 0:
-        return 0.0
+        return np.zeros((feature_matrix.shape[0],), dtype=np.float64)
     scores = list()
     for model in models:
         if not hasattr(model, 'predict_proba'):
@@ -1860,27 +1981,41 @@ def _predict_binary_ensemble_score(feature_vec, models, weights=None):
         proba = np.asarray(
             _targetp_predict_sklearn_proba(
                 model,
-                np.asarray(feature_vec, dtype=np.float64).reshape((1, -1)),
+                feature_matrix,
             ),
             dtype=np.float64,
         )
         classes = getattr(model, 'classes_', [0, 1])
         class_to_col = {int(cls): i for i, cls in enumerate(list(classes))}
-        scores.append(float(proba[0, class_to_col.get(1, 0)]) if 1 in class_to_col else 0.0)
+        if 1 in class_to_col:
+            scores.append(proba[:, class_to_col[1]])
+        else:
+            scores.append(np.zeros((feature_matrix.shape[0],), dtype=np.float64))
+    score_matrix = np.asarray(scores, dtype=np.float64)
     if weights is None:
-        return float(np.mean(np.asarray(scores, dtype=np.float64)))
+        return np.mean(score_matrix, axis=0)
     weights = np.asarray(weights, dtype=np.float64)
     if weights.shape[0] != len(scores):
         raise ValueError('TargetP specialist weights do not match model count.')
     total = float(np.sum(weights))
     if total <= 0.0:
         raise ValueError('TargetP specialist weights should sum to a positive value.')
-    return float(np.average(np.asarray(scores, dtype=np.float64), weights=weights / total))
+    return np.average(score_matrix, axis=0, weights=weights / total)
 
 
 def _predict_multiclass_ensemble_probabilities(feature_vec, models, weights=None):
+    matrix = _predict_multiclass_ensemble_probability_matrix(
+        feature_matrix=np.asarray(feature_vec, dtype=np.float64).reshape((1, -1)),
+        models=models,
+        weights=weights,
+    )
+    return matrix[0] if matrix.shape[0] else np.zeros((len(LOCALIZATION_CLASSES),), dtype=np.float64)
+
+
+def _predict_multiclass_ensemble_probability_matrix(feature_matrix, models, weights=None):
+    feature_matrix = np.asarray(feature_matrix, dtype=np.float64)
     if not isinstance(models, list) or len(models) == 0:
-        return np.zeros((len(LOCALIZATION_CLASSES),), dtype=np.float64)
+        return np.zeros((feature_matrix.shape[0], len(LOCALIZATION_CLASSES)), dtype=np.float64)
     prob_rows = list()
     for model in models:
         if not hasattr(model, 'predict_proba'):
@@ -1888,16 +2023,16 @@ def _predict_multiclass_ensemble_probabilities(feature_vec, models, weights=None
         proba = np.asarray(
             _targetp_predict_sklearn_proba(
                 model,
-                np.asarray(feature_vec, dtype=np.float64).reshape((1, -1)),
+                feature_matrix,
             ),
             dtype=np.float64,
         )
         classes = getattr(model, 'classes_', list(range(len(LOCALIZATION_CLASSES))))
         class_to_col = {int(cls): i for i, cls in enumerate(list(classes))}
-        row = np.zeros((len(LOCALIZATION_CLASSES),), dtype=np.float64)
+        row = np.zeros((feature_matrix.shape[0], len(LOCALIZATION_CLASSES)), dtype=np.float64)
         for class_i in range(len(LOCALIZATION_CLASSES)):
             if class_i in class_to_col:
-                row[class_i] = float(proba[0, class_to_col[class_i]])
+                row[:, class_i] = proba[:, class_to_col[class_i]]
         prob_rows.append(row)
     if weights is None:
         probs = np.mean(np.asarray(prob_rows, dtype=np.float64), axis=0)
@@ -1913,10 +2048,10 @@ def _predict_multiclass_ensemble_probabilities(feature_vec, models, weights=None
             axis=0,
             weights=weights / total,
         )
-    total = float(np.sum(probs))
-    if total <= 0.0:
-        return probs
-    return probs / total
+    totals = np.sum(probs, axis=1, keepdims=True)
+    nonempty = totals[:, 0] > 0.0
+    probs[nonempty] /= totals[nonempty]
+    return probs
 
 
 def _targetp_specialist_model_list(specialist, plural_key, singular_key):
@@ -2170,6 +2305,187 @@ def _apply_targetp_specialist_postprocess(
     return LOCALIZATION_CLASSES[pred_idx], details
 
 
+def apply_targetp_specialist_postprocess_batch(
+    aa_sequences,
+    base_prob_matrix,
+    prob_a_matrix,
+    prob_b_matrix,
+    localization_model,
+    organism_group,
+):
+    """Batch every sklearn estimator used by the TargetP blend specialists."""
+    specialist = localization_model.get('targetp_specialist_postprocess', None)
+    base_prob_matrix = np.asarray(base_prob_matrix, dtype=np.float64)
+    num_rows = base_prob_matrix.shape[0]
+    thresholds = _targetp_threshold_vector(localization_model.get('class_thresholds', {}))
+    scores = base_prob_matrix / thresholds[np.newaxis, :]
+    pred_indices = np.argmax(scores, axis=1).astype(int)
+    if not isinstance(specialist, dict) or not bool(specialist.get('enabled', True)):
+        return [LOCALIZATION_CLASSES[index] for index in pred_indices]
+
+    def row_probs(matrix, row_index):
+        return {
+            class_name: float(matrix[row_index, class_i])
+            for class_i, class_name in enumerate(LOCALIZATION_CLASSES)
+        }
+
+    base_rows = [row_probs(base_prob_matrix, i) for i in range(num_rows)]
+    prob_a_rows = [row_probs(prob_a_matrix, i) for i in range(num_rows)]
+    prob_b_rows = [row_probs(prob_b_matrix, i) for i in range(num_rows)]
+    sp_idx = LOCALIZATION_CLASSES.index('SP')
+    mtp_idx = LOCALIZATION_CLASSES.index('mTP')
+    ctp_idx = LOCALIZATION_CLASSES.index('cTP')
+    ltp_idx = LOCALIZATION_CLASSES.index('lTP')
+    notp_idx = LOCALIZATION_CLASSES.index('noTP')
+    non_sp_scores = scores.copy()
+    non_sp_scores[:, sp_idx] = -np.inf
+    non_sp_pred = np.argmax(non_sp_scores, axis=1).astype(int)
+
+    reranker_models = _targetp_specialist_model_list(
+        specialist, 'reranker_models', 'reranker_model'
+    )
+    reranker_classes = np.full((num_rows,), -1, dtype=int)
+    if reranker_models:
+        reranker_features = np.asarray([
+            _targetp_reranker_feature_vector(
+                aa_seq=aa_sequences[i],
+                base_probs=base_rows[i],
+                prob_a=prob_a_rows[i],
+                prob_b=prob_b_rows[i],
+                organism_group=organism_group,
+                class_thresholds=localization_model.get('class_thresholds', {}),
+                feature_profile=specialist.get('reranker_feature_profile', ''),
+            )
+            for i in range(num_rows)
+        ], dtype=np.float64)
+        reranker_probs = _predict_multiclass_ensemble_probability_matrix(
+            feature_matrix=reranker_features,
+            models=reranker_models,
+            weights=specialist.get('reranker_weights', None),
+        )
+        reranker_probs = normalize_localization_probability_matrix(
+            probability_matrix=reranker_probs,
+            organism_group=organism_group,
+        )
+        reranker_classes = np.argmax(reranker_probs, axis=1).astype(int)
+        reranker_scores = reranker_probs[np.arange(num_rows), reranker_classes]
+        default_threshold = float(specialist.get('reranker_threshold', 0.5))
+        class_thresholds = specialist.get('reranker_thresholds', {})
+        def resolve_reranker_threshold(class_index):
+            value = default_threshold
+            if isinstance(class_thresholds, dict):
+                value = class_thresholds.get(
+                    LOCALIZATION_CLASSES[class_index],
+                    default_threshold,
+                )
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return default_threshold
+
+        row_thresholds = np.asarray([
+            resolve_reranker_threshold(index) for index in reranker_classes
+        ], dtype=np.float64)
+        invalid_thresholds = (~np.isfinite(row_thresholds)) | (row_thresholds <= 0.0)
+        row_thresholds[invalid_thresholds] = default_threshold
+        positive = reranker_scores >= row_thresholds
+        pred_indices[positive] = reranker_classes[positive]
+
+    mtp_notp_models = _targetp_specialist_model_list(
+        specialist, 'mtp_notp_models', 'mtp_notp_model'
+    )
+    if mtp_notp_models:
+        candidate = np.isin(pred_indices, [notp_idx, mtp_idx]) | np.isin(
+            reranker_classes, [notp_idx, mtp_idx]
+        )
+        candidate_indices = np.flatnonzero(candidate)
+        if candidate_indices.size:
+            features = np.asarray([
+                _targetp_reranker_feature_vector(
+                    aa_seq=aa_sequences[i],
+                    base_probs=base_rows[i],
+                    prob_a=prob_a_rows[i],
+                    prob_b=prob_b_rows[i],
+                    organism_group=organism_group,
+                    class_thresholds=localization_model.get('class_thresholds', {}),
+                    feature_profile=specialist.get(
+                        'mtp_notp_feature_profile',
+                        specialist.get('reranker_feature_profile', ''),
+                    ),
+                )
+                for i in candidate_indices
+            ], dtype=np.float64)
+            candidate_scores = _predict_binary_ensemble_scores(
+                features,
+                mtp_notp_models,
+                specialist.get('mtp_notp_weights', None),
+            )
+            threshold = float(specialist.get('mtp_notp_threshold', 0.5))
+            pred_indices[candidate_indices] = np.where(
+                candidate_scores >= threshold, mtp_idx, notp_idx
+            )
+
+    sp_models = _targetp_specialist_model_list(specialist, 'sp_models', 'sp_model')
+    sp_positive = np.zeros((num_rows,), dtype=bool)
+    if sp_models:
+        sp_features = np.asarray([
+            _targetp_sp_specialist_feature_vector(
+                aa_sequences[i], base_rows[i], prob_a_rows[i], prob_b_rows[i], organism_group
+            )
+            for i in range(num_rows)
+        ], dtype=np.float64)
+        sp_scores = _predict_binary_ensemble_scores(
+            sp_features, sp_models, specialist.get('sp_weights', None)
+        )
+        sp_positive = sp_scores >= float(specialist.get('sp_threshold', 0.5))
+        rejected = (~sp_positive) & (pred_indices == sp_idx)
+        pred_indices[sp_positive] = sp_idx
+        pred_indices[rejected] = non_sp_pred[rejected]
+
+    ltp_models = _targetp_specialist_model_list(specialist, 'ltp_models', 'ltp_model')
+    if ltp_models and normalize_organism_group(organism_group) == 'plant':
+        mass = base_prob_matrix[:, ctp_idx] + base_prob_matrix[:, ltp_idx]
+        candidate_indices = np.flatnonzero(
+            (~sp_positive) & (mass > float(specialist.get('ltp_mass_threshold', 0.20)))
+        )
+        if candidate_indices.size:
+            features = np.asarray([
+                _targetp_ctp_ltp_specialist_feature_vector(
+                    aa_sequences[i], base_rows[i], prob_a_rows[i], prob_b_rows[i], organism_group
+                )
+                for i in candidate_indices
+            ], dtype=np.float64)
+            candidate_scores = _predict_binary_ensemble_scores(
+                features, ltp_models, specialist.get('ltp_weights', None)
+            )
+            positive = candidate_scores >= float(specialist.get('ltp_threshold', 0.5))
+            pred_indices[candidate_indices[positive]] = ltp_idx
+            negative_indices = candidate_indices[~positive]
+            needs_ctp = np.isin(pred_indices[negative_indices], [ctp_idx, ltp_idx])
+            pred_indices[negative_indices[needs_ctp]] = ctp_idx
+
+    notp_models = _targetp_specialist_model_list(specialist, 'notp_models', 'notp_model')
+    if notp_models:
+        features = np.asarray([
+            _targetp_notp_specialist_feature_vector(
+                aa_sequences[i],
+                base_rows[i],
+                prob_a_rows[i],
+                prob_b_rows[i],
+                organism_group,
+                localization_model.get('class_thresholds', {}),
+            )
+            for i in range(num_rows)
+        ], dtype=np.float64)
+        notp_scores = _predict_binary_ensemble_scores(
+            features, notp_models, specialist.get('notp_weights', None)
+        )
+        positive = (notp_scores >= float(specialist.get('notp_threshold', 0.5)))
+        positive &= pred_indices != notp_idx
+        pred_indices[positive] = notp_idx
+    return [LOCALIZATION_CLASSES[index] for index in pred_indices]
+
+
 def _apply_targetp_feature_ltp_specialist_postprocess(
     aa_seq,
     base_probs,
@@ -2233,6 +2549,58 @@ def _apply_targetp_feature_ltp_specialist_postprocess(
         'ctp_ltp_mass': float(ctp_ltp_mass),
         'mass_threshold': float(mass_threshold),
     }
+
+
+def apply_targetp_feature_ltp_specialist_postprocess_batch(
+    aa_sequences,
+    base_prob_matrix,
+    pred_classes,
+    localization_model,
+    organism_group,
+):
+    specialist = localization_model.get('targetp_feature_ltp_specialist', None)
+    out = list(pred_classes)
+    if not isinstance(specialist, dict) or not bool(specialist.get('enabled', True)):
+        return out
+    if normalize_organism_group(organism_group) != 'plant':
+        return out
+    source_classes = specialist.get('source_classes', ['cTP'])
+    if isinstance(source_classes, str):
+        source_classes = [value.strip() for value in source_classes.split(',') if value.strip()]
+    source_classes = [name for name in source_classes if name in LOCALIZATION_CLASSES]
+    if not source_classes:
+        source_classes = ['cTP']
+    ctp_idx = LOCALIZATION_CLASSES.index('cTP')
+    ltp_idx = LOCALIZATION_CLASSES.index('lTP')
+    mass = base_prob_matrix[:, ctp_idx] + base_prob_matrix[:, ltp_idx]
+    candidate_indices = [
+        i for i, pred_class in enumerate(out)
+        if pred_class in source_classes
+        and mass[i] >= float(specialist.get('mass_threshold', 0.0))
+    ]
+    if not candidate_indices:
+        return out
+    features = np.asarray([
+        _targetp_feature_ltp_specialist_feature_vector(
+            aa_seq=aa_sequences[i],
+            base_probs={
+                class_name: float(base_prob_matrix[i, class_i])
+                for class_i, class_name in enumerate(LOCALIZATION_CLASSES)
+            },
+            organism_group=organism_group,
+        )
+        for i in candidate_indices
+    ], dtype=np.float64)
+    scores = _predict_binary_ensemble_scores(
+        features,
+        specialist.get('models', []),
+        specialist.get('weights', None),
+    )
+    threshold = float(specialist.get('threshold', 0.5))
+    for local_i, row_i in enumerate(candidate_indices):
+        if scores[local_i] >= threshold:
+            out[row_i] = 'lTP'
+    return out
 
 
 def predict_targetp_blend_localization(

@@ -61,24 +61,34 @@ def vectorized_coordinate_update(
         )
 
         def apply_range_aware(coords):
-            updated = coords.copy()
-            cumulative_offset = 0
-            for original_start_1based, original_length, target_length in edits:
-                actual_start = original_start_1based + cumulative_offset
-                actual_old_end = actual_start + original_length - 1
-                actual_new_end = actual_start + target_length - 1
-                delta = target_length - original_length
-                inside = (
-                    (updated >= actual_start)
-                    & (updated <= actual_old_end)
-                )
+            original = np.asarray(coords)
+            starts = np.asarray([edit[0] for edit in edits], dtype=np.int64)
+            old_lengths = np.asarray([edit[1] for edit in edits], dtype=np.int64)
+            targets = np.asarray([edit[2] for edit in edits], dtype=np.int64)
+            old_ends = starts + old_lengths - 1
+            deltas = targets - old_lengths
+            prefix_delta = np.concatenate((
+                np.zeros((1,), dtype=np.int64),
+                np.cumsum(deltas, dtype=np.int64),
+            ))
+            completed = np.searchsorted(old_ends, original, side='left')
+            updated = original + prefix_delta[completed]
+
+            containing = np.searchsorted(starts, original, side='right') - 1
+            valid = containing >= 0
+            clipped = np.maximum(containing, 0)
+            inside = valid & (original <= old_ends[clipped])
+            for edit_index in np.unique(containing[inside]):
+                mask = inside & (containing == edit_index)
+                target_length = int(targets[edit_index])
+                mapped_start = int(starts[edit_index] + prefix_delta[edit_index])
                 if target_length == 0:
-                    updated[inside] = max(1, actual_start - 1)
-                elif delta < 0:
-                    updated[inside] = np.minimum(updated[inside], actual_new_end)
-                after = updated > actual_old_end
-                updated[after] += delta
-                cumulative_offset += delta
+                    updated[mask] = max(1, mapped_start - 1)
+                elif deltas[edit_index] < 0:
+                    updated[mask] = np.minimum(
+                        updated[mask],
+                        mapped_start + target_length - 1,
+                    )
             return updated
 
         return (
@@ -96,22 +106,27 @@ def vectorized_coordinate_update(
     else:
         for just in justifications:
             edits.append((int(just[0]) + 1, int(just[1])))
-    edits.sort(key=lambda x: x[0])
+    # Preserve the legacy tie-break on edit length for edits at the same site.
+    edits.sort()
 
     def apply_coordinate_shift(coords):
         if len(edits) == 0:
             return coords
-        updated = coords.copy()
-        cumulative_offset = 0
-        for original_start_1based, edit_len in edits:
-            if edit_len == 0:
-                continue
-            actual_edit_start_1based = original_start_1based + cumulative_offset
-            mask = (updated > actual_edit_start_1based)
-            if np.any(mask):
-                updated[mask] = updated[mask] + edit_len
-            cumulative_offset += edit_len
-        return updated
+        starts = np.asarray([edit[0] for edit in edits], dtype=np.int64)
+        deltas = np.asarray([edit[1] for edit in edits], dtype=np.int64)
+        prefix_delta = np.concatenate((
+            np.zeros((1,), dtype=np.int64),
+            np.cumsum(deltas, dtype=np.int64),
+        ))
+        actual_starts = starts + prefix_delta[:-1]
+        if np.any(actual_starts[1:] < actual_starts[:-1]):
+            updated = np.asarray(coords).copy()
+            for actual_start, edit_len in zip(actual_starts, deltas):
+                updated[updated > actual_start] += edit_len
+            return updated
+        original = np.asarray(coords)
+        completed = np.searchsorted(starts, original, side='left')
+        return original + prefix_delta[completed]
 
     updated_starts = apply_coordinate_shift(seq_gff_start_coordinates)
     updated_ends = apply_coordinate_shift(seq_gff_end_coordinates)

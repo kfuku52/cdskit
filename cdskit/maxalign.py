@@ -26,11 +26,25 @@ DEFAULT_MISSING_CHARS = '-?.'
 
 
 def popcount(mask):
-    count = 0
-    while mask:
-        mask &= mask - 1
-        count += 1
-    return count
+    return mask.bit_count()
+
+
+def subset_count_sum(remove_mask, base_counts):
+    """Sum counts for missing masks contained in *remove_mask*."""
+    # Enumerating 2**r subsets is substantially cheaper for small removal sets;
+    # scan sparse dictionaries when the removal set is large.
+    if (1 << popcount(remove_mask)) <= len(base_counts):
+        total = 0
+        subset = remove_mask
+        while subset:
+            total += base_counts.get(subset, 0)
+            subset = (subset - 1) & remove_mask
+        return total
+    return sum(
+        site_count
+        for missing_mask, site_count in base_counts.items()
+        if (missing_mask | remove_mask) == remove_mask
+    )
 
 
 def codon_is_present(codon, missing_chars):
@@ -288,6 +302,11 @@ def solve_exact(
     required_mask = indices_to_bitmask(required_indices)
     required_count = len(required_indices)
     threads = resolve_threads(threads=threads)
+    # Exact-search workers need enough subsets to amortize process startup and
+    # shared-data serialization. More than eight workers oversubscribes the
+    # common search sizes without improving throughput.
+    useful_workers = max(1, max_mask // 65_536)
+    threads = min(threads, useful_workers, 8)
     if (threads <= 1) or (max_mask <= 1):
         return evaluate_exact_subset_range(
             subset_start=0,
@@ -387,11 +406,10 @@ def greedy_missing_set_gap_counts(support_counts, active_mask, protected_mask, m
     masks = list(base_counts)
     gap_counts = dict()
     for remove_mask in masks:
-        gap_count = 0
-        for missing_mask, site_count in base_counts.items():
-            if (missing_mask | remove_mask) == remove_mask:
-                gap_count += site_count
-        gap_counts[remove_mask] = gap_count
+        gap_counts[remove_mask] = subset_count_sum(
+            remove_mask=remove_mask,
+            base_counts=base_counts,
+        )
     return masks, base_counts, gap_counts
 
 
@@ -452,10 +470,9 @@ def solve_greedy(
 
         def get_gap_count(remove_mask):
             if remove_mask not in gap_count_cache:
-                gap_count_cache[remove_mask] = sum(
-                    site_count
-                    for missing_mask, site_count in base_counts.items()
-                    if (missing_mask | remove_mask) == remove_mask
+                gap_count_cache[remove_mask] = subset_count_sum(
+                    remove_mask=remove_mask,
+                    base_counts=base_counts,
                 )
             return gap_count_cache[remove_mask]
 

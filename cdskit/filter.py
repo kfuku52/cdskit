@@ -1,19 +1,17 @@
 import math
 import sys
+from concurrent.futures import ProcessPoolExecutor
 from functools import partial
 
 from cdskit.codonutil import (
-    codon_has_missing,
-    codon_is_ambiguous,
-    codon_is_clean,
-    codon_is_stop,
-    has_internal_stop,
+    summarize_codons,
 )
 from cdskit.util import (
     atomic_write_json,
     parallel_map_ordered,
     read_seqs,
     resolve_threads,
+    should_use_process_pool,
     stop_if_invalid_codontable,
     stop_if_not_dna,
     write_seqs,
@@ -32,25 +30,9 @@ def validate_fraction(name, value):
 def analyze_record(record, codontable, inspect_internal_stop):
     seq_str = str(record.seq)
     length_nt = len(seq_str)
-    clean_codons = 0
-    missing_codons = 0
-    ambiguous_codons = 0
-    stop_codons = 0
-    total_codons = length_nt // 3
-    for idx in range(total_codons):
-        codon = seq_str[idx * 3:idx * 3 + 3]
-        if codon_is_clean(codon=codon, codontable=codontable):
-            clean_codons += 1
-            continue
-        if codon_has_missing(codon):
-            missing_codons += 1
-            continue
-        if codon_is_ambiguous(codon):
-            ambiguous_codons += 1
-            continue
-        if codon_is_stop(codon=codon, codontable=codontable):
-            stop_codons += 1
-            continue
+    codon_summary = summarize_codons(seq=seq_str, codontable=codontable)
+    total_codons = codon_summary['total']
+    clean_codons = codon_summary['clean']
     clean_codon_fraction = 0.0
     if total_codons > 0:
         clean_codon_fraction = clean_codons / total_codons
@@ -59,15 +41,39 @@ def analyze_record(record, codontable, inspect_internal_stop):
         'length_nt': length_nt,
         'tail_nt': length_nt % 3,
         'non_triplet': (length_nt % 3) != 0,
-        'internal_stop': inspect_internal_stop and has_internal_stop(seq=seq_str, codontable=codontable),
+        'internal_stop': inspect_internal_stop and codon_summary['internal_stop'],
         'total_codons': total_codons,
         'clean_codons': clean_codons,
         'unclean_codons': total_codons - clean_codons,
-        'missing_codons': missing_codons,
-        'ambiguous_codons': ambiguous_codons,
-        'stop_codons': stop_codons,
+        'missing_codons': codon_summary['missing'],
+        'ambiguous_codons': codon_summary['ambiguous'],
+        'stop_codons': codon_summary['stop'],
         'clean_codon_fraction': clean_codon_fraction,
     }
+
+
+def analyze_payload(payload, codontable, inspect_internal_stop):
+    from Bio.Seq import Seq
+    from Bio.SeqRecord import SeqRecord
+    seq_id, seq_str = payload
+    return analyze_record(
+        record=SeqRecord(Seq(seq_str), id=seq_id),
+        codontable=codontable,
+        inspect_internal_stop=inspect_internal_stop,
+    )
+
+
+def analyze_records_process_parallel(records, codontable, inspect_internal_stop, threads):
+    worker = partial(
+        analyze_payload,
+        codontable=codontable,
+        inspect_internal_stop=inspect_internal_stop,
+    )
+    payloads = [(record.id, str(record.seq)) for record in records]
+    max_workers = min(threads, len(payloads))
+    chunk_size = max(1, len(payloads) // (max_workers * 16))
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        return list(executor.map(worker, payloads, chunksize=chunk_size))
 
 
 def choose_duplicate_winners(records, candidate_indices, dedup):
@@ -243,7 +249,19 @@ def filter_main(args):
         codontable=args.codontable,
         inspect_internal_stop=args.drop_internal_stop,
     )
-    analyses = parallel_map_ordered(items=records, worker=worker, threads=threads)
+    analyses = None
+    if should_use_process_pool(records=records, threads=threads):
+        try:
+            analyses = analyze_records_process_parallel(
+                records=records,
+                codontable=args.codontable,
+                inspect_internal_stop=args.drop_internal_stop,
+                threads=threads,
+            )
+        except (OSError, PermissionError):
+            pass
+    if analyses is None:
+        analyses = parallel_map_ordered(items=records, worker=worker, threads=1)
     summary, kept_indices = summarize_filter(records=records, analyses=analyses, args=args)
     write_filter_report(report_path=args.report, summary=summary)
     sys.stderr.write('Dropped sequences: {:,}\n'.format(summary['num_dropped_sequences']))

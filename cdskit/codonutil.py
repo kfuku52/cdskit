@@ -7,7 +7,13 @@ UNAMBIGUOUS_NT = frozenset('ACGT')
 DNA_BASES = ('A', 'C', 'G', 'T')
 
 _CODON_TABLE_CACHE: dict = {}
+_CODON_CLASSIFICATION_CACHE: dict = {}
 _DEGENERACY_CACHE: dict = {}
+
+CODON_CLEAN = 0
+CODON_MISSING = 1
+CODON_AMBIGUOUS = 2
+CODON_STOP = 3
 
 
 def get_codon_table_components(codontable):
@@ -35,6 +41,28 @@ def get_stop_codons(codontable):
     return get_codon_table_components(codontable=codontable)['stop_codons']
 
 
+def classify_codon(codon, codontable):
+    """Classify a codon once and cache the result for the selected code."""
+    codon_upper = codon.upper()
+    cache = _CODON_CLASSIFICATION_CACHE.get(codontable)
+    if cache is None:
+        cache = {}
+        _CODON_CLASSIFICATION_CACHE[codontable] = cache
+    cached = cache.get(codon_upper)
+    if cached is not None:
+        return cached
+    if any(ch in MISSING_CHARS for ch in codon_upper):
+        state = CODON_MISSING
+    elif any(ch not in UNAMBIGUOUS_NT for ch in codon_upper):
+        state = CODON_AMBIGUOUS
+    elif codon_upper in get_stop_codons(codontable=codontable):
+        state = CODON_STOP
+    else:
+        state = CODON_CLEAN
+    cache[codon_upper] = state
+    return state
+
+
 def codon_has_missing(codon):
     codon_upper = codon.upper()
     return any(ch in MISSING_CHARS for ch in codon_upper)
@@ -52,21 +80,11 @@ def codon_is_ambiguous(codon):
 
 
 def codon_is_stop(codon, codontable):
-    codon_upper = codon.upper()
-    if codon_has_missing(codon_upper):
-        return False
-    if any(ch not in UNAMBIGUOUS_NT for ch in codon_upper):
-        return False
-    return codon_upper in get_stop_codons(codontable=codontable)
+    return classify_codon(codon=codon, codontable=codontable) == CODON_STOP
 
 
 def codon_is_clean(codon, codontable):
-    codon_upper = codon.upper()
-    if codon_has_missing(codon_upper):
-        return False
-    if any(ch not in UNAMBIGUOUS_NT for ch in codon_upper):
-        return False
-    return codon_upper not in get_stop_codons(codontable=codontable)
+    return classify_codon(codon=codon, codontable=codontable) == CODON_CLEAN
 
 
 def ambiguous_codon_counts(seq):
@@ -83,26 +101,41 @@ def ambiguous_codon_counts(seq):
     return ambiguous, evaluable
 
 
+def summarize_codons(seq, codontable):
+    """Return codon-state counts and internal-stop status in one pass."""
+    counts = [0, 0, 0, 0]
+    last_evaluable_index = None
+    stop_indices = []
+    total_codons = len(seq) // 3
+    for codon_index in range(total_codons):
+        start = codon_index * 3
+        state = classify_codon(seq[start:start + 3], codontable=codontable)
+        counts[state] += 1
+        if state != CODON_MISSING:
+            last_evaluable_index = codon_index
+        if state == CODON_STOP:
+            stop_indices.append(codon_index)
+    internal_stop = (
+        last_evaluable_index is not None
+        and any(index != last_evaluable_index for index in stop_indices)
+    )
+    return {
+        'total': total_codons,
+        'clean': counts[CODON_CLEAN],
+        'missing': counts[CODON_MISSING],
+        'ambiguous': counts[CODON_AMBIGUOUS],
+        'stop': counts[CODON_STOP],
+        'evaluable': total_codons - counts[CODON_MISSING],
+        'internal_stop': internal_stop,
+    }
+
+
 def is_gap_only_sequence(seq):
     return len(seq) > 0 and all(ch in GAP_ONLY_CHARS for ch in seq)
 
 
 def has_internal_stop(seq, codontable):
-    stop_codons = get_stop_codons(codontable=codontable)
-    codons = [seq[i:i + 3].upper() for i in range(0, len(seq) - 2, 3)]
-    evaluable_indices = [i for i, codon in enumerate(codons) if not codon_has_missing(codon)]
-    if len(evaluable_indices) <= 1:
-        return False
-    terminal_index = evaluable_indices[-1]
-    for i in evaluable_indices:
-        if i == terminal_index:
-            continue
-        codon = codons[i]
-        if any(ch not in UNAMBIGUOUS_NT for ch in codon):
-            continue
-        if codon in stop_codons:
-            return True
-    return False
+    return summarize_codons(seq=seq, codontable=codontable)['internal_stop']
 
 
 def degeneracy_fold_by_position(codon, codontable):

@@ -9,6 +9,7 @@ from cdskit.util import (
     parallel_map_ordered,
     read_seqs,
     resolve_threads,
+    should_use_process_pool,
     stop_if_not_aligned,
     stop_if_invalid_codontable,
     stop_if_not_dna,
@@ -21,7 +22,6 @@ AA_WILDCARD_CHARS = {'X', '?'}
 CDS_GAP_CHARS = {'-', '.'}
 _GAP_DROP_TABLE_CACHE: dict = {}
 _CODON_TRANSLATOR_CACHE: dict = {}
-_PROCESS_PARALLEL_MIN_RECORDS = 2000
 
 
 def remove_gap_chars(seq, gap_chars):
@@ -275,7 +275,7 @@ def backalign_main(args):
 
     threads = resolve_threads(getattr(args, 'threads', 1))
     backaligned_records = None
-    if (threads > 1) and (len(cdn_records) >= _PROCESS_PARALLEL_MIN_RECORDS):
+    if should_use_process_pool(records=cdn_records, threads=threads):
         try:
             payloads = [(record.id, str(record.seq), str(pep_record_map[record.id].seq)) for record in cdn_records]
             aligned = backalign_payloads_process_parallel(

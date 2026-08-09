@@ -23,16 +23,16 @@ def accession_batch_ranges(num_accession, batch_size):
 
 
 def find_missing_accessions(accessions, seq_records):
-    missing_ids = []
-    for accession in accessions:
-        found = False
-        for seq_record in seq_records:
-            if accession_matches_record_id(accession=accession, record_id=seq_record.id):
-                found = True
-                break
-        if not found:
-            missing_ids.append(accession)
-    return missing_ids
+    matched_accessions = set()
+    for seq_record in seq_records:
+        record_head = str(seq_record.id).strip().split()[0]
+        for token in [record_head] + record_head.split('|'):
+            matched_accessions.add(token)
+            prefix = token
+            while '.' in prefix:
+                prefix = prefix.rsplit('.', 1)[0]
+                matched_accessions.add(prefix)
+    return [accession for accession in accessions if accession not in matched_accessions]
 
 
 def accession_matches_record_id(accession, record_id):

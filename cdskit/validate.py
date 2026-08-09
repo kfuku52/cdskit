@@ -10,6 +10,7 @@ from cdskit.util import (
     parallel_map_ordered,
     read_seqs,
     resolve_threads,
+    should_use_process_pool,
     stop_if_invalid_codontable,
     stop_if_not_dna,
 )
@@ -22,7 +23,6 @@ UNAMBIGUOUS_NT = frozenset('ACGTacgt')
 _DROP_MISSING_CHARS_TABLE = str.maketrans('', '', ''.join(sorted(MISSING_CHARS)))
 _STOP_CODON_CACHE: dict = {}
 _AMBIGUOUS_CODON_CLASS_CACHE: dict = {}
-_PROCESS_PARALLEL_MIN_RECORDS = 2000
 
 
 def chunk_codons(seq):
@@ -106,12 +106,27 @@ def get_duplicate_ids(records):
 
 
 def summarize_single_sequence(seq_id, seq, stop_codons):
-    ambiguous, evaluable = sequence_ambiguous_codon_counts(seq)
+    ambiguous = 0
+    evaluable = 0
+    stop_indices = []
+    last_evaluable = None
+    seq_upper = seq.upper()
+    for codon_index, start in enumerate(range(0, len(seq_upper) - 2, 3)):
+        codon = seq_upper[start:start + 3]
+        if any(ch in MISSING_CHARS for ch in codon):
+            continue
+        evaluable += 1
+        last_evaluable = codon_index
+        if any(ch not in 'ACGT' for ch in codon):
+            ambiguous += 1
+        elif codon in stop_codons:
+            stop_indices.append(codon_index)
+    internal_stop = any(index != last_evaluable for index in stop_indices)
     return (
         seq_id,
         (len(seq) % 3 != 0),
         is_gap_only_sequence(seq),
-        has_internal_stop_with_stop_codons(seq=seq, stop_codons=stop_codons),
+        internal_stop,
         ambiguous,
         evaluable,
     )
@@ -148,7 +163,7 @@ def summarize_records(records, codontable, threads=1):
     worker_threads = resolve_threads(threads=threads)
     stop_codons = get_stop_codons(codontable=codontable)
     per_record = None
-    if (worker_threads > 1) and (len(records) >= _PROCESS_PARALLEL_MIN_RECORDS):
+    if should_use_process_pool(records=records, threads=worker_threads):
         try:
             payloads = [(record.id, str(record.seq)) for record in records]
             per_record = summarize_records_process_parallel(

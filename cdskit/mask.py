@@ -5,11 +5,15 @@ from functools import partial
 
 import Bio.Data.CodonTable
 import Bio.Seq
+import numpy as np
+
+from cdskit.translate import translate_sequence_codes
 
 from cdskit.util import (
     parallel_map_ordered,
     read_seqs,
     resolve_threads,
+    should_use_process_pool,
     stop_if_invalid_codontable,
     stop_if_not_dna,
     stop_if_not_multiple_of_three,
@@ -18,7 +22,6 @@ from cdskit.util import (
 
 _CODON_CLASS_CACHE: dict = {}
 _MASK_DECISION_CACHE: dict = {}
-_PROCESS_PARALLEL_MIN_RECORDS = 2000
 
 
 def codon_chunks(nucseq):
@@ -78,56 +81,25 @@ def get_mask_decision_cache(codontable, mask_ambiguous, mask_stop):
 
 
 def mask_sequence_string(nucseq, codontable, mask_triplet, mask_ambiguous, mask_stop):
-    if not mask_ambiguous and not mask_stop:
-        out = list()
-        changed = False
-        for i in range(0, len(nucseq), 3):
-            codon = nucseq[i:i + 3]
-            if ('-' in codon) and (codon != '---'):
-                out.append(mask_triplet)
-                changed = True
-            else:
-                out.append(codon)
-        if changed:
-            return ''.join(out)
+    if len(nucseq) == 0:
         return nucseq
-
-    mask_decision_cache = get_mask_decision_cache(
-        codontable=codontable,
-        mask_ambiguous=mask_ambiguous,
-        mask_stop=mask_stop,
-    )
-    out = list()
-    changed = False
-    for i in range(0, len(nucseq), 3):
-        codon = nucseq[i:i + 3]
-        codon_upper = codon.upper()
-        should_mask = mask_decision_cache.get(codon_upper)
-        if should_mask is None:
-            if ('-' in codon_upper) and (codon_upper != '---'):
-                should_mask = True
-            elif codon_upper == '---':
-                should_mask = False
-            else:
-                amino_acid = str(
-                    Bio.Seq.Seq(codon_upper).translate(table=codontable)
-                )
-                should_mask = should_mask_amino_acid(
-                    amino_acid,
-                    mask_ambiguous=mask_ambiguous,
-                    mask_stop=mask_stop,
-                )
-            mask_decision_cache[codon_upper] = should_mask
-        if should_mask:
-            out.append(mask_triplet)
-            changed = True
-            continue
-
-        out.append(codon)
-
-    if changed:
-        return ''.join(out)
-    return nucseq
+    sequence = np.frombuffer(nucseq.encode('ascii'), dtype='S1').reshape(-1, 3)
+    gap_positions = sequence == b'-'
+    should_mask = np.any(gap_positions, axis=1) & ~np.all(gap_positions, axis=1)
+    if mask_ambiguous or mask_stop:
+        amino_acids = translate_sequence_codes(
+            seq_str=nucseq,
+            codontable=codontable,
+        )
+        if mask_ambiguous:
+            should_mask |= amino_acids == ord('X')
+        if mask_stop:
+            should_mask |= amino_acids == ord('*')
+    if not np.any(should_mask):
+        return nucseq
+    output = np.frombuffer(bytearray(nucseq.encode('ascii')), dtype='S1').reshape(-1, 3)
+    output[should_mask, :] = np.frombuffer(mask_triplet.encode('ascii'), dtype='S1')
+    return output.tobytes().decode('ascii')
 
 
 def mask_record(record, codontable, mask_triplet, mask_ambiguous, mask_stop):
@@ -185,7 +157,7 @@ def mask_main(args):
     )
     threads = resolve_threads(getattr(args, 'threads', 1))
     masked_seqs = None
-    if (threads > 1) and (len(records) >= _PROCESS_PARALLEL_MIN_RECORDS):
+    if should_use_process_pool(records=records, threads=threads):
         try:
             payloads = [(record.id, str(record.seq)) for record in records]
             masked_payloads = mask_payloads_process_parallel(

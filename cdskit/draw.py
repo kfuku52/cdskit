@@ -274,6 +274,7 @@ def build_svg(records, args, summary):
     if num_records == 0 or num_sites == 0:
         out.append(svg_text('No sequences to draw', margin_left, grid_top + 20, size=13, cls='summary'))
     else:
+        seq_strings = [str(record.seq) for record in records]
         for site_idx, site_summary in enumerate(summary['site_summaries']):
             x = map_x0 + site_idx * tile_w
             state = 'keep' if site_idx in summary['kept_sites'] else 'remove'
@@ -292,8 +293,7 @@ def build_svg(records, args, summary):
                     )
                 )
 
-            for row_idx, record in enumerate(records):
-                seq = str(record.seq)
+            for row_idx, (record, seq) in enumerate(zip(records, seq_strings)):
                 codon = seq[site_idx * 3 : site_idx * 3 + 3]
                 category = classify_codon(codon=codon, codontable=args.codontable)
                 tile_y = grid_top + strip_h + row_idx * row_height + 1.0

@@ -2,10 +2,11 @@ import sys
 from collections import Counter
 
 from cdskit.codonutil import (
+    CODON_AMBIGUOUS,
+    CODON_MISSING,
+    CODON_STOP,
     UNAMBIGUOUS_NT,
-    ambiguous_codon_counts,
-    codon_has_missing,
-    codon_is_stop,
+    classify_codon,
     get_forward_table,
 )
 from cdskit.util import (
@@ -26,7 +27,9 @@ def summarize_record(record, codontable):
     seq_str = str(record.seq)
     codons_total = len(seq_str) // 3
     codons_missing = 0
+    codons_ambiguous = 0
     codons_stop = 0
+    codons_complete = 0
     usage = Counter()
     gc_counts = [0, 0, 0]
     gc_denoms = [0, 0, 0]
@@ -38,15 +41,21 @@ def summarize_record(record, codontable):
                 gc_denoms[pos] += 1
                 if ch in ('G', 'C'):
                     gc_counts[pos] += 1
-        if codon_has_missing(codon_upper):
+        state = classify_codon(codon=codon_upper, codontable=codontable)
+        if state == CODON_MISSING:
             codons_missing += 1
             continue
-        if not any(ch not in UNAMBIGUOUS_NT for ch in codon_upper):
+        if len(codon_upper) < 3:
+            if state != CODON_AMBIGUOUS:
+                usage[codon_upper] += 1
+            continue
+        codons_complete += 1
+        if state != CODON_AMBIGUOUS:
             usage[codon_upper] += 1
-            if codon_is_stop(codon=codon_upper, codontable=codontable):
+            if state == CODON_STOP:
                 codons_stop += 1
-    codons_ambiguous, evaluable_codons = ambiguous_codon_counts(seq=seq_str)
-    codons_complete = evaluable_codons
+        else:
+            codons_ambiguous += 1
     gc_total = sum(gc_counts)
     gc_denom_total = sum(gc_denoms)
     return {

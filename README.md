@@ -111,6 +111,11 @@ Commands that have independent record- or search-level work expose
 For resource safety, cdskit caps worker counts at 64 by default. Set
 `CDSKIT_MAX_THREADS` to change that ceiling.
 
+CPU-bound record commands select process workers from total sequence workload
+rather than record count. The default crossover is 16,000,000 residues and can
+be tuned with `CDSKIT_PROCESS_PARALLEL_MIN_RESIDUES`. Vectorized translation is
+processed serially because worker startup costs more than it saves.
+
 ## CLI and TSV conventions
 
 Long options use snake_case consistently, for example `--seq_file`,
@@ -212,6 +217,15 @@ helpers are available through `python -m cdskit.targetp_benchmark`. See the
 [`localize` wiki page](https://github.com/kfuku52/cdskit/wiki/cdskit-localize)
 for supported localization, membrane, and sorting-signal labels plus benchmark
 commands.
+
+## Performance benchmarks
+
+Run the repeatable CPU hot-path suite before and after performance changes:
+
+```bash
+python -m cdskit.benchmark_hotpaths
+python -m cdskit.benchmark_hotpaths --full
+```
 
 ## Citation
 There is no published paper on CDSKIT itself, but we used and cited CDSKIT in several papers including [Fukushima & Pollock (2023, Nat Ecol Evol 7: 155-170)](https://www.nature.com/articles/s41559-022-01932-7).

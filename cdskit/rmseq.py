@@ -33,7 +33,11 @@ def problematic_rate(seq, problematic_chars):
     seq_len = len(seq)
     if seq_len == 0:
         return 0.0
-    normalized_chars = normalize_problematic_chars(problematic_chars)
+    normalized_chars = (
+        problematic_chars
+        if isinstance(problematic_chars, frozenset)
+        else normalize_problematic_chars(problematic_chars)
+    )
     if len(normalized_chars) == 0:
         return 0.0
     num_problematic_char = sum(1 for ch in str(seq).upper() if ch in normalized_chars)

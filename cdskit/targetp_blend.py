@@ -37,7 +37,7 @@ from cdskit.targetp_benchmark import (
     TARGETP_TABLE1_REFERENCE,
     compute_prf_by_class,
 )
-from cdskit.cliutil import CdskitArgumentParser, parse_bool
+from cdskit.cliutil import CdskitArgumentParser, parse_bool, resolve_threads
 from cdskit.tsvio import read_tsv
 from cdskit.util import atomic_text_writer, atomic_write_json
 
@@ -50,6 +50,12 @@ TARGETP_SPECIALIST_FIXED_PROFILE = {
     'ltp_threshold': 0.2525,
     'ltp_mass_threshold': 0.21,
 }
+_SKLEARN_N_JOBS = 1
+
+
+def configure_sklearn_threads(threads):
+    global _SKLEARN_N_JOBS
+    _SKLEARN_N_JOBS = max(1, int(threads))
 
 
 def _read_training_rows(path, required_columns=None):
@@ -1285,7 +1291,7 @@ def _evaluate_targetp_specialist_postprocess(
             class_weight='balanced',
             max_features='sqrt',
             min_samples_leaf=1,
-            n_jobs=1,
+            n_jobs=_SKLEARN_N_JOBS,
         )
 
     ltp_scores_a = _binary_oof_scores(
@@ -1389,7 +1395,7 @@ def _evaluate_foldwise_targetp_specialist_postprocess(
             class_weight='balanced',
             max_features='sqrt',
             min_samples_leaf=1,
-            n_jobs=1,
+            n_jobs=_SKLEARN_N_JOBS,
         )
 
     for fold_id in sorted(set([str(v) for v in fold_ids.tolist()])):
@@ -1621,7 +1627,7 @@ def _evaluate_foldwise_fixed_targetp_specialist_postprocess(
             class_weight='balanced',
             max_features='sqrt',
             min_samples_leaf=1,
-            n_jobs=1,
+            n_jobs=_SKLEARN_N_JOBS,
         )
 
     for fold_id in sorted(set([str(v) for v in fold_ids.tolist()])):
@@ -2247,7 +2253,7 @@ def _fit_full_targetp_specialist_postprocess(
             class_weight='balanced',
             max_features='sqrt',
             min_samples_leaf=1,
-            n_jobs=1,
+            n_jobs=_SKLEARN_N_JOBS,
         )
         _fit_sklearn_model(model, ltp_features[ctp_ltp_train_mask, :], y_ltp)
         ltp_models.append(model)
@@ -2714,6 +2720,7 @@ def build_parser():
     parser.add_argument('--model_out_specialist_postprocess', default=True, type=parse_bool)
     parser.add_argument('--out_json', default='data/localize_bench/targetp2_bilstm_esm_blend.json', type=str)
     parser.add_argument('--out_md', default='data/localize_bench/targetp2_bilstm_esm_blend.md', type=str)
+    parser.add_argument('--threads', default=1, type=int, help='Number of CPU workers used by tree ensembles; 0 auto-detects CPUs.')
     return parser
 
 
@@ -2723,6 +2730,7 @@ def _to_bool_yes_no(value):
 
 def main(argv=None):
     args = build_parser().parse_args(argv)
+    configure_sklearn_threads(resolve_threads(args.threads))
     class_names = list(LOCALIZATION_CLASSES)
     reuse_cache = _to_bool_yes_no(args.reuse_oof_cache)
     fallback_true_idx = None

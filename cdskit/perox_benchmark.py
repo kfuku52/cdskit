@@ -38,6 +38,7 @@ from cdskit.util import atomic_text_writer, atomic_write_json
 
 DEFAULT_TRAIN_TSV = 'data/localize_bench/deeploc21/deeploc21_localization_train_validation.tsv'
 DEFAULT_EXTERNAL_TEST_TSV = 'data/localize_bench/deeploc21/deeploc21_hpa_test.tsv'
+_SKLEARN_N_JOBS = 1
 
 
 def _str_to_bool(value):
@@ -243,7 +244,7 @@ def make_perox_classifier(
             class_weight='balanced',
             max_features='sqrt',
             min_samples_leaf=max(1, int(min_samples_leaf)),
-            n_jobs=1,
+            n_jobs=_SKLEARN_N_JOBS,
         )
     raise ValueError('Unsupported perox model_kind: {}'.format(model_kind))
 
@@ -1715,6 +1716,7 @@ def build_arg_parser():
     parser.add_argument('--l2_regularization', default=0.0, type=float)
     parser.add_argument('--n_estimators', default=300, type=int)
     parser.add_argument('--min_samples_leaf', default=10, type=int)
+    parser.add_argument('--threads', default=1, type=int, help='Number of CPU workers used by tree ensembles; 0 auto-detects CPUs.')
     parser.add_argument('--base_model', default='', type=str)
     parser.add_argument('--model_out', default='', type=str)
     parser.add_argument('--out_json', dest='report_json', default='', type=str)
@@ -1749,8 +1751,10 @@ def build_arg_parser():
 
 
 def main(argv=None):
+    global _SKLEARN_N_JOBS
     parser = build_arg_parser()
     args = parser.parse_args(argv)
+    _SKLEARN_N_JOBS = resolve_threads(args.threads)
     report = run_deeploc21_perox_benchmark(
         train_tsv=args.train_tsv,
         external_test_tsv=args.external_test_tsv,

@@ -1,9 +1,6 @@
 import Bio.Data.CodonTable
 import Bio.Seq
 import Bio.SeqIO
-import numpy as np
-
-import io
 import json
 import os
 import re
@@ -43,6 +40,8 @@ QUALITY_REQUIRED_FORMATS = frozenset({
     'fastq-solexa',
     'qual',
 })
+DEFAULT_PROCESS_PARALLEL_MIN_RESIDUES = 16_000_000
+_ACTIVE_STAGED_PATHS: set[str] = set()
 
 
 def _normalized_path(path):
@@ -83,6 +82,10 @@ def validate_distinct_paths(inputs=(), outputs=()):
 def atomic_output_path(path):
     """Yield a same-directory temporary path and atomically replace *path*."""
     destination = Path(path)
+    normalized_destination = _normalized_path(destination)
+    if normalized_destination in _ACTIVE_STAGED_PATHS:
+        yield str(destination)
+        return
     destination.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(
         prefix='.{}.'.format(destination.name),
@@ -119,7 +122,14 @@ def atomic_output_paths(paths):
             )
             os.close(fd)
             temporary_paths.append(Path(temporary))
-        yield [str(path) for path in temporary_paths]
+        normalized_temporary_paths = {
+            _normalized_path(path) for path in temporary_paths
+        }
+        _ACTIVE_STAGED_PATHS.update(normalized_temporary_paths)
+        try:
+            yield [str(path) for path in temporary_paths]
+        finally:
+            _ACTIVE_STAGED_PATHS.difference_update(normalized_temporary_paths)
         for temporary in temporary_paths:
             with open(temporary, 'rb+') as handle:
                 os.fsync(handle.fileno())
@@ -194,8 +204,6 @@ def atomic_text_writer(path, encoding='utf-8', newline=None):
     with atomic_output_path(path) as temporary:
         with open(temporary, 'w', encoding=encoding, newline=newline) as handle:
             yield handle
-            handle.flush()
-            os.fsync(handle.fileno())
 
 
 def atomic_write_json(path, payload, **kwargs):
@@ -320,6 +328,18 @@ def parallel_map_ordered(items, worker, threads):
     return out
 
 
+def should_use_process_pool(records, threads, min_total_residues=None):
+    """Select processes from estimated work instead of a record-count cliff."""
+    if threads <= 1 or len(records) <= 1:
+        return False
+    if min_total_residues is None:
+        min_total_residues = int(os.environ.get(
+            'CDSKIT_PROCESS_PARALLEL_MIN_RESIDUES',
+            DEFAULT_PROCESS_PARALLEL_MIN_RESIDUES,
+        ))
+    return sum(len(record.seq) for record in records) >= min_total_residues
+
+
 def read_seqs(seqfile, seqformat):
     parsed = sys.stdin if seqfile == '-' else seqfile
     max_records = int(os.environ.get('CDSKIT_MAX_SEQUENCE_RECORDS', DEFAULT_MAX_SEQUENCE_RECORDS))
@@ -356,6 +376,51 @@ def read_seqs(seqfile, seqformat):
             )
     sys.stderr.write('Number of input sequences: {:,}\n'.format(len(records)))
     return records
+
+
+def iter_seq_chunks(seqfile, seqformat, max_chunk_records=10_000, max_chunk_residues=32_000_000):
+    """Yield bounded record batches while enforcing the normal input limits."""
+    parsed = sys.stdin if seqfile == '-' else seqfile
+    max_records = int(os.environ.get('CDSKIT_MAX_SEQUENCE_RECORDS', DEFAULT_MAX_SEQUENCE_RECORDS))
+    max_residues = int(os.environ.get('CDSKIT_MAX_SEQUENCE_RESIDUES', DEFAULT_MAX_SEQUENCE_RESIDUES))
+    max_id_length = int(os.environ.get('CDSKIT_MAX_SEQUENCE_ID_LENGTH', DEFAULT_MAX_SEQUENCE_ID_LENGTH))
+    chunk = []
+    chunk_residues = 0
+    total_records = 0
+    total_residues = 0
+    for record in Bio.SeqIO.parse(parsed, seqformat):
+        if len(record.id) > max_id_length:
+            raise ValueError(
+                'Sequence identifier exceeds {} characters. Set '
+                'CDSKIT_MAX_SEQUENCE_ID_LENGTH to change the safety limit.'.format(max_id_length)
+            )
+        record_residues = len(record.seq)
+        total_records += 1
+        total_residues += record_residues
+        if total_records > max_records:
+            raise ValueError(
+                'Input exceeds {} sequence records. Set CDSKIT_MAX_SEQUENCE_RECORDS to change the safety limit.'.format(
+                    max_records
+                )
+            )
+        if total_residues > max_residues:
+            raise ValueError(
+                'Input exceeds {:,} residues. Set CDSKIT_MAX_SEQUENCE_RESIDUES to change the safety limit.'.format(
+                    max_residues
+                )
+            )
+        if chunk and (
+            len(chunk) >= max_chunk_records
+            or chunk_residues + record_residues > max_chunk_residues
+        ):
+            yield chunk
+            chunk = []
+            chunk_residues = 0
+        chunk.append(record)
+        chunk_residues += record_residues
+    if chunk:
+        yield chunk
+    sys.stderr.write('Number of input sequences: {:,}\n'.format(total_records))
 
 
 def write_seqs(records, outfile, outseqformat):
@@ -418,12 +483,9 @@ def stop_if_not_dna(records, label='--seq_file'):
     invalid_chars = set()
     for record in records:
         seq_str = str(record.seq)
-        is_invalid = False
-        for ch in seq_str:
-            if ch not in DNA_ALLOWED_CHARS:
-                invalid_chars.add(ch)
-                is_invalid = True
-        if is_invalid:
+        record_invalid_chars = set(seq_str).difference(DNA_ALLOWED_CHARS)
+        if record_invalid_chars:
+            invalid_chars.update(record_invalid_chars)
             invalid_ids.append(record.id)
     if len(invalid_ids) == 0:
         return
@@ -444,12 +506,9 @@ def stop_if_not_protein(records, label='--seq_file'):
     invalid_chars = set()
     for record in records:
         seq_str = str(record.seq)
-        is_invalid = False
-        for ch in seq_str:
-            if ch not in PROTEIN_ALLOWED_CHARS:
-                invalid_chars.add(ch)
-                is_invalid = True
-        if is_invalid:
+        record_invalid_chars = set(seq_str).difference(PROTEIN_ALLOWED_CHARS)
+        if record_invalid_chars:
+            invalid_chars.update(record_invalid_chars)
             invalid_ids.append(record.id)
     if len(invalid_ids) == 0:
         return
@@ -479,12 +538,9 @@ def stop_if_not_seqtype(records, seqtype='auto', label='--seq_file'):
         invalid_chars = set()
         for record in records:
             seq_str = str(record.seq)
-            is_invalid = False
-            for ch in seq_str:
-                if ch not in allowed_chars:
-                    invalid_chars.add(ch)
-                    is_invalid = True
-            if is_invalid:
+            record_invalid_chars = set(seq_str).difference(allowed_chars)
+            if record_invalid_chars:
+                invalid_chars.update(record_invalid_chars)
                 invalid_ids.append(record.id)
         if len(invalid_ids) == 0:
             return
@@ -535,6 +591,7 @@ def translate_records(records, codontable):
 
 
 def records2array(records):
+    import numpy as np
     return np.array([list(record.seq) for record in records])
 
 
@@ -577,32 +634,48 @@ def replace_seq2cds(record):
 
 
 def read_gff(gff_file):
+    import numpy as np
+
     header_lines = []
-    data_lines = []
+    rows = []
+    max_widths = [1] * len(GFF_COLUMNS)
     with open(gff_file, 'r', encoding='utf-8') as f:
-        for line in f:
+        for line_number, line in enumerate(f, start=1):
             line = line.strip()
             if not line:
                 continue
-            if line[0] == '#':
+            if line.startswith('#'):
                 header_lines.append(line)
             else:
-                data_lines.append(line)
-    if len(data_lines) == 0:
+                fields = [field.strip() for field in line.split('\t')]
+                if len(fields) != len(GFF_COLUMNS):
+                    raise ValueError(
+                        'GFF line {} should contain exactly 9 tab-separated fields.'.format(
+                            line_number
+                        )
+                    )
+                try:
+                    start = int(fields[3])
+                    end = int(fields[4])
+                except ValueError as exc:
+                    raise ValueError(
+                        'GFF line {} has a non-integer start or end coordinate.'.format(
+                            line_number
+                        )
+                    ) from exc
+                row = fields[:3] + [start, end] + fields[5:]
+                rows.append(tuple(row))
+                for index, value in enumerate(fields):
+                    if index not in (3, 4):
+                        max_widths[index] = max(max_widths[index], len(value))
+    if len(rows) == 0:
         data = np.array([], dtype=GFF_DTYPE)
     else:
-        data = np.genfromtxt(
-            io.StringIO('\n'.join(data_lines)),
-            delimiter='\t',
-            dtype=None,
-            names=GFF_COLUMNS,
-            encoding='utf-8',
-            autostrip=True,
-            comments=None,
-        )
-        # Handle single record case: np.genfromtxt returns 0-d array for single line
-        if data.ndim == 0:
-            data = np.array([data], dtype=data.dtype)
+        dtype = [
+            (name, 'i8' if name in ('start', 'end') else 'U{}'.format(max_widths[index]))
+            for index, name in enumerate(GFF_COLUMNS)
+        ]
+        data = np.asarray(rows, dtype=dtype)
     sys.stderr.write('Number of input GFF header lines: {:,}\n'.format(len(header_lines)))
     sys.stderr.write('Number of input GFF records: {:,}\n'.format(len(data)))
     sys.stderr.write('Number of input GFF unique seqids: {:,}\n'.format(len(np.unique(data['seqid']))))
@@ -610,6 +683,7 @@ def read_gff(gff_file):
 
 
 def write_gff(gff, outfile):
+    import numpy as np
     sys.stderr.write('Number of output GFF header lines: {:,}\n'.format(len(gff['header'])))
     sys.stderr.write('Number of output GFF records: {:,}\n'.format(len(gff['data'])))
     sys.stderr.write('Number of output GFF unique seqids: {:,}\n'.format(len(np.unique(gff['data']['seqid']))))

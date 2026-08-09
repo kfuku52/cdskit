@@ -4,6 +4,37 @@ This project follows semantic versioning. Deprecated CLI spellings remain
 available for at least the 0.24 release series and print their canonical
 replacement to standard error.
 
+## Unreleased
+
+### Performance
+
+- Batched composite TargetP localization models, sklearn feature ensembles,
+  specialist heads, and peroxisome heads instead of invoking them per record.
+- Vectorized codon translation and masking, shared cached codon classification,
+  fused validation passes, and reduced repeated sequence conversion in
+  degeneracy and drawing paths.
+- Selected process parallelism by total sequence workload, streamed large
+  translation jobs in bounded chunks, accelerated exact and greedy maxalign,
+  and replaced generic GFF parsing and iterative coordinate shifts with typed
+  and search-based implementations.
+- Avoided duplicate transactional file synchronization and enabled explicit
+  CPU worker counts for research tree-ensemble training commands.
+
+### Testing
+
+- Added batching and workload-selection regression coverage plus a reusable
+  CPU hot-path benchmark runner.
+
+### Fixed
+
+- Kept batched TargetP blends and specialist rerankers consistent with
+  record-wise prediction for missing classes, non-plant constraints, and
+  malformed class-specific thresholds.
+- Preserved partial-codon helper behavior, stop-at-first-stop translation,
+  legacy same-site gap edit ordering, and incomplete-codon statistics.
+- Exposed the hot-path benchmark as the packaged
+  `python -m cdskit.benchmark_hotpaths` module.
+
 ## 0.25.2 — 2026-08-06
 
 ### Changed

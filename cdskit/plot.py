@@ -442,7 +442,18 @@ def _draw_aa_logo(ax, freqs, nt_start, y_top, logo_height):
         current_bottom = letter_top
 
 
-def _draw_sequence_split_row(ax, codon, aa, nt_start, row_top, panel_height, aa_font_size, codon_font_size, aa_alpha=0.16):
+def _draw_sequence_split_row(
+    ax,
+    codon,
+    aa,
+    nt_start,
+    row_top,
+    panel_height,
+    aa_font_size,
+    codon_font_size,
+    aa_alpha=0.16,
+    draw_panel=True,
+):
     panel_top = row_top
     content_top = panel_top + 0.005
     aa_height = 0.18
@@ -451,16 +462,17 @@ def _draw_sequence_split_row(ax, codon, aa, nt_start, row_top, panel_height, aa_
     aa_center_y = content_top + (aa_height / 2.0)
     codon_center_y = content_top + aa_height + codon_gap + (codon_height / 2.0)
 
-    _draw_msa_rect(
-        ax,
-        nt_start - 0.5,
-        panel_top,
-        3.0,
-        panel_height,
-        COL_MSA_ROW_BG,
-        edgecolor='none',
-        linewidth=0.0,
-    )
+    if draw_panel:
+        _draw_msa_rect(
+            ax,
+            nt_start - 0.5,
+            panel_top,
+            3.0,
+            panel_height,
+            COL_MSA_ROW_BG,
+            edgecolor='none',
+            linewidth=0.0,
+        )
 
     _draw_centered_box_text(
         ax=ax,
@@ -552,6 +564,17 @@ def _draw_msa_block(ax, records, msa_summary, start, end, wrap, font_size, y_off
 
     consensus_aa_font_size = max(font_size - 0.4, 5)
     consensus_codon_font_size = max(font_size * 0.46, 4)
+    if block_codons > 0:
+        _draw_msa_rect(
+            ax,
+            -0.5,
+            consensus_top,
+            float(block_len),
+            consensus_panel_height,
+            COL_MSA_ROW_BG,
+            edgecolor='none',
+            linewidth=0.0,
+        )
     for codon_offset in range(block_codons):
         nt_start = codon_offset * 3
         abs_codon_idx = start_codon + codon_offset
@@ -565,6 +588,7 @@ def _draw_msa_block(ax, records, msa_summary, start, end, wrap, font_size, y_off
             aa_font_size=consensus_aa_font_size,
             codon_font_size=consensus_codon_font_size,
             aa_alpha=0.18,
+            draw_panel=False,
         )
         _draw_aa_logo(
             ax=ax,
@@ -578,6 +602,17 @@ def _draw_msa_block(ax, records, msa_summary, start, end, wrap, font_size, y_off
     codon_font_size = max(font_size * 0.42, 4)
     for row_idx, record in enumerate(records):
         row_top = seq_y_start + row_idx * row_step
+        if block_codons > 0:
+            _draw_msa_rect(
+                ax,
+                -0.5,
+                row_top,
+                float(block_len),
+                row_panel_height,
+                COL_MSA_ROW_BG,
+                edgecolor='none',
+                linewidth=0.0,
+            )
         for codon_offset in range(block_codons):
             nt_start = codon_offset * 3
             abs_codon_idx = start_codon + codon_offset
@@ -590,6 +625,7 @@ def _draw_msa_block(ax, records, msa_summary, start, end, wrap, font_size, y_off
                 panel_height=row_panel_height,
                 aa_font_size=aa_font_size,
                 codon_font_size=codon_font_size,
+                draw_panel=False,
             )
 
     for rel_idx in range(0, wrap + 1, 3):

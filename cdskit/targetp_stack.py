@@ -3,7 +3,7 @@ import os
 
 import numpy as np
 
-from cdskit.cliutil import CdskitArgumentParser, parse_bool
+from cdskit.cliutil import CdskitArgumentParser, parse_bool, resolve_threads
 from cdskit.tsvio import read_tsv
 from cdskit.util import atomic_text_writer, atomic_write_json
 
@@ -43,6 +43,8 @@ from cdskit.targetp_blend import (
     _read_true_idx_from_training_tsv,
     _targetp_sp_scan_features,
 )
+
+_SKLEARN_N_JOBS = 1
 
 
 TARGETP_STACK_DEFAULTS = {
@@ -254,7 +256,7 @@ def make_targetp_stack_classifier(
             class_weight=None if str(class_weight).strip().lower() == 'none' else class_weight,
             max_features=max_features,
             min_samples_leaf=int(min_samples_leaf),
-            n_jobs=1,
+            n_jobs=_SKLEARN_N_JOBS,
         )
     if model_kind == 'extra_trees':
         from sklearn.ensemble import ExtraTreesClassifier
@@ -264,7 +266,7 @@ def make_targetp_stack_classifier(
             class_weight=None if str(class_weight).strip().lower() == 'none' else class_weight,
             max_features=max_features,
             min_samples_leaf=int(min_samples_leaf),
-            n_jobs=1,
+            n_jobs=_SKLEARN_N_JOBS,
         )
     if model_kind == 'hist_gradient_boosting':
         from sklearn.ensemble import HistGradientBoostingClassifier
@@ -2339,6 +2341,7 @@ def build_parser():
     parser.add_argument('--threshold_grid', default='0.05,0.075,0.1,0.15,0.2,0.3,0.4,0.5,0.65,0.8,1.0,1.25,1.5,2.0,3.0,5.0', type=str)
     parser.add_argument('--out_json', default='data/localize_bench/targetp2_stack_eval.json', type=str)
     parser.add_argument('--out_md', default='data/localize_bench/targetp2_stack_eval.md', type=str)
+    parser.add_argument('--threads', default=1, type=int, help='Number of CPU workers used by tree ensembles; 0 auto-detects CPUs.')
     return parser
 
 
@@ -2363,7 +2366,11 @@ def _parse_float_list(value):
 
 
 def main(argv=None):
+    global _SKLEARN_N_JOBS
     args = build_parser().parse_args(argv)
+    _SKLEARN_N_JOBS = resolve_threads(args.threads)
+    from cdskit import targetp_blend
+    targetp_blend.configure_sklearn_threads(_SKLEARN_N_JOBS)
     base_oof_npzs = [
         value.strip() for value in str(args.base_oof_npzs).split(',')
         if value.strip() != ''

@@ -8,7 +8,24 @@ import Bio.SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
-from cdskit.translate import translate_main
+from cdskit.translate import translate_main, translate_sequence_string
+
+
+@pytest.mark.parametrize(
+    'sequence,expected',
+    [
+        ('-', '-'),
+        ('.', '-'),
+        ('?', 'X'),
+        ('ATG?', 'MX'),
+    ],
+)
+def test_translate_sequence_string_preserves_partial_missing_codons(sequence, expected):
+    assert translate_sequence_string(sequence, codontable=1, to_stop=False) == expected
+
+
+def test_translate_to_stop_ignores_invalid_codons_after_stop():
+    assert translate_sequence_string('TAAXRK', codontable=1, to_stop=True) == ''
 
 
 class TestTranslateMain:

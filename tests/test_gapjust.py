@@ -121,6 +121,20 @@ class TestVectorizedCoordinateUpdate:
         assert list(tuple_starts) == list(dict_starts)
         assert list(tuple_ends) == list(dict_ends)
 
+    def test_same_site_legacy_edits_keep_original_tie_break(self):
+        starts = np.array([1])
+        ends = np.array([1])
+        justifications = [(0, 1), (0, -1)]
+
+        new_starts, new_ends = vectorized_coordinate_update(
+            starts,
+            ends,
+            justifications,
+        )
+
+        assert list(new_starts) == [2]
+        assert list(new_ends) == [2]
+
     def test_non_monotonic_actual_edit_starts_use_safe_fallback(self):
         """Fallback loop should handle edits whose shifted starts are not monotonic."""
         starts = np.array([8, 30])
