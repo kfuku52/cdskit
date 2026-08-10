@@ -13,116 +13,118 @@ from cdskit.localize_learn import (
 )
 from cdskit.tsvio import read_tsv
 from cdskit.cliutil import CdskitArgumentParser, parse_bool
-from cdskit.util import atomic_output_path, atomic_text_writer, atomic_write_json
+from cdskit.atomicio import atomic_output_path, atomic_text_writer, atomic_write_json
 
-TARGETP_SOURCE_COMMIT = '695c7b252298d3ec7a30491c8026e8839d41f678'
+TARGETP_SOURCE_COMMIT = "695c7b252298d3ec7a30491c8026e8839d41f678"
 TARGETP_DOWNLOAD_MAX_BYTES = 256 * 1024 * 1024
 TARGETP_DOWNLOADS = (
     (
-        'https://services.healthtech.dtu.dk/services/TargetP-2.0/targetp.fasta',
-        'targetp_fasta',
-        '049f6300ad68f6e4c59d6fc3cb9f321f6ea8f9134d3b6496bc241d582cc09768',
+        "https://services.healthtech.dtu.dk/services/TargetP-2.0/targetp.fasta",
+        "targetp_fasta",
+        "049f6300ad68f6e4c59d6fc3cb9f321f6ea8f9134d3b6496bc241d582cc09768",
     ),
     (
-        'https://services.healthtech.dtu.dk/services/TargetP-2.0/swissprot_annotated_proteins.tab',
-        'targetp_tab',
-        'daac14975a36522ce3c5b44c203f6cd7490e6f589ade11787281c9fc7c501d9f',
+        "https://services.healthtech.dtu.dk/services/TargetP-2.0/swissprot_annotated_proteins.tab",
+        "targetp_tab",
+        "daac14975a36522ce3c5b44c203f6cd7490e6f589ade11787281c9fc7c501d9f",
     ),
     (
-        'https://raw.githubusercontent.com/JJAlmagro/TargetP-2.0/{}/data/targetp_data.npz'.format(
+        "https://raw.githubusercontent.com/JJAlmagro/TargetP-2.0/{}/data/targetp_data.npz".format(
             TARGETP_SOURCE_COMMIT
         ),
-        'targetp_npz',
-        'ac22792b2498ac16449c91835a6fb235be8654db83f7f4f621b479e85e462f24',
+        "targetp_npz",
+        "ac22792b2498ac16449c91835a6fb235be8654db83f7f4f621b479e85e462f24",
     ),
 )
 
 TARGETP_LABEL_TO_LOCALIZATION = {
-    'Other': 'noTP',
-    'SP': 'SP',
-    'MT': 'mTP',
-    'CH': 'cTP',
-    'TH': 'lTP',
+    "Other": "noTP",
+    "SP": "SP",
+    "MT": "mTP",
+    "CH": "cTP",
+    "TH": "lTP",
 }
 
 TARGETP_YTYPE_TO_LABEL = {
-    0: 'Other',
-    1: 'SP',
-    2: 'MT',
-    3: 'CH',
-    4: 'TH',
+    0: "Other",
+    1: "SP",
+    2: "MT",
+    3: "CH",
+    4: "TH",
 }
 
 TARGETP_TABLE1_REFERENCE = {
-    'noTP': {'precision': 0.98, 'recall': 0.98, 'f1': 0.98},
-    'SP': {'precision': 0.97, 'recall': 0.98, 'f1': 0.98},
-    'mTP': {'precision': 0.87, 'recall': 0.85, 'f1': 0.86},
-    'cTP': {'precision': 0.90, 'recall': 0.86, 'f1': 0.88},
-    'lTP': {'precision': 0.75, 'recall': 0.75, 'f1': 0.75},
+    "noTP": {"precision": 0.98, "recall": 0.98, "f1": 0.98},
+    "SP": {"precision": 0.97, "recall": 0.98, "f1": 0.98},
+    "mTP": {"precision": 0.87, "recall": 0.85, "f1": 0.86},
+    "cTP": {"precision": 0.90, "recall": 0.86, "f1": 0.88},
+    "lTP": {"precision": 0.75, "recall": 0.75, "f1": 0.75},
 }
 
 
 def _parse_targetp_fasta(path):
     seq_by_accession = dict()
     accession = None
-    seq_chunks = list()
-    with open(path, 'r', encoding='utf-8') as inp:
+    seq_chunks: list[str] = []
+    with open(path, "r", encoding="utf-8") as inp:
         for raw in inp:
             line = raw.strip()
-            if line == '':
+            if line == "":
                 continue
-            if line.startswith('>'):
+            if line.startswith(">"):
                 if accession is not None:
-                    seq_by_accession[accession] = ''.join(seq_chunks)
+                    seq_by_accession[accession] = "".join(seq_chunks)
                 accession = line[1:].split()[0]
                 seq_chunks = list()
             else:
                 seq_chunks.append(line)
     if accession is not None:
-        seq_by_accession[accession] = ''.join(seq_chunks)
+        seq_by_accession[accession] = "".join(seq_chunks)
     return seq_by_accession
 
 
 def _read_targetp_tab_rows(path):
     rows = list()
-    with open(path, 'r', encoding='utf-8', newline='') as inp:
-        reader = csv.reader(inp, delimiter='\t')
+    with open(path, "r", encoding="utf-8", newline="") as inp:
+        reader = csv.reader(inp, delimiter="\t")
         for raw in reader:
             if len(raw) == 0:
                 continue
             if len(raw) < 3:
-                raise ValueError('Invalid TargetP annotation row: {}'.format(raw))
-            rows.append({
-                'accession': str(raw[0]).strip(),
-                'targetp_label': str(raw[1]).strip(),
-                'cleavage_site': str(raw[2]).strip(),
-            })
+                raise ValueError("Invalid TargetP annotation row: {}".format(raw))
+            rows.append(
+                {
+                    "accession": str(raw[0]).strip(),
+                    "targetp_label": str(raw[1]).strip(),
+                    "cleavage_site": str(raw[2]).strip(),
+                }
+            )
     return rows
 
 
 def _read_targetp_npz(path):
     with np.load(path, allow_pickle=False) as npz:
-        required = ['ids', 'fold', 'org', 'y_type']
+        required = ["ids", "fold", "org", "y_type"]
         for key in required:
             if key not in npz.files:
-                raise ValueError('TargetP npz is missing key: {}'.format(key))
-        ids = [str(v) for v in npz['ids'].tolist()]
-        folds = [int(v) for v in npz['fold'].tolist()]
-        orgs = [int(v) for v in npz['org'].tolist()]
-        y_types = [int(v) for v in npz['y_type'].tolist()]
+                raise ValueError("TargetP npz is missing key: {}".format(key))
+        ids = [str(v) for v in npz["ids"].tolist()]
+        folds = [int(v) for v in npz["fold"].tolist()]
+        orgs = [int(v) for v in npz["org"].tolist()]
+        y_types = [int(v) for v in npz["y_type"].tolist()]
     if not (len(ids) == len(folds) == len(orgs) == len(y_types)):
-        raise ValueError('Length mismatch among ids/fold/org/y_type in TargetP npz.')
+        raise ValueError("Length mismatch among ids/fold/org/y_type in TargetP npz.")
     return ids, folds, orgs, y_types
 
 
 def _map_targetp_label_to_localization(targetp_label):
     if targetp_label not in TARGETP_LABEL_TO_LOCALIZATION:
-        raise ValueError('Unsupported TargetP label: {}'.format(targetp_label))
+        raise ValueError("Unsupported TargetP label: {}".format(targetp_label))
     return TARGETP_LABEL_TO_LOCALIZATION[targetp_label]
 
 
 def _to_fold_id(fold_value):
-    return 'fold{}'.format(int(fold_value) + 1)
+    return "fold{}".format(int(fold_value) + 1)
 
 
 def prepare_targetp_benchmark_tsv(
@@ -130,7 +132,7 @@ def prepare_targetp_benchmark_tsv(
     annotation_tab_path,
     npz_path,
     out_tsv_path,
-    report_json_path='',
+    report_json_path="",
 ):
     seq_by_accession = _parse_targetp_fasta(path=fasta_path)
     ann_rows = _read_targetp_tab_rows(path=annotation_tab_path)
@@ -146,9 +148,9 @@ def prepare_targetp_benchmark_tsv(
 
     ann_by_accession = dict()
     for row in ann_rows:
-        acc = row['accession']
+        acc = row["accession"]
         if acc in ann_by_accession:
-            raise ValueError('Duplicate accession in annotation tab: {}'.format(acc))
+            raise ValueError("Duplicate accession in annotation tab: {}".format(acc))
         ann_by_accession[acc] = row
 
     ids_ann = set(ann_by_accession.keys())
@@ -156,12 +158,12 @@ def prepare_targetp_benchmark_tsv(
     ids_npz = set(ids)
     if (ids_ann != ids_fasta) or (ids_ann != ids_npz):
         txt = (
-            'TargetP sources are inconsistent. '
-            'ann_only={}, fasta_only={}, npz_only={}'
+            "TargetP sources are inconsistent. ann_only={}, fasta_only={}, npz_only={}"
         )
         raise ValueError(
             txt.format(
-                sorted(list(ids_ann - ids_fasta))[:5] + sorted(list(ids_ann - ids_npz))[:5],
+                sorted(list(ids_ann - ids_fasta))[:5]
+                + sorted(list(ids_ann - ids_npz))[:5],
                 sorted(list(ids_fasta - ids_ann))[:5],
                 sorted(list(ids_npz - ids_ann))[:5],
             )
@@ -169,46 +171,48 @@ def prepare_targetp_benchmark_tsv(
 
     out_rows = list()
     class_counts = {class_name: 0 for class_name in LOCALIZATION_CLASSES}
-    fold_counts = dict()
-    organism_counts = {'plant': 0, 'non_plant': 0}
+    fold_counts: dict[int, int] = {}
+    organism_counts = {"plant": 0, "non_plant": 0}
     y_type_mismatch = 0
     for acc in ids:
         ann = ann_by_accession[acc]
-        targetp_label = ann['targetp_label']
+        targetp_label = ann["targetp_label"]
         localization = _map_targetp_label_to_localization(targetp_label=targetp_label)
-        y_type_label = TARGETP_YTYPE_TO_LABEL.get(ytype_by_accession[acc], '')
+        y_type_label = TARGETP_YTYPE_TO_LABEL.get(ytype_by_accession[acc], "")
         if y_type_label != targetp_label:
             y_type_mismatch += 1
-        org_group = 'plant' if int(org_by_accession[acc]) == 1 else 'non_plant'
+        org_group = "plant" if int(org_by_accession[acc]) == 1 else "non_plant"
         fold_id = _to_fold_id(fold_by_accession[acc])
-        out_rows.append({
-            'accession': acc,
-            'sequence': seq_by_accession[acc],
-            'localization': localization,
-            'peroxisome': 'no',
-            'fold_id': fold_id,
-            'targetp_label': targetp_label,
-            'targetp_fold': int(fold_by_accession[acc]),
-            'organism_group': org_group,
-            'cleavage_site': ann['cleavage_site'],
-        })
+        out_rows.append(
+            {
+                "accession": acc,
+                "sequence": seq_by_accession[acc],
+                "localization": localization,
+                "peroxisome": "no",
+                "fold_id": fold_id,
+                "targetp_label": targetp_label,
+                "targetp_fold": int(fold_by_accession[acc]),
+                "organism_group": org_group,
+                "cleavage_site": ann["cleavage_site"],
+            }
+        )
         class_counts[localization] = class_counts.get(localization, 0) + 1
         fold_counts[fold_id] = fold_counts.get(fold_id, 0) + 1
         organism_counts[org_group] = organism_counts.get(org_group, 0) + 1
 
     out_dir = os.path.dirname(out_tsv_path)
-    if out_dir != '':
+    if out_dir != "":
         os.makedirs(out_dir, exist_ok=True)
     output_fields = [
-        'accession',
-        'sequence',
-        'localization',
-        'peroxisome',
-        'fold_id',
-        'targetp_label',
-        'targetp_fold',
-        'organism_group',
-        'cleavage_site',
+        "accession",
+        "sequence",
+        "localization",
+        "peroxisome",
+        "fold_id",
+        "targetp_label",
+        "targetp_fold",
+        "organism_group",
+        "cleavage_site",
     ]
     write_rows_tsv(
         rows=out_rows,
@@ -217,20 +221,20 @@ def prepare_targetp_benchmark_tsv(
     )
 
     report = {
-        'fasta_path': fasta_path,
-        'annotation_tab_path': annotation_tab_path,
-        'npz_path': npz_path,
-        'out_tsv_path': out_tsv_path,
-        'n_rows': int(len(out_rows)),
-        'class_counts': class_counts,
-        'fold_counts': fold_counts,
-        'organism_counts': organism_counts,
-        'y_type_mismatch_count': int(y_type_mismatch),
-        'fields': output_fields,
+        "fasta_path": fasta_path,
+        "annotation_tab_path": annotation_tab_path,
+        "npz_path": npz_path,
+        "out_tsv_path": out_tsv_path,
+        "n_rows": len(out_rows),
+        "class_counts": class_counts,
+        "fold_counts": fold_counts,
+        "organism_counts": organism_counts,
+        "y_type_mismatch_count": int(y_type_mismatch),
+        "fields": output_fields,
     }
-    if report_json_path != '':
+    if report_json_path != "":
         report_dir = os.path.dirname(report_json_path)
-        if report_dir != '':
+        if report_dir != "":
             os.makedirs(report_dir, exist_ok=True)
         atomic_write_json(report_json_path, report, indent=2)
     return report
@@ -275,13 +279,13 @@ def compute_prf_by_class(true_classes, pred_classes, class_names):
         if (precision + recall) > 0:
             f1 = (2.0 * precision * recall) / (precision + recall)
         out[class_name] = {
-            'tp': int(tp),
-            'fp': int(fp),
-            'fn': int(fn),
-            'support': int(support),
-            'precision': float(precision),
-            'recall': float(recall),
-            'f1': float(f1),
+            "tp": int(tp),
+            "fp": int(fp),
+            "fn": int(fn),
+            "support": int(support),
+            "precision": float(precision),
+            "recall": float(recall),
+            "f1": float(f1),
         }
     return out
 
@@ -293,72 +297,81 @@ def _macro_mean(metric_by_class, class_names, metric_name):
 
 def run_cdskit_cv_on_targetp(
     training_tsv,
-    model_arch='bilstm_attention',
-    localize_strategy='single_stage',
+    model_arch="bilstm_attention",
+    localize_strategy="single_stage",
     dl_params=None,
     cv_seed=1,
     use_organism_group=False,
-    distill_oof_npz='',
+    distill_oof_npz="",
 ):
     if dl_params is None:
         dl_params = {
-            'seq_len': 200,
-            'embed_dim': 32,
-            'hidden_dim': 64,
-            'num_layers': 1,
-            'dropout': 0.2,
-            'epochs': 15,
-            'batch_size': 128,
-            'learning_rate': 1.0e-3,
-            'weight_decay': 1.0e-4,
-            'use_class_weight': True,
-            'loss_name': 'ce',
-            'balanced_batch': False,
-            'aux_tp_weight': 0.0,
-            'aux_ctp_ltp_weight': 0.0,
-            'feature_fusion': True,
-            'distill_weight': 0.0,
-            'distill_temperature': 1.0,
-            'seed': 1,
-            'device': 'cpu',
-            'esm_model_name': 'facebook/esm2_t6_8M_UR50D',
-            'esm_model_revision': 'c731040fcd8d73dceaa04b0a8e6329b345b0f5df',
-            'esm_model_local_dir': '',
-            'esm_pooling': 'cls',
-            'esm_max_len': 200,
+            "seq_len": 200,
+            "embed_dim": 32,
+            "hidden_dim": 64,
+            "num_layers": 1,
+            "dropout": 0.2,
+            "epochs": 15,
+            "batch_size": 128,
+            "learning_rate": 1.0e-3,
+            "weight_decay": 1.0e-4,
+            "use_class_weight": True,
+            "loss_name": "ce",
+            "balanced_batch": False,
+            "aux_tp_weight": 0.0,
+            "aux_ctp_ltp_weight": 0.0,
+            "feature_fusion": True,
+            "distill_weight": 0.0,
+            "distill_temperature": 1.0,
+            "seed": 1,
+            "device": "cpu",
+            "esm_model_name": "facebook/esm2_t6_8M_UR50D",
+            "esm_model_revision": "c731040fcd8d73dceaa04b0a8e6329b345b0f5df",
+            "esm_model_local_dir": "",
+            "esm_pooling": "cls",
+            "esm_max_len": 200,
         }
-    required_columns = ['sequence', 'localization', 'peroxisome', 'fold_id']
+    required_columns = ["sequence", "localization", "peroxisome", "fold_id"]
     if bool(use_organism_group):
-        required_columns.append('organism_group')
+        required_columns.append("organism_group")
     rows = read_tsv(path=training_tsv, required_columns=required_columns)
-    x, aa_sequences, class_labels, perox_labels, skipped, fold_ids = build_training_matrix(
-        rows=rows,
-        seq_col='sequence',
-        seqtype='protein',
-        codontable=1,
-        label_mode='explicit',
-        localization_col='localization',
-        perox_col='peroxisome',
-        skip_ambiguous=True,
-        cv_fold_col='fold_id',
+    x, aa_sequences, class_labels, perox_labels, skipped, fold_ids = (
+        build_training_matrix(
+            rows=rows,
+            seq_col="sequence",
+            seqtype="protein",
+            codontable=1,
+            label_mode="explicit",
+            localization_col="localization",
+            perox_col="peroxisome",
+            skip_ambiguous=True,
+            cv_fold_col="fold_id",
+        )
     )
     organism_groups = None
     if bool(use_organism_group):
         if skipped != 0:
-            raise ValueError('TargetP organism_group gating requires no skipped rows.')
-        organism_groups = [str(row.get('organism_group', '')) for row in rows]
+            raise ValueError("TargetP organism_group gating requires no skipped rows.")
+        organism_groups = [str(row.get("organism_group", "")) for row in rows]
     soft_label_matrix = None
-    if str(distill_oof_npz).strip() != '':
+    if str(distill_oof_npz).strip() != "":
         with np.load(str(distill_oof_npz), allow_pickle=False) as teacher:
-            if 'prob_matrix' not in teacher.files:
-                raise ValueError('distill_oof_npz is missing prob_matrix.')
-            teacher_classes = [str(v) for v in teacher['class_names'].tolist()]
+            if "prob_matrix" not in teacher.files:
+                raise ValueError("distill_oof_npz is missing prob_matrix.")
+            teacher_classes = [str(v) for v in teacher["class_names"].tolist()]
             if teacher_classes != list(LOCALIZATION_CLASSES):
-                raise ValueError('distill_oof_npz class_names do not match LOCALIZATION_CLASSES.')
-            soft_label_matrix = np.asarray(teacher['prob_matrix'], dtype=np.float32)
+                raise ValueError(
+                    "distill_oof_npz class_names do not match LOCALIZATION_CLASSES."
+                )
+            soft_label_matrix = np.asarray(teacher["prob_matrix"], dtype=np.float32)
         if soft_label_matrix.shape != (len(class_labels), len(LOCALIZATION_CLASSES)):
-            txt = 'distill_oof_npz shape mismatch: expected {}, got {}.'
-            raise ValueError(txt.format((len(class_labels), len(LOCALIZATION_CLASSES)), soft_label_matrix.shape))
+            txt = "distill_oof_npz shape mismatch: expected {}, got {}."
+            raise ValueError(
+                txt.format(
+                    (len(class_labels), len(LOCALIZATION_CLASSES)),
+                    soft_label_matrix.shape,
+                )
+            )
     cv_metrics = evaluate_cross_validation(
         x=x,
         aa_sequences=aa_sequences,
@@ -368,17 +381,17 @@ def run_cdskit_cv_on_targetp(
         seed=int(cv_seed),
         model_arch=model_arch,
         dl_train_params=dl_params,
-        dl_device=str(dl_params.get('device', 'cpu')),
+        dl_device=str(dl_params.get("device", "cpu")),
         localize_strategy=localize_strategy,
         fold_ids=fold_ids,
         organism_groups=organism_groups,
         soft_label_matrix=soft_label_matrix,
         verbose=True,
     )
-    oof_rows = sorted(cv_metrics['oof_rows'], key=lambda r: int(r['index']))
-    true_classes = [row['true_class'] for row in oof_rows]
+    oof_rows = sorted(cv_metrics["oof_rows"], key=lambda r: int(r["index"]))
+    true_classes = [row["true_class"] for row in oof_rows]
     pred_classes = [
-        _predict_class_from_prob_dict(row.get('class_probabilities', {}))
+        _predict_class_from_prob_dict(row.get("class_probabilities", {}))
         for row in oof_rows
     ]
     by_class = compute_prf_by_class(
@@ -394,20 +407,22 @@ def run_cdskit_cv_on_targetp(
                 n_ok += 1
         overall = float(n_ok) / float(len(true_classes))
     return {
-        'training_tsv': training_tsv,
-        'n_rows_total': int(len(rows)),
-        'n_rows_used': int(len(true_classes)),
-        'n_rows_skipped': int(skipped),
-        'cv_class_accuracy_mean': float(cv_metrics['class_accuracy_mean']),
-        'cv_class_accuracy_std': float(cv_metrics['class_accuracy_std']),
-        'cv_class_accuracy_by_class': dict(cv_metrics['class_accuracy_by_class']),
-        'oof_overall_accuracy': float(overall),
-        'oof_by_class': by_class,
-        'oof_macro_f1': _macro_mean(by_class, list(LOCALIZATION_CLASSES), 'f1'),
-        'oof_macro_precision': _macro_mean(by_class, list(LOCALIZATION_CLASSES), 'precision'),
-        'oof_macro_recall': _macro_mean(by_class, list(LOCALIZATION_CLASSES), 'recall'),
-        'use_organism_group': bool(use_organism_group),
-        'distill_oof_npz': str(distill_oof_npz),
+        "training_tsv": training_tsv,
+        "n_rows_total": len(rows),
+        "n_rows_used": len(true_classes),
+        "n_rows_skipped": int(skipped),
+        "cv_class_accuracy_mean": float(cv_metrics["class_accuracy_mean"]),
+        "cv_class_accuracy_std": float(cv_metrics["class_accuracy_std"]),
+        "cv_class_accuracy_by_class": dict(cv_metrics["class_accuracy_by_class"]),
+        "oof_overall_accuracy": float(overall),
+        "oof_by_class": by_class,
+        "oof_macro_f1": _macro_mean(by_class, list(LOCALIZATION_CLASSES), "f1"),
+        "oof_macro_precision": _macro_mean(
+            by_class, list(LOCALIZATION_CLASSES), "precision"
+        ),
+        "oof_macro_recall": _macro_mean(by_class, list(LOCALIZATION_CLASSES), "recall"),
+        "use_organism_group": bool(use_organism_group),
+        "distill_oof_npz": str(distill_oof_npz),
     }
 
 
@@ -415,118 +430,168 @@ def build_targetp_comparison_table(cdskit_result):
     table_rows = list()
     for class_name in LOCALIZATION_CLASSES:
         ref = TARGETP_TABLE1_REFERENCE[class_name]
-        ours = cdskit_result['oof_by_class'][class_name]
-        table_rows.append({
-            'class': class_name,
-            'targetp_precision': float(ref['precision']),
-            'targetp_recall': float(ref['recall']),
-            'targetp_f1': float(ref['f1']),
-            'cdskit_precision': float(ours['precision']),
-            'cdskit_recall': float(ours['recall']),
-            'cdskit_f1': float(ours['f1']),
-            'delta_f1_cdskit_minus_targetp': float(ours['f1'] - ref['f1']),
-        })
-    targetp_macro_f1 = float(np.mean(np.asarray(
-        [TARGETP_TABLE1_REFERENCE[c]['f1'] for c in LOCALIZATION_CLASSES],
-        dtype=np.float64,
-    )))
+        ours = cdskit_result["oof_by_class"][class_name]
+        table_rows.append(
+            {
+                "class": class_name,
+                "targetp_precision": float(ref["precision"]),
+                "targetp_recall": float(ref["recall"]),
+                "targetp_f1": float(ref["f1"]),
+                "cdskit_precision": float(ours["precision"]),
+                "cdskit_recall": float(ours["recall"]),
+                "cdskit_f1": float(ours["f1"]),
+                "delta_f1_cdskit_minus_targetp": float(ours["f1"] - ref["f1"]),
+            }
+        )
+    targetp_macro_f1 = float(
+        np.mean(
+            np.asarray(
+                [TARGETP_TABLE1_REFERENCE[c]["f1"] for c in LOCALIZATION_CLASSES],
+                dtype=np.float64,
+            )
+        )
+    )
     return {
-        'rows': table_rows,
-        'targetp_macro_f1': targetp_macro_f1,
-        'cdskit_macro_f1': float(cdskit_result['oof_macro_f1']),
-        'delta_macro_f1_cdskit_minus_targetp': float(cdskit_result['oof_macro_f1'] - targetp_macro_f1),
-        'targetp_source': (
-            'TargetP-2.0 paper Table 1 '
-            '(https://pmc.ncbi.nlm.nih.gov/articles/PMC7723994/)'
+        "rows": table_rows,
+        "targetp_macro_f1": targetp_macro_f1,
+        "cdskit_macro_f1": float(cdskit_result["oof_macro_f1"]),
+        "delta_macro_f1_cdskit_minus_targetp": float(
+            cdskit_result["oof_macro_f1"] - targetp_macro_f1
+        ),
+        "targetp_source": (
+            "TargetP-2.0 paper Table 1 "
+            "(https://pmc.ncbi.nlm.nih.gov/articles/PMC7723994/)"
         ),
     }
 
 
 def render_markdown_table(comparison):
     out = list()
-    out.append('| Class | TargetP P | TargetP R | TargetP F1 | cdskit P | cdskit R | cdskit F1 | ΔF1 (cdskit-TargetP) |')
-    out.append('|---|---:|---:|---:|---:|---:|---:|---:|')
-    for row in comparison['rows']:
-        out.append(
-            '| {name} | {tp_p:.3f} | {tp_r:.3f} | {tp_f1:.3f} | {our_p:.3f} | {our_r:.3f} | {our_f1:.3f} | {d:.3f} |'.format(
-                name=row['class'],
-                tp_p=row['targetp_precision'],
-                tp_r=row['targetp_recall'],
-                tp_f1=row['targetp_f1'],
-                our_p=row['cdskit_precision'],
-                our_r=row['cdskit_recall'],
-                our_f1=row['cdskit_f1'],
-                d=row['delta_f1_cdskit_minus_targetp'],
-            )
-        )
-    out.append('')
-    out.append('| Metric | TargetP | cdskit | Δ (cdskit-TargetP) |')
-    out.append('|---|---:|---:|---:|')
     out.append(
-        '| Macro F1 (5-class) | {tp:.3f} | {our:.3f} | {d:.3f} |'.format(
-            tp=float(comparison['targetp_macro_f1']),
-            our=float(comparison['cdskit_macro_f1']),
-            d=float(comparison['delta_macro_f1_cdskit_minus_targetp']),
+        "| Class | TargetP P | TargetP R | TargetP F1 | cdskit P | cdskit R | cdskit F1 | ΔF1 (cdskit-TargetP) |"
+    )
+    out.append("|---|---:|---:|---:|---:|---:|---:|---:|")
+    out.extend(
+        [
+            "| {name} | {tp_p:.3f} | {tp_r:.3f} | {tp_f1:.3f} | {our_p:.3f} | {our_r:.3f} | {our_f1:.3f} | {d:.3f} |".format(
+                name=row["class"],
+                tp_p=row["targetp_precision"],
+                tp_r=row["targetp_recall"],
+                tp_f1=row["targetp_f1"],
+                our_p=row["cdskit_precision"],
+                our_r=row["cdskit_recall"],
+                our_f1=row["cdskit_f1"],
+                d=row["delta_f1_cdskit_minus_targetp"],
+            )
+            for row in comparison["rows"]
+        ]
+    )
+    out.append("")
+    out.append("| Metric | TargetP | cdskit | Δ (cdskit-TargetP) |")
+    out.append("|---|---:|---:|---:|")
+    out.append(
+        "| Macro F1 (5-class) | {tp:.3f} | {our:.3f} | {d:.3f} |".format(
+            tp=float(comparison["targetp_macro_f1"]),
+            our=float(comparison["cdskit_macro_f1"]),
+            d=float(comparison["delta_macro_f1_cdskit_minus_targetp"]),
         )
     )
-    return '\n'.join(out)
+    return "\n".join(out)
 
 
 def build_parser():
     parser = CdskitArgumentParser(
-        description='Prepare TargetP-2.0 benchmark TSV and run fair fold-fixed cdskit comparison.',
+        description="Prepare TargetP-2.0 benchmark TSV and run fair fold-fixed cdskit comparison.",
     )
-    parser.add_argument('--targetp_fasta', default='data/targetp_raw/targetp.fasta', type=str)
-    parser.add_argument('--targetp_tab', default='data/targetp_raw/swissprot_annotated_proteins.tab', type=str)
-    parser.add_argument('--targetp_npz', default='data/targetp_raw/targetp_data.npz', type=str)
-    parser.add_argument('--download', default=False, type=parse_bool)
     parser.add_argument(
-        '--out_tsv', dest='prepared_tsv',
-        default='data/localize_bench/targetp2_benchmark.tsv', type=str,
+        "--targetp_fasta", default="data/targetp_raw/targetp.fasta", type=str
     )
-    parser.add_argument('--prepare_report_json', default='data/localize_bench/targetp2_prepare_report.json', type=str)
-    parser.add_argument('--run_cdskit_cv', default=True, type=parse_bool)
-    parser.add_argument('--organism_gate', default=False, type=parse_bool)
-    parser.add_argument('--comparison_json', default='data/localize_bench/targetp2_cdskit_comparison.json', type=str)
-    parser.add_argument('--comparison_md', default='data/localize_bench/targetp2_cdskit_comparison.md', type=str)
-    parser.add_argument('--model_arch', default='bilstm_attention', choices=['nearest_centroid', 'bilstm_attention', 'esm_head'], type=str)
-    parser.add_argument('--localize_strategy', default='single_stage', choices=['single_stage', 'two_stage', 'two_stage_ctp_ltp'], type=str)
-    parser.add_argument('--dl_seq_len', default=200, type=int)
-    parser.add_argument('--dl_embed_dim', default=32, type=int)
-    parser.add_argument('--dl_hidden_dim', default=64, type=int)
-    parser.add_argument('--dl_num_layers', default=1, type=int)
-    parser.add_argument('--dl_dropout', default=0.2, type=float)
-    parser.add_argument('--dl_epochs', default=15, type=int)
-    parser.add_argument('--dl_batch_size', default=128, type=int)
-    parser.add_argument('--dl_lr', default=1.0e-3, type=float)
-    parser.add_argument('--dl_weight_decay', default=1.0e-4, type=float)
-    parser.add_argument('--dl_class_weight', default=True, type=parse_bool)
-    parser.add_argument('--dl_loss', default='ce', choices=['ce', 'focal'], type=str)
-    parser.add_argument('--dl_balanced_batch', default=False, type=parse_bool)
-    parser.add_argument('--dl_aux_tp_weight', default=0.0, type=float)
-    parser.add_argument('--dl_aux_ctp_ltp_weight', default=0.0, type=float)
-    parser.add_argument('--dl_feature_fusion', default=True, type=parse_bool)
-    parser.add_argument('--dl_distill_weight', default=0.0, type=float)
-    parser.add_argument('--dl_distill_temperature', default=1.0, type=float)
-    parser.add_argument('--distill_oof_npz', default='', type=str)
-    parser.add_argument('--dl_seed', default=1, type=int)
-    parser.add_argument('--dl_device', default='cpu', choices=['cpu', 'cuda', 'mps', 'auto'], type=str)
-    parser.add_argument('--esm_model_name', default='facebook/esm2_t6_8M_UR50D', type=str)
     parser.add_argument(
-        '--esm_model_revision',
-        default='c731040fcd8d73dceaa04b0a8e6329b345b0f5df',
+        "--targetp_tab",
+        default="data/targetp_raw/swissprot_annotated_proteins.tab",
         type=str,
     )
-    parser.add_argument('--esm_model_local_dir', default='', type=str)
-    parser.add_argument('--esm_pooling', default='cls', choices=['cls', 'mean'], type=str)
-    parser.add_argument('--esm_max_len', default=200, type=int)
-    parser.add_argument('--cv_seed', default=1, type=int)
-    parser.add_deprecated_alias('--prepared_tsv', '--out_tsv')
+    parser.add_argument(
+        "--targetp_npz", default="data/targetp_raw/targetp_data.npz", type=str
+    )
+    parser.add_argument("--download", default=False, type=parse_bool)
+    parser.add_argument(
+        "--out_tsv",
+        dest="prepared_tsv",
+        default="data/localize_bench/targetp2_benchmark.tsv",
+        type=str,
+    )
+    parser.add_argument(
+        "--prepare_report_json",
+        default="data/localize_bench/targetp2_prepare_report.json",
+        type=str,
+    )
+    parser.add_argument("--run_cdskit_cv", default=True, type=parse_bool)
+    parser.add_argument("--organism_gate", default=False, type=parse_bool)
+    parser.add_argument(
+        "--comparison_json",
+        default="data/localize_bench/targetp2_cdskit_comparison.json",
+        type=str,
+    )
+    parser.add_argument(
+        "--comparison_md",
+        default="data/localize_bench/targetp2_cdskit_comparison.md",
+        type=str,
+    )
+    parser.add_argument(
+        "--model_arch",
+        default="bilstm_attention",
+        choices=["nearest_centroid", "bilstm_attention", "esm_head"],
+        type=str,
+    )
+    parser.add_argument(
+        "--localize_strategy",
+        default="single_stage",
+        choices=["single_stage", "two_stage", "two_stage_ctp_ltp"],
+        type=str,
+    )
+    parser.add_argument("--dl_seq_len", default=200, type=int)
+    parser.add_argument("--dl_embed_dim", default=32, type=int)
+    parser.add_argument("--dl_hidden_dim", default=64, type=int)
+    parser.add_argument("--dl_num_layers", default=1, type=int)
+    parser.add_argument("--dl_dropout", default=0.2, type=float)
+    parser.add_argument("--dl_epochs", default=15, type=int)
+    parser.add_argument("--dl_batch_size", default=128, type=int)
+    parser.add_argument("--dl_lr", default=1.0e-3, type=float)
+    parser.add_argument("--dl_weight_decay", default=1.0e-4, type=float)
+    parser.add_argument("--dl_class_weight", default=True, type=parse_bool)
+    parser.add_argument("--dl_loss", default="ce", choices=["ce", "focal"], type=str)
+    parser.add_argument("--dl_balanced_batch", default=False, type=parse_bool)
+    parser.add_argument("--dl_aux_tp_weight", default=0.0, type=float)
+    parser.add_argument("--dl_aux_ctp_ltp_weight", default=0.0, type=float)
+    parser.add_argument("--dl_feature_fusion", default=True, type=parse_bool)
+    parser.add_argument("--dl_distill_weight", default=0.0, type=float)
+    parser.add_argument("--dl_distill_temperature", default=1.0, type=float)
+    parser.add_argument("--distill_oof_npz", default="", type=str)
+    parser.add_argument("--dl_seed", default=1, type=int)
+    parser.add_argument(
+        "--dl_device", default="cpu", choices=["cpu", "cuda", "mps", "auto"], type=str
+    )
+    parser.add_argument(
+        "--esm_model_name", default="facebook/esm2_t6_8M_UR50D", type=str
+    )
+    parser.add_argument(
+        "--esm_model_revision",
+        default="c731040fcd8d73dceaa04b0a8e6329b345b0f5df",
+        type=str,
+    )
+    parser.add_argument("--esm_model_local_dir", default="", type=str)
+    parser.add_argument(
+        "--esm_pooling", default="cls", choices=["cls", "mean"], type=str
+    )
+    parser.add_argument("--esm_max_len", default=200, type=int)
+    parser.add_argument("--cv_seed", default=1, type=int)
+    parser.add_deprecated_alias("--prepared_tsv", "--out_tsv")
     return parser
 
 
 def _to_bool_yes_no(text):
-    return str(text).strip().lower() in ['yes', 'y', 'true', '1']
+    return str(text).strip().lower() in ["yes", "y", "true", "1"]
 
 
 def _download_if_requested(args):
@@ -539,26 +604,33 @@ def _download_if_requested(args):
         digest = hashlib.sha256()
         downloaded = 0
         with atomic_output_path(path) as temporary:
-            with urllib_request.urlopen(url, timeout=120) as resp, open(temporary, 'wb') as out:
-                content_length = resp.headers.get('Content-Length')
+            with (
+                urllib_request.urlopen(url, timeout=120) as resp,
+                open(temporary, "wb") as out,
+            ):
+                content_length = resp.headers.get("Content-Length")
                 if (
                     content_length is not None
                     and int(content_length) > TARGETP_DOWNLOAD_MAX_BYTES
                 ):
-                    raise ValueError('TargetP download exceeds the 256 MiB safety limit.')
+                    raise ValueError(
+                        "TargetP download exceeds the 256 MiB safety limit."
+                    )
                 while True:
                     chunk = resp.read(1024 * 1024)
                     if not chunk:
                         break
                     downloaded += len(chunk)
                     if downloaded > TARGETP_DOWNLOAD_MAX_BYTES:
-                        raise ValueError('TargetP download exceeds the 256 MiB safety limit.')
+                        raise ValueError(
+                            "TargetP download exceeds the 256 MiB safety limit."
+                        )
                     digest.update(chunk)
                     out.write(chunk)
             observed = digest.hexdigest()
             if observed != expected_sha256:
                 raise ValueError(
-                    'TargetP download checksum mismatch for {}: expected {}, got {}.'.format(
+                    "TargetP download checksum mismatch for {}: expected {}, got {}.".format(
                         url,
                         expected_sha256,
                         observed,
@@ -578,34 +650,34 @@ def main(argv=None):
         out_tsv_path=args.prepared_tsv,
         report_json_path=args.prepare_report_json,
     )
-    out = {'prepare_report': prep_report}
+    out = {"prepare_report": prep_report}
 
     if _to_bool_yes_no(args.run_cdskit_cv):
         dl_params = {
-            'seq_len': int(args.dl_seq_len),
-            'embed_dim': int(args.dl_embed_dim),
-            'hidden_dim': int(args.dl_hidden_dim),
-            'num_layers': int(args.dl_num_layers),
-            'dropout': float(args.dl_dropout),
-            'epochs': int(args.dl_epochs),
-            'batch_size': int(args.dl_batch_size),
-            'learning_rate': float(args.dl_lr),
-            'weight_decay': float(args.dl_weight_decay),
-            'use_class_weight': _to_bool_yes_no(args.dl_class_weight),
-            'loss_name': str(args.dl_loss),
-            'balanced_batch': _to_bool_yes_no(args.dl_balanced_batch),
-            'aux_tp_weight': float(args.dl_aux_tp_weight),
-            'aux_ctp_ltp_weight': float(args.dl_aux_ctp_ltp_weight),
-            'feature_fusion': _to_bool_yes_no(args.dl_feature_fusion),
-            'distill_weight': float(args.dl_distill_weight),
-            'distill_temperature': float(args.dl_distill_temperature),
-            'seed': int(args.dl_seed),
-            'device': str(args.dl_device),
-            'esm_model_name': str(args.esm_model_name),
-            'esm_model_revision': str(args.esm_model_revision),
-            'esm_model_local_dir': str(args.esm_model_local_dir),
-            'esm_pooling': str(args.esm_pooling),
-            'esm_max_len': int(args.esm_max_len),
+            "seq_len": int(args.dl_seq_len),
+            "embed_dim": int(args.dl_embed_dim),
+            "hidden_dim": int(args.dl_hidden_dim),
+            "num_layers": int(args.dl_num_layers),
+            "dropout": float(args.dl_dropout),
+            "epochs": int(args.dl_epochs),
+            "batch_size": int(args.dl_batch_size),
+            "learning_rate": float(args.dl_lr),
+            "weight_decay": float(args.dl_weight_decay),
+            "use_class_weight": _to_bool_yes_no(args.dl_class_weight),
+            "loss_name": str(args.dl_loss),
+            "balanced_batch": _to_bool_yes_no(args.dl_balanced_batch),
+            "aux_tp_weight": float(args.dl_aux_tp_weight),
+            "aux_ctp_ltp_weight": float(args.dl_aux_ctp_ltp_weight),
+            "feature_fusion": _to_bool_yes_no(args.dl_feature_fusion),
+            "distill_weight": float(args.dl_distill_weight),
+            "distill_temperature": float(args.dl_distill_temperature),
+            "seed": int(args.dl_seed),
+            "device": str(args.dl_device),
+            "esm_model_name": str(args.esm_model_name),
+            "esm_model_revision": str(args.esm_model_revision),
+            "esm_model_local_dir": str(args.esm_model_local_dir),
+            "esm_pooling": str(args.esm_pooling),
+            "esm_max_len": int(args.esm_max_len),
         }
         cdskit_result = run_cdskit_cv_on_targetp(
             training_tsv=args.prepared_tsv,
@@ -618,25 +690,25 @@ def main(argv=None):
         )
         comparison = build_targetp_comparison_table(cdskit_result=cdskit_result)
         comparison_md = render_markdown_table(comparison=comparison)
-        out['cdskit_cv'] = cdskit_result
-        out['comparison'] = comparison
-        out['comparison_markdown'] = comparison_md
+        out["cdskit_cv"] = cdskit_result
+        out["comparison"] = comparison
+        out["comparison_markdown"] = comparison_md
 
-        if args.comparison_md != '':
+        if args.comparison_md != "":
             md_dir = os.path.dirname(args.comparison_md)
-            if md_dir != '':
+            if md_dir != "":
                 os.makedirs(md_dir, exist_ok=True)
-            with atomic_text_writer(args.comparison_md, encoding='utf-8') as out_md:
-                out_md.write(comparison_md + '\n')
+            with atomic_text_writer(args.comparison_md, encoding="utf-8") as out_md:
+                out_md.write(comparison_md + "\n")
 
-    if args.comparison_json != '':
+    if args.comparison_json != "":
         json_dir = os.path.dirname(args.comparison_json)
-        if json_dir != '':
+        if json_dir != "":
             os.makedirs(json_dir, exist_ok=True)
         atomic_write_json(args.comparison_json, out, indent=2)
 
     print(json.dumps(out, indent=2, allow_nan=False))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

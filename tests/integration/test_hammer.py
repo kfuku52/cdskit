@@ -31,7 +31,7 @@ class TestHammerMain:
             seqfile=str(input_path),
             outfile=str(output_path),
             codontable=1,
-            nail='3',  # Require all 3 sequences to have non-gap
+            nail="3",  # Require all 3 sequences to have non-gap
             prevent_gap_only=True,
         )
 
@@ -44,7 +44,9 @@ class TestHammerMain:
         # Some columns may be removed
         assert len(result[0].seq) <= 9
 
-    def test_hammer_handles_question_codon_as_missing_not_error(self, temp_dir, mock_args):
+    def test_hammer_handles_question_codon_as_missing_not_error(
+        self, temp_dir, mock_args
+    ):
         input_path = temp_dir / "input.fasta"
         output_path = temp_dir / "output.fasta"
 
@@ -59,7 +61,7 @@ class TestHammerMain:
             seqfile=str(input_path),
             outfile=str(output_path),
             codontable=1,
-            nail='3',
+            nail="3",
             prevent_gap_only=True,
         )
         hammer_main(args)
@@ -67,7 +69,9 @@ class TestHammerMain:
         result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
         assert [str(r.seq) for r in result] == ["ATGCCC", "ATGCCC", "ATGCCC"]
 
-    def test_hammer_prevent_gap_only_relaxes_for_question_missing_codons(self, temp_dir, mock_args):
+    def test_hammer_prevent_gap_only_relaxes_for_question_missing_codons(
+        self, temp_dir, mock_args
+    ):
         """prevent_gap_only should treat ?/. as missing in codon-level gap-only checks."""
         input_path = temp_dir / "input.fasta"
         output_path = temp_dir / "output.fasta"
@@ -84,7 +88,7 @@ class TestHammerMain:
             seqfile=str(input_path),
             outfile=str(output_path),
             codontable=1,
-            nail='3',
+            nail="3",
             prevent_gap_only=True,
         )
 
@@ -115,7 +119,7 @@ class TestHammerMain:
             seqfile=str(input_path),
             outfile=str(output_path),
             codontable=1,
-            nail='all',
+            nail="all",
             prevent_gap_only=True,
         )
 
@@ -143,7 +147,7 @@ class TestHammerMain:
             seqfile=str(input_path),
             outfile=str(output_path),
             codontable=1,
-            nail='2',  # Only require 2/3 sequences
+            nail="2",  # Only require 2/3 sequences
             prevent_gap_only=True,
         )
 
@@ -171,7 +175,7 @@ class TestHammerMain:
             seqfile=str(input_path),
             outfile=str(output_path),
             codontable=1,
-            nail='3',  # Would remove all columns
+            nail="3",  # Would remove all columns
             prevent_gap_only=True,
         )
 
@@ -194,7 +198,7 @@ class TestHammerMain:
             seqfile=str(input_path),
             outfile=str(output_path),
             codontable=1,
-            nail='all',
+            nail="all",
             prevent_gap_only=True,
         )
 
@@ -222,11 +226,11 @@ class TestHammerMain:
             seqfile=str(input_path),
             outfile=str(output_path),
             codontable=1,
-            nail='all',
+            nail="all",
             prevent_gap_only=True,
         )
 
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             hammer_main(args)
         assert "not identical" in str(exc_info.value)
 
@@ -245,11 +249,11 @@ class TestHammerMain:
             seqfile=str(input_path),
             outfile=str(output_path),
             codontable=1,
-            nail='all',
+            nail="all",
             prevent_gap_only=True,
         )
 
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             hammer_main(args)
         assert "multiple of three" in str(exc_info.value)
 
@@ -267,11 +271,11 @@ class TestHammerMain:
             seqfile=str(input_path),
             outfile=str(output_path),
             codontable=999,
-            nail='all',
+            nail="all",
             prevent_gap_only=True,
         )
 
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             hammer_main(args)
         assert "Invalid --codon_table" in str(exc_info.value)
 
@@ -301,7 +305,7 @@ class TestHammerMain:
             seqfile=str(input_path),
             outfile=str(output_path),
             codontable=1,
-            nail='4',  # Require at least 4 sequences to have non-gap
+            nail="4",  # Require at least 4 sequences to have non-gap
             prevent_gap_only=True,
         )
 
@@ -330,7 +334,7 @@ class TestHammerMain:
             seqfile=str(input_path),
             outfile=str(output_path),
             codontable=1,
-            nail='1',  # Require at least 1 sequence to have non-gap
+            nail="1",  # Require at least 1 sequence to have non-gap
             prevent_gap_only=True,
         )
 
@@ -348,7 +352,9 @@ class TestHammerMain:
         input_path = data_dir / "example_hammer.fasta"
         output_path = temp_dir / "output.fasta"
 
-        assert input_path.exists(), "required tracked fixture example_hammer.fasta is missing"
+        assert input_path.exists(), (
+            "required tracked fixture example_hammer.fasta is missing"
+        )
 
         # Check if input sequences are aligned before running
         input_records = list(Bio.SeqIO.parse(str(input_path), "fasta"))
@@ -359,7 +365,7 @@ class TestHammerMain:
             seqfile=str(input_path),
             outfile=str(output_path),
             codontable=1,
-            nail='4',  # Wiki example uses nail=4
+            nail="4",  # Wiki example uses nail=4
             prevent_gap_only=True,
         )
 
@@ -388,7 +394,7 @@ class TestHammerMain:
             seqfile=str(input_path),
             outfile=str(output_path),
             codontable=1,
-            nail='all',
+            nail="all",
             prevent_gap_only=True,
         )
 
@@ -415,7 +421,7 @@ class TestHammerMain:
             seqfile=str(input_path),
             outfile=str(output_path),
             codontable=1,
-            nail='all',
+            nail="all",
             prevent_gap_only=True,
         )
 
@@ -446,7 +452,9 @@ class TestHammerMain:
         # Create sequences where one is sparse - after strict filtering might become gap-only
         records = [
             SeqRecord(Seq("ATGAAATGA"), id="seq1", description=""),
-            SeqRecord(Seq("---AAA---"), id="seq2", description=""),  # Only middle codon has data
+            SeqRecord(
+                Seq("---AAA---"), id="seq2", description=""
+            ),  # Only middle codon has data
             SeqRecord(Seq("ATGAAATGA"), id="seq3", description=""),
         ]
         Bio.SeqIO.write(records, str(input_path), "fasta")
@@ -455,7 +463,7 @@ class TestHammerMain:
             seqfile=str(input_path),
             outfile=str(output_path),
             codontable=1,
-            nail='all',  # Requires all 3 to have non-gap - middle codon only
+            nail="all",  # Requires all 3 to have non-gap - middle codon only
             prevent_gap_only=True,
         )
 
@@ -468,7 +476,9 @@ class TestHammerMain:
         assert len(set(lengths)) == 1
         assert lengths[0] % 3 == 0
 
-    def test_hammer_nail_adjustment_for_gap_only_prevention(self, temp_dir, mock_args, capsys):
+    def test_hammer_nail_adjustment_for_gap_only_prevention(
+        self, temp_dir, mock_args, capsys
+    ):
         """Test that nail value is automatically adjusted to prevent gap-only sequences.
 
         Issue #3 described: 'A gap-only sequence was generated with --nail 4. Will try --nail 3'
@@ -490,7 +500,7 @@ class TestHammerMain:
             seqfile=str(input_path),
             outfile=str(output_path),
             codontable=1,
-            nail='4',  # Requires 4 sequences - but all_gaps will make this impossible
+            nail="4",  # Requires 4 sequences - but all_gaps will make this impossible
             prevent_gap_only=True,
         )
 
@@ -525,7 +535,7 @@ class TestHammerMain:
             seqfile=str(input_path),
             outfile=str(out_single),
             codontable=1,
-            nail='3',
+            nail="3",
             prevent_gap_only=True,
             threads=1,
         )
@@ -533,7 +543,7 @@ class TestHammerMain:
             seqfile=str(input_path),
             outfile=str(out_threaded),
             codontable=1,
-            nail='3',
+            nail="3",
             prevent_gap_only=True,
             threads=4,
         )
@@ -544,7 +554,9 @@ class TestHammerMain:
         result_single = list(Bio.SeqIO.parse(str(out_single), "fasta"))
         result_threaded = list(Bio.SeqIO.parse(str(out_threaded), "fasta"))
         assert [r.id for r in result_single] == [r.id for r in result_threaded]
-        assert [str(r.seq) for r in result_single] == [str(r.seq) for r in result_threaded]
+        assert [str(r.seq) for r in result_single] == [
+            str(r.seq) for r in result_threaded
+        ]
 
     @pytest.mark.parametrize("nail", ["0", "-1"])
     def test_hammer_rejects_non_positive_nail(self, temp_dir, mock_args, nail):
@@ -565,6 +577,6 @@ class TestHammerMain:
             prevent_gap_only=True,
         )
 
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             hammer_main(args)
-        assert '--nail should be a positive integer' in str(exc_info.value)
+        assert "--nail should be a positive integer" in str(exc_info.value)

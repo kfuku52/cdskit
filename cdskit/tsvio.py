@@ -1,58 +1,72 @@
+from __future__ import annotations
+
 import csv
 import json
+import os
 import sys
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
+from typing import Any, TypeAlias
 
-from cdskit.util import atomic_text_writer
-
-
-TSV_ENCODING = 'utf-8'
-TSV_LINE_TERMINATOR = '\n'
-TSV_REPORT_SCHEMA_VERSION = '2'
+from cdskit.atomicio import atomic_text_writer
 
 
-def _column_list(values):
+TSV_ENCODING = "utf-8"
+TSV_LINE_TERMINATOR = "\n"
+TSV_REPORT_SCHEMA_VERSION = "2"
+Pathish: TypeAlias = str | os.PathLike[str]
+TSVRow: TypeAlias = Mapping[str, Any]
+
+
+def _column_list(values: Iterable[Any] | None) -> list[str]:
     return [str(value) for value in (values or [])]
 
 
-def validate_fieldnames(fieldnames, path, required_columns=None):
+def validate_fieldnames(
+    fieldnames: Iterable[Any] | None,
+    path: Pathish,
+    required_columns: Iterable[Any] | None = None,
+) -> list[str]:
     fieldnames = _column_list(fieldnames)
     if len(fieldnames) == 0:
-        raise ValueError('TSV has no header: {}'.format(path))
-    empty = [index + 1 for index, name in enumerate(fieldnames) if name.strip() == '']
+        raise ValueError("TSV has no header: {}".format(path))
+    empty = [index + 1 for index, name in enumerate(fieldnames) if name.strip() == ""]
     if empty:
         raise ValueError(
-            'TSV has empty header name(s) at column(s) {}: {}'.format(
-                ', '.join(str(value) for value in empty),
+            "TSV has empty header name(s) at column(s) {}: {}".format(
+                ", ".join(str(value) for value in empty),
                 path,
             )
         )
     duplicates = sorted({name for name in fieldnames if fieldnames.count(name) > 1})
     if duplicates:
         raise ValueError(
-            'TSV has duplicate columns in {}: {}'.format(path, ', '.join(duplicates))
+            "TSV has duplicate columns in {}: {}".format(path, ", ".join(duplicates))
         )
     required = _column_list(required_columns)
     missing = [name for name in required if name not in fieldnames]
     if missing:
         raise ValueError(
-            'Missing required columns in {}: {}'.format(path, ', '.join(missing))
+            "Missing required columns in {}: {}".format(path, ", ".join(missing))
         )
     return fieldnames
 
 
-def read_tsv(path, required_columns=None, return_fieldnames=False):
+def read_tsv(
+    path: Pathish,
+    required_columns: Iterable[Any] | None = None,
+    return_fieldnames: bool = False,
+) -> Any:
     """Read a strict, rectangular, headered TSV file.
 
     UTF-8 BOM is accepted for interoperability, while writers always emit plain
     UTF-8 with LF line endings.
     """
-    with open(path, 'r', encoding='utf-8-sig', newline='') as inp:
-        reader = csv.reader(inp, delimiter='\t', strict=True)
+    with open(path, "r", encoding="utf-8-sig", newline="") as inp:
+        reader = csv.reader(inp, delimiter="\t", strict=True)
         try:
             fieldnames = next(reader)
         except StopIteration:
-            raise ValueError('TSV is empty: {}'.format(path))
+            raise ValueError("TSV is empty: {}".format(path)) from None
         fieldnames = validate_fieldnames(
             fieldnames=fieldnames,
             path=path,
@@ -64,49 +78,53 @@ def read_tsv(path, required_columns=None, return_fieldnames=False):
                 continue
             if len(values) != len(fieldnames):
                 raise ValueError(
-                    'TSV row width mismatch in {} at line {}: expected {} columns, got {}.'.format(
+                    "TSV row width mismatch in {} at line {}: expected {} columns, got {}.".format(
                         path,
                         line_number,
                         len(fieldnames),
                         len(values),
                     )
                 )
-            rows.append(dict(zip(fieldnames, values)))
+            rows.append(dict(zip(fieldnames, values, strict=True)))
     if return_fieldnames:
         return rows, fieldnames
     return rows
 
 
-def write_tsv(path, rows, fieldnames):
+def write_tsv(
+    path: Pathish,
+    rows: Iterable[TSVRow],
+    fieldnames: Iterable[Any],
+) -> None:
     fieldnames = validate_fieldnames(
         fieldnames=fieldnames,
         path=path,
         required_columns=None,
     )
-    if path == '-':
+    if path == "-":
         out_context = None
         out = sys.stdout
     else:
         out_context = atomic_text_writer(
             path,
             encoding=TSV_ENCODING,
-            newline='',
+            newline="",
         )
         out = out_context.__enter__()
     try:
         writer = csv.DictWriter(
             out,
             fieldnames=fieldnames,
-            delimiter='\t',
+            delimiter="\t",
             lineterminator=TSV_LINE_TERMINATOR,
-            extrasaction='raise',
+            extrasaction="raise",
         )
         writer.writeheader()
         expected = set(fieldnames)
         for row_number, row in enumerate(rows, start=1):
             if not isinstance(row, Mapping):
                 raise TypeError(
-                    'TSV row {} for {} should be a mapping, got {}.'.format(
+                    "TSV row {} for {} should be a mapping, got {}.".format(
                         row_number,
                         path,
                         type(row).__name__,
@@ -115,24 +133,24 @@ def write_tsv(path, rows, fieldnames):
             unexpected = sorted(str(name) for name in set(row) - expected)
             if unexpected:
                 raise ValueError(
-                    'Unexpected TSV columns in {} at data row {}: {}.'.format(
+                    "Unexpected TSV columns in {} at data row {}: {}.".format(
                         path,
                         row_number,
-                        ', '.join(unexpected),
+                        ", ".join(unexpected),
                     )
                 )
-            writer.writerow({name: json_cell(row.get(name, '')) for name in fieldnames})
+            writer.writerow({name: json_cell(row.get(name, "")) for name in fieldnames})
     finally:
         if out_context is not None:
             out_context.__exit__(*sys.exc_info())
 
 
 def write_sectioned_tsv(
-    path,
-    fieldnames,
-    rows,
-    schema_version=TSV_REPORT_SCHEMA_VERSION,
-):
+    path: Pathish,
+    fieldnames: Iterable[Any],
+    rows: Iterable[TSVRow],
+    schema_version: str = TSV_REPORT_SCHEMA_VERSION,
+) -> None:
     """Write a versioned rectangular report with ``section`` on every row."""
     fieldnames = validate_fieldnames(
         fieldnames=fieldnames,
@@ -140,34 +158,31 @@ def write_sectioned_tsv(
         required_columns=None,
     )
     fieldnames = [
-        'schema_version',
-        'section',
-    ] + [
-        name for name in fieldnames
-        if name not in {'schema_version', 'section'}
-    ]
+        "schema_version",
+        "section",
+    ] + [name for name in fieldnames if name not in {"schema_version", "section"}]
     schema_version = str(schema_version)
-    if schema_version.strip() == '':
-        raise ValueError('TSV schema_version should not be empty: {}'.format(path))
+    if schema_version.strip() == "":
+        raise ValueError("TSV schema_version should not be empty: {}".format(path))
 
-    def versioned_rows():
+    def versioned_rows() -> Iterable[TSVRow]:
         for row_number, row in enumerate(rows, start=1):
             if not isinstance(row, Mapping):
                 yield row
                 continue
-            section = str(row.get('section') or '').strip()
-            if section == '':
+            section = str(row.get("section") or "").strip()
+            if section == "":
                 raise ValueError(
-                    'Missing TSV section in {} at data row {}.'.format(
+                    "Missing TSV section in {} at data row {}.".format(
                         path,
                         row_number,
                     )
                 )
-            declared_version = row.get('schema_version')
-            if declared_version not in (None, '', schema_version):
+            declared_version = row.get("schema_version")
+            if declared_version not in (None, "", schema_version):
                 raise ValueError(
-                    'Conflicting TSV schema_version in {} at data row {}: '
-                    'expected {}, got {}.'.format(
+                    "Conflicting TSV schema_version in {} at data row {}: "
+                    "expected {}, got {}.".format(
                         path,
                         row_number,
                         schema_version,
@@ -175,23 +190,23 @@ def write_sectioned_tsv(
                     )
                 )
             versioned = dict(row)
-            versioned['schema_version'] = schema_version
-            versioned['section'] = section
+            versioned["schema_version"] = schema_version
+            versioned["section"] = section
             yield versioned
 
     write_tsv(path=path, rows=versioned_rows(), fieldnames=fieldnames)
 
 
-def json_cell(value):
+def json_cell(value: Any) -> Any:
     if isinstance(value, (dict, list, tuple)):
         return json.dumps(
             value,
             ensure_ascii=False,
-            separators=(',', ':'),
+            separators=(",", ":"),
             allow_nan=False,
         )
     if isinstance(value, bool):
-        return 'yes' if value else 'no'
+        return "yes" if value else "no"
     if value is None:
-        return ''
+        return ""
     return value

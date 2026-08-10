@@ -23,7 +23,7 @@ class TestBackalignHelpers:
     """Tests for helper functions used by backalign."""
 
     def test_remove_gap_chars(self):
-        assert remove_gap_chars("ATG---AAA..CCC", {'-', '.'}) == "ATGAAACCC"
+        assert remove_gap_chars("ATG---AAA..CCC", {"-", "."}) == "ATGAAACCC"
 
     def test_split_codons(self):
         assert split_codons("ATGAAACCC") == ["ATG", "AAA", "CCC"]
@@ -52,7 +52,7 @@ class TestBackalignHelpers:
 
     def test_stop_if_not_multiple_of_three_after_gap_removal_invalid(self):
         records = [SeqRecord(Seq("ATG--AA"), id="seq1")]
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             stop_if_not_multiple_of_three_after_gap_removal(records)
         assert "multiple of three" in str(exc_info.value)
 
@@ -70,19 +70,25 @@ class TestBackalignHelpers:
             SeqRecord(Seq("ATG"), id="seq1"),
             SeqRecord(Seq("AAA"), id="seq1"),
         ]
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             get_record_map(records, "--seqfile")
         assert "Duplicated ID" in str(exc_info.value)
 
     def test_stop_if_sequence_ids_do_not_match_success(self):
-        cdn_records = [SeqRecord(Seq("ATG"), id="seq1"), SeqRecord(Seq("AAA"), id="seq2")]
+        cdn_records = [
+            SeqRecord(Seq("ATG"), id="seq1"),
+            SeqRecord(Seq("AAA"), id="seq2"),
+        ]
         pep_records = [SeqRecord(Seq("M"), id="seq2"), SeqRecord(Seq("K"), id="seq1")]
         stop_if_sequence_ids_do_not_match(cdn_records, pep_records)
 
     def test_stop_if_sequence_ids_do_not_match_reports_missing_in_both(self):
-        cdn_records = [SeqRecord(Seq("ATG"), id="seq1"), SeqRecord(Seq("AAA"), id="seq2")]
+        cdn_records = [
+            SeqRecord(Seq("ATG"), id="seq1"),
+            SeqRecord(Seq("AAA"), id="seq2"),
+        ]
         pep_records = [SeqRecord(Seq("M"), id="seq2"), SeqRecord(Seq("K"), id="seq3")]
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             stop_if_sequence_ids_do_not_match(cdn_records, pep_records)
         message = str(exc_info.value)
         assert "Missing in CDS: seq3" in message
@@ -120,35 +126,35 @@ class TestBackalignRecord:
     def test_backalign_record_rejects_too_many_non_gap_sites(self):
         cdn_record = SeqRecord(Seq("ATGAAA"), id="seq1")  # MK
         pep_record = SeqRecord(Seq("MKA"), id="seq1")
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             backalign_record(cdn_record, pep_record, codontable=1)
         assert "too many non-gap sites" in str(exc_info.value)
 
     def test_backalign_record_rejects_amino_acid_mismatch(self):
         cdn_record = SeqRecord(Seq("ATGAAA"), id="seq1")  # MK
         pep_record = SeqRecord(Seq("MQ"), id="seq1")
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             backalign_record(cdn_record, pep_record, codontable=1)
         assert "mismatch" in str(exc_info.value)
 
     def test_backalign_record_rejects_invalid_codon(self):
         cdn_record = SeqRecord(Seq("ATG@@@"), id="seq1")
         pep_record = SeqRecord(Seq("MX"), id="seq1")
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             backalign_record(cdn_record, pep_record, codontable=1)
         assert "Invalid codon" in str(exc_info.value)
 
     def test_backalign_record_rejects_unmatched_single_nonstop_codon(self):
         cdn_record = SeqRecord(Seq("ATGAAA"), id="seq1")  # MK
         pep_record = SeqRecord(Seq("M"), id="seq1")
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             backalign_record(cdn_record, pep_record, codontable=1)
         assert "Unmatched codon remained" in str(exc_info.value)
 
     def test_backalign_record_rejects_unmatched_multiple_codons(self):
         cdn_record = SeqRecord(Seq("ATGAAACCC"), id="seq1")  # MKP
         pep_record = SeqRecord(Seq("M"), id="seq1")
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             backalign_record(cdn_record, pep_record, codontable=1)
         assert "codons remained unmatched" in str(exc_info.value)
 
@@ -246,7 +252,7 @@ class TestBackalignMain:
             codontable=1,
         )
 
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             backalign_main(args)
         assert "did not match" in str(exc_info.value)
 
@@ -286,7 +292,7 @@ class TestBackalignMain:
             codontable=1,
         )
 
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             backalign_main(args)
         assert "multiple of three" in str(exc_info.value)
 
@@ -306,7 +312,7 @@ class TestBackalignMain:
             aa_aln=str(pep_path),
             codontable=999,
         )
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             backalign_main(args)
         assert "Invalid --codon_table" in str(exc_info.value)
 
@@ -326,7 +332,7 @@ class TestBackalignMain:
             aa_aln=str(pep_path),
             codontable=1,
         )
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             backalign_main(args)
         assert "DNA-only input is required" in str(exc_info.value)
 
@@ -338,7 +344,9 @@ class TestBackalignMain:
 
         cdn_records = [SeqRecord(Seq("ATGAAA"), id="seq1", description="")]  # MK
         Bio.SeqIO.write(cdn_records, str(cdn_path), "fasta")
-        pep_records = [SeqRecord(Seq("MQ"), id="seq1", description="")]  # mismatch at position 2
+        pep_records = [
+            SeqRecord(Seq("MQ"), id="seq1", description="")
+        ]  # mismatch at position 2
         Bio.SeqIO.write(pep_records, str(pep_path), "fasta")
 
         args = mock_args(
@@ -348,7 +356,7 @@ class TestBackalignMain:
             codontable=1,
         )
 
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             backalign_main(args)
         assert "mismatch" in str(exc_info.value)
 
@@ -376,7 +384,7 @@ class TestBackalignMain:
             codontable=1,
         )
 
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             backalign_main(args)
         assert "not identical" in str(exc_info.value)
 
@@ -421,7 +429,9 @@ class TestBackalignMain:
         result_single = list(Bio.SeqIO.parse(str(out_single), "fasta"))
         result_threaded = list(Bio.SeqIO.parse(str(out_threaded), "fasta"))
         assert [r.id for r in result_single] == [r.id for r in result_threaded]
-        assert [str(r.seq) for r in result_single] == [str(r.seq) for r in result_threaded]
+        assert [str(r.seq) for r in result_single] == [
+            str(r.seq) for r in result_threaded
+        ]
 
     def test_backalign_rejects_duplicate_ids_in_cds(self, temp_dir, mock_args):
         """Reject duplicate IDs in CDS input."""
@@ -444,7 +454,7 @@ class TestBackalignMain:
             codontable=1,
         )
 
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             backalign_main(args)
         assert "Duplicated ID" in str(exc_info.value)
 
@@ -469,7 +479,7 @@ class TestBackalignMain:
             codontable=1,
         )
 
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             backalign_main(args)
         assert "Duplicated ID" in str(exc_info.value)
 
@@ -479,7 +489,9 @@ class TestBackalignMain:
         pep_path = temp_dir / "aa_aln.fasta"
         out_path = temp_dir / "out.fasta"
 
-        cdn_records = [SeqRecord(Seq("ATG---AAA...CCC"), id="seq1", description="")]  # MKP
+        cdn_records = [
+            SeqRecord(Seq("ATG---AAA...CCC"), id="seq1", description="")
+        ]  # MKP
         Bio.SeqIO.write(cdn_records, str(cdn_path), "fasta")
         pep_records = [SeqRecord(Seq("MK-P"), id="seq1", description="")]
         Bio.SeqIO.write(pep_records, str(pep_path), "fasta")
@@ -524,6 +536,6 @@ class TestBackalignMain:
             aa_aln=str(pep_path),
             codontable=1,
         )
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             backalign_main(args)
         assert "mismatch" in str(exc_info.value)

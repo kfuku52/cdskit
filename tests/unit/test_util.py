@@ -60,18 +60,20 @@ class TestThreadHelpers:
         assert util.resolve_threads(0) == 7
 
     def test_resolve_threads_rejects_negative(self):
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             util.resolve_threads(-1)
         assert "--threads should be >= 0" in str(exc_info.value)
 
     def test_parallel_map_ordered_keeps_input_order(self):
         items = [5, 3, 1, 4, 2]
-        result = util.parallel_map_ordered(items=items, worker=lambda x: x * 2, threads=3)
+        result = util.parallel_map_ordered(
+            items=items, worker=lambda x: x * 2, threads=3
+        )
         assert result == [10, 6, 2, 8, 4]
 
     def test_process_pool_selection_uses_total_residues_not_record_count(self):
-        few_long = [SeqRecord(Seq('A' * 80), id='a'), SeqRecord(Seq('C' * 80), id='b')]
-        many_short = [SeqRecord(Seq('ATG'), id=str(i)) for i in range(100)]
+        few_long = [SeqRecord(Seq("A" * 80), id="a"), SeqRecord(Seq("C" * 80), id="b")]
+        many_short = [SeqRecord(Seq("ATG"), id=str(i)) for i in range(100)]
 
         assert util.should_use_process_pool(
             few_long,
@@ -85,23 +87,29 @@ class TestThreadHelpers:
         )
 
     def test_iter_seq_chunks_preserves_order_and_bounds_memory(self, temp_dir):
-        fasta_path = temp_dir / 'chunked.fasta'
+        fasta_path = temp_dir / "chunked.fasta"
         Bio.SeqIO.write(
-            [SeqRecord(Seq('ATG' * 4), id=f'seq{i}', description='') for i in range(5)],
+            [SeqRecord(Seq("ATG" * 4), id=f"seq{i}", description="") for i in range(5)],
             str(fasta_path),
-            'fasta',
+            "fasta",
         )
 
-        chunks = list(util.iter_seq_chunks(
-            str(fasta_path),
-            'fasta',
-            max_chunk_records=2,
-            max_chunk_residues=24,
-        ))
+        chunks = list(
+            util.iter_seq_chunks(
+                str(fasta_path),
+                "fasta",
+                max_chunk_records=2,
+                max_chunk_residues=24,
+            )
+        )
 
         assert [len(chunk) for chunk in chunks] == [2, 2, 1]
         assert [record.id for chunk in chunks for record in chunk] == [
-            'seq0', 'seq1', 'seq2', 'seq3', 'seq4'
+            "seq0",
+            "seq1",
+            "seq2",
+            "seq3",
+            "seq4",
         ]
 
 
@@ -196,6 +204,7 @@ class TestWriteSeqs:
                 for temporary, text in zip(
                     temporary_paths,
                     ("new first\n", "new second\n"),
+                    strict=False,
                 ):
                     with open(temporary, "w", encoding="utf-8") as output:
                         output.write(text)
@@ -254,7 +263,7 @@ class TestStopIfNotMultipleOfThree:
         records = [
             SeqRecord(Seq("ATGAA"), id="seq1"),  # 5 nt
         ]
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             util.stop_if_not_multiple_of_three(records)
         assert "multiple of three" in str(exc_info.value)
 
@@ -264,7 +273,7 @@ class TestStopIfNotMultipleOfThree:
             SeqRecord(Seq("ATGAAA"), id="seq1"),  # 6 nt - valid
             SeqRecord(Seq("ATGAA"), id="seq2"),  # 5 nt - invalid
         ]
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             util.stop_if_not_multiple_of_three(records)
 
 
@@ -286,7 +295,7 @@ class TestStopIfNotAligned:
             SeqRecord(Seq("ATGAAA"), id="seq1"),
             SeqRecord(Seq("ATG"), id="seq2"),
         ]
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             util.stop_if_not_aligned(records)
         assert "not identical" in str(exc_info.value)
 
@@ -311,7 +320,7 @@ class TestStopIfNotDna:
             SeqRecord(Seq("AUGAAATGA"), id="seq1"),
             SeqRecord(Seq("ATGaaauaa"), id="seq2"),
         ]
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             util.stop_if_not_dna(records, label="--seqfile")
         assert "DNA-only input is required" in str(exc_info.value)
         assert "seq1,seq2" in str(exc_info.value)
@@ -321,7 +330,7 @@ class TestStopIfNotDna:
             SeqRecord(Seq("ATGPPP"), id="seq_bad"),
             SeqRecord(Seq("ATGAAA"), id="seq_ok"),
         ]
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             util.stop_if_not_dna(records, label="--seqfile")
         assert "DNA-only input is required" in str(exc_info.value)
         assert "seq_bad" in str(exc_info.value)
@@ -343,7 +352,7 @@ class TestStopIfNotProtein:
             SeqRecord(Seq("MK1"), id="bad1"),
             SeqRecord(Seq("QQQ"), id="ok1"),
         ]
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             util.stop_if_not_protein(records, label="--seqfile")
         assert "Protein-only input is required" in str(exc_info.value)
         assert "bad1" in str(exc_info.value)
@@ -367,7 +376,7 @@ class TestStopIfNotSeqtype:
 
     def test_rejects_unknown_seqtype(self):
         records = [SeqRecord(Seq("ATG"), id="seq1")]
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             util.stop_if_not_seqtype(records=records, seqtype="rna", label="--seqfile")
         assert "Invalid --seq_type" in str(exc_info.value)
 
@@ -377,7 +386,7 @@ class TestStopIfInvalidCodontable:
         util.stop_if_invalid_codontable(1)
 
     def test_rejects_invalid_codontable(self):
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             util.stop_if_invalid_codontable(999)
         assert "Invalid --codon_table" in str(exc_info.value)
 
@@ -404,7 +413,9 @@ class TestTranslateRecords:
     def test_translation_different_codon_tables(self):
         """Test translation with different codon tables."""
         records = [
-            SeqRecord(Seq("ATGTTGTGA"), id="seq1"),  # Standard: M L *, Mitochondrial: M L W
+            SeqRecord(
+                Seq("ATGTTGTGA"), id="seq1"
+            ),  # Standard: M L *, Mitochondrial: M L W
         ]
         # Standard code
         result1 = util.translate_records(records, 1)
@@ -434,8 +445,8 @@ class TestRecords2Array:
         ]
         result = util.records2array(records)
         assert result.shape == (2, 4)
-        assert list(result[0]) == ['A', 'T', 'G', 'C']
-        assert list(result[1]) == ['G', 'C', 'T', 'A']
+        assert list(result[0]) == ["A", "T", "G", "C"]
+        assert list(result[1]) == ["G", "C", "T", "A"]
 
 
 class TestGetSeqname:
@@ -451,7 +462,7 @@ class TestGetSeqname:
     def test_raises_for_unknown_annotation_key(self):
         record = SeqRecord(Seq("ATG"), id="r2")
         record.annotations["organism"] = "Homo sapiens"
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             util.get_seqname(record, "organism_unknown")
         assert "Invalid --seq_name_format element (unknown)" in str(exc_info.value)
 
@@ -481,20 +492,20 @@ class TestReadGff:
     def test_read_gff_file(self, gff_file):
         """Test reading GFF file."""
         result = util.read_gff(str(gff_file))
-        assert 'header' in result
-        assert 'data' in result
-        assert len(result['header']) == 1  # ##gff-version 3
-        assert len(result['data']) == 3  # 3 features
+        assert "header" in result
+        assert "data" in result
+        assert len(result["header"]) == 1  # ##gff-version 3
+        assert len(result["data"]) == 3  # 3 features
 
     def test_gff_data_structure(self, gff_file):
         """Test GFF data has correct structure."""
         result = util.read_gff(str(gff_file))
-        data = result['data']
+        data = result["data"]
         # Check first record
-        assert data[0]['seqid'] == 'seq1'
-        assert data[0]['type'] == 'gene'
-        assert data[0]['start'] == 1
-        assert data[0]['end'] == 100
+        assert data[0]["seqid"] == "seq1"
+        assert data[0]["type"] == "gene"
+        assert data[0]["start"] == 1
+        assert data[0]["end"] == 100
 
     def test_single_record_gff_is_returned_as_1d_array(self, temp_dir):
         """Single non-header line should still produce length-1 structured array."""
@@ -507,7 +518,9 @@ class TestReadGff:
     def test_read_gff_preserves_long_attributes(self, temp_dir):
         path = temp_dir / "long_attr.gff"
         long_attr = "ID=" + ("A" * 700)
-        path.write_text(f"##gff-version 3\nseq1\tsource\tgene\t1\t10\t.\t+\t.\t{long_attr}\n")
+        path.write_text(
+            f"##gff-version 3\nseq1\tsource\tgene\t1\t10\t.\t+\t.\t{long_attr}\n"
+        )
         result = util.read_gff(str(path))
         assert len(result["data"]) == 1
         assert result["data"][0]["attributes"] == long_attr
@@ -519,15 +532,15 @@ class TestWriteGff:
     def test_write_and_read_roundtrip(self, temp_dir):
         out_path = temp_dir / "roundtrip.gff"
         dtype = [
-            ('seqid', 'U100'),
-            ('source', 'U100'),
-            ('type', 'U100'),
-            ('start', 'i4'),
-            ('end', 'i4'),
-            ('score', 'U100'),
-            ('strand', 'U10'),
-            ('phase', 'U10'),
-            ('attributes', 'U500')
+            ("seqid", "U100"),
+            ("source", "U100"),
+            ("type", "U100"),
+            ("start", "i4"),
+            ("end", "i4"),
+            ("score", "U100"),
+            ("strand", "U10"),
+            ("phase", "U10"),
+            ("attributes", "U500"),
         ]
         data = np.array(
             [

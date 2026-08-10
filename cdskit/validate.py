@@ -5,8 +5,8 @@ from functools import partial
 
 import Bio.Data.CodonTable
 
+from cdskit.atomicio import atomic_write_json
 from cdskit.util import (
-    atomic_write_json,
     parallel_map_ordered,
     read_seqs,
     resolve_threads,
@@ -17,16 +17,16 @@ from cdskit.util import (
 from cdskit.tsvio import json_cell, write_sectioned_tsv
 
 
-MISSING_CHARS = frozenset('-?.')
-GAP_ONLY_CHARS = frozenset('-?.NXnx')
-UNAMBIGUOUS_NT = frozenset('ACGTacgt')
-_DROP_MISSING_CHARS_TABLE = str.maketrans('', '', ''.join(sorted(MISSING_CHARS)))
+MISSING_CHARS = frozenset("-?.")
+GAP_ONLY_CHARS = frozenset("-?.NXnx")
+UNAMBIGUOUS_NT = frozenset("ACGTacgt")
+_DROP_MISSING_CHARS_TABLE = str.maketrans("", "", "".join(sorted(MISSING_CHARS)))
 _STOP_CODON_CACHE: dict = {}
 _AMBIGUOUS_CODON_CLASS_CACHE: dict = {}
 
 
 def chunk_codons(seq):
-    return [seq[i:i + 3] for i in range(0, len(seq), 3)]
+    return [seq[i : i + 3] for i in range(0, len(seq), 3)]
 
 
 def get_stop_codons(codontable):
@@ -35,8 +35,8 @@ def get_stop_codons(codontable):
         try:
             table = Bio.Data.CodonTable.unambiguous_dna_by_id[int(codontable)]
         except (KeyError, TypeError, ValueError):
-            txt = 'Invalid --codon_table: {}. Exiting.\n'
-            raise Exception(txt.format(codontable))
+            txt = "Invalid --codon_table: {}. Exiting.\n"
+            raise ValueError(txt.format(codontable)) from None
         stop_codons = frozenset([codon.upper() for codon in table.stop_codons])
         _STOP_CODON_CACHE[codontable] = stop_codons
     return stop_codons
@@ -48,9 +48,10 @@ def is_gap_only_sequence(seq):
 
 def has_internal_stop_with_stop_codons(seq, stop_codons):
     seq_upper = seq.upper()
-    codons = [seq_upper[i:i + 3] for i in range(0, len(seq_upper) - 2, 3)]
+    codons = [seq_upper[i : i + 3] for i in range(0, len(seq_upper) - 2, 3)]
     evaluable_indices = [
-        i for i, codon in enumerate(codons)
+        i
+        for i, codon in enumerate(codons)
         if not any(ch in MISSING_CHARS for ch in codon)
     ]
     if len(evaluable_indices) <= 1:
@@ -81,18 +82,26 @@ def sequence_ambiguous_codon_counts(seq):
     seq_len = len(seq)
     codon_class_cache = _AMBIGUOUS_CODON_CLASS_CACHE
     for i in range(0, seq_len - 2, 3):
-        codon = seq[i:i + 3]
+        codon = seq[i : i + 3]
         codon_class = codon_class_cache.get(codon)
         if codon_class is None:
             ch0 = codon[0]
             ch1 = codon[1]
             ch2 = codon[2]
-            if (ch0 in MISSING_CHARS) or (ch1 in MISSING_CHARS) or (ch2 in MISSING_CHARS):
+            if (
+                (ch0 in MISSING_CHARS)
+                or (ch1 in MISSING_CHARS)
+                or (ch2 in MISSING_CHARS)
+            ):
                 codon_class = (0, 0)
             else:
                 codon_class = (
                     1,
-                    int((ch0 not in UNAMBIGUOUS_NT) or (ch1 not in UNAMBIGUOUS_NT) or (ch2 not in UNAMBIGUOUS_NT)),
+                    int(
+                        (ch0 not in UNAMBIGUOUS_NT)
+                        or (ch1 not in UNAMBIGUOUS_NT)
+                        or (ch2 not in UNAMBIGUOUS_NT)
+                    ),
                 )
             codon_class_cache[codon] = codon_class
         evaluable += codon_class[0]
@@ -112,12 +121,12 @@ def summarize_single_sequence(seq_id, seq, stop_codons):
     last_evaluable = None
     seq_upper = seq.upper()
     for codon_index, start in enumerate(range(0, len(seq_upper) - 2, 3)):
-        codon = seq_upper[start:start + 3]
+        codon = seq_upper[start : start + 3]
         if any(ch in MISSING_CHARS for ch in codon):
             continue
         evaluable += 1
         last_evaluable = codon_index
-        if any(ch not in 'ACGT' for ch in codon):
+        if any(ch not in "ACGT" for ch in codon):
             ambiguous += 1
         elif codon in stop_codons:
             stop_indices.append(codon_index)
@@ -172,15 +181,19 @@ def summarize_records(records, codontable, threads=1):
                 threads=worker_threads,
             )
         except (OSError, PermissionError):
-            sys.stderr.write('Process-based parallelism unavailable; falling back to threads.\n')
+            sys.stderr.write(
+                "Process-based parallelism unavailable; falling back to threads.\n"
+            )
     if per_record is None:
         worker = partial(summarize_single_record, stop_codons=stop_codons)
-        per_record = parallel_map_ordered(items=records, worker=worker, threads=worker_threads)
+        per_record = parallel_map_ordered(
+            items=records, worker=worker, threads=worker_threads
+        )
 
     non_triplet_ids = [entry[0] for entry in per_record if entry[1]]
     gap_only_ids = [entry[0] for entry in per_record if entry[2]]
     internal_stop_ids = [entry[0] for entry in per_record if entry[3]]
-    ambiguous_by_seq = dict()
+    ambiguous_by_seq: dict[str, int] = {}
     total_ambiguous = 0
     total_evaluable = 0
     for entry in per_record:
@@ -199,93 +212,113 @@ def summarize_records(records, codontable, threads=1):
     issue_ids |= set(duplicate_ids)
 
     return {
-        'num_sequences': len(records),
-        'aligned': aligned,
-        'non_triplet_ids': non_triplet_ids,
-        'duplicate_ids': duplicate_ids,
-        'gap_only_ids': gap_only_ids,
-        'internal_stop_ids': internal_stop_ids,
-        'ambiguous_codons': total_ambiguous,
-        'evaluable_codons': total_evaluable,
-        'ambiguous_codon_rate': ambiguous_rate,
-        'ambiguous_codons_by_sequence': ambiguous_by_seq,
-        'num_sequences_with_issues': len(issue_ids),
-        'sequence_ids_with_issues': sorted(issue_ids),
+        "num_sequences": len(records),
+        "aligned": aligned,
+        "non_triplet_ids": non_triplet_ids,
+        "duplicate_ids": duplicate_ids,
+        "gap_only_ids": gap_only_ids,
+        "internal_stop_ids": internal_stop_ids,
+        "ambiguous_codons": total_ambiguous,
+        "evaluable_codons": total_evaluable,
+        "ambiguous_codon_rate": ambiguous_rate,
+        "ambiguous_codons_by_sequence": ambiguous_by_seq,
+        "num_sequences_with_issues": len(issue_ids),
+        "sequence_ids_with_issues": sorted(issue_ids),
     }
 
 
 def write_validate_report(report_path, summary):
-    if report_path == '':
+    if report_path == "":
         return
-    if report_path.lower().endswith('.json'):
+    if report_path.lower().endswith(".json"):
         atomic_write_json(report_path, summary, indent=2)
         return
     count_values = {
-        'num_non_triplet_sequences': len(summary['non_triplet_ids']),
-        'num_duplicate_ids': len(summary['duplicate_ids']),
-        'num_gap_only_sequences': len(summary['gap_only_ids']),
-        'num_internal_stop_sequences': len(summary['internal_stop_ids']),
+        "num_non_triplet_sequences": len(summary["non_triplet_ids"]),
+        "num_duplicate_ids": len(summary["duplicate_ids"]),
+        "num_gap_only_sequences": len(summary["gap_only_ids"]),
+        "num_internal_stop_sequences": len(summary["internal_stop_ids"]),
     }
-    rows = []
-    for key in [
-        'num_sequences', 'aligned', 'num_non_triplet_sequences',
-        'num_duplicate_ids', 'num_gap_only_sequences',
-        'num_internal_stop_sequences', 'ambiguous_codons', 'evaluable_codons',
-        'ambiguous_codon_rate', 'num_sequences_with_issues',
-    ]:
-        rows.append({
-            'section': 'summary',
-            'metric': key,
-            'value': json_cell(count_values.get(key, summary.get(key, ''))),
-        })
-    for key in [
-        'non_triplet_ids', 'duplicate_ids', 'gap_only_ids',
-        'internal_stop_ids', 'sequence_ids_with_issues',
-    ]:
-        rows.append({
-            'section': 'id_set',
-            'metric': key,
-            'ids': json_cell(summary[key]),
-        })
+    rows = [
+        {
+            "section": "summary",
+            "metric": key,
+            "value": json_cell(count_values.get(key, summary.get(key, ""))),
+        }
+        for key in [
+            "num_sequences",
+            "aligned",
+            "num_non_triplet_sequences",
+            "num_duplicate_ids",
+            "num_gap_only_sequences",
+            "num_internal_stop_sequences",
+            "ambiguous_codons",
+            "evaluable_codons",
+            "ambiguous_codon_rate",
+            "num_sequences_with_issues",
+        ]
+    ]
+    rows.extend(
+        [
+            {
+                "section": "id_set",
+                "metric": key,
+                "ids": json_cell(summary[key]),
+            }
+            for key in [
+                "non_triplet_ids",
+                "duplicate_ids",
+                "gap_only_ids",
+                "internal_stop_ids",
+                "sequence_ids_with_issues",
+            ]
+        ]
+    )
     write_sectioned_tsv(
         path=report_path,
-        fieldnames=['section', 'metric', 'value', 'ids'],
+        fieldnames=["section", "metric", "value", "ids"],
         rows=rows,
     )
 
 
 def print_validate_summary(summary):
-    sys.stdout.write('Validation summary\n')
+    sys.stdout.write("Validation summary\n")
     sys.stdout.write(f"num_sequences\t{summary['num_sequences']}\n")
     sys.stdout.write(f"aligned\t{summary['aligned']}\n")
     sys.stdout.write(f"num_non_triplet_sequences\t{len(summary['non_triplet_ids'])}\n")
     sys.stdout.write(f"num_duplicate_ids\t{len(summary['duplicate_ids'])}\n")
     sys.stdout.write(f"num_gap_only_sequences\t{len(summary['gap_only_ids'])}\n")
-    sys.stdout.write(f"num_internal_stop_sequences\t{len(summary['internal_stop_ids'])}\n")
+    sys.stdout.write(
+        f"num_internal_stop_sequences\t{len(summary['internal_stop_ids'])}\n"
+    )
     sys.stdout.write(f"ambiguous_codons\t{summary['ambiguous_codons']}\n")
     sys.stdout.write(f"evaluable_codons\t{summary['evaluable_codons']}\n")
     sys.stdout.write(f"ambiguous_codon_rate\t{summary['ambiguous_codon_rate']:.6f}\n")
-    sys.stdout.write(f"num_sequences_with_issues\t{summary['num_sequences_with_issues']}\n")
+    sys.stdout.write(
+        f"num_sequences_with_issues\t{summary['num_sequences_with_issues']}\n"
+    )
 
-    if len(summary['non_triplet_ids']) > 0:
+    if len(summary["non_triplet_ids"]) > 0:
         sys.stdout.write(f"non_triplet_ids\t{','.join(summary['non_triplet_ids'])}\n")
-    if len(summary['duplicate_ids']) > 0:
+    if len(summary["duplicate_ids"]) > 0:
         sys.stdout.write(f"duplicate_ids\t{','.join(summary['duplicate_ids'])}\n")
-    if len(summary['gap_only_ids']) > 0:
+    if len(summary["gap_only_ids"]) > 0:
         sys.stdout.write(f"gap_only_ids\t{','.join(summary['gap_only_ids'])}\n")
-    if len(summary['internal_stop_ids']) > 0:
-        sys.stdout.write(f"internal_stop_ids\t{','.join(summary['internal_stop_ids'])}\n")
+    if len(summary["internal_stop_ids"]) > 0:
+        sys.stdout.write(
+            f"internal_stop_ids\t{','.join(summary['internal_stop_ids'])}\n"
+        )
 
 
 def validate_main(args):
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
-    stop_if_not_dna(records=records, label='--seq_file')
+    stop_if_not_dna(records=records, label="--seq_file")
     stop_if_invalid_codontable(args.codontable)
     summary = summarize_records(
         records=records,
         codontable=args.codontable,
-        threads=getattr(args, 'threads', 1),
+        threads=getattr(args, "threads", 1),
     )
     print_validate_summary(summary=summary)
-    report_path = getattr(args, 'report', '')
+    report_path = getattr(args, "report", "")
     write_validate_report(report_path=report_path, summary=summary)

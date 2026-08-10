@@ -34,16 +34,18 @@ class TestSplitMain:
         assert third == "outprefix_3rd_codon_positions.fasta"
 
     def test_resolve_output_prefix_prefers_explicit_prefix(self, mock_args):
-        args = mock_args(seqfile='input.fasta', prefix='custom_prefix', outfile='ignored')
-        assert resolve_output_prefix(args) == 'custom_prefix'
+        args = mock_args(
+            seqfile="input.fasta", prefix="custom_prefix", outfile="ignored"
+        )
+        assert resolve_output_prefix(args) == "custom_prefix"
 
     def test_resolve_output_prefix_uses_outfile_as_fallback(self, mock_args):
-        args = mock_args(seqfile='input.fasta', prefix='INFILE', outfile='from_outfile')
-        assert resolve_output_prefix(args) == 'from_outfile'
+        args = mock_args(seqfile="input.fasta", prefix="INFILE", outfile="from_outfile")
+        assert resolve_output_prefix(args) == "from_outfile"
 
     def test_resolve_output_prefix_uses_stdin_label_for_stream_input(self, mock_args):
-        args = mock_args(seqfile='-', prefix='INFILE', outfile='-')
-        assert resolve_output_prefix(args) == 'stdin'
+        args = mock_args(seqfile="-", prefix="INFILE", outfile="-")
+        assert resolve_output_prefix(args) == "stdin"
 
     def test_split_basic(self, temp_dir, mock_args):
         """Test basic split functionality - extract codon positions."""
@@ -65,15 +67,21 @@ class TestSplitMain:
         split_main(args)
 
         # Check 1st codon positions
-        first = list(Bio.SeqIO.parse(str(temp_dir / "output_1st_codon_positions.fasta"), "fasta"))
+        first = list(
+            Bio.SeqIO.parse(str(temp_dir / "output_1st_codon_positions.fasta"), "fasta")
+        )
         assert str(first[0].seq) == "ACG"  # 1st position of each codon
 
         # Check 2nd codon positions
-        second = list(Bio.SeqIO.parse(str(temp_dir / "output_2nd_codon_positions.fasta"), "fasta"))
+        second = list(
+            Bio.SeqIO.parse(str(temp_dir / "output_2nd_codon_positions.fasta"), "fasta")
+        )
         assert str(second[0].seq) == "TCG"  # 2nd position of each codon
 
         # Check 3rd codon positions
-        third = list(Bio.SeqIO.parse(str(temp_dir / "output_3rd_codon_positions.fasta"), "fasta"))
+        third = list(
+            Bio.SeqIO.parse(str(temp_dir / "output_3rd_codon_positions.fasta"), "fasta")
+        )
         assert str(third[0].seq) == "GCG"  # 3rd position of each codon
 
     def test_split_multiple_sequences(self, temp_dir, mock_args):
@@ -94,7 +102,9 @@ class TestSplitMain:
         split_main(args)
 
         # Check all sequences are in each output
-        first = list(Bio.SeqIO.parse(str(temp_dir / "output_1st_codon_positions.fasta"), "fasta"))
+        first = list(
+            Bio.SeqIO.parse(str(temp_dir / "output_1st_codon_positions.fasta"), "fasta")
+        )
         assert len(first) == 2
         assert str(first[0].seq) == "AC"
         assert str(first[1].seq) == "AG"
@@ -115,13 +125,19 @@ class TestSplitMain:
 
         split_main(args)
 
-        first = list(Bio.SeqIO.parse(str(temp_dir / "output_1st_codon_positions.fasta"), "fasta"))
+        first = list(
+            Bio.SeqIO.parse(str(temp_dir / "output_1st_codon_positions.fasta"), "fasta")
+        )
         assert str(first[0].seq) == "A-C"
 
-        second = list(Bio.SeqIO.parse(str(temp_dir / "output_2nd_codon_positions.fasta"), "fasta"))
+        second = list(
+            Bio.SeqIO.parse(str(temp_dir / "output_2nd_codon_positions.fasta"), "fasta")
+        )
         assert str(second[0].seq) == "T-C"
 
-        third = list(Bio.SeqIO.parse(str(temp_dir / "output_3rd_codon_positions.fasta"), "fasta"))
+        third = list(
+            Bio.SeqIO.parse(str(temp_dir / "output_3rd_codon_positions.fasta"), "fasta")
+        )
         assert str(third[0].seq) == "G-C"
 
     def test_split_infile_prefix(self, temp_dir, mock_args):
@@ -135,7 +151,7 @@ class TestSplitMain:
 
         args = mock_args(
             seqfile=str(input_path),
-            prefix='INFILE',
+            prefix="INFILE",
         )
 
         split_main(args)
@@ -155,7 +171,7 @@ class TestSplitMain:
 
         args = mock_args(
             seqfile=str(input_path),
-            prefix='INFILE',
+            prefix="INFILE",
             outfile=str(temp_dir / "from_outfile"),
         )
 
@@ -181,7 +197,9 @@ class TestSplitMain:
 
         split_main(args)
 
-        first = list(Bio.SeqIO.parse(str(temp_dir / "output_1st_codon_positions.fasta"), "fasta"))
+        first = list(
+            Bio.SeqIO.parse(str(temp_dir / "output_1st_codon_positions.fasta"), "fasta")
+        )
         # 6 codons = 6 first positions
         assert len(first[0].seq) == 6
 
@@ -199,7 +217,7 @@ class TestSplitMain:
             prefix=str(temp_dir / "output"),
         )
 
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             split_main(args)
         assert "multiple of three" in str(exc_info.value)
 
@@ -216,7 +234,7 @@ class TestSplitMain:
             prefix=str(temp_dir / "output"),
         )
 
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             split_main(args)
         assert "DNA-only input is required" in str(exc_info.value)
 
@@ -235,12 +253,14 @@ class TestSplitMain:
         split_main(args)
 
         # Compare with expected outputs if they exist
-        result_1st = list(Bio.SeqIO.parse(str(temp_dir / "output_1st_codon_positions.fasta"), "fasta"))
+        result_1st = list(
+            Bio.SeqIO.parse(str(temp_dir / "output_1st_codon_positions.fasta"), "fasta")
+        )
 
         if expected_1st.exists():
             expected = list(Bio.SeqIO.parse(str(expected_1st), "fasta"))
             assert len(result_1st) == len(expected)
-            for r, e in zip(result_1st, expected):
+            for r, e in zip(result_1st, expected, strict=False):
                 assert str(r.seq) == str(e.seq), f"Mismatch for {r.id}"
 
     def test_split_preserves_sequence_ids(self, temp_dir, mock_args):
@@ -259,7 +279,9 @@ class TestSplitMain:
 
         split_main(args)
 
-        first = list(Bio.SeqIO.parse(str(temp_dir / "output_1st_codon_positions.fasta"), "fasta"))
+        first = list(
+            Bio.SeqIO.parse(str(temp_dir / "output_1st_codon_positions.fasta"), "fasta")
+        )
         assert first[0].id == "my_special_seq"
 
     def test_split_wiki_example(self, temp_dir, mock_args):
@@ -275,7 +297,11 @@ class TestSplitMain:
 
         # Use a 39 nt sequence (divisible by 3)
         records = [
-            SeqRecord(Seq("ATGAACCCAGCCGCTCAACTGCTGCGCATGCGCAGCGCT"), id="seq1", description=""),
+            SeqRecord(
+                Seq("ATGAACCCAGCCGCTCAACTGCTGCGCATGCGCAGCGCT"),
+                id="seq1",
+                description="",
+            ),
         ]
         Bio.SeqIO.write(records, str(input_path), "fasta")
 
@@ -287,19 +313,25 @@ class TestSplitMain:
         split_main(args)
 
         # Verify 1st positions
-        first = list(Bio.SeqIO.parse(str(temp_dir / "output_1st_codon_positions.fasta"), "fasta"))
+        first = list(
+            Bio.SeqIO.parse(str(temp_dir / "output_1st_codon_positions.fasta"), "fasta")
+        )
         first_seq = str(first[0].seq)
         # 1st position of each codon: A, A, C, G, G, C, C, C, C, A, C, A, G
         assert first_seq == "AACGGCCCCACAG"
 
         # Verify 2nd positions
-        second = list(Bio.SeqIO.parse(str(temp_dir / "output_2nd_codon_positions.fasta"), "fasta"))
+        second = list(
+            Bio.SeqIO.parse(str(temp_dir / "output_2nd_codon_positions.fasta"), "fasta")
+        )
         second_seq = str(second[0].seq)
         # 2nd position of each codon: T, A, C, C, C, A, T, T, G, T, G, G, C
         assert second_seq == "TACCCATTGTGGC"
 
         # Verify 3rd positions
-        third = list(Bio.SeqIO.parse(str(temp_dir / "output_3rd_codon_positions.fasta"), "fasta"))
+        third = list(
+            Bio.SeqIO.parse(str(temp_dir / "output_3rd_codon_positions.fasta"), "fasta")
+        )
         third_seq = str(third[0].seq)
         # 3rd position of each codon: G, C, A, C, T, A, G, G, C, G, C, C, T
         assert third_seq == "GCACTAGGCGCCT"
@@ -321,7 +353,9 @@ class TestSplitMain:
 
         split_main(args)
 
-        first = list(Bio.SeqIO.parse(str(temp_dir / "output_1st_codon_positions.fasta"), "fasta"))
+        first = list(
+            Bio.SeqIO.parse(str(temp_dir / "output_1st_codon_positions.fasta"), "fasta")
+        )
         assert len(first) == 2
         assert str(first[0].seq) == "A-CG"
         assert str(first[1].seq) == "AAC-"
@@ -344,7 +378,9 @@ class TestSplitMain:
 
         split_main(args)
 
-        first = list(Bio.SeqIO.parse(str(temp_dir / "output_1st_codon_positions.fasta"), "fasta"))
+        first = list(
+            Bio.SeqIO.parse(str(temp_dir / "output_1st_codon_positions.fasta"), "fasta")
+        )
         # 30 codons = 30 first positions
         assert len(first[0].seq) == 30
         # All first positions should be A or C (from ATG and CCC)
@@ -404,4 +440,6 @@ class TestSplitMain:
             single_records = list(Bio.SeqIO.parse(single_prefix + suffix, "fasta"))
             threaded_records = list(Bio.SeqIO.parse(threaded_prefix + suffix, "fasta"))
             assert [r.id for r in single_records] == [r.id for r in threaded_records]
-            assert [str(r.seq) for r in single_records] == [str(r.seq) for r in threaded_records]
+            assert [str(r.seq) for r in single_records] == [
+                str(r.seq) for r in threaded_records
+            ]

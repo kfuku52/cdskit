@@ -2,6 +2,11 @@
 /.coverage
 /.coverage.*
 /.pytest_cache/
+/.mypy_cache/
+/.ruff_cache/
+/.venv/
+/coverage.json
+/htmlcov/
 /build/
 /dist/
 /*.egg-info/

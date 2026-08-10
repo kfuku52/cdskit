@@ -37,52 +37,58 @@ from cdskit.targetp_pair_blend import (
 
 
 def test_pair_prediction_rows_are_joined_by_accession_not_position():
-    rows = [{'accession': 'A'}, {'accession': 'B'}]
+    rows = [{"accession": "A"}, {"accession": "B"}]
     prediction_rows = []
-    for accession in ['B', 'A']:
-        row = {'accession': accession}
-        row.update({'p_{}'.format(name): 0.2 for name in LOCALIZATION_CLASSES})
+    for accession in ["B", "A"]:
+        row = {"accession": accession}
+        row.update({"p_{}".format(name): 0.2 for name in LOCALIZATION_CLASSES})
         prediction_rows.append(row)
 
-    aligned = _align_prediction_rows(rows, prediction_rows, 'test')
+    aligned = _align_prediction_rows(rows, prediction_rows, "test")
 
-    assert [row['accession'] for row in aligned] == ['A', 'B']
+    assert [row["accession"] for row in aligned] == ["A", "B"]
 
 
 def test_pair_prediction_rows_require_complete_unique_accessions():
-    rows = [{'accession': 'A'}]
-    prediction = {'accession': ''}
-    prediction.update({'p_{}'.format(name): 0.2 for name in LOCALIZATION_CLASSES})
+    rows = [{"accession": "A"}]
+    prediction = {"accession": ""}
+    prediction.update({"p_{}".format(name): 0.2 for name in LOCALIZATION_CLASSES})
 
-    with pytest.raises(ValueError, match='empty accession'):
-        _align_prediction_rows(rows, [prediction], 'test')
+    with pytest.raises(ValueError, match="empty accession"):
+        _align_prediction_rows(rows, [prediction], "test")
 
 
 def test_pair_blend_cli_rejects_orphan_prediction_table():
     with pytest.raises(
         ValueError,
-        match='--reranker_predictions_tsv requires --reranker_tsv',
+        match="--reranker_predictions_tsv requires --reranker_tsv",
     ):
-        targetp_pair_blend_main([
-            '--model_a', 'unused-a.json',
-            '--model_b', 'unused-b.json',
-            '--reranker_predictions_tsv', 'predictions.tsv',
-            '--model_out', 'unused-out.json',
-        ])
+        targetp_pair_blend_main(
+            [
+                "--model_a",
+                "unused-a.json",
+                "--model_b",
+                "unused-b.json",
+                "--reranker_predictions_tsv",
+                "predictions.tsv",
+                "--model_out",
+                "unused-out.json",
+            ]
+        )
 
 
 def test_oof_rows_to_prob_and_true_sorts_and_normalizes():
-    class_names = ['noTP', 'SP']
+    class_names = ["noTP", "SP"]
     oof_rows = [
         {
-            'index': '1',
-            'true_class': 'SP',
-            'class_probabilities': {'noTP': 2.0, 'SP': 2.0},
+            "index": "1",
+            "true_class": "SP",
+            "class_probabilities": {"noTP": 2.0, "SP": 2.0},
         },
         {
-            'index': '0',
-            'true_class': 'noTP',
-            'class_probabilities': {'noTP': -1.0, 'SP': 0.0},
+            "index": "0",
+            "true_class": "noTP",
+            "class_probabilities": {"noTP": -1.0, "SP": 0.0},
         },
     ]
 
@@ -107,7 +113,7 @@ def test_oof_cache_save_and_load_roundtrip(temp_dir):
         dtype=np.float64,
     )
     true_idx = np.asarray([0, 1, 2], dtype=np.int64)
-    npz_path = temp_dir / 'oof.npz'
+    npz_path = temp_dir / "oof.npz"
 
     _save_oof_npz(
         path=str(npz_path),
@@ -132,7 +138,7 @@ def test_oof_cache_load_can_use_fallback_true_idx(temp_dir):
         dtype=np.float64,
     )
     true_idx = np.asarray([0, 1], dtype=np.int64)
-    npz_path = temp_dir / 'oof_without_true.npz'
+    npz_path = temp_dir / "oof_without_true.npz"
     np.savez_compressed(
         str(npz_path),
         prob_matrix=prob_matrix,
@@ -150,58 +156,65 @@ def test_oof_cache_load_can_use_fallback_true_idx(temp_dir):
 
 
 def test_oof_generation_can_resume_from_fold_cache(temp_dir):
-    training_tsv = temp_dir / 'targetp.tsv'
-    rows = list()
+    training_tsv = temp_dir / "targetp.tsv"
     seq_by_class = {
-        'noTP': 'MGGGGGGGGGGGGGGGGGGG',
-        'SP': 'MKKLLLLLLLLAAAAAGGGGG',
-        'mTP': 'MARRRRAAASSSLLLGGGGG',
-        'cTP': 'MASTSTSTSTSSRRRGGGGG',
-        'lTP': 'MRRSTSTSTSTSSGGGGGGG',
+        "noTP": "MGGGGGGGGGGGGGGGGGGG",
+        "SP": "MKKLLLLLLLLAAAAAGGGGG",
+        "mTP": "MARRRRAAASSSLLLGGGGG",
+        "cTP": "MASTSTSTSTSSRRRGGGGG",
+        "lTP": "MRRSTSTSTSTSSGGGGGGG",
     }
-    for fold_id in ['fold1', 'fold2']:
-        for class_name in LOCALIZATION_CLASSES:
-            rows.append({
-                'accession': '{}_{}'.format(fold_id, class_name),
-                'sequence': seq_by_class[class_name],
-                'localization': class_name,
-                'peroxisome': 'no',
-                'fold_id': fold_id,
-            })
-    with open(training_tsv, 'w', encoding='utf-8', newline='') as out:
+    rows = [
+        {
+            "accession": "{}_{}".format(fold_id, class_name),
+            "sequence": seq_by_class[class_name],
+            "localization": class_name,
+            "peroxisome": "no",
+            "fold_id": fold_id,
+        }
+        for fold_id in ["fold1", "fold2"]
+        for class_name in LOCALIZATION_CLASSES
+    ]
+    with open(training_tsv, "w", encoding="utf-8", newline="") as out:
         writer = csv.DictWriter(
             out,
-            delimiter='\t',
-            fieldnames=['accession', 'sequence', 'localization', 'peroxisome', 'fold_id'],
+            delimiter="\t",
+            fieldnames=[
+                "accession",
+                "sequence",
+                "localization",
+                "peroxisome",
+                "fold_id",
+            ],
         )
         writer.writeheader()
         for row in rows:
             writer.writerow(row)
 
-    cache_dir = temp_dir / 'fold_cache'
+    cache_dir = temp_dir / "fold_cache"
     first = _run_model_oof(
         training_tsv=str(training_tsv),
-        model_arch='nearest_centroid',
-        localize_strategy='single_stage',
+        model_arch="nearest_centroid",
+        localize_strategy="single_stage",
         dl_train_params={},
         cv_seed=1,
         fold_cache_dir=str(cache_dir),
     )
     second = _run_model_oof(
         training_tsv=str(training_tsv),
-        model_arch='nearest_centroid',
-        localize_strategy='single_stage',
+        model_arch="nearest_centroid",
+        localize_strategy="single_stage",
         dl_train_params={},
         cv_seed=1,
         fold_cache_dir=str(cache_dir),
     )
 
-    assert first['fold_cache_written'] == 2
-    assert first['fold_cache_used'] == 0
-    assert second['fold_cache_written'] == 0
-    assert second['fold_cache_used'] == 2
-    np.testing.assert_allclose(second['prob_matrix'], first['prob_matrix'])
-    np.testing.assert_allclose(second['true_idx'], first['true_idx'])
+    assert first["fold_cache_written"] == 2
+    assert first["fold_cache_used"] == 0
+    assert second["fold_cache_written"] == 0
+    assert second["fold_cache_used"] == 2
+    np.testing.assert_allclose(second["prob_matrix"], first["prob_matrix"])
+    np.testing.assert_allclose(second["true_idx"], first["true_idx"])
 
 
 def test_classwise_blend_beats_global_when_models_specialize():
@@ -236,15 +249,15 @@ def test_classwise_blend_beats_global_when_models_specialize():
         init_alpha=best_global_alpha,
     )
 
-    assert classwise_metrics['macro_f1'] > global_metrics['macro_f1']
-    assert classwise_metrics['macro_f1'] == pytest.approx(0.7333333333333333)
+    assert classwise_metrics["macro_f1"] > global_metrics["macro_f1"]
+    assert classwise_metrics["macro_f1"] == pytest.approx(0.7333333333333333)
     assert alpha_by_class.tolist() == pytest.approx([0.0, 1.0, 0.0, 0.0, 0.0])
 
 
 def test_foldwise_classwise_blend_uses_held_out_folds():
     class_names = list(LOCALIZATION_CLASSES)
     true_idx = np.asarray([0, 1, 0, 1], dtype=np.int64)
-    fold_ids = np.asarray(['fold1', 'fold1', 'fold2', 'fold2'])
+    fold_ids = np.asarray(["fold1", "fold1", "fold2", "fold2"])
     prob_a = np.asarray(
         [
             [0.90, 0.10, 0.00, 0.00, 0.00],
@@ -275,8 +288,8 @@ def test_foldwise_classwise_blend_uses_held_out_folds():
     )
 
     assert len(fold_rows) == 2
-    assert metrics['macro_f1'] > 0.0
-    assert {row['fold_id'] for row in fold_rows} == {'fold1', 'fold2'}
+    assert metrics["macro_f1"] > 0.0
+    assert {row["fold_id"] for row in fold_rows} == {"fold1", "fold2"}
 
 
 def test_apply_organism_gate_removes_non_plant_ctp_ltp_mass():
@@ -296,8 +309,8 @@ def test_apply_organism_gate_removes_non_plant_ctp_ltp_mass():
     )
 
     np.testing.assert_allclose(gated[0, :], prob[0, :])
-    assert gated[1, class_names.index('cTP')] == pytest.approx(0.0)
-    assert gated[1, class_names.index('lTP')] == pytest.approx(0.0)
+    assert gated[1, class_names.index("cTP")] == pytest.approx(0.0)
+    assert gated[1, class_names.index("lTP")] == pytest.approx(0.0)
     assert float(gated[1, :].sum()) == pytest.approx(1.0)
 
 
@@ -322,208 +335,214 @@ def test_build_targetp_blend_runtime_model_predicts_with_wrapped_base_models():
     class_names = list(LOCALIZATION_CLASSES)
     model = _build_targetp_blend_runtime_model(
         base_model_a={
-            'model_type': 'nearest_centroid_v1',
-            'localization_model': {
-                'mode': 'constant',
-                'class_label': 'noTP',
-                'class_order': class_names,
+            "model_type": "nearest_centroid_v1",
+            "localization_model": {
+                "mode": "constant",
+                "class_label": "noTP",
+                "class_order": class_names,
             },
         },
         base_model_b={
-            'model_type': 'nearest_centroid_v1',
-            'localization_model': {
-                'mode': 'constant',
-                'class_label': 'lTP',
-                'class_order': class_names,
+            "model_type": "nearest_centroid_v1",
+            "localization_model": {
+                "mode": "constant",
+                "class_label": "lTP",
+                "class_order": class_names,
             },
         },
-        perox_model={'mode': 'constant', 'yes_probability': 0.0},
+        perox_model={"mode": "constant", "yes_probability": 0.0},
         alpha_by_class={
-            'noTP': 1.0,
-            'SP': 1.0,
-            'mTP': 1.0,
-            'cTP': 1.0,
-            'lTP': 0.0,
+            "noTP": 1.0,
+            "SP": 1.0,
+            "mTP": 1.0,
+            "cTP": 1.0,
+            "lTP": 0.0,
         },
         class_thresholds={
-            'noTP': 1.0,
-            'SP': 1.0,
-            'mTP': 1.0,
-            'cTP': 1.0,
-            'lTP': 0.4,
+            "noTP": 1.0,
+            "SP": 1.0,
+            "mTP": 1.0,
+            "cTP": 1.0,
+            "lTP": 0.4,
         },
-        metadata={'source': 'unit-test'},
+        metadata={"source": "unit-test"},
     )
 
     pred = predict_localization_and_peroxisome(
-        aa_seq='MARRVAAARRLLLLLVVVVVAAST',
+        aa_seq="MARRVAAARRLLLLLVVVVVAAST",
         model=model,
-        organism_group='plant',
+        organism_group="plant",
     )
 
-    assert model['model_type'] == 'targetp_blend_v1'
-    assert model['metadata']['source'] == 'unit-test'
-    assert pred['predicted_class'] == 'lTP'
+    assert model["model_type"] == "targetp_blend_v1"
+    assert model["metadata"]["source"] == "unit-test"
+    assert pred["predicted_class"] == "lTP"
 
 
 def test_build_targetp_pair_blend_runtime_model_accepts_scalar_alpha():
     class_names = list(LOCALIZATION_CLASSES)
     base_model_a = {
-        'model_type': 'nearest_centroid_v1',
-        'localization_model': {
-            'mode': 'constant',
-            'class_label': 'noTP',
-            'class_order': class_names,
+        "model_type": "nearest_centroid_v1",
+        "localization_model": {
+            "mode": "constant",
+            "class_label": "noTP",
+            "class_order": class_names,
         },
-        'perox_model': {'mode': 'constant', 'yes_probability': 0.25},
+        "perox_model": {"mode": "constant", "yes_probability": 0.25},
     }
     base_model_b = {
-        'model_type': 'nearest_centroid_v1',
-        'localization_model': {
-            'mode': 'constant',
-            'class_label': 'SP',
-            'class_order': class_names,
+        "model_type": "nearest_centroid_v1",
+        "localization_model": {
+            "mode": "constant",
+            "class_label": "SP",
+            "class_order": class_names,
         },
-        'perox_model': {'mode': 'constant', 'yes_probability': 0.75},
+        "perox_model": {"mode": "constant", "yes_probability": 0.75},
     }
 
     model = build_targetp_pair_blend_runtime_model(
         base_model_a=base_model_a,
         base_model_b=base_model_b,
         alpha_by_class=0.0,
-        perox_source='b',
-        metadata={'source': 'pair-test'},
+        perox_source="b",
+        metadata={"source": "pair-test"},
     )
     pred = predict_localization_and_peroxisome(
-        aa_seq='MKKLLLLLLLLAAAAAGGGGG',
+        aa_seq="MKKLLLLLLLLAAAAAGGGGG",
         model=model,
     )
 
-    assert model['model_type'] == 'targetp_blend_v1'
-    assert model['metadata']['source'] == 'pair-test'
-    assert model['metadata']['perox_source'] == 'b'
-    assert pred['predicted_class'] == 'SP'
-    assert pred['perox_probability_yes'] == pytest.approx(0.75)
+    assert model["model_type"] == "targetp_blend_v1"
+    assert model["metadata"]["source"] == "pair-test"
+    assert model["metadata"]["perox_source"] == "b"
+    assert pred["predicted_class"] == "SP"
+    assert pred["perox_probability_yes"] == pytest.approx(0.75)
 
 
 @pytest.mark.ml
 def test_targetp_pair_blend_cli_writes_model(temp_dir):
-    pytest.importorskip('torch')
+    pytest.importorskip("torch")
 
     class_names = list(LOCALIZATION_CLASSES)
     model_a = {
-        'model_type': 'nearest_centroid_v1',
-        'feature_names': list(FEATURE_NAMES),
-        'localization_model': {
-            'mode': 'constant',
-            'class_label': 'noTP',
-            'class_order': class_names,
+        "model_type": "nearest_centroid_v1",
+        "feature_names": list(FEATURE_NAMES),
+        "localization_model": {
+            "mode": "constant",
+            "class_label": "noTP",
+            "class_order": class_names,
         },
-        'perox_model': {'mode': 'constant', 'yes_probability': 0.0},
-        'metadata': {},
+        "perox_model": {"mode": "constant", "yes_probability": 0.0},
+        "metadata": {},
     }
     model_b = {
-        'model_type': 'nearest_centroid_v1',
-        'feature_names': list(FEATURE_NAMES),
-        'localization_model': {
-            'mode': 'constant',
-            'class_label': 'mTP',
-            'class_order': class_names,
+        "model_type": "nearest_centroid_v1",
+        "feature_names": list(FEATURE_NAMES),
+        "localization_model": {
+            "mode": "constant",
+            "class_label": "mTP",
+            "class_order": class_names,
         },
-        'perox_model': {'mode': 'constant', 'yes_probability': 0.0},
-        'metadata': {},
+        "perox_model": {"mode": "constant", "yes_probability": 0.0},
+        "metadata": {},
     }
     from cdskit.localize_model import load_localize_model, save_localize_model
 
-    model_a_path = temp_dir / 'a.pt'
-    model_b_path = temp_dir / 'b.pt'
-    out_path = temp_dir / 'blend.pt'
+    model_a_path = temp_dir / "a.pt"
+    model_b_path = temp_dir / "b.pt"
+    out_path = temp_dir / "blend.pt"
     save_localize_model(model=model_a, path=str(model_a_path))
     save_localize_model(model=model_b, path=str(model_b_path))
 
-    targetp_pair_blend_main([
-        '--model_a', str(model_a_path),
-        '--model_b', str(model_b_path),
-        '--alpha', '0.0',
-        '--model_out', str(out_path),
-    ])
+    targetp_pair_blend_main(
+        [
+            "--model_a",
+            str(model_a_path),
+            "--model_b",
+            str(model_b_path),
+            "--alpha",
+            "0.0",
+            "--model_out",
+            str(out_path),
+        ]
+    )
     saved = load_localize_model(str(out_path))
     pred = predict_localization_and_peroxisome(
-        aa_seq='MARRRRAAASSSLLLGGGGG',
+        aa_seq="MARRRRAAASSSLLLGGGGG",
         model=saved,
     )
 
-    assert saved['model_type'] == 'targetp_blend_v1'
-    assert saved['metadata']['base_model_a'] == str(model_a_path)
-    assert pred['predicted_class'] == 'mTP'
+    assert saved["model_type"] == "targetp_blend_v1"
+    assert saved["metadata"]["base_model_a"] == str(model_a_path)
+    assert pred["predicted_class"] == "mTP"
 
 
 @pytest.mark.ml
 def test_targetp_mtp_notp_specialist_accepts_none_class_weight():
-    pytest.importorskip('sklearn')
+    pytest.importorskip("sklearn")
 
     class_names = list(LOCALIZATION_CLASSES)
     base_model_a = {
-        'model_type': 'nearest_centroid_v1',
-        'localization_model': {
-            'mode': 'constant',
-            'class_label': 'noTP',
-            'class_order': class_names,
+        "model_type": "nearest_centroid_v1",
+        "localization_model": {
+            "mode": "constant",
+            "class_label": "noTP",
+            "class_order": class_names,
         },
-        'perox_model': {'mode': 'constant', 'yes_probability': 0.0},
+        "perox_model": {"mode": "constant", "yes_probability": 0.0},
     }
     base_model_b = {
-        'model_type': 'nearest_centroid_v1',
-        'localization_model': {
-            'mode': 'constant',
-            'class_label': 'mTP',
-            'class_order': class_names,
+        "model_type": "nearest_centroid_v1",
+        "localization_model": {
+            "mode": "constant",
+            "class_label": "mTP",
+            "class_order": class_names,
         },
-        'perox_model': {'mode': 'constant', 'yes_probability': 0.0},
+        "perox_model": {"mode": "constant", "yes_probability": 0.0},
     }
     model = build_targetp_pair_blend_runtime_model(
         base_model_a=base_model_a,
         base_model_b=base_model_b,
         alpha_by_class=0.5,
-        metadata={'source': 'mtp-notp-class-weight-test'},
+        metadata={"source": "mtp-notp-class-weight-test"},
     )
     rows = [
         {
-            'accession': 'N1',
-            'sequence': 'MGPVNQDEGPVNQDEGPVNQDE',
-            'organism_group': 'non_plant',
-            'true_class': 'noTP',
+            "accession": "N1",
+            "sequence": "MGPVNQDEGPVNQDEGPVNQDE",
+            "organism_group": "non_plant",
+            "true_class": "noTP",
         },
         {
-            'accession': 'N2',
-            'sequence': 'MGGGGGGGGGGGGGGGGGGGG',
-            'organism_group': 'non_plant',
-            'true_class': 'noTP',
+            "accession": "N2",
+            "sequence": "MGGGGGGGGGGGGGGGGGGGG",
+            "organism_group": "non_plant",
+            "true_class": "noTP",
         },
         {
-            'accession': 'M1',
-            'sequence': 'MRRKRRAARAKRRNQAAARRRAA',
-            'organism_group': 'non_plant',
-            'true_class': 'mTP',
+            "accession": "M1",
+            "sequence": "MRRKRRAARAKRRNQAAARRRAA",
+            "organism_group": "non_plant",
+            "true_class": "mTP",
         },
         {
-            'accession': 'M2',
-            'sequence': 'MARRRRAAASSSLLLGGGGG',
-            'organism_group': 'non_plant',
-            'true_class': 'mTP',
+            "accession": "M2",
+            "sequence": "MARRRRAAASSSLLLGGGGG",
+            "organism_group": "non_plant",
+            "true_class": "mTP",
         },
     ]
     prediction_rows = list()
     for row in rows:
         pred_row = {
-            'accession': row['accession'],
-            'true_class': row['true_class'],
+            "accession": row["accession"],
+            "true_class": row["true_class"],
         }
         for class_name in LOCALIZATION_CLASSES:
-            value = 0.5 if class_name in ['noTP', 'mTP'] else 0.0
-            pred_row['p_{}'.format(class_name)] = value
-            pred_row['p_a_{}'.format(class_name)] = 1.0 if class_name == 'noTP' else 0.0
-            pred_row['p_b_{}'.format(class_name)] = 1.0 if class_name == 'mTP' else 0.0
+            value = 0.5 if class_name in ["noTP", "mTP"] else 0.0
+            pred_row["p_{}".format(class_name)] = value
+            pred_row["p_a_{}".format(class_name)] = 1.0 if class_name == "noTP" else 0.0
+            pred_row["p_b_{}".format(class_name)] = 1.0 if class_name == "mTP" else 0.0
         prediction_rows.append(pred_row)
 
     model = attach_targetp_mtp_notp_specialist(
@@ -532,12 +551,12 @@ def test_targetp_mtp_notp_specialist_accepts_none_class_weight():
         prediction_rows=prediction_rows,
         threshold=0.52,
         max_iter=2,
-        class_weight='none',
+        class_weight="none",
     )
 
-    specialist = model['localization_model']['targetp_specialist_postprocess']
-    assert specialist['mtp_notp_class_weight'] == 'none'
-    assert model['metadata']['targetp_mtp_notp_specialist']['class_weight'] == 'none'
+    specialist = model["localization_model"]["targetp_specialist_postprocess"]
+    assert specialist["mtp_notp_class_weight"] == "none"
+    assert model["metadata"]["targetp_mtp_notp_specialist"]["class_weight"] == "none"
 
 
 def test_mtp_notp_threshold_selection_uses_validation_macro_f1():
@@ -547,68 +566,74 @@ def test_mtp_notp_threshold_selection_uses_validation_macro_f1():
         threshold_grid=[0.30, 0.50, 0.70],
     )
 
-    assert result['threshold'] == pytest.approx(0.50)
-    assert result['macro_f1'] == pytest.approx(1.0)
-    assert result['by_class']['noTP']['f1'] == pytest.approx(1.0)
-    assert result['by_class']['mTP']['f1'] == pytest.approx(1.0)
+    assert result["threshold"] == pytest.approx(0.50)
+    assert result["macro_f1"] == pytest.approx(1.0)
+    assert result["by_class"]["noTP"]["f1"] == pytest.approx(1.0)
+    assert result["by_class"]["mTP"]["f1"] == pytest.approx(1.0)
 
 
-def test_export_targetp_blend_runtime_model_uses_full_training_table(temp_dir, monkeypatch):
+def test_export_targetp_blend_runtime_model_uses_full_training_table(
+    temp_dir, monkeypatch
+):
     class_names = list(LOCALIZATION_CLASSES)
-    training_tsv = temp_dir / 'targetp_export.tsv'
-    with open(training_tsv, 'w', encoding='utf-8', newline='') as out:
+    training_tsv = temp_dir / "targetp_export.tsv"
+    with open(training_tsv, "w", encoding="utf-8", newline="") as out:
         writer = csv.DictWriter(
             out,
-            fieldnames=['sequence', 'localization', 'peroxisome'],
-            delimiter='\t',
-            lineterminator='\n',
+            fieldnames=["sequence", "localization", "peroxisome"],
+            delimiter="\t",
+            lineterminator="\n",
         )
         writer.writeheader()
         for class_name, seq in [
-            ('noTP', 'MGPVNQDEGPVNQDEGPVNQDE'),
-            ('SP', 'MKKLLLLLLLLLLAVAVAASAASA'),
-            ('mTP', 'MRRKRRAARAKRRNQAAARRRAA'),
-            ('cTP', 'MSTSTSTTSTASSSAATSTASSTT'),
-            ('lTP', 'MARRVAAARRLLLLLVVVVVAAST'),
+            ("noTP", "MGPVNQDEGPVNQDEGPVNQDE"),
+            ("SP", "MKKLLLLLLLLLLAVAVAASAASA"),
+            ("mTP", "MRRKRRAARAKRRNQAAARRRAA"),
+            ("cTP", "MSTSTSTTSTASSSAATSTASSTT"),
+            ("lTP", "MARRVAAARRLLLLLVVVVVAAST"),
         ]:
-            writer.writerow({
-                'sequence': seq,
-                'localization': class_name,
-                'peroxisome': 'no',
-            })
+            writer.writerow(
+                {
+                    "sequence": seq,
+                    "localization": class_name,
+                    "peroxisome": "no",
+                }
+            )
 
     def fake_fit_localization_model(**kwargs):
-        model_arch = kwargs['model_arch']
+        model_arch = kwargs["model_arch"]
         return {
-            'mode': 'constant',
-            'class_label': 'noTP' if model_arch == 'bilstm_attention' else 'lTP',
-            'class_order': class_names,
+            "mode": "constant",
+            "class_label": "noTP" if model_arch == "bilstm_attention" else "lTP",
+            "class_order": class_names,
         }
 
     saved = {}
 
     def fake_save_localize_model(model, path):
-        saved['model'] = model
-        saved['path'] = path
+        saved["model"] = model
+        saved["path"] = path
 
     monkeypatch.setattr(
         targetp_blend_module,
-        'fit_localization_model',
+        "fit_localization_model",
         fake_fit_localization_model,
     )
     monkeypatch.setattr(
         targetp_blend_module,
-        'save_localize_model',
+        "save_localize_model",
         fake_save_localize_model,
     )
-    args = targetp_blend_module.build_parser().parse_args([
-        '--training_tsv',
-        str(training_tsv),
-        '--model_out',
-        str(temp_dir / 'targetp_blend.pt'),
-        '--model_out_specialist_postprocess',
-        'no',
-    ])
+    args = targetp_blend_module.build_parser().parse_args(
+        [
+            "--training_tsv",
+            str(training_tsv),
+            "--model_out",
+            str(temp_dir / "targetp_blend.pt"),
+            "--model_out_specialist_postprocess",
+            "no",
+        ]
+    )
     prob_a = np.tile(np.asarray([[1.0, 0.0, 0.0, 0.0, 0.0]], dtype=np.float64), (5, 1))
     prob_b = np.tile(np.asarray([[0.0, 0.0, 0.0, 0.0, 1.0]], dtype=np.float64), (5, 1))
     true_idx = np.arange(5, dtype=np.int64)
@@ -621,42 +646,50 @@ def test_export_targetp_blend_runtime_model_uses_full_training_table(temp_dir, m
         alpha_by_class=np.asarray([0.5, 0.5, 0.5, 0.5, 0.5], dtype=np.float64),
         class_thresholds=np.ones((5,), dtype=np.float64),
         benchmark_out={
-            'targetp_macro_f1': 0.89,
-            'blend_threshold': {'metrics': {'macro_f1': 0.90}},
-            'specialist_foldwise': {
-                'metrics': {'macro_f1': 0.91},
-                'targetp_margin': {
-                    'min_class_f1_margin': 0.001,
-                    'beats_targetp_all_classes': True,
+            "targetp_macro_f1": 0.89,
+            "blend_threshold": {"metrics": {"macro_f1": 0.90}},
+            "specialist_foldwise": {
+                "metrics": {"macro_f1": 0.91},
+                "targetp_margin": {
+                    "min_class_f1_margin": 0.001,
+                    "beats_targetp_all_classes": True,
                 },
             },
         },
     )
 
-    assert info['model_type'] == 'targetp_blend_v1'
-    assert info['specialist_postprocess'] is False
-    assert saved['path'] == str(temp_dir / 'targetp_blend.pt')
-    assert saved['model']['model_type'] == 'targetp_blend_v1'
-    assert saved['model']['metadata']['num_used_rows'] == 5
-    assert saved['model']['metadata']['benchmark_specialist_foldwise_macro_f1'] == pytest.approx(0.91)
-    assert saved['model']['metadata']['benchmark_specialist_foldwise_min_class_f1_margin'] == pytest.approx(0.001)
-    assert saved['model']['metadata']['benchmark_specialist_foldwise_all_classes_gt_targetp'] is True
+    assert info["model_type"] == "targetp_blend_v1"
+    assert info["specialist_postprocess"] is False
+    assert saved["path"] == str(temp_dir / "targetp_blend.pt")
+    assert saved["model"]["model_type"] == "targetp_blend_v1"
+    assert saved["model"]["metadata"]["num_used_rows"] == 5
+    assert saved["model"]["metadata"][
+        "benchmark_specialist_foldwise_macro_f1"
+    ] == pytest.approx(0.91)
+    assert saved["model"]["metadata"][
+        "benchmark_specialist_foldwise_min_class_f1_margin"
+    ] == pytest.approx(0.001)
+    assert (
+        saved["model"]["metadata"][
+            "benchmark_specialist_foldwise_all_classes_gt_targetp"
+        ]
+        is True
+    )
     assert [
-        row['model_type']
-        for row in saved['model']['localization_model']['base_models']
-    ] == ['bilstm_attention_v1', 'esm_head_v1']
+        row["model_type"] for row in saved["model"]["localization_model"]["base_models"]
+    ] == ["bilstm_attention_v1", "esm_head_v1"]
 
 
 def test_targetp_margin_summary_flags_all_class_pass():
-    class_names = ['noTP', 'SP']
+    class_names = ["noTP", "SP"]
     targetp_ref = {
-        'noTP': {'f1': 0.80},
-        'SP': {'f1': 0.70},
+        "noTP": {"f1": 0.80},
+        "SP": {"f1": 0.70},
     }
     metrics = {
-        'by_class': {
-            'noTP': {'f1': 0.82},
-            'SP': {'f1': 0.71},
+        "by_class": {
+            "noTP": {"f1": 0.82},
+            "SP": {"f1": 0.71},
         },
     }
 
@@ -666,9 +699,9 @@ def test_targetp_margin_summary_flags_all_class_pass():
         class_names=class_names,
     )
 
-    assert summary['beats_targetp_all_classes'] is True
-    assert summary['min_class_f1_margin'] == pytest.approx(0.01)
-    assert summary['class_beats_targetp'] == {'noTP': True, 'SP': True}
+    assert summary["beats_targetp_all_classes"] is True
+    assert summary["min_class_f1_margin"] == pytest.approx(0.01)
+    assert summary["class_beats_targetp"] == {"noTP": True, "SP": True}
 
 
 def test_specialist_postprocess_applies_sp_gate_and_ltp_rerank():
@@ -696,9 +729,9 @@ def test_specialist_postprocess_applies_sp_gate_and_ltp_rerank():
     )
 
     assert pred.tolist() == [
-        class_to_idx['noTP'],
-        class_to_idx['SP'],
-        class_to_idx['cTP'],
+        class_to_idx["noTP"],
+        class_to_idx["SP"],
+        class_to_idx["cTP"],
     ]
 
 
@@ -732,9 +765,9 @@ def test_specialist_threshold_pair_uses_calibration_fallback():
         fallback_if_best_min_margin_below=0.0,
     )
 
-    assert result['selection_source'] == 'calibration_profile_fallback'
-    assert result['sp_threshold'] == pytest.approx(0.95)
-    assert result['ltp_threshold'] == pytest.approx(0.95)
+    assert result["selection_source"] == "calibration_profile_fallback"
+    assert result["sp_threshold"] == pytest.approx(0.95)
+    assert result["ltp_threshold"] == pytest.approx(0.95)
 
 
 def test_specialist_threshold_rank_supports_macro_objective():
@@ -746,13 +779,13 @@ def test_specialist_threshold_rank_supports_macro_objective():
         pred_idx=pred_idx,
         true_idx=true_idx,
         class_names=class_names,
-        objective='targetp_margin',
+        objective="targetp_margin",
     )
     macro_rank = _specialist_threshold_rank(
         pred_idx=pred_idx,
         true_idx=true_idx,
         class_names=class_names,
-        objective='macro_f1',
+        objective="macro_f1",
     )
 
     assert targetp_rank[0] < 0.0
@@ -783,28 +816,27 @@ def test_main_runs_with_cached_oof_only(temp_dir, monkeypatch):
         ],
         dtype=np.float64,
     )
-    bilstm_npz = temp_dir / 'bilstm_oof.npz'
-    esm_npz = temp_dir / 'esm_oof.npz'
-    out_json = temp_dir / 'blend_out.json'
-    out_md = temp_dir / 'blend_out.md'
-    dummy_tsv = temp_dir / 'dummy.tsv'
+    bilstm_npz = temp_dir / "bilstm_oof.npz"
+    esm_npz = temp_dir / "esm_oof.npz"
+    out_json = temp_dir / "blend_out.json"
+    out_md = temp_dir / "blend_out.md"
+    dummy_tsv = temp_dir / "dummy.tsv"
     dummy_tsv.write_text(
-        'sequence\tlocalization\tperoxisome\tfold_id\n'
-        'MAAA\tnoTP\tno\tfold1\n',
-        encoding='utf-8',
+        "sequence\tlocalization\tperoxisome\tfold_id\nMAAA\tnoTP\tno\tfold1\n",
+        encoding="utf-8",
     )
     cache_args = targetp_blend_module.build_parser().parse_args([])
     cache_args.training_tsv = str(dummy_tsv)
     bilstm_key = targetp_blend_module._training_file_cache_key(
         path=str(dummy_tsv),
-        model_arch='bilstm_attention',
+        model_arch="bilstm_attention",
         localize_strategy=cache_args.localize_strategy,
         dl_train_params=targetp_blend_module._bilstm_dl_params_from_args(cache_args),
         cv_seed=cache_args.cv_seed,
     )
     esm_key = targetp_blend_module._training_file_cache_key(
         path=str(dummy_tsv),
-        model_arch='esm_head',
+        model_arch="esm_head",
         localize_strategy=cache_args.localize_strategy,
         dl_train_params=targetp_blend_module._esm_dl_params_from_args(cache_args),
         cv_seed=cache_args.cv_seed,
@@ -827,42 +859,44 @@ def test_main_runs_with_cached_oof_only(temp_dir, monkeypatch):
 
     monkeypatch.setattr(
         sys,
-        'argv',
+        "argv",
         [
-            'targetp_blend.py',
-            '--training_tsv',
+            "targetp_blend.py",
+            "--training_tsv",
             str(dummy_tsv),
-            '--reuse_oof_cache',
-            'yes',
-            '--bilstm_oof_npz',
+            "--reuse_oof_cache",
+            "yes",
+            "--bilstm_oof_npz",
             str(bilstm_npz),
-            '--esm_oof_npz',
+            "--esm_oof_npz",
             str(esm_npz),
-            '--blend_grid_step',
-            '0.5',
-            '--out_json',
+            "--blend_grid_step",
+            "0.5",
+            "--out_json",
             str(out_json),
-            '--out_md',
+            "--out_md",
             str(out_md),
         ],
     )
     main()
 
-    with open(out_json, 'r', encoding='utf-8') as inp:
+    with open(out_json, "r", encoding="utf-8") as inp:
         result = json.load(inp)
 
-    assert result['bilstm']['used_cache'] is True
-    assert result['esm']['used_cache'] is True
-    assert 'blend_global' in result
-    assert 'blend_classwise' in result
-    assert 'targetp_margin' in result['blend_threshold']
-    md = out_md.read_text(encoding='utf-8')
-    assert '| Metric | TargetP | bilstm | esm | blend(global) | blend(classwise) |' in md
-    assert '| All classes > TargetP |' in md
+    assert result["bilstm"]["used_cache"] is True
+    assert result["esm"]["used_cache"] is True
+    assert "blend_global" in result
+    assert "blend_classwise" in result
+    assert "targetp_margin" in result["blend_threshold"]
+    md = out_md.read_text(encoding="utf-8")
+    assert (
+        "| Metric | TargetP | bilstm | esm | blend(global) | blend(classwise) |" in md
+    )
+    assert "| All classes > TargetP |" in md
 
 
 def test_metrics_from_prob_matrix_computes_expected_accuracy():
-    class_names = ['noTP', 'SP']
+    class_names = ["noTP", "SP"]
     prob_matrix = np.asarray(
         [
             [0.80, 0.20],
@@ -878,5 +912,5 @@ def test_metrics_from_prob_matrix_computes_expected_accuracy():
         true_idx=true_idx,
         class_names=class_names,
     )
-    assert metrics['overall_accuracy'] == pytest.approx(0.75)
-    assert metrics['macro_f1'] == pytest.approx(0.7333333333333334)
+    assert metrics["overall_accuracy"] == pytest.approx(0.75)
+    assert metrics["macro_f1"] == pytest.approx(0.7333333333333334)

@@ -28,15 +28,23 @@ class TestDegeneracyMain:
             seqfile=str(input_path),
             prefix=str(prefix),
             fold=[0, 2, 3, 4],
-            report='',
+            report="",
         )
 
         degeneracy_main(args)
 
-        zero = list(Bio.SeqIO.parse(str(temp_dir / "deg_0fold_positions.fasta"), "fasta"))
-        two = list(Bio.SeqIO.parse(str(temp_dir / "deg_2fold_positions.fasta"), "fasta"))
-        three = list(Bio.SeqIO.parse(str(temp_dir / "deg_3fold_positions.fasta"), "fasta"))
-        four = list(Bio.SeqIO.parse(str(temp_dir / "deg_4fold_positions.fasta"), "fasta"))
+        zero = list(
+            Bio.SeqIO.parse(str(temp_dir / "deg_0fold_positions.fasta"), "fasta")
+        )
+        two = list(
+            Bio.SeqIO.parse(str(temp_dir / "deg_2fold_positions.fasta"), "fasta")
+        )
+        three = list(
+            Bio.SeqIO.parse(str(temp_dir / "deg_3fold_positions.fasta"), "fasta")
+        )
+        four = list(
+            Bio.SeqIO.parse(str(temp_dir / "deg_4fold_positions.fasta"), "fasta")
+        )
 
         assert [str(record.seq) for record in zero] == ["GCTTAT", "GCTTAT"]
         assert [str(record.seq) for record in two] == ["T", "C"]
@@ -57,20 +65,28 @@ class TestDegeneracyMain:
             seqfile=str(input_path),
             prefix=str(prefix),
             fold=[0, 2, 4],
-            report='',
+            report="",
         )
 
         degeneracy_main(args)
 
-        zero = list(Bio.SeqIO.parse(str(temp_dir / "deg_0fold_positions.fasta"), "fasta"))
-        two = list(Bio.SeqIO.parse(str(temp_dir / "deg_2fold_positions.fasta"), "fasta"))
-        four = list(Bio.SeqIO.parse(str(temp_dir / "deg_4fold_positions.fasta"), "fasta"))
+        zero = list(
+            Bio.SeqIO.parse(str(temp_dir / "deg_0fold_positions.fasta"), "fasta")
+        )
+        two = list(
+            Bio.SeqIO.parse(str(temp_dir / "deg_2fold_positions.fasta"), "fasta")
+        )
+        four = list(
+            Bio.SeqIO.parse(str(temp_dir / "deg_4fold_positions.fasta"), "fasta")
+        )
 
         assert [str(record.seq) for record in zero] == ["GC", "GA"]
         assert [str(record.seq) for record in two] == ["", ""]
         assert [str(record.seq) for record in four] == ["", ""]
 
-    def test_degeneracy_ignores_missing_codons_and_writes_report(self, temp_dir, mock_args):
+    def test_degeneracy_ignores_missing_codons_and_writes_report(
+        self, temp_dir, mock_args
+    ):
         input_path = temp_dir / "input.fasta"
         prefix = temp_dir / "deg"
         report_path = temp_dir / "report.json"
@@ -90,7 +106,9 @@ class TestDegeneracyMain:
 
         degeneracy_main(args)
 
-        four = list(Bio.SeqIO.parse(str(temp_dir / "deg_4fold_positions.fasta"), "fasta"))
+        four = list(
+            Bio.SeqIO.parse(str(temp_dir / "deg_4fold_positions.fasta"), "fasta")
+        )
         report = json.loads(report_path.read_text())
         assert [str(record.seq) for record in four] == ["T", "-"]
         assert report["counts_by_fold"]["4"] == 1

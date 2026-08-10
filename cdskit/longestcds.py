@@ -20,8 +20,8 @@ from cdskit.util import (
 _CODON_TABLE_CACHE: dict = {}
 _CODON_SCAN_CACHE: dict = {}
 _REVCOMP_TABLE = str.maketrans(
-    'ACGTRYMKWSBDHVN',
-    'TGCAYRKMWSVHDBN',
+    "ACGTRYMKWSBDHVN",
+    "TGCAYRKMWSVHDBN",
 )
 
 
@@ -70,15 +70,17 @@ def frame_end_index(seq_len, frame_offset):
 
 
 def original_coordinates(strand, seq_len, start_idx, end_idx):
-    if strand == '+':
+    if strand == "+":
         return start_idx + 1, end_idx
     # Coordinates on original (plus) strand while preserving coding orientation via strand symbol.
     return seq_len - end_idx + 1, seq_len - start_idx
 
 
-def build_candidate_sort_key(category, nt_len, strand, has_stop, has_start, frame, start_1based):
-    rank = 2 if category == 'complete' else 1 if category == 'partial' else 0
-    strand_order = 0 if strand == '+' else 1
+def build_candidate_sort_key(
+    category, nt_len, strand, has_stop, has_start, frame, start_1based
+):
+    rank = 2 if category == "complete" else 1 if category == "partial" else 0
+    strand_order = 0 if strand == "+" else 1
     return (
         rank,
         nt_len,
@@ -149,13 +151,13 @@ def build_candidate_from_fields(candidate_fields, sort_key):
         start_idx=candidate_fields[8],
         end_idx=candidate_fields[9],
         sort_key=sort_key,
-        output_seq='',
+        output_seq="",
     )
 
 
 def collect_start_stop_positions_by_frame(strand_seq, start_codons, stop_codons):
-    start_positions = [list(), list(), list()]
-    stop_positions = [list(), list(), list()]
+    start_positions: list[list[int]] = [[], [], []]
+    stop_positions: list[list[int]] = [[], [], []]
     seq_find = strand_seq.find
 
     for codon in start_codons:
@@ -220,7 +222,7 @@ def scan_start_based_best_candidate(
                     end_idx=end_idx,
                     has_start=True,
                     has_stop=True,
-                    category='complete',
+                    category="complete",
                 )
                 best_rank = best_sort_key[0]
                 best_len = best_sort_key[1]
@@ -240,7 +242,7 @@ def scan_start_based_best_candidate(
                     end_idx=max_end,
                     has_start=True,
                     has_stop=False,
-                    category='partial',
+                    category="partial",
                 )
                 best_rank = best_sort_key[0]
                 best_len = best_sort_key[1]
@@ -281,7 +283,7 @@ def scan_stop_free_best_candidate(
                     end_idx=stop_pos,
                     has_start=False,
                     has_stop=False,
-                    category='no_start',
+                    category="no_start",
                 )
                 best_rank = best_sort_key[0]
                 best_len = best_sort_key[1]
@@ -302,7 +304,7 @@ def scan_stop_free_best_candidate(
                 end_idx=max_end,
                 has_start=False,
                 has_stop=False,
-                category='no_start',
+                category="no_start",
             )
             best_rank = best_sort_key[0]
             best_len = best_sort_key[1]
@@ -310,9 +312,9 @@ def scan_stop_free_best_candidate(
 
 
 def rank_value(candidate):
-    if candidate.category == 'complete':
+    if candidate.category == "complete":
         return 2
-    if candidate.category == 'partial':
+    if candidate.category == "partial":
         return 1
     return 0
 
@@ -341,9 +343,11 @@ def choose_best_candidate(seq_str, codontable):
         start_codons=start_codons,
         stop_codons=stop_codons,
     )
-    strand_contexts.append(('+', plus_frame_ends, plus_start_positions, plus_stop_positions))
+    strand_contexts.append(
+        ("+", plus_frame_ends, plus_start_positions, plus_stop_positions)
+    )
     best_sort_key, best_fields = scan_start_based_best_candidate(
-        strand='+',
+        strand="+",
         seq_len=seq_len,
         frame_ends=plus_frame_ends,
         start_positions_by_frame=plus_start_positions,
@@ -351,9 +355,15 @@ def choose_best_candidate(seq_str, codontable):
         best_sort_key=best_sort_key,
         best_fields=best_fields,
     )
-    if (best_sort_key is not None) and (best_sort_key[0] == 2) and (best_sort_key[1] == seq_len):
-        candidate = build_candidate_from_fields(candidate_fields=best_fields, sort_key=best_sort_key)
-        candidate.output_seq = seq_upper[candidate.start_idx:candidate.end_idx]
+    if (
+        (best_sort_key is not None)
+        and (best_sort_key[0] == 2)
+        and (best_sort_key[1] == seq_len)
+    ):
+        candidate = build_candidate_from_fields(
+            candidate_fields=best_fields, sort_key=best_sort_key
+        )
+        candidate.output_seq = seq_upper[candidate.start_idx : candidate.end_idx]
         return candidate
 
     reverse_complement = seq_upper.translate(_REVCOMP_TABLE)[::-1]
@@ -367,9 +377,11 @@ def choose_best_candidate(seq_str, codontable):
         start_codons=start_codons,
         stop_codons=stop_codons,
     )
-    strand_contexts.append(('-', minus_frame_ends, minus_start_positions, minus_stop_positions))
+    strand_contexts.append(
+        ("-", minus_frame_ends, minus_start_positions, minus_stop_positions)
+    )
     best_sort_key, best_fields = scan_start_based_best_candidate(
-        strand='-',
+        strand="-",
         seq_len=seq_len,
         frame_ends=minus_frame_ends,
         start_positions_by_frame=minus_start_positions,
@@ -391,11 +403,15 @@ def choose_best_candidate(seq_str, codontable):
 
     if best_fields is None:
         return None
-    candidate = build_candidate_from_fields(candidate_fields=best_fields, sort_key=best_sort_key)
-    if candidate.strand == '+':
-        candidate.output_seq = seq_upper[candidate.start_idx:candidate.end_idx]
+    candidate = build_candidate_from_fields(
+        candidate_fields=best_fields, sort_key=best_sort_key
+    )
+    if candidate.strand == "+":
+        candidate.output_seq = seq_upper[candidate.start_idx : candidate.end_idx]
     else:
-        candidate.output_seq = reverse_complement[candidate.start_idx:candidate.end_idx]
+        candidate.output_seq = reverse_complement[
+            candidate.start_idx : candidate.end_idx
+        ]
     return candidate
 
 
@@ -413,15 +429,15 @@ def choose_candidates_process_parallel(seq_strings, codontable, threads):
 
 def build_output_record(record, candidate, annotate_seqname):
     if candidate is None:
-        txt = 'No CDS candidate found for {}. Output sequence is empty.\n'
+        txt = "No CDS candidate found for {}. Output sequence is empty.\n"
         sys.stderr.write(txt.format(record.id))
-        meta = 'strand=NA frame=NA start=NA end=NA nt_len=0 aa_len=0 category=none'
+        meta = "strand=NA frame=NA start=NA end=NA nt_len=0 aa_len=0 category=none"
         if annotate_seqname:
-            description = f'{record.id} {meta}'
+            description = f"{record.id} {meta}"
         else:
             description = record.description
         return SeqRecord(
-            seq=Seq(''),
+            seq=Seq(""),
             id=record.id,
             name=record.name,
             description=description,
@@ -432,17 +448,17 @@ def build_output_record(record, candidate, annotate_seqname):
         f"start={candidate.start_1based} end={candidate.end_1based} "
         f"nt_len={candidate.nt_len} aa_len={candidate.aa_len} category={candidate.category}"
     )
-    if candidate.output_seq != '':
+    if candidate.output_seq != "":
         output_seq = candidate.output_seq
     else:
         seq_upper = str(record.seq).upper()
-        if candidate.strand == '+':
-            output_seq = seq_upper[candidate.start_idx:candidate.end_idx]
+        if candidate.strand == "+":
+            output_seq = seq_upper[candidate.start_idx : candidate.end_idx]
         else:
             reverse_complement = seq_upper.translate(_REVCOMP_TABLE)[::-1]
-            output_seq = reverse_complement[candidate.start_idx:candidate.end_idx]
+            output_seq = reverse_complement[candidate.start_idx : candidate.end_idx]
     if annotate_seqname:
-        description = f'{record.id} {meta}'
+        description = f"{record.id} {meta}"
     else:
         description = record.description
     return SeqRecord(
@@ -454,13 +470,15 @@ def build_output_record(record, candidate, annotate_seqname):
 
 
 def longestcds_main(args):
-    annotate_seqname = bool(getattr(args, 'annotate_seqname', False))
-    threads = resolve_threads(getattr(args, 'threads', 1))
+    annotate_seqname = bool(getattr(args, "annotate_seqname", False))
+    threads = resolve_threads(getattr(args, "threads", 1))
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
-    stop_if_not_dna(records=records, label='--seq_file')
+    stop_if_not_dna(records=records, label="--seq_file")
     stop_if_invalid_codontable(args.codontable)
     if len(records) == 0:
-        write_seqs(records=records, outfile=args.outfile, outseqformat=args.outseqformat)
+        write_seqs(
+            records=records, outfile=args.outfile, outseqformat=args.outseqformat
+        )
         return
 
     candidates = None
@@ -473,17 +491,23 @@ def longestcds_main(args):
                 threads=threads,
             )
         except (OSError, PermissionError):
-            sys.stderr.write('Process-based parallelism unavailable; falling back to threads.\n')
+            sys.stderr.write(
+                "Process-based parallelism unavailable; falling back to threads.\n"
+            )
     if candidates is None:
         worker = partial(choose_best_candidate_from_record, codontable=args.codontable)
         candidates = parallel_map_ordered(items=records, worker=worker, threads=threads)
 
     output_records = list()
-    for record, candidate in zip(records, candidates):
-        output_records.append(build_output_record(
-            record=record,
-            candidate=candidate,
-            annotate_seqname=annotate_seqname,
-        ))
+    for record, candidate in zip(records, candidates, strict=False):
+        output_records.append(
+            build_output_record(
+                record=record,
+                candidate=candidate,
+                annotate_seqname=annotate_seqname,
+            )
+        )
 
-    write_seqs(records=output_records, outfile=args.outfile, outseqformat=args.outseqformat)
+    write_seqs(
+        records=output_records, outfile=args.outfile, outseqformat=args.outseqformat
+    )

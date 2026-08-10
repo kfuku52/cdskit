@@ -3,7 +3,7 @@ import os
 import numpy as np
 
 
-DEFAULT_ESM_MODEL_REVISION = 'c731040fcd8d73dceaa04b0a8e6329b345b0f5df'
+DEFAULT_ESM_MODEL_REVISION = "c731040fcd8d73dceaa04b0a8e6329b345b0f5df"
 
 
 def require_transformers():
@@ -13,59 +13,63 @@ def require_transformers():
         from transformers import AutoModel, AutoTokenizer
     except Exception as exc:
         txt = (
-            'transformers + torch are required for --model_arch esm_head. '
-            'Install them first. Original error: {}'
+            "transformers + torch are required for --model_arch esm_head. "
+            "Install them first. Original error: {}"
         )
-        raise ImportError(txt.format(str(exc)))
+        raise ImportError(txt.format(str(exc))) from exc
     return torch, nn, AutoTokenizer, AutoModel
 
 
-def resolve_torch_device(device_text='auto'):
+def resolve_torch_device(device_text="auto"):
     torch, _, _, _ = require_transformers()
     device_text = str(device_text).strip().lower()
-    if device_text in ['', 'auto']:
+    if device_text in ["", "auto"]:
         if torch.cuda.is_available():
-            return 'cuda'
-        if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
-            return 'mps'
-        return 'cpu'
-    if device_text == 'cuda':
+            return "cuda"
+        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            return "mps"
+        return "cpu"
+    if device_text == "cuda":
         if not torch.cuda.is_available():
-            raise ValueError('CUDA device was requested but CUDA is not available.')
-        return 'cuda'
-    if device_text == 'mps':
-        if (not hasattr(torch.backends, 'mps')) or (not torch.backends.mps.is_available()):
-            raise ValueError('MPS device was requested but MPS is not available.')
-        return 'mps'
-    if device_text == 'cpu':
-        return 'cpu'
-    raise ValueError('Unsupported --dl_device: {}'.format(device_text))
+            raise ValueError("CUDA device was requested but CUDA is not available.")
+        return "cuda"
+    if device_text == "mps":
+        if (not hasattr(torch.backends, "mps")) or (
+            not torch.backends.mps.is_available()
+        ):
+            raise ValueError("MPS device was requested but MPS is not available.")
+        return "mps"
+    if device_text == "cpu":
+        return "cpu"
+    raise ValueError("Unsupported --dl_device: {}".format(device_text))
 
 
 def _pool_last_hidden(last_hidden_state, attention_mask, pooling, torch):
-    pooling = str(pooling or 'cls').strip().lower()
-    if pooling == 'cls':
+    pooling = str(pooling or "cls").strip().lower()
+    if pooling == "cls":
         return last_hidden_state[:, 0, :]
-    if pooling == 'mean':
+    if pooling == "mean":
         mask = attention_mask.unsqueeze(-1).to(last_hidden_state.dtype)
         sum_h = (last_hidden_state * mask).sum(dim=1)
         denom = mask.sum(dim=1).clamp(min=1.0)
         return sum_h / denom
-    raise ValueError('Unsupported --esm_pooling: {}'.format(pooling))
+    raise ValueError("Unsupported --esm_pooling: {}".format(pooling))
 
 
 def _build_linear_head(nn, in_dim, num_class):
     return nn.Linear(int(in_dim), int(num_class))
 
 
-def _resolve_model_source(model_name, model_local_dir=''):
-    model_name = str(model_name or '').strip()
-    model_local_dir = str(model_local_dir or '').strip()
-    if model_local_dir != '':
-        return model_local_dir, True, 'local'
-    if model_name == '':
-        raise ValueError('--esm_model_name should not be empty when --esm_model_local_dir is not set.')
-    return model_name, False, 'huggingface'
+def _resolve_model_source(model_name, model_local_dir=""):
+    model_name = str(model_name or "").strip()
+    model_local_dir = str(model_local_dir or "").strip()
+    if model_local_dir != "":
+        return model_local_dir, True, "local"
+    if model_name == "":
+        raise ValueError(
+            "--esm_model_name should not be empty when --esm_model_local_dir is not set."
+        )
+    return model_name, False, "huggingface"
 
 
 def fit_esm_head_classifier(
@@ -94,30 +98,30 @@ def fit_esm_head_classifier(
     labels = list(labels)
     class_order = list(class_order)
     if len(labels) == 0:
-        raise ValueError('No training sequence for esm_head.')
+        raise ValueError("No training sequence for esm_head.")
     if len(aa_sequences) != len(labels):
-        raise ValueError('Sequence count and label count mismatch for esm_head.')
+        raise ValueError("Sequence count and label count mismatch for esm_head.")
     if int(epochs) < 1:
-        raise ValueError('--dl_epochs should be >= 1.')
+        raise ValueError("--dl_epochs should be >= 1.")
     if int(batch_size) < 1:
-        raise ValueError('--dl_batch_size should be >= 1.')
+        raise ValueError("--dl_batch_size should be >= 1.")
     if int(max_len) < 4:
-        raise ValueError('--esm_max_len should be >= 4.')
+        raise ValueError("--esm_max_len should be >= 4.")
 
     resolved_device = resolve_torch_device(device_text=device)
     model_source, local_files_only, source_type = _resolve_model_source(
         model_name=model_name,
         model_local_dir=model_local_dir,
     )
-    revision = None if source_type == 'local' else str(model_revision or '').strip()
-    if source_type != 'local' and revision == '':
-        raise ValueError('--esm_model_revision is required for a remote ESM model.')
-    common_kwargs = {
-        'local_files_only': bool(local_files_only),
-        'trust_remote_code': False,
+    revision = None if source_type == "local" else str(model_revision or "").strip()
+    if source_type != "local" and revision == "":
+        raise ValueError("--esm_model_revision is required for a remote ESM model.")
+    common_kwargs: dict[str, object] = {
+        "local_files_only": bool(local_files_only),
+        "trust_remote_code": False,
     }
     if revision is not None:
-        common_kwargs['revision'] = revision
+        common_kwargs["revision"] = revision
     tokenizer = AutoTokenizer.from_pretrained(str(model_source), **common_kwargs)
     encoder = AutoModel.from_pretrained(
         str(model_source),
@@ -131,7 +135,7 @@ def fit_esm_head_classifier(
 
     label_to_idx = {name: i for i, name in enumerate(class_order)}
     y = np.asarray([label_to_idx[v] for v in labels], dtype=np.int64)
-    hidden_size = int(getattr(encoder.config, 'hidden_size'))
+    hidden_size = int(encoder.config.hidden_size)
     head = _build_linear_head(
         nn=nn,
         in_dim=hidden_size,
@@ -170,7 +174,7 @@ def fit_esm_head_classifier(
     for _ in range(int(epochs)):
         rng.shuffle(indices)
         for start in range(0, indices.shape[0], int(batch_size)):
-            batch_idx = indices[start:start + int(batch_size)]
+            batch_idx = indices[start : start + int(batch_size)]
             batch_seq = [aa_sequences[i] for i in batch_idx.tolist()]
             batch_y = torch.as_tensor(
                 y[batch_idx],
@@ -179,7 +183,7 @@ def fit_esm_head_classifier(
             )
             tokens = tokenizer(
                 batch_seq,
-                return_tensors='pt',
+                return_tensors="pt",
                 padding=True,
                 truncation=True,
                 max_length=int(max_len),
@@ -189,7 +193,7 @@ def fit_esm_head_classifier(
                 out = encoder(**tokens)
                 pooled = _pool_last_hidden(
                     last_hidden_state=out.last_hidden_state,
-                    attention_mask=tokens['attention_mask'],
+                    attention_mask=tokens["attention_mask"],
                     pooling=pooling,
                     torch=torch,
                 )
@@ -202,51 +206,51 @@ def fit_esm_head_classifier(
 
     head_state_dict = {k: v.detach().cpu() for k, v in head.state_dict().items()}
     return {
-        'class_order': list(class_order),
-        'model_name': str(model_name),
-        'model_revision': str(revision or ''),
-        'model_local_dir': str(model_local_dir),
-        'model_source_type': str(source_type),
-        'max_len': int(max_len),
-        'pooling': str(pooling),
-        'head_in_dim': int(hidden_size),
-        'head_state_dict': head_state_dict,
-        'device': str(resolved_device),
+        "class_order": list(class_order),
+        "model_name": str(model_name),
+        "model_revision": str(revision or ""),
+        "model_local_dir": str(model_local_dir),
+        "model_source_type": str(source_type),
+        "max_len": int(max_len),
+        "pooling": str(pooling),
+        "head_in_dim": int(hidden_size),
+        "head_state_dict": head_state_dict,
+        "device": str(resolved_device),
     }
 
 
-def _get_runtime_esm_encoder_and_head(localization_model, device_text='cpu'):
-    torch, nn, AutoTokenizer, AutoModel = require_transformers()
-    if '_runtime_model_cache' not in localization_model:
-        localization_model['_runtime_model_cache'] = dict()
-    cache = localization_model['_runtime_model_cache']
+def _get_runtime_esm_encoder_and_head(localization_model, device_text="cpu"):
+    _torch, nn, AutoTokenizer, AutoModel = require_transformers()
+    if "_runtime_model_cache" not in localization_model:
+        localization_model["_runtime_model_cache"] = dict()
+    cache = localization_model["_runtime_model_cache"]
 
     resolved_device = resolve_torch_device(device_text=device_text)
     cache_key = str(resolved_device)
     if cache_key in cache:
         return cache[cache_key], resolved_device
 
-    model_name = str(localization_model.get('model_name', ''))
-    model_revision = str(localization_model.get('model_revision', '')).strip()
-    model_local_dir = str(localization_model.get('model_local_dir', ''))
+    model_name = str(localization_model.get("model_name", ""))
+    model_revision = str(localization_model.get("model_revision", "")).strip()
+    model_local_dir = str(localization_model.get("model_local_dir", ""))
     model_source, local_files_only, source_type = _resolve_model_source(
         model_name=model_name,
         model_local_dir=model_local_dir,
     )
-    offline = bool(localization_model.get('_runtime_offline', False)) or (
-        str(os.environ.get('CDSKIT_OFFLINE', '')).strip().lower()
-        in {'1', 'true', 't', 'yes', 'y', 'on'}
+    offline = bool(localization_model.get("_runtime_offline", False)) or (
+        str(os.environ.get("CDSKIT_OFFLINE", "")).strip().lower()
+        in {"1", "true", "t", "yes", "y", "on"}
     )
-    common_kwargs = {
-        'local_files_only': bool(local_files_only or offline),
-        'trust_remote_code': False,
+    common_kwargs: dict[str, object] = {
+        "local_files_only": bool(local_files_only or offline),
+        "trust_remote_code": False,
     }
-    if source_type != 'local':
-        if model_revision == '':
+    if source_type != "local":
+        if model_revision == "":
             raise ValueError(
-                'Remote ESM model revision is missing from the model artifact.'
+                "Remote ESM model revision is missing from the model artifact."
             )
-        common_kwargs['revision'] = model_revision
+        common_kwargs["revision"] = model_revision
     tokenizer = AutoTokenizer.from_pretrained(
         str(model_source),
         **common_kwargs,
@@ -263,16 +267,16 @@ def _get_runtime_esm_encoder_and_head(localization_model, device_text='cpu'):
 
     head = _build_linear_head(
         nn=nn,
-        in_dim=int(localization_model['head_in_dim']),
-        num_class=len(localization_model['class_order']),
+        in_dim=int(localization_model["head_in_dim"]),
+        num_class=len(localization_model["class_order"]),
     )
-    head.load_state_dict(localization_model['head_state_dict'], strict=True)
+    head.load_state_dict(localization_model["head_state_dict"], strict=True)
     head.eval()
     head.to(resolved_device)
     cache[cache_key] = {
-        'tokenizer': tokenizer,
-        'encoder': encoder,
-        'head': head,
+        "tokenizer": tokenizer,
+        "encoder": encoder,
+        "head": head,
     }
     return cache[cache_key], resolved_device
 
@@ -280,7 +284,7 @@ def _get_runtime_esm_encoder_and_head(localization_model, device_text='cpu'):
 def predict_esm_head_batch(
     aa_sequences,
     localization_model,
-    device='cpu',
+    device="cpu",
     batch_size=128,
 ):
     torch, _, _, _ = require_transformers()
@@ -288,19 +292,19 @@ def predict_esm_head_batch(
         localization_model=localization_model,
         device_text=device,
     )
-    tokenizer = runtime['tokenizer']
-    encoder = runtime['encoder']
-    head = runtime['head']
-    max_len = int(localization_model['max_len'])
-    pooling = str(localization_model.get('pooling', 'cls'))
+    tokenizer = runtime["tokenizer"]
+    encoder = runtime["encoder"]
+    head = runtime["head"]
+    max_len = int(localization_model["max_len"])
+    pooling = str(localization_model.get("pooling", "cls"))
 
     probs = list()
     with torch.no_grad():
         for start in range(0, len(aa_sequences), int(batch_size)):
-            batch_seq = aa_sequences[start:start + int(batch_size)]
+            batch_seq = aa_sequences[start : start + int(batch_size)]
             tokens = tokenizer(
                 batch_seq,
-                return_tensors='pt',
+                return_tensors="pt",
                 padding=True,
                 truncation=True,
                 max_length=max_len,
@@ -309,7 +313,7 @@ def predict_esm_head_batch(
             out = encoder(**tokens)
             pooled = _pool_last_hidden(
                 last_hidden_state=out.last_hidden_state,
-                attention_mask=tokens['attention_mask'],
+                attention_mask=tokens["attention_mask"],
                 pooling=pooling,
                 torch=torch,
             )
@@ -317,18 +321,18 @@ def predict_esm_head_batch(
             batch_probs = logits.softmax(dim=1).detach().cpu().numpy()
             probs.append(batch_probs)
     if len(probs) == 0:
-        return np.zeros((0, len(localization_model['class_order'])), dtype=np.float64)
+        return np.zeros((0, len(localization_model["class_order"])), dtype=np.float64)
     return np.vstack(probs).astype(np.float64)
 
 
-def predict_esm_head(aa_seq, localization_model, device='cpu'):
+def predict_esm_head(aa_seq, localization_model, device="cpu"):
     probs = predict_esm_head_batch(
         aa_sequences=[aa_seq],
         localization_model=localization_model,
         device=device,
         batch_size=1,
     )
-    class_order = list(localization_model['class_order'])
+    class_order = list(localization_model["class_order"])
     class_probs = {class_order[i]: float(probs[0, i]) for i in range(len(class_order))}
     pred_index = int(np.argmax(probs[0, :]))
     return class_order[pred_index], class_probs

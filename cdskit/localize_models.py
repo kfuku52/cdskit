@@ -2,124 +2,130 @@
 Helpers for resolving cdskit localize pretrained model aliases.
 """
 
+from __future__ import annotations
+
 import hashlib
 import os
 import tempfile
 import urllib.request
 from pathlib import Path
+from typing import Any, TypeAlias
 
 
-TARGETING5_V1_FILENAME = 'cdskit-localize-targeting5-v1.pt'
+ModelSpec: TypeAlias = dict[str, Any]
+
+
+TARGETING5_V1_FILENAME = "cdskit-localize-targeting5-v1.pt"
 TARGETING5_PEROX_DEEPLOC21_ET_V1_FILENAME = (
-    'cdskit-localize-targeting5-perox-deeploc21-et-v1.pt'
+    "cdskit-localize-targeting5-perox-deeploc21-et-v1.pt"
 )
 
-PRETRAINED_LOCALIZE_MODELS = {
-    'targeting5-v1': {
-        'name': 'targeting5-v1',
-        'version': 'v1',
-        'filename': TARGETING5_V1_FILENAME,
-        'aliases': ('targeting5', 'targeting5-v1', 'targeting5:v1'),
-        'description': 'CPU-inference TargetP-compatible noTP/SP/mTP/cTP/lTP model.',
-        'url': (
-            'https://github.com/kfuku52/cdskit/releases/download/'
-            'localize-targeting5-v1/{}'.format(TARGETING5_V1_FILENAME)
+PRETRAINED_LOCALIZE_MODELS: dict[str, ModelSpec] = {
+    "targeting5-v1": {
+        "name": "targeting5-v1",
+        "version": "v1",
+        "filename": TARGETING5_V1_FILENAME,
+        "aliases": ("targeting5", "targeting5-v1", "targeting5:v1"),
+        "description": "CPU-inference TargetP-compatible noTP/SP/mTP/cTP/lTP model.",
+        "url": (
+            "https://github.com/kfuku52/cdskit/releases/download/"
+            "localize-targeting5-v1/{}".format(TARGETING5_V1_FILENAME)
         ),
-        'sha256': 'ddaeab7093533a213ee58117b70ad0f45b0c126cf82c77df32e369eaff2beeb2',
-        'published': True,
+        "sha256": "ddaeab7093533a213ee58117b70ad0f45b0c126cf82c77df32e369eaff2beeb2",
+        "published": True,
     },
-    'targeting5-perox-deeploc21-et-v1': {
-        'name': 'targeting5-perox-deeploc21-et-v1',
-        'version': 'v1',
-        'filename': TARGETING5_PEROX_DEEPLOC21_ET_V1_FILENAME,
-        'aliases': (
-            'targeting5-perox-deeploc21-et-v1',
-            'targeting5-perox-deeploc21-et',
-            'targeting5-perox-deeploc21',
+    "targeting5-perox-deeploc21-et-v1": {
+        "name": "targeting5-perox-deeploc21-et-v1",
+        "version": "v1",
+        "filename": TARGETING5_PEROX_DEEPLOC21_ET_V1_FILENAME,
+        "aliases": (
+            "targeting5-perox-deeploc21-et-v1",
+            "targeting5-perox-deeploc21-et",
+            "targeting5-perox-deeploc21",
         ),
-        'description': (
-            'Experimental CPU-inference targeting5 model with a '
-            'DeepLoc21-trained ExtraTrees peroxisome sequence-label head.'
+        "description": (
+            "Experimental CPU-inference targeting5 model with a "
+            "DeepLoc21-trained ExtraTrees peroxisome sequence-label head."
         ),
-        'url': (
-            'https://github.com/kfuku52/cdskit/releases/download/'
-            'localize-targeting5-perox-deeploc21-et-v1/{}'.format(
+        "url": (
+            "https://github.com/kfuku52/cdskit/releases/download/"
+            "localize-targeting5-perox-deeploc21-et-v1/{}".format(
                 TARGETING5_PEROX_DEEPLOC21_ET_V1_FILENAME
             )
         ),
-        'sha256': 'd0998df8819d975b4392342ab78dccc0dd95cf301e4d2df8f38c73d0b5aab445',
-        'published': True,
+        "sha256": "d0998df8819d975b4392342ab78dccc0dd95cf301e4d2df8f38c73d0b5aab445",
+        "published": True,
     },
 }
 MAX_MODEL_DOWNLOAD_BYTES = 2 * 1024 * 1024 * 1024
 
 
-def _truthy(value):
-    return str(value or '').strip().lower() in {'1', 'true', 't', 'yes', 'y', 'on'}
+def _truthy(value: Any) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "t", "yes", "y", "on"}
 
 
-def _alias_map():
-    out = {}
+def _alias_map() -> dict[str, ModelSpec]:
+    out: dict[str, ModelSpec] = {}
     for key, spec in PRETRAINED_LOCALIZE_MODELS.items():
-        aliases = list(spec.get('aliases', ()))
+        aliases = list(spec.get("aliases", ()))
         aliases.append(key)
         for alias in aliases:
             out[str(alias).strip().lower()] = spec
     return out
 
 
-def is_pretrained_localize_model_alias(model):
-    return str(model or '').strip().lower() in _alias_map()
+def is_pretrained_localize_model_alias(model: Any) -> bool:
+    return str(model or "").strip().lower() in _alias_map()
 
 
-def known_pretrained_localize_models():
+def known_pretrained_localize_models() -> list[str]:
     """Return known pretrained localize aliases."""
 
     return sorted(_alias_map().keys())
 
 
-def localize_model_cache_dir():
+def localize_model_cache_dir() -> Path:
     """Return the root cache directory for downloaded cdskit models."""
 
-    override = os.environ.get('CDSKIT_MODEL_DIR', '').strip()
+    override = os.environ.get("CDSKIT_MODEL_DIR", "").strip()
     if override:
         return Path(override).expanduser()
 
-    xdg_cache = os.environ.get('XDG_CACHE_HOME', '').strip()
+    xdg_cache = os.environ.get("XDG_CACHE_HOME", "").strip()
     if xdg_cache:
-        return Path(xdg_cache).expanduser() / 'cdskit' / 'models'
+        return Path(xdg_cache).expanduser() / "cdskit" / "models"
 
-    return Path.home() / '.cache' / 'cdskit' / 'models'
+    return Path.home() / ".cache" / "cdskit" / "models"
 
 
-def _cache_path_for_spec(spec):
+def _cache_path_for_spec(spec: ModelSpec) -> Path:
     return (
         localize_model_cache_dir()
-        / 'localize'
-        / str(spec.get('name', '')).strip()
-        / str(spec.get('version', '')).strip()
-        / str(spec.get('filename', '')).strip()
+        / "localize"
+        / str(spec.get("name", "")).strip()
+        / str(spec.get("version", "")).strip()
+        / str(spec.get("filename", "")).strip()
     )
 
 
-def _file_sha256(path):
+def _file_sha256(path: str | os.PathLike[str]) -> str:
     digest = hashlib.sha256()
-    with open(path, 'rb') as inp:
-        for chunk in iter(lambda: inp.read(1024 * 1024), b''):
+    with open(path, "rb") as inp:
+        for chunk in iter(lambda: inp.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
 
 
-def _verify_checksum(path, spec):
-    expected = str(spec.get('sha256', '') or '').strip().lower()
+def _verify_checksum(path: str | os.PathLike[str], spec: ModelSpec) -> None:
+    expected = str(spec.get("sha256", "") or "").strip().lower()
     if not expected:
         return
 
     observed = _file_sha256(path)
     if observed != expected:
         raise ValueError(
-            'Cached pretrained localize model checksum mismatch at {}. '
-            'Expected {}, observed {}. Remove the cached file to download it again.'.format(
+            "Cached pretrained localize model checksum mismatch at {}. "
+            "Expected {}, observed {}. Remove the cached file to download it again.".format(
                 path,
                 expected,
                 observed,
@@ -127,36 +133,38 @@ def _verify_checksum(path, spec):
         )
 
 
-def _download_to_cache(spec, cache_path):
-    url = str(spec.get('url', '') or '').strip()
-    expected_sha256 = str(spec.get('sha256', '') or '').strip()
-    if url == '' or expected_sha256 == '':
+def _download_to_cache(spec: ModelSpec, cache_path: Path) -> None:
+    url = str(spec.get("url", "") or "").strip()
+    expected_sha256 = str(spec.get("sha256", "") or "").strip()
+    if url == "" or expected_sha256 == "":
         raise FileNotFoundError(
             'Pretrained localize model "{}" is registered but its release URL or '
-            'sha256 checksum is not ready yet. Use an explicit --model PATH for now.'.format(
-                spec.get('name', 'unknown')
+            "sha256 checksum is not ready yet. Use an explicit --model PATH for now.".format(
+                spec.get("name", "unknown")
             )
         )
 
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp_path = tempfile.mkstemp(
-        prefix='{}.download.'.format(cache_path.name),
-        suffix='.tmp',
+        prefix="{}.download.".format(cache_path.name),
+        suffix=".tmp",
         dir=str(cache_path.parent),
     )
     try:
-        with os.fdopen(fd, 'wb') as out:
+        with os.fdopen(fd, "wb") as out:
             request = urllib.request.Request(
                 url,
-                headers={'User-Agent': 'cdskit-localize-model-downloader'},
+                headers={"User-Agent": "cdskit-localize-model-downloader"},
             )
             with urllib.request.urlopen(request, timeout=60) as inp:
-                content_length = inp.headers.get('Content-Length')
+                content_length = inp.headers.get("Content-Length")
                 if (
                     content_length is not None
                     and int(content_length) > MAX_MODEL_DOWNLOAD_BYTES
                 ):
-                    raise ValueError('Pretrained model download exceeds the 2 GiB safety limit.')
+                    raise ValueError(
+                        "Pretrained model download exceeds the 2 GiB safety limit."
+                    )
                 downloaded = 0
                 while True:
                     chunk = inp.read(1024 * 1024)
@@ -164,7 +172,9 @@ def _download_to_cache(spec, cache_path):
                         break
                     downloaded += len(chunk)
                     if downloaded > MAX_MODEL_DOWNLOAD_BYTES:
-                        raise ValueError('Pretrained model download exceeds the 2 GiB safety limit.')
+                        raise ValueError(
+                            "Pretrained model download exceeds the 2 GiB safety limit."
+                        )
                     out.write(chunk)
         _verify_checksum(tmp_path, spec)
         os.replace(tmp_path, cache_path)
@@ -174,7 +184,7 @@ def _download_to_cache(spec, cache_path):
         raise
 
 
-def resolve_localize_model_path(model, allow_download=True):
+def resolve_localize_model_path(model: Any, allow_download: bool = True) -> str:
     """
     Resolve a localize model argument to a local file path.
 
@@ -183,18 +193,18 @@ def resolve_localize_model_path(model, allow_download=True):
     as published and has a checksum.
     """
 
-    model_text = str(model or '').strip()
-    if model_text == '':
-        raise ValueError('--model is required.')
+    model_text = str(model or "").strip()
+    if model_text == "":
+        raise ValueError("--model is required.")
 
     spec = _alias_map().get(model_text.lower())
     if spec is None:
         path = Path(model_text).expanduser()
         if path.exists():
             return str(path)
-        known = ', '.join(known_pretrained_localize_models())
+        known = ", ".join(known_pretrained_localize_models())
         raise FileNotFoundError(
-            'Localize model path not found: {}. Known pretrained model aliases: {}'.format(
+            "Localize model path not found: {}. Known pretrained model aliases: {}".format(
                 model_text,
                 known,
             )
@@ -205,20 +215,20 @@ def resolve_localize_model_path(model, allow_download=True):
         _verify_checksum(cache_path, spec)
         return str(cache_path)
 
-    if not allow_download or _truthy(os.environ.get('CDSKIT_OFFLINE', '')):
+    if not allow_download or _truthy(os.environ.get("CDSKIT_OFFLINE", "")):
         raise FileNotFoundError(
             'Pretrained localize model "{}" is not present in the cache at {} '
-            'and model download is disabled.'.format(
-                spec.get('name', model_text),
+            "and model download is disabled.".format(
+                spec.get("name", model_text),
                 cache_path,
             )
         )
 
-    if not bool(spec.get('published', False)):
+    if not bool(spec.get("published", False)):
         raise FileNotFoundError(
             'Pretrained localize model "{}" is registered but not published yet. '
-            'Use an explicit --model PATH until the GitHub Release asset and '
-            'sha256 checksum are finalized.'.format(spec.get('name', model_text))
+            "Use an explicit --model PATH until the GitHub Release asset and "
+            "sha256 checksum are finalized.".format(spec.get("name", model_text))
         )
 
     _download_to_cache(spec, cache_path)

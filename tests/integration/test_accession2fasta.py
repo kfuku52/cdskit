@@ -43,7 +43,9 @@ class TestAccession2FastaHelpers:
         assert prepared.description == ""
 
     def test_prepare_accession_record_extract_cds(self):
-        record = SeqRecord(Seq("AAATGCCCCTTT"), id="ACC1", name="ACC1", description="desc")
+        record = SeqRecord(
+            Seq("AAATGCCCCTTT"), id="ACC1", name="ACC1", description="desc"
+        )
         record.annotations["organism"] = "Homo sapiens"
         record.annotations["accessions"] = ["ACC1"]
         record.features = [
@@ -66,7 +68,9 @@ class TestAccession2FastaHelpers:
 
     def test_find_missing_accessions_does_not_use_substring_match(self):
         seq_records = [SeqRecord(Seq("ATG"), id="AB12.1")]
-        missing = find_missing_accessions(accessions=["AB1", "AB12"], seq_records=seq_records)
+        missing = find_missing_accessions(
+            accessions=["AB1", "AB12"], seq_records=seq_records
+        )
         assert missing == ["AB1"]
 
 
@@ -121,7 +125,9 @@ class TestAccession2SeqRecord:
 class TestAccession2FastaMain:
     """Tests for accession2fasta_main function."""
 
-    def test_accession2fasta_threads_matches_single_thread(self, temp_dir, mock_args, monkeypatch):
+    def test_accession2fasta_threads_matches_single_thread(
+        self, temp_dir, mock_args, monkeypatch
+    ):
         accession_file = temp_dir / "acc.txt"
         accession_file.write_text("ACC1\nACC2\nACC3\n")
         out_single = temp_dir / "single.fasta"
@@ -136,7 +142,11 @@ class TestAccession2FastaMain:
                 records.append(rec)
             return records
 
-        monkeypatch.setattr(accession_module, "accession2seq_record", lambda accessions, database: make_records())
+        monkeypatch.setattr(
+            accession_module,
+            "accession2seq_record",
+            lambda accessions, database: make_records(),
+        )
 
         args_single = mock_args(
             accession_file=str(accession_file),
@@ -167,21 +177,23 @@ class TestAccession2FastaMain:
         result_single = list(accession_module.SeqIO.parse(str(out_single), "fasta"))
         result_threaded = list(accession_module.SeqIO.parse(str(out_threaded), "fasta"))
         assert [r.id for r in result_single] == [r.id for r in result_threaded]
-        assert [str(r.seq) for r in result_single] == [str(r.seq) for r in result_threaded]
+        assert [str(r.seq) for r in result_single] == [
+            str(r.seq) for r in result_threaded
+        ]
 
     def test_accession2fasta_requires_accession_file(self, mock_args):
         args = mock_args(
-            accession_file='',
-            outfile='-',
-            outseqformat='fasta',
-            email='',
+            accession_file="",
+            outfile="-",
+            outseqformat="fasta",
+            email="",
             extract_cds=False,
-            ncbi_database='nucleotide',
-            seqnamefmt='organism_accessions',
+            ncbi_database="nucleotide",
+            seqnamefmt="organism_accessions",
             list_seqname_keys=False,
             threads=1,
         )
 
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             accession2fasta_main(args)
-        assert '--accession_file is required' in str(exc_info.value)
+        assert "--accession_file is required" in str(exc_info.value)

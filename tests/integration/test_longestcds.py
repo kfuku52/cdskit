@@ -20,18 +20,24 @@ class TestLongestCdsMain:
         records = [SeqRecord(Seq("ATGAAATGA"), id="seq1", description="")]
         Bio.SeqIO.write(records, str(input_path), "fasta")
 
-        args = mock_args(seqfile=str(input_path), outfile=str(output_path), codontable=999)
-        with pytest.raises(Exception) as exc_info:
+        args = mock_args(
+            seqfile=str(input_path), outfile=str(output_path), codontable=999
+        )
+        with pytest.raises(ValueError) as exc_info:
             longestcds_main(args)
         assert "Invalid --codon_table" in str(exc_info.value)
 
-    def test_longestcds_accepts_codontable_name_when_called_programmatically(self, temp_dir, mock_args):
+    def test_longestcds_accepts_codontable_name_when_called_programmatically(
+        self, temp_dir, mock_args
+    ):
         input_path = temp_dir / "input.fasta"
         output_path = temp_dir / "output.fasta"
         records = [SeqRecord(Seq("ATGAAATAG"), id="seq1", description="")]
         Bio.SeqIO.write(records, str(input_path), "fasta")
 
-        args = mock_args(seqfile=str(input_path), outfile=str(output_path), codontable="Standard")
+        args = mock_args(
+            seqfile=str(input_path), outfile=str(output_path), codontable="Standard"
+        )
         longestcds_main(args)
 
         result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
@@ -44,7 +50,9 @@ class TestLongestCdsMain:
         records = [SeqRecord(Seq("GGGATGAAATAGCCC"), id="seq1", description="")]
         Bio.SeqIO.write(records, str(input_path), "fasta")
 
-        args = mock_args(seqfile=str(input_path), outfile=str(output_path), codontable=1)
+        args = mock_args(
+            seqfile=str(input_path), outfile=str(output_path), codontable=1
+        )
         longestcds_main(args)
 
         result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
@@ -52,7 +60,9 @@ class TestLongestCdsMain:
         assert str(result[0].seq) == "ATGAAATAG"
         assert result[0].description == "seq1"
 
-    def test_longestcds_with_annotation_outputs_metadata_in_header(self, temp_dir, mock_args):
+    def test_longestcds_with_annotation_outputs_metadata_in_header(
+        self, temp_dir, mock_args
+    ):
         input_path = temp_dir / "input.fasta"
         output_path = temp_dir / "output.fasta"
         records = [SeqRecord(Seq("GGGATGAAATAGCCC"), id="seq1", description="")]
@@ -191,7 +201,9 @@ class TestLongestCdsMain:
         ]
         Bio.SeqIO.write(records, str(input_path), "fasta")
 
-        args = mock_args(seqfile=str(input_path), outfile=str(output_path), codontable=1)
+        args = mock_args(
+            seqfile=str(input_path), outfile=str(output_path), codontable=1
+        )
         longestcds_main(args)
 
         result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
@@ -231,8 +243,12 @@ class TestLongestCdsMain:
         result_threaded = list(Bio.SeqIO.parse(str(out_threaded), "fasta"))
 
         assert [r.id for r in result_single] == [r.id for r in result_threaded]
-        assert [str(r.seq) for r in result_single] == [str(r.seq) for r in result_threaded]
-        assert [r.description for r in result_single] == [r.description for r in result_threaded]
+        assert [str(r.seq) for r in result_single] == [
+            str(r.seq) for r in result_threaded
+        ]
+        assert [r.description for r in result_single] == [
+            r.description for r in result_threaded
+        ]
 
 
 class TestLongestCommandAliases:
@@ -260,7 +276,9 @@ class TestLongestCommandAliases:
         result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
         assert str(result[0].seq) == "ATGAAATAG"
 
-    def test_longestorf_cli_is_canonical_without_deprecation_warning(self, temp_dir, capsys):
+    def test_longestorf_cli_is_canonical_without_deprecation_warning(
+        self, temp_dir, capsys
+    ):
         input_path = temp_dir / "input.fasta"
         output_path = temp_dir / "output.fasta"
         records = [SeqRecord(Seq("GGGATGAAATAGCCC"), id="seq1", description="")]

@@ -11,80 +11,87 @@ from cdskit.localize_model import (
     save_localize_model,
 )
 from cdskit.targetp_external_eval import load_fixed_uniprot_holdout_rows, read_tsv
-from cdskit.targetp_blend import _fit_sklearn_model, build_targetp_pair_blend_runtime_model
+from cdskit.targetp_blend import (
+    _fit_sklearn_model,
+    build_targetp_pair_blend_runtime_model,
+)
 from cdskit.cliutil import CdskitArgumentParser
 
 
 TARGETP_NOTP_SPECIALIST_PROFILE = {
-    'name': 'targetp_notp_probability_sequence_v1',
-    'model_kind': 'HistGradientBoostingClassifier',
-    'max_iter': 120,
-    'learning_rate': 0.04,
-    'l2_regularization': 0.02,
-    'random_state': 99,
-    'class_weight': 'balanced',
-    'threshold': 0.54,
+    "name": "targetp_notp_probability_sequence_v1",
+    "model_kind": "HistGradientBoostingClassifier",
+    "max_iter": 120,
+    "learning_rate": 0.04,
+    "l2_regularization": 0.02,
+    "random_state": 99,
+    "class_weight": "balanced",
+    "threshold": 0.54,
 }
 
 
 TARGETP_RERANKER_PROFILE = {
-    'name': 'targetp_probability_pair_sequence_reranker_v2',
-    'model_kind': 'HistGradientBoostingClassifier',
-    'max_iter': 120,
-    'learning_rate': 0.04,
-    'l2_regularization': 0.02,
-    'random_state': 111,
-    'class_weight': 'balanced',
-    'threshold': 0.50,
+    "name": "targetp_probability_pair_sequence_reranker_v2",
+    "model_kind": "HistGradientBoostingClassifier",
+    "max_iter": 120,
+    "learning_rate": 0.04,
+    "l2_regularization": 0.02,
+    "random_state": 111,
+    "class_weight": "balanced",
+    "threshold": 0.50,
 }
 
 
 TARGETP_MTP_NOTP_SPECIALIST_PROFILE = {
-    'name': 'targetp_mtp_notp_pair_sequence_v1',
-    'feature_profile': TARGETP_RERANKER_PROFILE['name'],
-    'model_kind': 'HistGradientBoostingClassifier',
-    'max_iter': 120,
-    'learning_rate': 0.04,
-    'l2_regularization': 0.02,
-    'random_state': 811,
-    'class_weight': 'balanced',
-    'threshold': 0.60,
+    "name": "targetp_mtp_notp_pair_sequence_v1",
+    "feature_profile": TARGETP_RERANKER_PROFILE["name"],
+    "model_kind": "HistGradientBoostingClassifier",
+    "max_iter": 120,
+    "learning_rate": 0.04,
+    "l2_regularization": 0.02,
+    "random_state": 811,
+    "class_weight": "balanced",
+    "threshold": 0.60,
 }
 
 
 def _normalize_class_weight(value):
-    text = str(value or '').strip()
-    if text == '' or text.lower() in ['none', 'null']:
+    text = str(value or "").strip()
+    if text == "" or text.lower() in ["none", "null"]:
         return None
     return text
 
 
 def _class_weight_metadata_value(value):
     resolved = _normalize_class_weight(value)
-    return 'none' if resolved is None else str(resolved)
+    return "none" if resolved is None else str(resolved)
 
 
 def _parse_threshold_grid(text, default=None):
     if default is None:
         default = [float(value) / 100.0 for value in range(35, 76)]
-    text = str(text or '').strip()
-    if text == '':
+    text = str(text or "").strip()
+    if text == "":
         return list(default)
     out = list()
-    for part in text.split(','):
+    for part in text.split(","):
         part = part.strip()
-        if part == '':
+        if part == "":
             continue
         value = float(part)
         if (not np.isfinite(value)) or value < 0.0 or value > 1.0:
-            raise ValueError('Threshold grid values should be finite values between 0 and 1.')
+            raise ValueError(
+                "Threshold grid values should be finite values between 0 and 1."
+            )
         out.append(value)
     if len(out) == 0:
-        raise ValueError('Threshold grid should contain at least one value.')
+        raise ValueError("Threshold grid should contain at least one value.")
     return sorted(set(out))
 
 
-def _binary_class_metrics(labels, predictions, positive_name='mTP', negative_name='noTP'):
+def _binary_class_metrics(
+    labels, predictions, positive_name="mTP", negative_name="noTP"
+):
     labels = np.asarray(labels, dtype=np.int64)
     predictions = np.asarray(predictions, dtype=np.int64)
     out = dict()
@@ -95,19 +102,21 @@ def _binary_class_metrics(labels, predictions, positive_name='mTP', negative_nam
         fn = int(np.sum((labels == label) & (predictions != label)))
         precision = 0.0 if tp + fp == 0 else float(tp) / float(tp + fp)
         recall = 0.0 if tp + fn == 0 else float(tp) / float(tp + fn)
-        f1 = 0.0 if precision + recall == 0.0 else (
-            2.0 * precision * recall / (precision + recall)
+        f1 = (
+            0.0
+            if precision + recall == 0.0
+            else (2.0 * precision * recall / (precision + recall))
         )
         out[class_name] = {
-            'precision': float(precision),
-            'recall': float(recall),
-            'f1': float(f1),
-            'tp': int(tp),
-            'fp': int(fp),
-            'fn': int(fn),
+            "precision": float(precision),
+            "recall": float(recall),
+            "f1": float(f1),
+            "tp": int(tp),
+            "fp": int(fp),
+            "fn": int(fn),
         }
         f1_values.append(float(f1))
-    out['macro_f1'] = float(np.mean(np.asarray(f1_values, dtype=np.float64)))
+    out["macro_f1"] = float(np.mean(np.asarray(f1_values, dtype=np.float64)))
     return out
 
 
@@ -115,34 +124,38 @@ def _select_mtp_notp_threshold_from_scores(labels, scores, threshold_grid):
     labels = np.asarray(labels, dtype=np.int64)
     scores = np.asarray(scores, dtype=np.float64)
     if labels.shape[0] != scores.shape[0]:
-        raise ValueError('mTP/noTP threshold validation labels and scores differ in length.')
+        raise ValueError(
+            "mTP/noTP threshold validation labels and scores differ in length."
+        )
     if labels.shape[0] == 0:
-        raise ValueError('mTP/noTP threshold validation requires at least one row.')
+        raise ValueError("mTP/noTP threshold validation requires at least one row.")
     if len(set(labels.tolist())) < 2:
-        raise ValueError('mTP/noTP threshold validation requires both noTP and mTP rows.')
+        raise ValueError(
+            "mTP/noTP threshold validation requires both noTP and mTP rows."
+        )
     best = None
     for threshold in threshold_grid:
         predictions = (scores >= float(threshold)).astype(np.int64)
         metrics = _binary_class_metrics(labels=labels, predictions=predictions)
         rank = (
-            float(metrics['macro_f1']),
-            min(float(metrics['noTP']['f1']), float(metrics['mTP']['f1'])),
+            float(metrics["macro_f1"]),
+            min(float(metrics["noTP"]["f1"]), float(metrics["mTP"]["f1"])),
             -abs(0.5 - float(threshold)),
         )
-        if best is None or rank > best['rank']:
+        if best is None or rank > best["rank"]:
             best = {
-                'rank': rank,
-                'threshold': float(threshold),
-                'metrics': metrics,
+                "rank": rank,
+                "threshold": float(threshold),
+                "metrics": metrics,
             }
     return {
-        'threshold': float(best['threshold']),
-        'macro_f1': float(best['metrics']['macro_f1']),
-        'by_class': {
-            'noTP': best['metrics']['noTP'],
-            'mTP': best['metrics']['mTP'],
+        "threshold": float(best["threshold"]),
+        "macro_f1": float(best["metrics"]["macro_f1"]),
+        "by_class": {
+            "noTP": best["metrics"]["noTP"],
+            "mTP": best["metrics"]["mTP"],
         },
-        'grid': [float(value) for value in threshold_grid],
+        "grid": [float(value) for value in threshold_grid],
     }
 
 
@@ -159,39 +172,39 @@ def _select_mtp_notp_threshold_from_predictions(
         prediction_rows=prediction_rows,
     )
     proba = np.asarray(classifier.predict_proba(features), dtype=np.float64)
-    classes = [int(cls) for cls in list(getattr(classifier, 'classes_', []))]
+    classes = [int(cls) for cls in list(getattr(classifier, "classes_", []))]
     if 1 not in classes:
-        raise ValueError('mTP/noTP threshold validation classifier is missing class 1.')
+        raise ValueError("mTP/noTP threshold validation classifier is missing class 1.")
     scores = proba[:, classes.index(1)]
     report = _select_mtp_notp_threshold_from_scores(
         labels=labels,
         scores=scores,
         threshold_grid=threshold_grid,
     )
-    report['validation_rows'] = int(features.shape[0])
-    report['positive_rows'] = int(np.sum(labels == 1))
-    report['negative_rows'] = int(np.sum(labels == 0))
+    report["validation_rows"] = int(features.shape[0])
+    report["positive_rows"] = int(np.sum(labels == 1))
+    report["negative_rows"] = int(np.sum(labels == 0))
     return report
 
 
 def _parse_class_values(text, default):
-    text = str(text or '').strip()
-    if text == '':
+    text = str(text or "").strip()
+    if text == "":
         return {class_name: float(default) for class_name in LOCALIZATION_CLASSES}
-    if '=' not in text:
+    if "=" not in text:
         value = float(text)
         return {class_name: value for class_name in LOCALIZATION_CLASSES}
     out = {class_name: float(default) for class_name in LOCALIZATION_CLASSES}
-    for part in text.split(','):
+    for part in text.split(","):
         part = part.strip()
-        if part == '':
+        if part == "":
             continue
-        if '=' not in part:
-            raise ValueError('Class-specific values should use CLASS=VALUE entries.')
-        class_name, value = part.split('=', 1)
+        if "=" not in part:
+            raise ValueError("Class-specific values should use CLASS=VALUE entries.")
+        class_name, value = part.split("=", 1)
         class_name = class_name.strip()
         if class_name not in LOCALIZATION_CLASSES:
-            raise ValueError('Unknown class: {}'.format(class_name))
+            raise ValueError("Unknown class: {}".format(class_name))
         out[class_name] = float(value.strip())
     return out
 
@@ -206,20 +219,20 @@ def _targetp_notp_specialist_training_matrix(model, rows):
 
 def _probabilities_from_prediction_row(row):
     return {
-        class_name: float(row.get('p_{}'.format(class_name), 0.0))
+        class_name: float(row.get("p_{}".format(class_name), 0.0))
         for class_name in LOCALIZATION_CLASSES
     }
 
 
 def _base_probabilities_from_prediction_row(row, prefix):
-    prefix = str(prefix or '').strip()
-    if prefix == '':
+    prefix = str(prefix or "").strip()
+    if prefix == "":
         return _probabilities_from_prediction_row(row)
-    keys = ['p_{}_{}'.format(prefix, class_name) for class_name in LOCALIZATION_CLASSES]
+    keys = ["p_{}_{}".format(prefix, class_name) for class_name in LOCALIZATION_CLASSES]
     if not all(key in row for key in keys):
         return _probabilities_from_prediction_row(row)
     return {
-        class_name: float(row.get('p_{}_{}'.format(prefix, class_name), 0.0))
+        class_name: float(row.get("p_{}_{}".format(prefix, class_name), 0.0))
         for class_name in LOCALIZATION_CLASSES
     }
 
@@ -229,25 +242,25 @@ def _align_prediction_rows(rows, prediction_rows, label):
     if prediction_rows is None:
         return None
     required_probability_columns = {
-        'p_{}'.format(class_name) for class_name in LOCALIZATION_CLASSES
+        "p_{}".format(class_name) for class_name in LOCALIZATION_CLASSES
     }
     aligned_by_accession = {}
     for row_i, row in enumerate(prediction_rows, start=2):
-        accession = str(row.get('accession', '') or '').strip()
-        if accession == '':
+        accession = str(row.get("accession", "") or "").strip()
+        if accession == "":
             raise ValueError(
-                '{} prediction TSV row {} has an empty accession.'.format(label, row_i)
+                "{} prediction TSV row {} has an empty accession.".format(label, row_i)
             )
         if accession in aligned_by_accession:
             raise ValueError(
-                '{} prediction TSV has duplicate accession: {}'.format(label, accession)
+                "{} prediction TSV has duplicate accession: {}".format(label, accession)
             )
         missing = sorted(required_probability_columns.difference(row))
         if missing:
             raise ValueError(
-                '{} prediction TSV is missing required columns: {}'.format(
+                "{} prediction TSV is missing required columns: {}".format(
                     label,
-                    ', '.join(missing),
+                    ", ".join(missing),
                 )
             )
         aligned_by_accession[accession] = row
@@ -255,11 +268,15 @@ def _align_prediction_rows(rows, prediction_rows, label):
     source_accessions = []
     seen = set()
     for row_i, row in enumerate(rows, start=2):
-        accession = str(row.get('accession', '') or '').strip()
-        if accession == '':
-            raise ValueError('{} source TSV row {} has an empty accession.'.format(label, row_i))
+        accession = str(row.get("accession", "") or "").strip()
+        if accession == "":
+            raise ValueError(
+                "{} source TSV row {} has an empty accession.".format(label, row_i)
+            )
         if accession in seen:
-            raise ValueError('{} source TSV has duplicate accession: {}'.format(label, accession))
+            raise ValueError(
+                "{} source TSV has duplicate accession: {}".format(label, accession)
+            )
         seen.add(accession)
         source_accessions.append(accession)
 
@@ -268,116 +285,142 @@ def _align_prediction_rows(rows, prediction_rows, label):
     if missing_predictions or unexpected_predictions:
         details = []
         if missing_predictions:
-            details.append('missing predictions for {}'.format(', '.join(missing_predictions)))
+            details.append(
+                "missing predictions for {}".format(", ".join(missing_predictions))
+            )
         if unexpected_predictions:
-            details.append('unexpected predictions for {}'.format(', '.join(unexpected_predictions)))
-        raise ValueError('{} accession mismatch: {}.'.format(label, '; '.join(details)))
+            details.append(
+                "unexpected predictions for {}".format(
+                    ", ".join(unexpected_predictions)
+                )
+            )
+        raise ValueError("{} accession mismatch: {}.".format(label, "; ".join(details)))
     return [aligned_by_accession[accession] for accession in source_accessions]
 
 
-def _targetp_notp_specialist_training_matrix_from_predictions(model, rows, prediction_rows=None):
-    if str(model.get('model_type', '')).strip() != 'targetp_blend_v1':
-        raise ValueError('noTP specialist training requires a targetp_blend_v1 model.')
-    localization_model = model.get('localization_model', {})
-    prediction_rows = _align_prediction_rows(rows, prediction_rows, 'noTP specialist')
+def _targetp_notp_specialist_training_matrix_from_predictions(
+    model, rows, prediction_rows=None
+):
+    if str(model.get("model_type", "")).strip() != "targetp_blend_v1":
+        raise ValueError("noTP specialist training requires a targetp_blend_v1 model.")
+    localization_model = model.get("localization_model", {})
+    prediction_rows = _align_prediction_rows(rows, prediction_rows, "noTP specialist")
     features = list()
     labels = list()
     for row_i, row in enumerate(rows):
-        true_class = str(row.get('true_class', row.get('localization', '')) or '').strip()
+        true_class = str(
+            row.get("true_class", row.get("localization", "")) or ""
+        ).strip()
         if true_class not in LOCALIZATION_CLASSES:
-            raise ValueError('Unknown true class for noTP specialist: {}'.format(true_class))
-        sequence = row.get('sequence', '')
-        organism_group = row.get('organism_group', '')
+            raise ValueError(
+                "Unknown true class for noTP specialist: {}".format(true_class)
+            )
+        sequence = row.get("sequence", "")
+        organism_group = row.get("organism_group", "")
         if prediction_rows is None:
             pred = predict_localization_and_peroxisome(
                 aa_seq=sequence,
                 model=model,
                 organism_group=organism_group,
             )
-            blend_details = pred.get('targetp_blend_details', {})
-            base_model_probabilities = blend_details.get('base_model_probabilities', [])
+            blend_details = pred.get("targetp_blend_details", {})
+            base_model_probabilities = blend_details.get("base_model_probabilities", [])
             if len(base_model_probabilities) != 2:
-                raise ValueError('targetp_blend_v1 did not return two base probability vectors.')
-            base_probs = pred['class_probabilities']
+                raise ValueError(
+                    "targetp_blend_v1 did not return two base probability vectors."
+                )
+            base_probs = pred["class_probabilities"]
             prob_a = base_model_probabilities[0]
             prob_b = base_model_probabilities[1]
         else:
             pred_row = prediction_rows[row_i]
-            pred_true = str(pred_row.get('true_class', '') or '').strip()
-            pred_acc = str(pred_row.get('accession', '') or '').strip()
-            row_acc = str(row.get('accession', '') or '').strip()
-            if pred_true != '' and pred_true != true_class:
-                raise ValueError('noTP specialist prediction row true_class mismatch.')
-            if pred_acc != '' and row_acc != '' and pred_acc != row_acc:
-                raise ValueError('noTP specialist prediction row accession mismatch.')
+            pred_true = str(pred_row.get("true_class", "") or "").strip()
+            pred_acc = str(pred_row.get("accession", "") or "").strip()
+            row_acc = str(row.get("accession", "") or "").strip()
+            if pred_true != "" and pred_true != true_class:
+                raise ValueError("noTP specialist prediction row true_class mismatch.")
+            if pred_acc != "" and row_acc != "" and pred_acc != row_acc:
+                raise ValueError("noTP specialist prediction row accession mismatch.")
             base_probs = _probabilities_from_prediction_row(pred_row)
             prob_a = base_probs
             prob_b = base_probs
-        features.append(_targetp_notp_specialist_feature_vector(
-            aa_seq=sequence,
-            base_probs=base_probs,
-            prob_a=prob_a,
-            prob_b=prob_b,
-            organism_group=organism_group,
-            class_thresholds=localization_model.get('class_thresholds', {}),
-        ))
-        labels.append(1 if true_class == 'noTP' else 0)
+        features.append(
+            _targetp_notp_specialist_feature_vector(
+                aa_seq=sequence,
+                base_probs=base_probs,
+                prob_a=prob_a,
+                prob_b=prob_b,
+                organism_group=organism_group,
+                class_thresholds=localization_model.get("class_thresholds", {}),
+            )
+        )
+        labels.append(1 if true_class == "noTP" else 0)
     if len(features) == 0:
-        raise ValueError('No rows were available for noTP specialist training.')
+        raise ValueError("No rows were available for noTP specialist training.")
     return np.asarray(features, dtype=np.float64), np.asarray(labels, dtype=np.int64)
 
 
-def _targetp_reranker_training_matrix_from_predictions(model, rows, prediction_rows=None):
-    if str(model.get('model_type', '')).strip() != 'targetp_blend_v1':
-        raise ValueError('TargetP reranker training requires a targetp_blend_v1 model.')
-    localization_model = model.get('localization_model', {})
-    prediction_rows = _align_prediction_rows(rows, prediction_rows, 'TargetP reranker')
+def _targetp_reranker_training_matrix_from_predictions(
+    model, rows, prediction_rows=None
+):
+    if str(model.get("model_type", "")).strip() != "targetp_blend_v1":
+        raise ValueError("TargetP reranker training requires a targetp_blend_v1 model.")
+    localization_model = model.get("localization_model", {})
+    prediction_rows = _align_prediction_rows(rows, prediction_rows, "TargetP reranker")
     class_to_idx = {class_name: i for i, class_name in enumerate(LOCALIZATION_CLASSES)}
     features = list()
     labels = list()
     for row_i, row in enumerate(rows):
-        true_class = str(row.get('true_class', row.get('localization', '')) or '').strip()
+        true_class = str(
+            row.get("true_class", row.get("localization", "")) or ""
+        ).strip()
         if true_class not in LOCALIZATION_CLASSES:
-            raise ValueError('Unknown true class for TargetP reranker: {}'.format(true_class))
-        sequence = row.get('sequence', '')
-        organism_group = row.get('organism_group', '')
+            raise ValueError(
+                "Unknown true class for TargetP reranker: {}".format(true_class)
+            )
+        sequence = row.get("sequence", "")
+        organism_group = row.get("organism_group", "")
         if prediction_rows is None:
             pred = predict_localization_and_peroxisome(
                 aa_seq=sequence,
                 model=model,
                 organism_group=organism_group,
             )
-            blend_details = pred.get('targetp_blend_details', {})
-            base_model_probabilities = blend_details.get('base_model_probabilities', [])
+            blend_details = pred.get("targetp_blend_details", {})
+            base_model_probabilities = blend_details.get("base_model_probabilities", [])
             if len(base_model_probabilities) != 2:
-                raise ValueError('targetp_blend_v1 did not return two base probability vectors.')
-            base_probs = pred['class_probabilities']
+                raise ValueError(
+                    "targetp_blend_v1 did not return two base probability vectors."
+                )
+            base_probs = pred["class_probabilities"]
             prob_a = base_model_probabilities[0]
             prob_b = base_model_probabilities[1]
         else:
             pred_row = prediction_rows[row_i]
-            pred_true = str(pred_row.get('true_class', '') or '').strip()
-            pred_acc = str(pred_row.get('accession', '') or '').strip()
-            row_acc = str(row.get('accession', '') or '').strip()
-            if pred_true != '' and pred_true != true_class:
-                raise ValueError('TargetP reranker prediction row true_class mismatch.')
-            if pred_acc != '' and row_acc != '' and pred_acc != row_acc:
-                raise ValueError('TargetP reranker prediction row accession mismatch.')
+            pred_true = str(pred_row.get("true_class", "") or "").strip()
+            pred_acc = str(pred_row.get("accession", "") or "").strip()
+            row_acc = str(row.get("accession", "") or "").strip()
+            if pred_true != "" and pred_true != true_class:
+                raise ValueError("TargetP reranker prediction row true_class mismatch.")
+            if pred_acc != "" and row_acc != "" and pred_acc != row_acc:
+                raise ValueError("TargetP reranker prediction row accession mismatch.")
             base_probs = _probabilities_from_prediction_row(pred_row)
-            prob_a = _base_probabilities_from_prediction_row(pred_row, 'a')
-            prob_b = _base_probabilities_from_prediction_row(pred_row, 'b')
-        features.append(_targetp_reranker_feature_vector(
-            aa_seq=sequence,
-            base_probs=base_probs,
-            prob_a=prob_a,
-            prob_b=prob_b,
-            organism_group=organism_group,
-            class_thresholds=localization_model.get('class_thresholds', {}),
-            feature_profile=TARGETP_RERANKER_PROFILE['name'],
-        ))
+            prob_a = _base_probabilities_from_prediction_row(pred_row, "a")
+            prob_b = _base_probabilities_from_prediction_row(pred_row, "b")
+        features.append(
+            _targetp_reranker_feature_vector(
+                aa_seq=sequence,
+                base_probs=base_probs,
+                prob_a=prob_a,
+                prob_b=prob_b,
+                organism_group=organism_group,
+                class_thresholds=localization_model.get("class_thresholds", {}),
+                feature_profile=TARGETP_RERANKER_PROFILE["name"],
+            )
+        )
         labels.append(class_to_idx[true_class])
     if len(features) == 0:
-        raise ValueError('No rows were available for TargetP reranker training.')
+        raise ValueError("No rows were available for TargetP reranker training.")
     return np.asarray(features, dtype=np.float64), np.asarray(labels, dtype=np.int64)
 
 
@@ -386,57 +429,73 @@ def _targetp_mtp_notp_specialist_training_matrix_from_predictions(
     rows,
     prediction_rows=None,
 ):
-    if str(model.get('model_type', '')).strip() != 'targetp_blend_v1':
-        raise ValueError('mTP/noTP specialist training requires a targetp_blend_v1 model.')
-    localization_model = model.get('localization_model', {})
-    prediction_rows = _align_prediction_rows(rows, prediction_rows, 'mTP/noTP specialist')
+    if str(model.get("model_type", "")).strip() != "targetp_blend_v1":
+        raise ValueError(
+            "mTP/noTP specialist training requires a targetp_blend_v1 model."
+        )
+    localization_model = model.get("localization_model", {})
+    prediction_rows = _align_prediction_rows(
+        rows, prediction_rows, "mTP/noTP specialist"
+    )
     features = list()
     labels = list()
     for row_i, row in enumerate(rows):
-        true_class = str(row.get('true_class', row.get('localization', '')) or '').strip()
+        true_class = str(
+            row.get("true_class", row.get("localization", "")) or ""
+        ).strip()
         if true_class not in LOCALIZATION_CLASSES:
-            raise ValueError('Unknown true class for mTP/noTP specialist: {}'.format(true_class))
-        if true_class not in ['noTP', 'mTP']:
+            raise ValueError(
+                "Unknown true class for mTP/noTP specialist: {}".format(true_class)
+            )
+        if true_class not in ["noTP", "mTP"]:
             continue
-        sequence = row.get('sequence', '')
-        organism_group = row.get('organism_group', '')
+        sequence = row.get("sequence", "")
+        organism_group = row.get("organism_group", "")
         if prediction_rows is None:
             pred = predict_localization_and_peroxisome(
                 aa_seq=sequence,
                 model=model,
                 organism_group=organism_group,
             )
-            blend_details = pred.get('targetp_blend_details', {})
-            base_model_probabilities = blend_details.get('base_model_probabilities', [])
+            blend_details = pred.get("targetp_blend_details", {})
+            base_model_probabilities = blend_details.get("base_model_probabilities", [])
             if len(base_model_probabilities) != 2:
-                raise ValueError('targetp_blend_v1 did not return two base probability vectors.')
-            base_probs = pred['class_probabilities']
+                raise ValueError(
+                    "targetp_blend_v1 did not return two base probability vectors."
+                )
+            base_probs = pred["class_probabilities"]
             prob_a = base_model_probabilities[0]
             prob_b = base_model_probabilities[1]
         else:
             pred_row = prediction_rows[row_i]
-            pred_true = str(pred_row.get('true_class', '') or '').strip()
-            pred_acc = str(pred_row.get('accession', '') or '').strip()
-            row_acc = str(row.get('accession', '') or '').strip()
-            if pred_true != '' and pred_true != true_class:
-                raise ValueError('mTP/noTP specialist prediction row true_class mismatch.')
-            if pred_acc != '' and row_acc != '' and pred_acc != row_acc:
-                raise ValueError('mTP/noTP specialist prediction row accession mismatch.')
+            pred_true = str(pred_row.get("true_class", "") or "").strip()
+            pred_acc = str(pred_row.get("accession", "") or "").strip()
+            row_acc = str(row.get("accession", "") or "").strip()
+            if pred_true != "" and pred_true != true_class:
+                raise ValueError(
+                    "mTP/noTP specialist prediction row true_class mismatch."
+                )
+            if pred_acc != "" and row_acc != "" and pred_acc != row_acc:
+                raise ValueError(
+                    "mTP/noTP specialist prediction row accession mismatch."
+                )
             base_probs = _probabilities_from_prediction_row(pred_row)
-            prob_a = _base_probabilities_from_prediction_row(pred_row, 'a')
-            prob_b = _base_probabilities_from_prediction_row(pred_row, 'b')
-        features.append(_targetp_reranker_feature_vector(
-            aa_seq=sequence,
-            base_probs=base_probs,
-            prob_a=prob_a,
-            prob_b=prob_b,
-            organism_group=organism_group,
-            class_thresholds=localization_model.get('class_thresholds', {}),
-            feature_profile=TARGETP_MTP_NOTP_SPECIALIST_PROFILE['feature_profile'],
-        ))
-        labels.append(1 if true_class == 'mTP' else 0)
+            prob_a = _base_probabilities_from_prediction_row(pred_row, "a")
+            prob_b = _base_probabilities_from_prediction_row(pred_row, "b")
+        features.append(
+            _targetp_reranker_feature_vector(
+                aa_seq=sequence,
+                base_probs=base_probs,
+                prob_a=prob_a,
+                prob_b=prob_b,
+                organism_group=organism_group,
+                class_thresholds=localization_model.get("class_thresholds", {}),
+                feature_profile=TARGETP_MTP_NOTP_SPECIALIST_PROFILE["feature_profile"],
+            )
+        )
+        labels.append(1 if true_class == "mTP" else 0)
     if len(features) == 0:
-        raise ValueError('No rows were available for mTP/noTP specialist training.')
+        raise ValueError("No rows were available for mTP/noTP specialist training.")
     return np.asarray(features, dtype=np.float64), np.asarray(labels, dtype=np.int64)
 
 
@@ -444,17 +503,17 @@ def attach_targetp_notp_specialist(
     model,
     rows,
     prediction_rows=None,
-    threshold=TARGETP_NOTP_SPECIALIST_PROFILE['threshold'],
-    max_iter=TARGETP_NOTP_SPECIALIST_PROFILE['max_iter'],
-    learning_rate=TARGETP_NOTP_SPECIALIST_PROFILE['learning_rate'],
-    l2_regularization=TARGETP_NOTP_SPECIALIST_PROFILE['l2_regularization'],
-    random_state=TARGETP_NOTP_SPECIALIST_PROFILE['random_state'],
+    threshold=TARGETP_NOTP_SPECIALIST_PROFILE["threshold"],
+    max_iter=TARGETP_NOTP_SPECIALIST_PROFILE["max_iter"],
+    learning_rate=TARGETP_NOTP_SPECIALIST_PROFILE["learning_rate"],
+    l2_regularization=TARGETP_NOTP_SPECIALIST_PROFILE["l2_regularization"],
+    random_state=TARGETP_NOTP_SPECIALIST_PROFILE["random_state"],
 ):
     """Attach a CPU-runtime noTP rescue classifier trained on a development set."""
     try:
         from sklearn.ensemble import HistGradientBoostingClassifier
     except ImportError as exc:
-        raise RuntimeError('noTP specialist training requires scikit-learn.') from exc
+        raise RuntimeError("noTP specialist training requires scikit-learn.") from exc
 
     features, labels = _targetp_notp_specialist_training_matrix_from_predictions(
         model=model,
@@ -462,48 +521,52 @@ def attach_targetp_notp_specialist(
         prediction_rows=prediction_rows,
     )
     if len(set(labels.tolist())) < 2:
-        raise ValueError('noTP specialist training requires both noTP and non-noTP rows.')
+        raise ValueError(
+            "noTP specialist training requires both noTP and non-noTP rows."
+        )
     classifier = HistGradientBoostingClassifier(
         max_iter=int(max_iter),
         learning_rate=float(learning_rate),
         l2_regularization=float(l2_regularization),
         random_state=int(random_state),
-        class_weight=TARGETP_NOTP_SPECIALIST_PROFILE['class_weight'],
+        class_weight=TARGETP_NOTP_SPECIALIST_PROFILE["class_weight"],
     )
     _fit_sklearn_model(classifier, features, labels)
 
-    localization_model = model['localization_model']
-    specialist = dict(localization_model.get('targetp_specialist_postprocess', {}))
-    specialist.update({
-        'enabled': True,
-        'notp_feature_profile': TARGETP_NOTP_SPECIALIST_PROFILE['name'],
-        'notp_models': [classifier],
-        'notp_weights': [1.0],
-        'notp_threshold': float(threshold),
-        'notp_model_kind': TARGETP_NOTP_SPECIALIST_PROFILE['model_kind'],
-        'notp_max_iter': int(max_iter),
-        'notp_learning_rate': float(learning_rate),
-        'notp_l2_regularization': float(l2_regularization),
-        'notp_random_state': int(random_state),
-        'notp_class_weight': TARGETP_NOTP_SPECIALIST_PROFILE['class_weight'],
-        'notp_training_rows': int(features.shape[0]),
-        'notp_feature_dim': int(features.shape[1]),
-    })
-    localization_model['targetp_specialist_postprocess'] = specialist
-    model.setdefault('metadata', {})
-    model['metadata']['targetp_notp_specialist'] = {
-        'feature_profile': TARGETP_NOTP_SPECIALIST_PROFILE['name'],
-        'model_kind': TARGETP_NOTP_SPECIALIST_PROFILE['model_kind'],
-        'threshold': float(threshold),
-        'training_rows': int(features.shape[0]),
-        'positive_rows': int(np.sum(labels == 1)),
-        'negative_rows': int(np.sum(labels == 0)),
-        'feature_dim': int(features.shape[1]),
-        'max_iter': int(max_iter),
-        'learning_rate': float(learning_rate),
-        'l2_regularization': float(l2_regularization),
-        'random_state': int(random_state),
-        'class_weight': TARGETP_NOTP_SPECIALIST_PROFILE['class_weight'],
+    localization_model = model["localization_model"]
+    specialist = dict(localization_model.get("targetp_specialist_postprocess", {}))
+    specialist.update(
+        {
+            "enabled": True,
+            "notp_feature_profile": TARGETP_NOTP_SPECIALIST_PROFILE["name"],
+            "notp_models": [classifier],
+            "notp_weights": [1.0],
+            "notp_threshold": float(threshold),
+            "notp_model_kind": TARGETP_NOTP_SPECIALIST_PROFILE["model_kind"],
+            "notp_max_iter": int(max_iter),
+            "notp_learning_rate": float(learning_rate),
+            "notp_l2_regularization": float(l2_regularization),
+            "notp_random_state": int(random_state),
+            "notp_class_weight": TARGETP_NOTP_SPECIALIST_PROFILE["class_weight"],
+            "notp_training_rows": int(features.shape[0]),
+            "notp_feature_dim": int(features.shape[1]),
+        }
+    )
+    localization_model["targetp_specialist_postprocess"] = specialist
+    model.setdefault("metadata", {})
+    model["metadata"]["targetp_notp_specialist"] = {
+        "feature_profile": TARGETP_NOTP_SPECIALIST_PROFILE["name"],
+        "model_kind": TARGETP_NOTP_SPECIALIST_PROFILE["model_kind"],
+        "threshold": float(threshold),
+        "training_rows": int(features.shape[0]),
+        "positive_rows": int(np.sum(labels == 1)),
+        "negative_rows": int(np.sum(labels == 0)),
+        "feature_dim": int(features.shape[1]),
+        "max_iter": int(max_iter),
+        "learning_rate": float(learning_rate),
+        "l2_regularization": float(l2_regularization),
+        "random_state": int(random_state),
+        "class_weight": TARGETP_NOTP_SPECIALIST_PROFILE["class_weight"],
     }
     return model
 
@@ -512,12 +575,12 @@ def attach_targetp_mtp_notp_specialist(
     model,
     rows,
     prediction_rows=None,
-    threshold=TARGETP_MTP_NOTP_SPECIALIST_PROFILE['threshold'],
-    max_iter=TARGETP_MTP_NOTP_SPECIALIST_PROFILE['max_iter'],
-    learning_rate=TARGETP_MTP_NOTP_SPECIALIST_PROFILE['learning_rate'],
-    l2_regularization=TARGETP_MTP_NOTP_SPECIALIST_PROFILE['l2_regularization'],
-    random_state=TARGETP_MTP_NOTP_SPECIALIST_PROFILE['random_state'],
-    class_weight=TARGETP_MTP_NOTP_SPECIALIST_PROFILE['class_weight'],
+    threshold=TARGETP_MTP_NOTP_SPECIALIST_PROFILE["threshold"],
+    max_iter=TARGETP_MTP_NOTP_SPECIALIST_PROFILE["max_iter"],
+    learning_rate=TARGETP_MTP_NOTP_SPECIALIST_PROFILE["learning_rate"],
+    l2_regularization=TARGETP_MTP_NOTP_SPECIALIST_PROFILE["l2_regularization"],
+    random_state=TARGETP_MTP_NOTP_SPECIALIST_PROFILE["random_state"],
+    class_weight=TARGETP_MTP_NOTP_SPECIALIST_PROFILE["class_weight"],
     threshold_validation_rows=None,
     threshold_validation_prediction_rows=None,
     threshold_grid=None,
@@ -526,7 +589,9 @@ def attach_targetp_mtp_notp_specialist(
     try:
         from sklearn.ensemble import HistGradientBoostingClassifier
     except ImportError as exc:
-        raise RuntimeError('mTP/noTP specialist training requires scikit-learn.') from exc
+        raise RuntimeError(
+            "mTP/noTP specialist training requires scikit-learn."
+        ) from exc
 
     features, labels = _targetp_mtp_notp_specialist_training_matrix_from_predictions(
         model=model,
@@ -534,7 +599,9 @@ def attach_targetp_mtp_notp_specialist(
         prediction_rows=prediction_rows,
     )
     if len(set(labels.tolist())) < 2:
-        raise ValueError('mTP/noTP specialist training requires both noTP and mTP rows.')
+        raise ValueError(
+            "mTP/noTP specialist training requires both noTP and mTP rows."
+        )
     resolved_class_weight = _normalize_class_weight(class_weight)
     class_weight_text = _class_weight_metadata_value(class_weight)
     classifier = HistGradientBoostingClassifier(
@@ -549,7 +616,7 @@ def attach_targetp_mtp_notp_specialist(
     threshold_validation_report = None
     if threshold_validation_rows is not None:
         threshold_values = (
-            _parse_threshold_grid('', default=None)
+            _parse_threshold_grid("", default=None)
             if threshold_grid is None
             else list(threshold_grid)
         )
@@ -560,43 +627,47 @@ def attach_targetp_mtp_notp_specialist(
             prediction_rows=threshold_validation_prediction_rows,
             threshold_grid=threshold_values,
         )
-        resolved_threshold = float(threshold_validation_report['threshold'])
+        resolved_threshold = float(threshold_validation_report["threshold"])
 
-    localization_model = model['localization_model']
-    specialist = dict(localization_model.get('targetp_specialist_postprocess', {}))
-    specialist.update({
-        'enabled': True,
-        'mtp_notp_feature_profile': TARGETP_MTP_NOTP_SPECIALIST_PROFILE['feature_profile'],
-        'mtp_notp_models': [classifier],
-        'mtp_notp_weights': [1.0],
-        'mtp_notp_threshold': float(resolved_threshold),
-        'mtp_notp_model_kind': TARGETP_MTP_NOTP_SPECIALIST_PROFILE['model_kind'],
-        'mtp_notp_max_iter': int(max_iter),
-        'mtp_notp_learning_rate': float(learning_rate),
-        'mtp_notp_l2_regularization': float(l2_regularization),
-        'mtp_notp_random_state': int(random_state),
-        'mtp_notp_class_weight': class_weight_text,
-        'mtp_notp_training_rows': int(features.shape[0]),
-        'mtp_notp_feature_dim': int(features.shape[1]),
-    })
-    localization_model['targetp_specialist_postprocess'] = specialist
-    model.setdefault('metadata', {})
-    model['metadata']['targetp_mtp_notp_specialist'] = {
-        'feature_profile': TARGETP_MTP_NOTP_SPECIALIST_PROFILE['feature_profile'],
-        'model_kind': TARGETP_MTP_NOTP_SPECIALIST_PROFILE['model_kind'],
-        'threshold': float(resolved_threshold),
-        'training_rows': int(features.shape[0]),
-        'mtp_rows': int(np.sum(labels == 1)),
-        'notp_rows': int(np.sum(labels == 0)),
-        'feature_dim': int(features.shape[1]),
-        'max_iter': int(max_iter),
-        'learning_rate': float(learning_rate),
-        'l2_regularization': float(l2_regularization),
-        'random_state': int(random_state),
-        'class_weight': class_weight_text,
+    localization_model = model["localization_model"]
+    specialist = dict(localization_model.get("targetp_specialist_postprocess", {}))
+    specialist.update(
+        {
+            "enabled": True,
+            "mtp_notp_feature_profile": TARGETP_MTP_NOTP_SPECIALIST_PROFILE[
+                "feature_profile"
+            ],
+            "mtp_notp_models": [classifier],
+            "mtp_notp_weights": [1.0],
+            "mtp_notp_threshold": float(resolved_threshold),
+            "mtp_notp_model_kind": TARGETP_MTP_NOTP_SPECIALIST_PROFILE["model_kind"],
+            "mtp_notp_max_iter": int(max_iter),
+            "mtp_notp_learning_rate": float(learning_rate),
+            "mtp_notp_l2_regularization": float(l2_regularization),
+            "mtp_notp_random_state": int(random_state),
+            "mtp_notp_class_weight": class_weight_text,
+            "mtp_notp_training_rows": int(features.shape[0]),
+            "mtp_notp_feature_dim": int(features.shape[1]),
+        }
+    )
+    localization_model["targetp_specialist_postprocess"] = specialist
+    model.setdefault("metadata", {})
+    model["metadata"]["targetp_mtp_notp_specialist"] = {
+        "feature_profile": TARGETP_MTP_NOTP_SPECIALIST_PROFILE["feature_profile"],
+        "model_kind": TARGETP_MTP_NOTP_SPECIALIST_PROFILE["model_kind"],
+        "threshold": float(resolved_threshold),
+        "training_rows": int(features.shape[0]),
+        "mtp_rows": int(np.sum(labels == 1)),
+        "notp_rows": int(np.sum(labels == 0)),
+        "feature_dim": int(features.shape[1]),
+        "max_iter": int(max_iter),
+        "learning_rate": float(learning_rate),
+        "l2_regularization": float(l2_regularization),
+        "random_state": int(random_state),
+        "class_weight": class_weight_text,
     }
     if threshold_validation_report is not None:
-        model['metadata']['targetp_mtp_notp_specialist']['threshold_validation'] = (
+        model["metadata"]["targetp_mtp_notp_specialist"]["threshold_validation"] = (
             threshold_validation_report
         )
     return model
@@ -606,18 +677,18 @@ def attach_targetp_reranker(
     model,
     rows,
     prediction_rows=None,
-    threshold=TARGETP_RERANKER_PROFILE['threshold'],
+    threshold=TARGETP_RERANKER_PROFILE["threshold"],
     class_thresholds=None,
-    max_iter=TARGETP_RERANKER_PROFILE['max_iter'],
-    learning_rate=TARGETP_RERANKER_PROFILE['learning_rate'],
-    l2_regularization=TARGETP_RERANKER_PROFILE['l2_regularization'],
-    random_state=TARGETP_RERANKER_PROFILE['random_state'],
+    max_iter=TARGETP_RERANKER_PROFILE["max_iter"],
+    learning_rate=TARGETP_RERANKER_PROFILE["learning_rate"],
+    l2_regularization=TARGETP_RERANKER_PROFILE["l2_regularization"],
+    random_state=TARGETP_RERANKER_PROFILE["random_state"],
 ):
     """Attach a CPU-runtime multiclass TargetP reranker trained on a development set."""
     try:
         from sklearn.ensemble import HistGradientBoostingClassifier
     except ImportError as exc:
-        raise RuntimeError('TargetP reranker training requires scikit-learn.') from exc
+        raise RuntimeError("TargetP reranker training requires scikit-learn.") from exc
 
     features, labels = _targetp_reranker_training_matrix_from_predictions(
         model=model,
@@ -625,59 +696,61 @@ def attach_targetp_reranker(
         prediction_rows=prediction_rows,
     )
     if len(set(labels.tolist())) < 2:
-        raise ValueError('TargetP reranker training requires at least two classes.')
+        raise ValueError("TargetP reranker training requires at least two classes.")
     classifier = HistGradientBoostingClassifier(
         max_iter=int(max_iter),
         learning_rate=float(learning_rate),
         l2_regularization=float(l2_regularization),
         random_state=int(random_state),
-        class_weight=TARGETP_RERANKER_PROFILE['class_weight'],
+        class_weight=TARGETP_RERANKER_PROFILE["class_weight"],
     )
     _fit_sklearn_model(classifier, features, labels)
 
-    localization_model = model['localization_model']
-    specialist = dict(localization_model.get('targetp_specialist_postprocess', {}))
-    specialist.update({
-        'enabled': True,
-        'reranker_feature_profile': TARGETP_RERANKER_PROFILE['name'],
-        'reranker_models': [classifier],
-        'reranker_weights': [1.0],
-        'reranker_threshold': float(threshold),
-        'reranker_model_kind': TARGETP_RERANKER_PROFILE['model_kind'],
-        'reranker_max_iter': int(max_iter),
-        'reranker_learning_rate': float(learning_rate),
-        'reranker_l2_regularization': float(l2_regularization),
-        'reranker_random_state': int(random_state),
-        'reranker_class_weight': TARGETP_RERANKER_PROFILE['class_weight'],
-        'reranker_training_rows': int(features.shape[0]),
-        'reranker_feature_dim': int(features.shape[1]),
-    })
+    localization_model = model["localization_model"]
+    specialist = dict(localization_model.get("targetp_specialist_postprocess", {}))
+    specialist.update(
+        {
+            "enabled": True,
+            "reranker_feature_profile": TARGETP_RERANKER_PROFILE["name"],
+            "reranker_models": [classifier],
+            "reranker_weights": [1.0],
+            "reranker_threshold": float(threshold),
+            "reranker_model_kind": TARGETP_RERANKER_PROFILE["model_kind"],
+            "reranker_max_iter": int(max_iter),
+            "reranker_learning_rate": float(learning_rate),
+            "reranker_l2_regularization": float(l2_regularization),
+            "reranker_random_state": int(random_state),
+            "reranker_class_weight": TARGETP_RERANKER_PROFILE["class_weight"],
+            "reranker_training_rows": int(features.shape[0]),
+            "reranker_feature_dim": int(features.shape[1]),
+        }
+    )
     if class_thresholds is not None:
-        specialist['reranker_thresholds'] = {
+        specialist["reranker_thresholds"] = {
             class_name: float(class_thresholds[class_name])
             for class_name in LOCALIZATION_CLASSES
         }
-    localization_model['targetp_specialist_postprocess'] = specialist
-    model.setdefault('metadata', {})
+    localization_model["targetp_specialist_postprocess"] = specialist
+    model.setdefault("metadata", {})
     counts = {
         class_name: int(np.sum(labels == class_i))
         for class_i, class_name in enumerate(LOCALIZATION_CLASSES)
     }
-    model['metadata']['targetp_reranker'] = {
-        'feature_profile': TARGETP_RERANKER_PROFILE['name'],
-        'model_kind': TARGETP_RERANKER_PROFILE['model_kind'],
-        'threshold': float(threshold),
-        'training_rows': int(features.shape[0]),
-        'class_counts': counts,
-        'feature_dim': int(features.shape[1]),
-        'max_iter': int(max_iter),
-        'learning_rate': float(learning_rate),
-        'l2_regularization': float(l2_regularization),
-        'random_state': int(random_state),
-        'class_weight': TARGETP_RERANKER_PROFILE['class_weight'],
+    model["metadata"]["targetp_reranker"] = {
+        "feature_profile": TARGETP_RERANKER_PROFILE["name"],
+        "model_kind": TARGETP_RERANKER_PROFILE["model_kind"],
+        "threshold": float(threshold),
+        "training_rows": int(features.shape[0]),
+        "class_counts": counts,
+        "feature_dim": int(features.shape[1]),
+        "max_iter": int(max_iter),
+        "learning_rate": float(learning_rate),
+        "l2_regularization": float(l2_regularization),
+        "random_state": int(random_state),
+        "class_weight": TARGETP_RERANKER_PROFILE["class_weight"],
     }
     if class_thresholds is not None:
-        model['metadata']['targetp_reranker']['class_thresholds'] = {
+        model["metadata"]["targetp_reranker"]["class_thresholds"] = {
             class_name: float(class_thresholds[class_name])
             for class_name in LOCALIZATION_CLASSES
         }
@@ -686,159 +759,177 @@ def attach_targetp_reranker(
 
 def build_parser():
     parser = CdskitArgumentParser(
-        description='Build a CPU-runtime TargetP pair blend from two trained cdskit localize models.',
+        description="Build a CPU-runtime TargetP pair blend from two trained cdskit localize models.",
     )
-    parser.add_argument('--model_a', required=True, type=str)
-    parser.add_argument('--model_b', required=True, type=str)
-    parser.add_argument('--alpha', default='0.5', type=str)
-    parser.add_argument('--class_thresholds', default='', type=str)
-    parser.add_argument('--perox_source', default='a', choices=['a', 'b'], type=str)
-    parser.add_argument('--metadata_json', default='', type=str)
-    parser.add_argument('--notp_specialist_tsv', default='', type=str)
-    parser.add_argument('--notp_specialist_predictions_tsv', default='', type=str)
-    parser.add_argument('--reranker_tsv', default='', type=str)
-    parser.add_argument('--reranker_predictions_tsv', default='', type=str)
-    parser.add_argument('--mtp_notp_specialist_tsv', default='', type=str)
-    parser.add_argument('--mtp_notp_specialist_predictions_tsv', default='', type=str)
-    parser.add_argument('--mtp_notp_specialist_threshold_validation_tsv', default='', type=str)
+    parser.add_argument("--model_a", required=True, type=str)
+    parser.add_argument("--model_b", required=True, type=str)
+    parser.add_argument("--alpha", default="0.5", type=str)
+    parser.add_argument("--class_thresholds", default="", type=str)
+    parser.add_argument("--perox_source", default="a", choices=["a", "b"], type=str)
+    parser.add_argument("--metadata_json", default="", type=str)
+    parser.add_argument("--notp_specialist_tsv", default="", type=str)
+    parser.add_argument("--notp_specialist_predictions_tsv", default="", type=str)
+    parser.add_argument("--reranker_tsv", default="", type=str)
+    parser.add_argument("--reranker_predictions_tsv", default="", type=str)
+    parser.add_argument("--mtp_notp_specialist_tsv", default="", type=str)
+    parser.add_argument("--mtp_notp_specialist_predictions_tsv", default="", type=str)
     parser.add_argument(
-        '--mtp_notp_specialist_threshold_validation_predictions_tsv',
-        default='',
+        "--mtp_notp_specialist_threshold_validation_tsv", default="", type=str
+    )
+    parser.add_argument(
+        "--mtp_notp_specialist_threshold_validation_predictions_tsv",
+        default="",
         type=str,
     )
     parser.add_argument(
-        '--mtp_notp_specialist_threshold_grid',
-        default='',
+        "--mtp_notp_specialist_threshold_grid",
+        default="",
         type=str,
     )
     parser.add_argument(
-        '--reranker_threshold',
-        default=TARGETP_RERANKER_PROFILE['threshold'],
+        "--reranker_threshold",
+        default=TARGETP_RERANKER_PROFILE["threshold"],
         type=float,
     )
-    parser.add_argument('--reranker_class_thresholds', default='', type=str)
+    parser.add_argument("--reranker_class_thresholds", default="", type=str)
     parser.add_argument(
-        '--reranker_max_iter',
-        default=TARGETP_RERANKER_PROFILE['max_iter'],
+        "--reranker_max_iter",
+        default=TARGETP_RERANKER_PROFILE["max_iter"],
         type=int,
     )
     parser.add_argument(
-        '--reranker_learning_rate',
-        default=TARGETP_RERANKER_PROFILE['learning_rate'],
+        "--reranker_learning_rate",
+        default=TARGETP_RERANKER_PROFILE["learning_rate"],
         type=float,
     )
     parser.add_argument(
-        '--reranker_l2',
-        default=TARGETP_RERANKER_PROFILE['l2_regularization'],
+        "--reranker_l2",
+        default=TARGETP_RERANKER_PROFILE["l2_regularization"],
         type=float,
     )
     parser.add_argument(
-        '--reranker_random_state',
-        default=TARGETP_RERANKER_PROFILE['random_state'],
+        "--reranker_random_state",
+        default=TARGETP_RERANKER_PROFILE["random_state"],
         type=int,
     )
     parser.add_argument(
-        '--notp_specialist_threshold',
-        default=TARGETP_NOTP_SPECIALIST_PROFILE['threshold'],
+        "--notp_specialist_threshold",
+        default=TARGETP_NOTP_SPECIALIST_PROFILE["threshold"],
         type=float,
     )
     parser.add_argument(
-        '--notp_specialist_max_iter',
-        default=TARGETP_NOTP_SPECIALIST_PROFILE['max_iter'],
+        "--notp_specialist_max_iter",
+        default=TARGETP_NOTP_SPECIALIST_PROFILE["max_iter"],
         type=int,
     )
     parser.add_argument(
-        '--notp_specialist_learning_rate',
-        default=TARGETP_NOTP_SPECIALIST_PROFILE['learning_rate'],
+        "--notp_specialist_learning_rate",
+        default=TARGETP_NOTP_SPECIALIST_PROFILE["learning_rate"],
         type=float,
     )
     parser.add_argument(
-        '--notp_specialist_l2',
-        default=TARGETP_NOTP_SPECIALIST_PROFILE['l2_regularization'],
+        "--notp_specialist_l2",
+        default=TARGETP_NOTP_SPECIALIST_PROFILE["l2_regularization"],
         type=float,
     )
     parser.add_argument(
-        '--notp_specialist_random_state',
-        default=TARGETP_NOTP_SPECIALIST_PROFILE['random_state'],
+        "--notp_specialist_random_state",
+        default=TARGETP_NOTP_SPECIALIST_PROFILE["random_state"],
         type=int,
     )
     parser.add_argument(
-        '--mtp_notp_specialist_threshold',
-        default=TARGETP_MTP_NOTP_SPECIALIST_PROFILE['threshold'],
+        "--mtp_notp_specialist_threshold",
+        default=TARGETP_MTP_NOTP_SPECIALIST_PROFILE["threshold"],
         type=float,
     )
     parser.add_argument(
-        '--mtp_notp_specialist_max_iter',
-        default=TARGETP_MTP_NOTP_SPECIALIST_PROFILE['max_iter'],
+        "--mtp_notp_specialist_max_iter",
+        default=TARGETP_MTP_NOTP_SPECIALIST_PROFILE["max_iter"],
         type=int,
     )
     parser.add_argument(
-        '--mtp_notp_specialist_learning_rate',
-        default=TARGETP_MTP_NOTP_SPECIALIST_PROFILE['learning_rate'],
+        "--mtp_notp_specialist_learning_rate",
+        default=TARGETP_MTP_NOTP_SPECIALIST_PROFILE["learning_rate"],
         type=float,
     )
     parser.add_argument(
-        '--mtp_notp_specialist_l2',
-        default=TARGETP_MTP_NOTP_SPECIALIST_PROFILE['l2_regularization'],
+        "--mtp_notp_specialist_l2",
+        default=TARGETP_MTP_NOTP_SPECIALIST_PROFILE["l2_regularization"],
         type=float,
     )
     parser.add_argument(
-        '--mtp_notp_specialist_random_state',
-        default=TARGETP_MTP_NOTP_SPECIALIST_PROFILE['random_state'],
+        "--mtp_notp_specialist_random_state",
+        default=TARGETP_MTP_NOTP_SPECIALIST_PROFILE["random_state"],
         type=int,
     )
     parser.add_argument(
-        '--mtp_notp_specialist_class_weight',
-        default=TARGETP_MTP_NOTP_SPECIALIST_PROFILE['class_weight'],
+        "--mtp_notp_specialist_class_weight",
+        default=TARGETP_MTP_NOTP_SPECIALIST_PROFILE["class_weight"],
         type=str,
     )
-    parser.add_argument('--model_out', required=True, type=str)
+    parser.add_argument("--model_out", required=True, type=str)
     return parser
 
 
 def main(argv=None):
     args = build_parser().parse_args(argv)
     dependent_options = [
-        ('--notp_specialist_predictions_tsv', args.notp_specialist_predictions_tsv,
-         '--notp_specialist_tsv', args.notp_specialist_tsv),
-        ('--reranker_predictions_tsv', args.reranker_predictions_tsv,
-         '--reranker_tsv', args.reranker_tsv),
-        ('--mtp_notp_specialist_predictions_tsv', args.mtp_notp_specialist_predictions_tsv,
-         '--mtp_notp_specialist_tsv', args.mtp_notp_specialist_tsv),
+        (
+            "--notp_specialist_predictions_tsv",
+            args.notp_specialist_predictions_tsv,
+            "--notp_specialist_tsv",
+            args.notp_specialist_tsv,
+        ),
+        (
+            "--reranker_predictions_tsv",
+            args.reranker_predictions_tsv,
+            "--reranker_tsv",
+            args.reranker_tsv,
+        ),
+        (
+            "--mtp_notp_specialist_predictions_tsv",
+            args.mtp_notp_specialist_predictions_tsv,
+            "--mtp_notp_specialist_tsv",
+            args.mtp_notp_specialist_tsv,
+        ),
     ]
     for child_name, child_value, parent_name, parent_value in dependent_options:
-        if str(child_value).strip() != '' and str(parent_value).strip() == '':
-            raise ValueError('{} requires {}.'.format(child_name, parent_name))
+        if str(child_value).strip() != "" and str(parent_value).strip() == "":
+            raise ValueError("{} requires {}.".format(child_name, parent_name))
     model_a = load_localize_model(args.model_a)
     model_b = load_localize_model(args.model_b)
     metadata = {}
-    if str(args.metadata_json).strip() != '':
+    if str(args.metadata_json).strip() != "":
         metadata = json.loads(str(args.metadata_json))
         if not isinstance(metadata, dict):
-            raise ValueError('--metadata_json should decode to an object.')
-    metadata.update({
-        'base_model_a': str(args.model_a),
-        'base_model_b': str(args.model_b),
-        'alpha_by_class': _parse_class_values(args.alpha, default=0.5),
-        'class_thresholds': _parse_class_values(args.class_thresholds, default=1.0),
-    })
+            raise ValueError("--metadata_json should decode to an object.")
+    metadata.update(
+        {
+            "base_model_a": str(args.model_a),
+            "base_model_b": str(args.model_b),
+            "alpha_by_class": _parse_class_values(args.alpha, default=0.5),
+            "class_thresholds": _parse_class_values(args.class_thresholds, default=1.0),
+        }
+    )
     model = build_targetp_pair_blend_runtime_model(
         base_model_a=model_a,
         base_model_b=model_b,
-        alpha_by_class=metadata['alpha_by_class'],
-        class_thresholds=metadata['class_thresholds'],
+        alpha_by_class=metadata["alpha_by_class"],
+        class_thresholds=metadata["class_thresholds"],
         perox_source=args.perox_source,
         metadata=metadata,
     )
     notp_report = None
-    if str(args.notp_specialist_tsv).strip() != '':
+    if str(args.notp_specialist_tsv).strip() != "":
         notp_rows, notp_skipped = load_fixed_uniprot_holdout_rows(
             path=str(args.notp_specialist_tsv),
             strict_targetp_organism_labels=True,
         )
         notp_prediction_rows = None
-        if str(args.notp_specialist_predictions_tsv).strip() != '':
-            notp_prediction_rows = read_tsv(path=str(args.notp_specialist_predictions_tsv))
+        if str(args.notp_specialist_predictions_tsv).strip() != "":
+            notp_prediction_rows = read_tsv(
+                path=str(args.notp_specialist_predictions_tsv)
+            )
         model = attach_targetp_notp_specialist(
             model=model,
             rows=notp_rows,
@@ -849,22 +940,24 @@ def main(argv=None):
             l2_regularization=float(args.notp_specialist_l2),
             random_state=int(args.notp_specialist_random_state),
         )
-        model['metadata']['targetp_notp_specialist']['training_tsv'] = str(
+        model["metadata"]["targetp_notp_specialist"]["training_tsv"] = str(
             args.notp_specialist_tsv
         )
-        model['metadata']['targetp_notp_specialist']['predictions_tsv'] = str(
+        model["metadata"]["targetp_notp_specialist"]["predictions_tsv"] = str(
             args.notp_specialist_predictions_tsv
         )
-        model['metadata']['targetp_notp_specialist']['skipped_rows'] = dict(notp_skipped)
-        notp_report = dict(model['metadata']['targetp_notp_specialist'])
+        model["metadata"]["targetp_notp_specialist"]["skipped_rows"] = dict(
+            notp_skipped
+        )
+        notp_report = dict(model["metadata"]["targetp_notp_specialist"])
     reranker_report = None
-    if str(args.reranker_tsv).strip() != '':
+    if str(args.reranker_tsv).strip() != "":
         reranker_rows, reranker_skipped = load_fixed_uniprot_holdout_rows(
             path=str(args.reranker_tsv),
             strict_targetp_organism_labels=True,
         )
         reranker_prediction_rows = None
-        if str(args.reranker_predictions_tsv).strip() != '':
+        if str(args.reranker_predictions_tsv).strip() != "":
             reranker_prediction_rows = read_tsv(path=str(args.reranker_predictions_tsv))
         model = attach_targetp_reranker(
             model=model,
@@ -873,7 +966,7 @@ def main(argv=None):
             threshold=float(args.reranker_threshold),
             class_thresholds=(
                 None
-                if str(args.reranker_class_thresholds).strip() == ''
+                if str(args.reranker_class_thresholds).strip() == ""
                 else _parse_class_values(
                     args.reranker_class_thresholds,
                     default=float(args.reranker_threshold),
@@ -884,46 +977,54 @@ def main(argv=None):
             l2_regularization=float(args.reranker_l2),
             random_state=int(args.reranker_random_state),
         )
-        model['metadata']['targetp_reranker']['training_tsv'] = str(args.reranker_tsv)
-        model['metadata']['targetp_reranker']['predictions_tsv'] = str(
+        model["metadata"]["targetp_reranker"]["training_tsv"] = str(args.reranker_tsv)
+        model["metadata"]["targetp_reranker"]["predictions_tsv"] = str(
             args.reranker_predictions_tsv
         )
-        model['metadata']['targetp_reranker']['skipped_rows'] = dict(reranker_skipped)
-        reranker_report = dict(model['metadata']['targetp_reranker'])
+        model["metadata"]["targetp_reranker"]["skipped_rows"] = dict(reranker_skipped)
+        reranker_report = dict(model["metadata"]["targetp_reranker"])
     mtp_notp_report = None
-    if str(args.mtp_notp_specialist_tsv).strip() != '':
+    if str(args.mtp_notp_specialist_tsv).strip() != "":
         mtp_notp_rows, mtp_notp_skipped = load_fixed_uniprot_holdout_rows(
             path=str(args.mtp_notp_specialist_tsv),
             strict_targetp_organism_labels=True,
         )
         mtp_notp_prediction_rows = None
-        if str(args.mtp_notp_specialist_predictions_tsv).strip() != '':
+        if str(args.mtp_notp_specialist_predictions_tsv).strip() != "":
             mtp_notp_prediction_rows = read_tsv(
                 path=str(args.mtp_notp_specialist_predictions_tsv)
             )
         mtp_notp_validation_rows = None
         mtp_notp_validation_prediction_rows = None
-        if str(args.mtp_notp_specialist_threshold_validation_tsv).strip() != '':
+        if str(args.mtp_notp_specialist_threshold_validation_tsv).strip() != "":
             mtp_notp_validation_rows, mtp_notp_validation_skipped = (
                 load_fixed_uniprot_holdout_rows(
                     path=str(args.mtp_notp_specialist_threshold_validation_tsv),
                     strict_targetp_organism_labels=True,
                 )
             )
-            if str(
-                args.mtp_notp_specialist_threshold_validation_predictions_tsv
-            ).strip() != '':
+            if (
+                str(
+                    args.mtp_notp_specialist_threshold_validation_predictions_tsv
+                ).strip()
+                != ""
+            ):
                 mtp_notp_validation_prediction_rows = read_tsv(
-                    path=str(args.mtp_notp_specialist_threshold_validation_predictions_tsv)
+                    path=str(
+                        args.mtp_notp_specialist_threshold_validation_predictions_tsv
+                    )
                 )
         else:
             mtp_notp_validation_skipped = {}
-            if str(
-                args.mtp_notp_specialist_threshold_validation_predictions_tsv
-            ).strip() != '':
+            if (
+                str(
+                    args.mtp_notp_specialist_threshold_validation_predictions_tsv
+                ).strip()
+                != ""
+            ):
                 raise ValueError(
-                    '--mtp_notp_specialist_threshold_validation_predictions_tsv '
-                    'requires --mtp_notp_specialist_threshold_validation_tsv.'
+                    "--mtp_notp_specialist_threshold_validation_predictions_tsv "
+                    "requires --mtp_notp_specialist_threshold_validation_tsv."
                 )
         model = attach_targetp_mtp_notp_specialist(
             model=model,
@@ -942,40 +1043,49 @@ def main(argv=None):
                 default=None,
             ),
         )
-        model['metadata']['targetp_mtp_notp_specialist']['training_tsv'] = str(
+        model["metadata"]["targetp_mtp_notp_specialist"]["training_tsv"] = str(
             args.mtp_notp_specialist_tsv
         )
-        model['metadata']['targetp_mtp_notp_specialist']['predictions_tsv'] = str(
+        model["metadata"]["targetp_mtp_notp_specialist"]["predictions_tsv"] = str(
             args.mtp_notp_specialist_predictions_tsv
         )
-        model['metadata']['targetp_mtp_notp_specialist']['skipped_rows'] = dict(
+        model["metadata"]["targetp_mtp_notp_specialist"]["skipped_rows"] = dict(
             mtp_notp_skipped
         )
         if mtp_notp_validation_rows is not None:
-            validation_report = model['metadata']['targetp_mtp_notp_specialist'].setdefault(
-                'threshold_validation',
+            validation_report = model["metadata"][
+                "targetp_mtp_notp_specialist"
+            ].setdefault(
+                "threshold_validation",
                 {},
             )
-            validation_report['validation_tsv'] = str(
+            validation_report["validation_tsv"] = str(
                 args.mtp_notp_specialist_threshold_validation_tsv
             )
-            validation_report['predictions_tsv'] = str(
+            validation_report["predictions_tsv"] = str(
                 args.mtp_notp_specialist_threshold_validation_predictions_tsv
             )
-            validation_report['skipped_rows'] = dict(mtp_notp_validation_skipped)
-        mtp_notp_report = dict(model['metadata']['targetp_mtp_notp_specialist'])
+            validation_report["skipped_rows"] = dict(mtp_notp_validation_skipped)
+        mtp_notp_report = dict(model["metadata"]["targetp_mtp_notp_specialist"])
     save_localize_model(model=model, path=str(args.model_out))
-    print(json.dumps({
-        'model_out': str(args.model_out),
-        'model_type': model['model_type'],
-        'alpha_by_class': metadata['alpha_by_class'],
-        'class_thresholds': metadata['class_thresholds'],
-        'notp_specialist': notp_report,
-        'reranker': reranker_report,
-        'mtp_notp_specialist': mtp_notp_report,
-    }, indent=2, sort_keys=True, allow_nan=False))
+    print(
+        json.dumps(
+            {
+                "model_out": str(args.model_out),
+                "model_type": model["model_type"],
+                "alpha_by_class": metadata["alpha_by_class"],
+                "class_thresholds": metadata["class_thresholds"],
+                "notp_specialist": notp_report,
+                "reranker": reranker_report,
+                "mtp_notp_specialist": mtp_notp_report,
+            },
+            indent=2,
+            sort_keys=True,
+            allow_nan=False,
+        )
+    )
     return model
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

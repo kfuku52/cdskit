@@ -30,7 +30,7 @@ class TestPrintseqMain:
 
         args = mock_args(
             seqfile=str(input_path),
-            seqname='seq_[AG]',  # Match seq_A and seq_G
+            seqname="seq_[AG]",  # Match seq_A and seq_G
             show_seqname=True,
         )
 
@@ -58,7 +58,7 @@ class TestPrintseqMain:
 
         args = mock_args(
             seqfile=str(input_path),
-            seqname='target',
+            seqname="target",
             show_seqname=True,
         )
 
@@ -80,7 +80,7 @@ class TestPrintseqMain:
 
         args = mock_args(
             seqfile=str(input_path),
-            seqname='seq1',
+            seqname="seq1",
             show_seqname=False,
         )
 
@@ -103,7 +103,7 @@ class TestPrintseqMain:
 
         args = mock_args(
             seqfile=str(input_path),
-            seqname='nonexistent',
+            seqname="nonexistent",
             show_seqname=True,
         )
 
@@ -121,14 +121,16 @@ class TestPrintseqMain:
         records = [
             SeqRecord(Seq("AAAA"), id="gene_001", name="gene_001", description=""),
             SeqRecord(Seq("TTTT"), id="gene_002", name="gene_002", description=""),
-            SeqRecord(Seq("GGGG"), id="transcript_001", name="transcript_001", description=""),
+            SeqRecord(
+                Seq("GGGG"), id="transcript_001", name="transcript_001", description=""
+            ),
             SeqRecord(Seq("CCCC"), id="gene_100", name="gene_100", description=""),
         ]
         Bio.SeqIO.write(records, str(input_path), "fasta")
 
         args = mock_args(
             seqfile=str(input_path),
-            seqname='gene_00[12]',  # Match gene_001 and gene_002
+            seqname="gene_00[12]",  # Match gene_001 and gene_002
             show_seqname=True,
         )
 
@@ -144,11 +146,13 @@ class TestPrintseqMain:
         """Test printseq with example_printseq.fasta from wiki."""
         input_path = data_dir / "example_printseq.fasta"
 
-        assert input_path.exists(), "required tracked fixture example_printseq.fasta is missing"
+        assert input_path.exists(), (
+            "required tracked fixture example_printseq.fasta is missing"
+        )
 
         args = mock_args(
             seqfile=str(input_path),
-            seqname='seq_[AG]',  # Wiki example regex
+            seqname="seq_[AG]",  # Wiki example regex
             show_seqname=True,
         )
 
@@ -173,7 +177,7 @@ class TestPrintseqMain:
 
         args = mock_args(
             seqfile=str(input_path),
-            seqname='seq.*',  # Match all seq*
+            seqname="seq.*",  # Match all seq*
             show_seqname=True,
         )
 
@@ -195,13 +199,13 @@ class TestPrintseqMain:
 
         args_single = mock_args(
             seqfile=str(input_path),
-            seqname='seq_[AG]',
+            seqname="seq_[AG]",
             show_seqname=True,
             threads=1,
         )
         args_threaded = mock_args(
             seqfile=str(input_path),
-            seqname='seq_[AG]',
+            seqname="seq_[AG]",
             show_seqname=True,
             threads=4,
         )
@@ -219,12 +223,12 @@ class TestPrintseqMain:
 
         args = mock_args(
             seqfile=str(input_path),
-            seqname='[',
+            seqname="[",
             show_seqname=True,
         )
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             printseq_main(args)
-        assert 'Invalid regex in --seq_name_regex' in str(exc_info.value)
+        assert "Invalid regex in --seq_name_regex" in str(exc_info.value)
 
     def test_printseq_rejects_non_dna_input(self, temp_dir, mock_args):
         input_path = temp_dir / "input.fasta"
@@ -233,15 +237,17 @@ class TestPrintseqMain:
 
         args = mock_args(
             seqfile=str(input_path),
-            seqname='prot1',
+            seqname="prot1",
             show_seqname=True,
-            seqtype='dna',
+            seqtype="dna",
         )
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             printseq_main(args)
         assert "DNA-only input is required" in str(exc_info.value)
 
-    def test_printseq_accepts_protein_input_when_seqtype_protein(self, temp_dir, mock_args, capsys):
+    def test_printseq_accepts_protein_input_when_seqtype_protein(
+        self, temp_dir, mock_args, capsys
+    ):
         input_path = temp_dir / "input.fasta"
         records = [
             SeqRecord(Seq("MKT"), id="prot1", name="prot1", description=""),
@@ -251,14 +257,14 @@ class TestPrintseqMain:
 
         args = mock_args(
             seqfile=str(input_path),
-            seqname='prot1',
+            seqname="prot1",
             show_seqname=True,
-            seqtype='protein',
+            seqtype="protein",
         )
         printseq_main(args)
 
         captured = capsys.readouterr()
-        lines = [line for line in captured.out.strip().split('\n') if line]
+        lines = [line for line in captured.out.strip().split("\n") if line]
         assert lines == [">prot1", "MKT"]
 
 
@@ -271,7 +277,9 @@ class TestPrintseqHelpers:
         assert record_matches_seqname(record, r"seq_[TC]") is False
 
     def test_record_matches_seqname_uses_id_not_name(self):
-        record = SeqRecord(Seq("ATGAAA"), id="wanted_id", name="other_name", description="")
+        record = SeqRecord(
+            Seq("ATGAAA"), id="wanted_id", name="other_name", description=""
+        )
         assert record_matches_seqname(record, r"wanted_id") is True
         assert record_matches_seqname(record, r"other_name") is False
 

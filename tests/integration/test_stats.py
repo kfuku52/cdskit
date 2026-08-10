@@ -57,7 +57,9 @@ class TestStatsMain:
 
         # 50% GC content: 3 G/C out of 6
         records = [
-            SeqRecord(Seq("ATGCAT"), id="seq1", description=""),  # A T G C A T = 2 GC / 6
+            SeqRecord(
+                Seq("ATGCAT"), id="seq1", description=""
+            ),  # A T G C A T = 2 GC / 6
         ]
         Bio.SeqIO.write(records, str(input_path), "fasta")
 
@@ -107,7 +109,9 @@ class TestStatsMain:
         captured = capsys.readouterr()
         assert "Total N length: 3" in captured.out
 
-    def test_stats_counts_gc_and_n_case_insensitively(self, temp_dir, mock_args, capsys):
+    def test_stats_counts_gc_and_n_case_insensitively(
+        self, temp_dir, mock_args, capsys
+    ):
         input_path = temp_dir / "input.fasta"
 
         records = [
@@ -162,8 +166,8 @@ class TestStatsMain:
         """Test stats with a checkout-independent fixture."""
         input_path = temp_dir / "example_stats.fasta"
         input_path.write_text(
-            '>seq1\nATGCGC\n>seq2\natgn--\n',
-            encoding='utf-8',
+            ">seq1\nATGCGC\n>seq2\natgn--\n",
+            encoding="utf-8",
         )
 
         args = mock_args(
@@ -232,7 +236,10 @@ class TestStatsMain:
         stats_main(args)
 
         captured = capsys.readouterr()
-        assert "Total length: 1,000" in captured.out or "Total length: 1000" in captured.out
+        assert (
+            "Total length: 1,000" in captured.out
+            or "Total length: 1000" in captured.out
+        )
 
     def test_stats_mixed_content(self, temp_dir, mock_args, capsys):
         """Test stats with mixed content (gaps, Ns, softmasked)."""

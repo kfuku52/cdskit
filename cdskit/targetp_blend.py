@@ -39,16 +39,16 @@ from cdskit.targetp_benchmark import (
 )
 from cdskit.cliutil import CdskitArgumentParser, parse_bool, resolve_threads
 from cdskit.tsvio import read_tsv
-from cdskit.util import atomic_text_writer, atomic_write_json
+from cdskit.atomicio import atomic_text_writer, atomic_write_json
 
 TARGETP_SPECIALIST_FIXED_PROFILE = {
-    'name': 'targetp_specialist_fixed_v1',
-    'sp_random_states': [2, 13, 31],
-    'sp_weights': [0.22251605108894593, 0.24685472258402566, 0.5306292263270285],
-    'ltp_random_states': [13, 23, 31, 6, 5],
-    'sp_threshold': 0.6975,
-    'ltp_threshold': 0.2525,
-    'ltp_mass_threshold': 0.21,
+    "name": "targetp_specialist_fixed_v1",
+    "sp_random_states": [2, 13, 31],
+    "sp_weights": [0.22251605108894593, 0.24685472258402566, 0.5306292263270285],
+    "ltp_random_states": [13, 23, 31, 6, 5],
+    "sp_threshold": 0.6975,
+    "ltp_threshold": 0.2525,
+    "ltp_mass_threshold": 0.21,
 }
 _SKLEARN_N_JOBS = 1
 
@@ -64,13 +64,13 @@ def _read_training_rows(path, required_columns=None):
 
 def _oof_rows_to_prob_and_true(oof_rows, class_names):
     class_to_idx = {name: i for i, name in enumerate(class_names)}
-    rows = sorted(oof_rows, key=lambda r: int(r['index']))
+    rows = sorted(oof_rows, key=lambda r: int(r["index"]))
     n = len(rows)
     k = len(class_names)
     prob = np.zeros((n, k), dtype=np.float64)
     true_idx = np.zeros((n,), dtype=np.int64)
     for i, row in enumerate(rows):
-        probs = row.get('class_probabilities', {})
+        probs = row.get("class_probabilities", {})
         total = 0.0
         for j, class_name in enumerate(class_names):
             p = float(probs.get(class_name, 0.0))
@@ -83,7 +83,7 @@ def _oof_rows_to_prob_and_true(oof_rows, class_names):
             total = 1.0
         if total != 1.0:
             prob[i, :] = prob[i, :] / total
-        true_name = str(row['true_class'])
+        true_name = str(row["true_class"])
         true_idx[i] = int(class_to_idx[true_name])
     return prob, true_idx
 
@@ -106,14 +106,18 @@ def _metrics_from_prediction_indices(pred_idx, true_idx, class_names):
         class_names=class_names,
     )
     overall = float(np.mean(pred_idx == true_idx))
-    macro_f1 = float(np.mean(np.asarray(
-        [by_class[name]['f1'] for name in class_names],
-        dtype=np.float64,
-    )))
+    macro_f1 = float(
+        np.mean(
+            np.asarray(
+                [by_class[name]["f1"] for name in class_names],
+                dtype=np.float64,
+            )
+        )
+    )
     return {
-        'overall_accuracy': overall,
-        'macro_f1': macro_f1,
-        'by_class': by_class,
+        "overall_accuracy": overall,
+        "macro_f1": macro_f1,
+        "by_class": by_class,
     }
 
 
@@ -148,7 +152,7 @@ def _optimize_global_alpha(prob_a, prob_b, true_idx, class_names, grid):
             true_idx=true_idx,
             class_names=class_names,
         )
-        if (best_metrics is None) or (metrics['macro_f1'] > best_metrics['macro_f1']):
+        if (best_metrics is None) or (metrics["macro_f1"] > best_metrics["macro_f1"]):
             best_metrics = metrics
             best_alpha = float(alpha)
     return best_alpha, best_metrics
@@ -176,7 +180,7 @@ def _optimize_classwise_alpha(prob_a, prob_b, true_idx, class_names, grid, init_
                     true_idx=true_idx,
                     class_names=class_names,
                 )
-                if metrics['macro_f1'] > best_local_metrics['macro_f1']:
+                if metrics["macro_f1"] > best_local_metrics["macro_f1"]:
                     best_local_alpha = float(trial)
                     best_local_metrics = metrics
             if best_local_alpha != float(alpha[c]):
@@ -215,7 +219,7 @@ def _optimize_class_thresholds(prob_matrix, true_idx, class_names, grid):
                     true_idx=true_idx,
                     class_names=class_names,
                 )
-                if metrics['macro_f1'] > best_local_metrics['macro_f1']:
+                if metrics["macro_f1"] > best_local_metrics["macro_f1"]:
                     best_local = float(trial)
                     best_local_metrics = metrics
             if best_local != float(thresholds[class_i]):
@@ -225,13 +229,14 @@ def _optimize_class_thresholds(prob_matrix, true_idx, class_names, grid):
     return thresholds, best_metrics
 
 
-def _save_oof_npz(path, prob_matrix, true_idx, class_names, cache_key=''):
+def _save_oof_npz(path, prob_matrix, true_idx, class_names, cache_key=""):
     out_dir = os.path.dirname(path)
-    if out_dir != '':
+    if out_dir != "":
         os.makedirs(out_dir, exist_ok=True)
-    from cdskit.util import atomic_output_path
+    from cdskit.atomicio import atomic_output_path
+
     with atomic_output_path(path) as temporary:
-        with open(temporary, 'wb') as out:
+        with open(temporary, "wb") as out:
             np.savez_compressed(
                 out,
                 prob_matrix=np.asarray(prob_matrix, dtype=np.float64),
@@ -241,46 +246,52 @@ def _save_oof_npz(path, prob_matrix, true_idx, class_names, cache_key=''):
             )
 
 
-def _load_oof_npz(path, fallback_true_idx=None, cache_key=''):
+def _load_oof_npz(path, fallback_true_idx=None, cache_key=""):
     with np.load(path, allow_pickle=False) as data:
-        prob_matrix = np.asarray(data['prob_matrix'], dtype=np.float64)
-        if 'true_idx' in data.files:
-            true_idx = np.asarray(data['true_idx'], dtype=np.int64)
+        prob_matrix = np.asarray(data["prob_matrix"], dtype=np.float64)
+        if "true_idx" in data.files:
+            true_idx = np.asarray(data["true_idx"], dtype=np.int64)
         elif fallback_true_idx is not None:
             true_idx = np.asarray(fallback_true_idx, dtype=np.int64)
         else:
             raise KeyError(
-                'true_idx is not a file in the archive and no fallback_true_idx was provided.'
+                "true_idx is not a file in the archive and no fallback_true_idx was provided."
             )
-        class_names = [str(v) for v in data['class_names'].tolist()]
+        class_names = [str(v) for v in data["class_names"].tolist()]
         if cache_key:
-            if 'cache_key' not in data.files:
-                raise ValueError('OOF cache has no provenance metadata: {}'.format(path))
-            loaded_key = str(np.asarray(data['cache_key']).tolist())
+            if "cache_key" not in data.files:
+                raise ValueError(
+                    "OOF cache has no provenance metadata: {}".format(path)
+                )
+            loaded_key = str(np.asarray(data["cache_key"]).tolist())
             if loaded_key != str(cache_key):
-                raise ValueError('OOF cache provenance does not match current run: {}'.format(path))
+                raise ValueError(
+                    "OOF cache provenance does not match current run: {}".format(path)
+                )
     if not np.isfinite(prob_matrix).all():
-        raise ValueError('OOF probability matrix contains non-finite values: {}'.format(path))
+        raise ValueError(
+            "OOF probability matrix contains non-finite values: {}".format(path)
+        )
     return prob_matrix, true_idx, class_names
 
 
 def _safe_cache_name(value):
-    text = str(value or '').strip()
-    if text == '':
-        text = 'fold'
+    text = str(value or "").strip()
+    if text == "":
+        text = "fold"
     out = list()
     for ch in text:
-        if ch.isalnum() or ch in ['-', '_', '.']:
+        if ch.isalnum() or ch in ["-", "_", "."]:
             out.append(ch)
         else:
-            out.append('_')
-    return ''.join(out)
+            out.append("_")
+    return "".join(out)
 
 
 def _oof_fold_cache_path(cache_dir, model_arch, fold_label):
     return os.path.join(
         str(cache_dir),
-        '{}_{}.npz'.format(_safe_cache_name(model_arch), _safe_cache_name(fold_label)),
+        "{}_{}.npz".format(_safe_cache_name(model_arch), _safe_cache_name(fold_label)),
     )
 
 
@@ -288,35 +299,37 @@ def _content_fingerprint(values):
     digest = hashlib.sha256()
 
     def update_part(part):
-        digest.update(len(part).to_bytes(8, byteorder='big', signed=False))
+        digest.update(len(part).to_bytes(8, byteorder="big", signed=False))
         digest.update(part)
 
     for value in values:
         if isinstance(value, np.ndarray):
             array = np.ascontiguousarray(value)
-            update_part(str(array.dtype).encode('utf-8'))
-            update_part(str(array.shape).encode('utf-8'))
+            update_part(str(array.dtype).encode("utf-8"))
+            update_part(str(array.shape).encode("utf-8"))
             update_part(array.tobytes())
         else:
-            update_part(
-                json.dumps(value, sort_keys=True, default=str).encode('utf-8')
-            )
+            update_part(json.dumps(value, sort_keys=True, default=str).encode("utf-8"))
     return digest.hexdigest()
 
 
-def _training_file_cache_key(path, model_arch, localize_strategy, dl_train_params, cv_seed):
+def _training_file_cache_key(
+    path, model_arch, localize_strategy, dl_train_params, cv_seed
+):
     digest = hashlib.sha256()
-    with open(path, 'rb') as inp:
-        for chunk in iter(lambda: inp.read(1024 * 1024), b''):
+    with open(path, "rb") as inp:
+        for chunk in iter(lambda: inp.read(1024 * 1024), b""):
             digest.update(chunk)
-    return _content_fingerprint([
-        __version__,
-        digest.hexdigest(),
-        model_arch,
-        localize_strategy,
-        dict(sorted(dict(dl_train_params).items())),
-        int(cv_seed),
-    ])
+    return _content_fingerprint(
+        [
+            __version__,
+            digest.hexdigest(),
+            model_arch,
+            localize_strategy,
+            dict(sorted(dict(dl_train_params).items())),
+            int(cv_seed),
+        ]
+    )
 
 
 def _oof_fold_cache_key(
@@ -331,29 +344,34 @@ def _oof_fold_cache_key(
     cv_seed,
 ):
     payload = {
-        'cdskit_version': __version__,
-        'model_arch': str(model_arch),
-        'localize_strategy': str(localize_strategy),
-        'dl_train_params': dict(sorted(dict(dl_train_params).items())),
-        'cv_seed': int(cv_seed),
-        'training_content_sha256': _content_fingerprint([
-            np.asarray(x),
-            list(aa_sequences),
-            list(class_labels),
-            list(perox_labels),
-            None if fold_ids is None else list(fold_ids),
-        ]),
+        "cdskit_version": __version__,
+        "model_arch": str(model_arch),
+        "localize_strategy": str(localize_strategy),
+        "dl_train_params": dict(sorted(dict(dl_train_params).items())),
+        "cv_seed": int(cv_seed),
+        "training_content_sha256": _content_fingerprint(
+            [
+                np.asarray(x),
+                list(aa_sequences),
+                list(class_labels),
+                list(perox_labels),
+                None if fold_ids is None else list(fold_ids),
+            ]
+        ),
     }
     return json.dumps(payload, sort_keys=True, default=str)
 
 
-def _save_oof_fold_npz(path, row_index, prob_matrix, true_idx, class_names, fold_label, cache_key=''):
+def _save_oof_fold_npz(
+    path, row_index, prob_matrix, true_idx, class_names, fold_label, cache_key=""
+):
     out_dir = os.path.dirname(path)
-    if out_dir != '':
+    if out_dir != "":
         os.makedirs(out_dir, exist_ok=True)
-    from cdskit.util import atomic_output_path
+    from cdskit.atomicio import atomic_output_path
+
     with atomic_output_path(path) as temporary:
-        with open(temporary, 'wb') as out:
+        with open(temporary, "wb") as out:
             np.savez_compressed(
                 out,
                 row_index=np.asarray(row_index, dtype=np.int64),
@@ -365,67 +383,82 @@ def _save_oof_fold_npz(path, row_index, prob_matrix, true_idx, class_names, fold
             )
 
 
-def _load_oof_fold_npz(path, class_names, cache_key=''):
+def _load_oof_fold_npz(path, class_names, cache_key=""):
     with np.load(path, allow_pickle=False) as data:
-        loaded_names = [str(v) for v in np.asarray(data['class_names']).tolist()]
+        loaded_names = [str(v) for v in np.asarray(data["class_names"]).tolist()]
         if loaded_names != list(class_names):
-            raise ValueError('Class names in OOF fold cache do not match LOCALIZATION_CLASSES.')
-        if str(cache_key or '') != '':
-            if 'cache_key' not in data.files:
-                raise ValueError('OOF fold cache has no cache_key metadata: {}'.format(path))
-            loaded_key = str(np.asarray(data['cache_key']).tolist())
+            raise ValueError(
+                "Class names in OOF fold cache do not match LOCALIZATION_CLASSES."
+            )
+        if str(cache_key or "") != "":
+            if "cache_key" not in data.files:
+                raise ValueError(
+                    "OOF fold cache has no cache_key metadata: {}".format(path)
+                )
+            loaded_key = str(np.asarray(data["cache_key"]).tolist())
             if loaded_key != str(cache_key):
-                raise ValueError('OOF fold cache parameters do not match current run: {}'.format(path))
-        row_index = np.asarray(data['row_index'], dtype=np.int64)
-        prob_matrix = np.asarray(data['prob_matrix'], dtype=np.float64)
-        true_idx = np.asarray(data['true_idx'], dtype=np.int64)
-    if prob_matrix.shape[0] != row_index.shape[0] or true_idx.shape[0] != row_index.shape[0]:
-        raise ValueError('Row count mismatch in OOF fold cache: {}'.format(path))
+                raise ValueError(
+                    "OOF fold cache parameters do not match current run: {}".format(
+                        path
+                    )
+                )
+        row_index = np.asarray(data["row_index"], dtype=np.int64)
+        prob_matrix = np.asarray(data["prob_matrix"], dtype=np.float64)
+        true_idx = np.asarray(data["true_idx"], dtype=np.int64)
+    if (
+        prob_matrix.shape[0] != row_index.shape[0]
+        or true_idx.shape[0] != row_index.shape[0]
+    ):
+        raise ValueError("Row count mismatch in OOF fold cache: {}".format(path))
     if not np.isfinite(prob_matrix).all():
-        raise ValueError('OOF fold cache contains non-finite values: {}'.format(path))
+        raise ValueError("OOF fold cache contains non-finite values: {}".format(path))
     return row_index, prob_matrix, true_idx
 
 
 def _read_true_idx_from_training_tsv(training_tsv, class_names):
     class_to_idx = {name: i for i, name in enumerate(class_names)}
-    rows = _read_training_rows(path=training_tsv, required_columns=['localization'])
+    rows = _read_training_rows(path=training_tsv, required_columns=["localization"])
     out = list()
     for row in rows:
-        class_name = str(row.get('localization', '')).strip()
+        class_name = str(row.get("localization", "")).strip()
         if class_name not in class_to_idx:
-            raise ValueError('Unsupported localization label in training_tsv: {}'.format(class_name))
+            raise ValueError(
+                "Unsupported localization label in training_tsv: {}".format(class_name)
+            )
         out.append(class_to_idx[class_name])
     return np.asarray(out, dtype=np.int64)
 
 
 def _read_fold_ids_from_training_tsv(training_tsv):
-    rows = _read_training_rows(path=training_tsv, required_columns=['fold_id'])
+    rows = _read_training_rows(path=training_tsv, required_columns=["fold_id"])
     fold_ids = list()
     for row_i, row in enumerate(rows):
-        fold_id = str(row.get('fold_id', '')).strip()
-        if fold_id == '':
-            fold_id = str(row.get('targetp_fold', '')).strip()
-        if fold_id == '':
-            fold_id = 'row{}'.format(row_i)
+        fold_id = str(row.get("fold_id", "")).strip()
+        if fold_id == "":
+            fold_id = str(row.get("targetp_fold", "")).strip()
+        if fold_id == "":
+            fold_id = "row{}".format(row_i)
         fold_ids.append(fold_id)
     return np.asarray(fold_ids)
 
 
 def _read_organism_group_mask(training_tsv):
-    rows = _read_training_rows(path=training_tsv, required_columns=['organism_group'])
-    return np.asarray([
-        str(row.get('organism_group', '')).strip().lower() == 'plant'
-        for row in rows
-    ], dtype=bool)
+    rows = _read_training_rows(path=training_tsv, required_columns=["organism_group"])
+    return np.asarray(
+        [str(row.get("organism_group", "")).strip().lower() == "plant" for row in rows],
+        dtype=bool,
+    )
 
 
 def _apply_organism_gate(prob_matrix, plant_mask, class_names):
     prob_matrix = np.asarray(prob_matrix, dtype=np.float64).copy()
     plant_mask = np.asarray(plant_mask, dtype=bool)
     if prob_matrix.shape[0] != plant_mask.shape[0]:
-        raise ValueError('organism_group row count does not match OOF probability rows.')
+        raise ValueError(
+            "organism_group row count does not match OOF probability rows."
+        )
     class_to_idx = {name: i for i, name in enumerate(class_names)}
-    for class_name in ['cTP', 'lTP']:
+    for class_name in ["cTP", "lTP"]:
         if class_name in class_to_idx:
             prob_matrix[~plant_mask, class_to_idx[class_name]] = 0.0
     row_sum = prob_matrix.sum(axis=1, keepdims=True)
@@ -435,7 +468,7 @@ def _apply_organism_gate(prob_matrix, plant_mask, class_names):
 
 def _targetp_reference_f1_array(class_names):
     return np.asarray(
-        [TARGETP_TABLE1_REFERENCE[class_name]['f1'] for class_name in class_names],
+        [TARGETP_TABLE1_REFERENCE[class_name]["f1"] for class_name in class_names],
         dtype=np.float64,
     )
 
@@ -461,79 +494,88 @@ def _targetp_margin_rank(pred_idx, true_idx, class_names):
         n_class=len(class_names),
     )
     ref = _targetp_reference_f1_array(class_names=class_names)
-    overall = float(np.mean(np.asarray(pred_idx, dtype=np.int64) == np.asarray(true_idx, dtype=np.int64)))
+    overall = float(
+        np.mean(
+            np.asarray(pred_idx, dtype=np.int64) == np.asarray(true_idx, dtype=np.int64)
+        )
+    )
     return (
         float(np.min(f1 - ref)),
         float(np.mean(f1)),
-        float(f1[class_names.index('SP')] if 'SP' in class_names else 0.0),
-        float(f1[class_names.index('lTP')] if 'lTP' in class_names else 0.0),
-        float(f1[class_names.index('cTP')] if 'cTP' in class_names else 0.0),
+        float(f1[class_names.index("SP")] if "SP" in class_names else 0.0),
+        float(f1[class_names.index("lTP")] if "lTP" in class_names else 0.0),
+        float(f1[class_names.index("cTP")] if "cTP" in class_names else 0.0),
         overall,
     )
 
 
-def _specialist_threshold_rank(pred_idx, true_idx, class_names, objective='targetp_margin'):
-    objective = str(objective or 'targetp_margin').strip().lower()
-    if objective == 'targetp_margin':
+def _specialist_threshold_rank(
+    pred_idx, true_idx, class_names, objective="targetp_margin"
+):
+    objective = str(objective or "targetp_margin").strip().lower()
+    if objective == "targetp_margin":
         return _targetp_margin_rank(
             pred_idx=pred_idx,
             true_idx=true_idx,
             class_names=class_names,
         )
-    if objective == 'macro_f1':
+    if objective == "macro_f1":
         f1 = _fast_f1_vector(
             pred_idx=pred_idx,
             true_idx=true_idx,
             n_class=len(class_names),
         )
-        overall = float(np.mean(
-            np.asarray(pred_idx, dtype=np.int64) == np.asarray(true_idx, dtype=np.int64)
-        ))
+        overall = float(
+            np.mean(
+                np.asarray(pred_idx, dtype=np.int64)
+                == np.asarray(true_idx, dtype=np.int64)
+            )
+        )
         return (
             float(np.mean(f1)),
-            float(f1[class_names.index('lTP')] if 'lTP' in class_names else 0.0),
-            float(f1[class_names.index('SP')] if 'SP' in class_names else 0.0),
-            float(f1[class_names.index('mTP')] if 'mTP' in class_names else 0.0),
-            float(f1[class_names.index('cTP')] if 'cTP' in class_names else 0.0),
+            float(f1[class_names.index("lTP")] if "lTP" in class_names else 0.0),
+            float(f1[class_names.index("SP")] if "SP" in class_names else 0.0),
+            float(f1[class_names.index("mTP")] if "mTP" in class_names else 0.0),
+            float(f1[class_names.index("cTP")] if "cTP" in class_names else 0.0),
             overall,
         )
-    raise ValueError('Unsupported specialist threshold objective: {}'.format(objective))
+    raise ValueError("Unsupported specialist threshold objective: {}".format(objective))
 
 
 def _targetp_margin_summary(metrics, targetp_ref, class_names):
     margins = dict()
     beats = dict()
     for class_name in class_names:
-        f1 = float(metrics['by_class'][class_name]['f1'])
-        ref_f1 = float(targetp_ref[class_name]['f1'])
+        f1 = float(metrics["by_class"][class_name]["f1"])
+        ref_f1 = float(targetp_ref[class_name]["f1"])
         margin = f1 - ref_f1
         margins[class_name] = float(margin)
         beats[class_name] = bool(margin > 0.0)
     min_margin = min(margins.values()) if len(margins) > 0 else 0.0
     return {
-        'beats_targetp_all_classes': bool(all(beats.values())),
-        'min_class_f1_margin': float(min_margin),
-        'class_f1_margins': margins,
-        'class_beats_targetp': beats,
+        "beats_targetp_all_classes": bool(all(beats.values())),
+        "min_class_f1_margin": float(min_margin),
+        "class_f1_margins": margins,
+        "class_beats_targetp": beats,
     }
 
 
 def _attach_targetp_margin_summaries(out, class_names):
     for key in [
-        'bilstm',
-        'esm',
-        'blend_global',
-        'blend_classwise',
-        'blend_threshold',
-        'blend_foldwise',
-        'specialist_postprocess',
-        'specialist_foldwise',
-        'specialist_foldwise_fixed',
+        "bilstm",
+        "esm",
+        "blend_global",
+        "blend_classwise",
+        "blend_threshold",
+        "blend_foldwise",
+        "specialist_postprocess",
+        "specialist_foldwise",
+        "specialist_foldwise_fixed",
     ]:
         if key not in out:
             continue
-        out[key]['targetp_margin'] = _targetp_margin_summary(
-            metrics=out[key]['metrics'],
+        out[key]["targetp_margin"] = _targetp_margin_summary(
+            metrics=out[key]["metrics"],
             targetp_ref=TARGETP_TABLE1_REFERENCE,
             class_names=class_names,
         )
@@ -544,7 +586,7 @@ def _best_binary_f1_threshold(scores, true_idx, positive_idx):
     true_idx = np.asarray(true_idx, dtype=np.int64)
     yy = true_idx == int(positive_idx)
     if scores.shape[0] != yy.shape[0]:
-        raise ValueError('Binary threshold score length does not match labels.')
+        raise ValueError("Binary threshold score length does not match labels.")
     order = np.argsort(-scores)
     sorted_scores = scores[order]
     sorted_y = yy[order]
@@ -553,7 +595,7 @@ def _best_binary_f1_threshold(scores, true_idx, positive_idx):
     fp = 0
     best_f1 = 0.0
     best_threshold = float(sorted_scores[0]) if sorted_scores.size else 0.5
-    best_counts = {'tp': 0, 'fp': 0, 'fn': total_pos}
+    best_counts = {"tp": 0, "fp": 0, "fn": total_pos}
     i = 0
     while i < sorted_scores.shape[0]:
         value = float(sorted_scores[i])
@@ -569,7 +611,7 @@ def _best_binary_f1_threshold(scores, true_idx, positive_idx):
         if f1 > best_f1:
             best_f1 = f1
             best_threshold = value
-            best_counts = {'tp': int(tp), 'fp': int(fp), 'fn': int(fn)}
+            best_counts = {"tp": int(tp), "fp": int(fp), "fn": int(fn)}
     return best_threshold, best_f1, best_counts
 
 
@@ -578,14 +620,14 @@ def _binary_f1_at_threshold(scores, true_idx, positive_idx, threshold):
     true_idx = np.asarray(true_idx, dtype=np.int64)
     yy = true_idx == int(positive_idx)
     if scores.shape[0] != yy.shape[0]:
-        raise ValueError('Binary threshold score length does not match labels.')
+        raise ValueError("Binary threshold score length does not match labels.")
     pred = scores >= float(threshold)
     tp = int(np.sum(pred & yy))
     fp = int(np.sum(pred & (~yy)))
     fn = int(np.sum((~pred) & yy))
     denom = (2 * tp) + fp + fn
     f1 = 0.0 if denom == 0 else float(2 * tp) / float(denom)
-    return f1, {'tp': tp, 'fp': fp, 'fn': fn}
+    return f1, {"tp": tp, "fp": fp, "fn": fn}
 
 
 def _top_binary_f1_thresholds(scores, true_idx, positive_idx, max_candidates=80):
@@ -593,7 +635,7 @@ def _top_binary_f1_thresholds(scores, true_idx, positive_idx, max_candidates=80)
     true_idx = np.asarray(true_idx, dtype=np.int64)
     yy = true_idx == int(positive_idx)
     if scores.shape[0] != yy.shape[0]:
-        raise ValueError('Binary threshold score length does not match labels.')
+        raise ValueError("Binary threshold score length does not match labels.")
     rows = list()
     for threshold in np.unique(scores).tolist():
         f1, counts = _binary_f1_at_threshold(
@@ -603,7 +645,7 @@ def _top_binary_f1_thresholds(scores, true_idx, positive_idx, max_candidates=80)
             threshold=threshold,
         )
         rows.append((f1, float(threshold), counts))
-    rows.sort(key=lambda row: (row[0], -row[2]['fp'], row[2]['tp']), reverse=True)
+    rows.sort(key=lambda row: (row[0], -row[2]["fp"], row[2]["tp"]), reverse=True)
     out = list()
     seen = set()
     for f1, threshold, counts in rows:
@@ -614,28 +656,28 @@ def _top_binary_f1_thresholds(scores, true_idx, positive_idx, max_candidates=80)
         if len(out) >= int(max_candidates):
             break
     if len(out) == 0:
-        out.append((0.5, 0.0, {'tp': 0, 'fp': 0, 'fn': int(np.sum(yy))}))
+        out.append((0.5, 0.0, {"tp": 0, "fp": 0, "fn": int(np.sum(yy))}))
     return out
 
 
 def _targetp_sp_scan_features(seq):
-    seq = str(seq or '')
+    seq = str(seq or "")
     best_score = -99.0
     best_cut = 0
     best_parts = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
     for cut in range(12, min(45, len(seq) - 1)):
         pre = seq[:cut]
-        nreg = seq[:max(1, cut - 18)]
-        hreg = seq[max(0, cut - 18):max(0, cut - 7)]
-        creg = seq[max(0, cut - 7):cut + 2]
-        m3 = seq[cut - 3] if cut - 3 >= 0 else 'X'
-        m2 = seq[cut - 2] if cut - 2 >= 0 else 'X'
-        m1 = seq[cut - 1] if cut - 1 >= 0 else 'X'
-        p1 = seq[cut] if cut < len(seq) else 'X'
-        small_m3 = 1.0 if m3 in 'AVSGTC' else 0.0
-        small_m1 = 1.0 if m1 in 'ASGTC' else 0.0
-        ala_m1 = 1.0 if m1 == 'A' else 0.0
-        pro_bad = 1.0 if 'P' in (m3 + m2 + m1 + p1) else 0.0
+        nreg = seq[: max(1, cut - 18)]
+        hreg = seq[max(0, cut - 18) : max(0, cut - 7)]
+        creg = seq[max(0, cut - 7) : cut + 2]
+        m3 = seq[cut - 3] if cut - 3 >= 0 else "X"
+        m2 = seq[cut - 2] if cut - 2 >= 0 else "X"
+        m1 = seq[cut - 1] if cut - 1 >= 0 else "X"
+        p1 = seq[cut] if cut < len(seq) else "X"
+        small_m3 = 1.0 if m3 in "AVSGTC" else 0.0
+        small_m1 = 1.0 if m1 in "ASGTC" else 0.0
+        ala_m1 = 1.0 if m1 == "A" else 0.0
+        pro_bad = 1.0 if "P" in (m3 + m2 + m1 + p1) else 0.0
         hyd = fraction_in_set(hreg, AA_HYDROPHOBIC)
         run = longest_hydrophobic_run(hreg)
         small = fraction_in_set(creg, AA_SMALL)
@@ -679,20 +721,22 @@ def _targetp_sp_scan_features(seq):
         seq[20:60],
         seq[40:100],
     ]:
-        out.extend([
-            mean_hydropathy(window),
-            longest_hydrophobic_run(window),
-            fraction_in_set(window, AA_HYDROPHOBIC),
-            fraction_in_set(window, AA_BASIC),
-            fraction_in_set(window, AA_ACIDIC),
-            fraction_in_set(window, AA_SER_THR),
-            fraction_in_set(window, AA_SMALL),
-        ])
+        out.extend(
+            [
+                mean_hydropathy(window),
+                longest_hydrophobic_run(window),
+                fraction_in_set(window, AA_HYDROPHOBIC),
+                fraction_in_set(window, AA_BASIC),
+                fraction_in_set(window, AA_ACIDIC),
+                fraction_in_set(window, AA_SER_THR),
+                fraction_in_set(window, AA_SMALL),
+            ]
+        )
     return out
 
 
 def _targetp_ctp_ltp_sequence_features(seq, organism_group):
-    seq = str(seq or '')
+    seq = str(seq or "")
     out = list(extract_broad_localize_features(seq, organism_group)[0])
     windows = [
         seq[:20],
@@ -711,20 +755,33 @@ def _targetp_ctp_ltp_sequence_features(seq, organism_group):
         AA_SMALL,
         AA_SER_THR,
         AA_AROMATIC,
-        frozenset('R'),
-        frozenset('K'),
-        frozenset('A'),
-        frozenset('S'),
-        frozenset('T'),
-        frozenset('P'),
-        frozenset('G'),
-        frozenset('LIV'),
+        frozenset("R"),
+        frozenset("K"),
+        frozenset("A"),
+        frozenset("S"),
+        frozenset("T"),
+        frozenset("P"),
+        frozenset("G"),
+        frozenset("LIV"),
     ]
     for window in windows:
         out.extend([mean_hydropathy(window), longest_hydrophobic_run(window)])
         out.extend([fraction_in_set(window, group) for group in groups])
     n_term = seq[:140]
-    for motif in ['RR', 'KR', 'RK', 'KK', 'RA', 'RS', 'SR', 'ST', 'TS', 'SS', 'TP', 'SP']:
+    for motif in [
+        "RR",
+        "KR",
+        "RK",
+        "KK",
+        "RA",
+        "RS",
+        "SR",
+        "ST",
+        "TS",
+        "SS",
+        "TP",
+        "SP",
+    ]:
         out.append(1.0 if motif in n_term else 0.0)
         out.append(float(n_term.find(motif) if motif in n_term else 999))
     return out
@@ -735,19 +792,21 @@ def _specialist_probability_features(base_prob, prob_a, prob_b, class_names):
     prob_a = np.asarray(prob_a, dtype=np.float64)
     prob_b = np.asarray(prob_b, dtype=np.float64)
     class_to_idx = {name: i for i, name in enumerate(class_names)}
-    ctp_idx = class_to_idx['cTP']
-    ltp_idx = class_to_idx['lTP']
+    ctp_idx = class_to_idx["cTP"]
+    ltp_idx = class_to_idx["lTP"]
     ltp_ratio = base_prob[:, ltp_idx] / np.clip(
         base_prob[:, ctp_idx] + base_prob[:, ltp_idx],
         a_min=1.0e-12,
         a_max=None,
     )
-    return ltp_ratio, np.hstack([
-        base_prob,
-        prob_a,
-        prob_b,
-        ltp_ratio.reshape((-1, 1)),
-    ])
+    return ltp_ratio, np.hstack(
+        [
+            base_prob,
+            prob_a,
+            prob_b,
+            ltp_ratio.reshape((-1, 1)),
+        ]
+    )
 
 
 def _build_sp_specialist_features(rows, base_prob, prob_a, prob_b, class_names):
@@ -759,13 +818,18 @@ def _build_sp_specialist_features(rows, base_prob, prob_a, prob_b, class_names):
     )
     del ltp_ratio
     seq_features = np.asarray(
-        [_targetp_sp_scan_features(row.get('sequence', '')) for row in rows],
+        [_targetp_sp_scan_features(row.get("sequence", "")) for row in rows],
         dtype=np.float64,
     )
-    plant_flag = np.asarray([
-        1.0 if str(row.get('organism_group', '')).strip().lower() == 'plant' else 0.0
-        for row in rows
-    ], dtype=np.float64).reshape((-1, 1))
+    plant_flag = np.asarray(
+        [
+            1.0
+            if str(row.get("organism_group", "")).strip().lower() == "plant"
+            else 0.0
+            for row in rows
+        ],
+        dtype=np.float64,
+    ).reshape((-1, 1))
     return np.hstack([seq_features, prob_features, plant_flag])
 
 
@@ -777,17 +841,25 @@ def _build_ctp_ltp_specialist_features(rows, base_prob, prob_a, prob_b, class_na
         class_names=class_names,
     )
     del ltp_ratio
-    seq_features = np.asarray([
-        _targetp_ctp_ltp_sequence_features(
-            seq=row.get('sequence', ''),
-            organism_group=row.get('organism_group', ''),
-        )
-        for row in rows
-    ], dtype=np.float64)
-    plant_flag = np.asarray([
-        1.0 if str(row.get('organism_group', '')).strip().lower() == 'plant' else 0.0
-        for row in rows
-    ], dtype=np.float64).reshape((-1, 1))
+    seq_features = np.asarray(
+        [
+            _targetp_ctp_ltp_sequence_features(
+                seq=row.get("sequence", ""),
+                organism_group=row.get("organism_group", ""),
+            )
+            for row in rows
+        ],
+        dtype=np.float64,
+    )
+    plant_flag = np.asarray(
+        [
+            1.0
+            if str(row.get("organism_group", "")).strip().lower() == "plant"
+            else 0.0
+            for row in rows
+        ],
+        dtype=np.float64,
+    ).reshape((-1, 1))
     return np.hstack([seq_features, prob_features, plant_flag])
 
 
@@ -800,8 +872,8 @@ def _sklearn_single_thread_context():
         return
     with warnings.catch_warnings():
         warnings.filterwarnings(
-            'ignore',
-            message=r'\s*Found Intel OpenMP.*',
+            "ignore",
+            message=r"\s*Found Intel OpenMP.*",
             category=RuntimeWarning,
         )
         with threadpool_limits(limits=1):
@@ -819,14 +891,18 @@ def _predict_sklearn_proba(model, features):
         return model.predict_proba(features)
 
 
-def _binary_oof_scores(features, true_idx, fold_ids, train_mask, positive_idx, make_model):
+def _binary_oof_scores(
+    features, true_idx, fold_ids, train_mask, positive_idx, make_model
+):
     features = np.asarray(features, dtype=np.float64)
     true_idx = np.asarray(true_idx, dtype=np.int64)
     fold_ids = np.asarray(fold_ids)
     train_mask = np.asarray(train_mask, dtype=bool)
     scores = np.zeros((features.shape[0],), dtype=np.float64)
     for fold_id in sorted(set([str(v) for v in fold_ids.tolist()])):
-        valid_mask = np.asarray([str(v) == fold_id for v in fold_ids.tolist()], dtype=bool)
+        valid_mask = np.asarray(
+            [str(v) == fold_id for v in fold_ids.tolist()], dtype=bool
+        )
         fit_mask = (~valid_mask) & train_mask
         y_train = (true_idx[fit_mask] == int(positive_idx)).astype(np.int64)
         if features[fit_mask].shape[0] == 0:
@@ -837,11 +913,15 @@ def _binary_oof_scores(features, true_idx, fold_ids, train_mask, positive_idx, m
             continue
         model = make_model()
         _fit_sklearn_model(model, features[fit_mask], y_train)
-        if not hasattr(model, 'predict_proba'):
-            raise TypeError('Specialist model should support predict_proba.')
-        proba = np.asarray(_predict_sklearn_proba(model, features[valid_mask]), dtype=np.float64)
+        if not hasattr(model, "predict_proba"):
+            raise TypeError("Specialist model should support predict_proba.")
+        proba = np.asarray(
+            _predict_sklearn_proba(model, features[valid_mask]), dtype=np.float64
+        )
         class_to_col = {int(cls): i for i, cls in enumerate(model.classes_.tolist())}
-        scores[valid_mask] = proba[:, class_to_col.get(1, 0)] if 1 in class_to_col else 0.0
+        scores[valid_mask] = (
+            proba[:, class_to_col.get(1, 0)] if 1 in class_to_col else 0.0
+        )
     return scores
 
 
@@ -861,7 +941,9 @@ def _binary_crossfit_scores(
     score_mask = np.asarray(score_mask, dtype=bool)
     scores = np.zeros((features.shape[0],), dtype=np.float64)
     for fold_id in sorted(set([str(v) for v in fold_ids[score_mask].tolist()])):
-        valid_mask = score_mask & np.asarray([str(v) == fold_id for v in fold_ids.tolist()], dtype=bool)
+        valid_mask = score_mask & np.asarray(
+            [str(v) == fold_id for v in fold_ids.tolist()], dtype=bool
+        )
         train_mask = fit_mask & (~valid_mask)
         y_train = (true_idx[train_mask] == int(positive_idx)).astype(np.int64)
         if features[train_mask].shape[0] == 0:
@@ -872,9 +954,13 @@ def _binary_crossfit_scores(
             continue
         model = make_model()
         _fit_sklearn_model(model, features[train_mask], y_train)
-        proba = np.asarray(_predict_sklearn_proba(model, features[valid_mask]), dtype=np.float64)
+        proba = np.asarray(
+            _predict_sklearn_proba(model, features[valid_mask]), dtype=np.float64
+        )
         class_to_col = {int(cls): i for i, cls in enumerate(model.classes_.tolist())}
-        scores[valid_mask] = proba[:, class_to_col.get(1, 0)] if 1 in class_to_col else 0.0
+        scores[valid_mask] = (
+            proba[:, class_to_col.get(1, 0)] if 1 in class_to_col else 0.0
+        )
     return scores
 
 
@@ -926,24 +1012,28 @@ def _fit_binary_predict_scores(
         return scores
     model = make_model()
     _fit_sklearn_model(model, features[fit_mask], y_train)
-    proba = np.asarray(_predict_sklearn_proba(model, features[predict_mask]), dtype=np.float64)
+    proba = np.asarray(
+        _predict_sklearn_proba(model, features[predict_mask]), dtype=np.float64
+    )
     class_to_col = {int(cls): i for i, cls in enumerate(model.classes_.tolist())}
-    scores[predict_mask] = proba[:, class_to_col.get(1, 0)] if 1 in class_to_col else 0.0
+    scores[predict_mask] = (
+        proba[:, class_to_col.get(1, 0)] if 1 in class_to_col else 0.0
+    )
     return scores
 
 
 def _aggregate_score_columns(score_columns, weights=None):
     if len(score_columns) == 0:
-        raise ValueError('At least one score column is required.')
+        raise ValueError("At least one score column is required.")
     stack = np.vstack([np.asarray(col, dtype=np.float64) for col in score_columns])
     if weights is None:
         return np.mean(stack, axis=0)
     weights = np.asarray(weights, dtype=np.float64)
     if weights.shape[0] != stack.shape[0]:
-        raise ValueError('Score aggregation weights do not match score columns.')
+        raise ValueError("Score aggregation weights do not match score columns.")
     total = float(np.sum(weights))
     if total <= 0.0:
-        raise ValueError('Score aggregation weights should sum to a positive value.')
+        raise ValueError("Score aggregation weights should sum to a positive value.")
     return np.average(stack, axis=0, weights=weights / total)
 
 
@@ -989,9 +1079,9 @@ def _apply_specialist_postprocess_predictions(
     ltp_scores = np.asarray(ltp_scores, dtype=np.float64)
     plant_mask = np.asarray(plant_mask, dtype=bool)
     class_to_idx = {name: i for i, name in enumerate(class_names)}
-    sp_idx = class_to_idx['SP']
-    ctp_idx = class_to_idx['cTP']
-    ltp_idx = class_to_idx['lTP']
+    sp_idx = class_to_idx["SP"]
+    ctp_idx = class_to_idx["cTP"]
+    ltp_idx = class_to_idx["lTP"]
 
     pred_idx = _prediction_indices_with_thresholds(
         prob_matrix=base_prob,
@@ -1009,9 +1099,7 @@ def _apply_specialist_postprocess_predictions(
 
     ctp_ltp_mass = base_prob[:, ctp_idx] + base_prob[:, ltp_idx]
     ltp_candidate = (
-        plant_mask
-        & (~sp_positive)
-        & (ctp_ltp_mass > float(ltp_mass_threshold))
+        plant_mask & (~sp_positive) & (ctp_ltp_mass > float(ltp_mass_threshold))
     )
     pred_idx[ltp_candidate & (ltp_scores >= float(ltp_threshold))] = ltp_idx
     demote_ltp = (
@@ -1035,10 +1123,13 @@ def _optimize_ltp_specialist_threshold(
     ltp_mass_threshold,
 ):
     class_to_idx = {name: i for i, name in enumerate(class_names)}
-    ctp_idx = class_to_idx['cTP']
-    ltp_idx = class_to_idx['lTP']
+    ctp_idx = class_to_idx["cTP"]
+    ltp_idx = class_to_idx["lTP"]
     sp_positive = np.asarray(sp_scores, dtype=np.float64) >= float(sp_threshold)
-    ctp_ltp_mass = np.asarray(base_prob, dtype=np.float64)[:, ctp_idx] + np.asarray(base_prob, dtype=np.float64)[:, ltp_idx]
+    ctp_ltp_mass = (
+        np.asarray(base_prob, dtype=np.float64)[:, ctp_idx]
+        + np.asarray(base_prob, dtype=np.float64)[:, ltp_idx]
+    )
     relevant = (
         np.asarray(plant_mask, dtype=bool)
         & (~sp_positive)
@@ -1090,10 +1181,13 @@ def _candidate_ltp_thresholds(
     ltp_mass_threshold,
 ):
     class_to_idx = {name: i for i, name in enumerate(class_names)}
-    ctp_idx = class_to_idx['cTP']
-    ltp_idx = class_to_idx['lTP']
+    ctp_idx = class_to_idx["cTP"]
+    ltp_idx = class_to_idx["lTP"]
     sp_positive = np.asarray(sp_scores, dtype=np.float64) >= float(sp_threshold)
-    ctp_ltp_mass = np.asarray(base_prob, dtype=np.float64)[:, ctp_idx] + np.asarray(base_prob, dtype=np.float64)[:, ltp_idx]
+    ctp_ltp_mass = (
+        np.asarray(base_prob, dtype=np.float64)[:, ctp_idx]
+        + np.asarray(base_prob, dtype=np.float64)[:, ltp_idx]
+    )
     relevant = (
         np.asarray(plant_mask, dtype=bool)
         & (~sp_positive)
@@ -1124,24 +1218,24 @@ def _optimize_specialist_threshold_pair(
     fallback_sp_threshold=None,
     fallback_ltp_threshold=None,
     fallback_if_best_min_margin_below=None,
-    threshold_objective='targetp_margin',
+    threshold_objective="targetp_margin",
 ):
     class_to_idx = {name: i for i, name in enumerate(class_names)}
     sp_candidates = _top_binary_f1_thresholds(
         scores=sp_scores,
         true_idx=true_idx,
-        positive_idx=class_to_idx['SP'],
+        positive_idx=class_to_idx["SP"],
         max_candidates=max_sp_candidates,
     )
     seen_sp = set([float(row[0]) for row in sp_candidates])
-    for threshold in ([] if extra_sp_thresholds is None else extra_sp_thresholds):
+    for threshold in [] if extra_sp_thresholds is None else extra_sp_thresholds:
         threshold = float(threshold)
         if threshold in seen_sp:
             continue
         f1, counts = _binary_f1_at_threshold(
             scores=sp_scores,
             true_idx=true_idx,
-            positive_idx=class_to_idx['SP'],
+            positive_idx=class_to_idx["SP"],
             threshold=threshold,
         )
         sp_candidates.append((threshold, f1, counts))
@@ -1160,10 +1254,16 @@ def _optimize_specialist_threshold_pair(
             ltp_mass_threshold=ltp_mass_threshold,
         )
         if extra_ltp_thresholds is not None:
-            ltp_thresholds = np.unique(np.concatenate([
-                np.asarray(ltp_thresholds, dtype=np.float64),
-                np.asarray([float(v) for v in extra_ltp_thresholds], dtype=np.float64),
-            ]))
+            ltp_thresholds = np.unique(
+                np.concatenate(
+                    [
+                        np.asarray(ltp_thresholds, dtype=np.float64),
+                        np.asarray(
+                            [float(v) for v in extra_ltp_thresholds], dtype=np.float64
+                        ),
+                    ]
+                )
+            )
         for ltp_threshold in ltp_thresholds.tolist():
             pred_idx = _apply_specialist_postprocess_predictions(
                 base_prob=base_prob,
@@ -1196,10 +1296,12 @@ def _optimize_specialist_threshold_pair(
                 fallback_sp_threshold is not None
                 and fallback_ltp_threshold is not None
                 and bool(np.isclose(float(sp_threshold), float(fallback_sp_threshold)))
-                and bool(np.isclose(float(ltp_threshold), float(fallback_ltp_threshold)))
+                and bool(
+                    np.isclose(float(ltp_threshold), float(fallback_ltp_threshold))
+                )
             ):
                 fallback = candidate
-    selection_source = 'training_margin_rank'
+    selection_source = "training_margin_rank"
     if (
         fallback is not None
         and fallback_if_best_min_margin_below is not None
@@ -1207,15 +1309,15 @@ def _optimize_specialist_threshold_pair(
         and float(best[0][0]) <= float(fallback_if_best_min_margin_below)
     ):
         best = fallback
-        selection_source = 'calibration_profile_fallback'
+        selection_source = "calibration_profile_fallback"
     return {
-        'rank': best[0],
-        'sp_threshold': best[1],
-        'ltp_threshold': best[2],
-        'sp_binary_f1': best[3],
-        'sp_binary_counts': best[4],
-        'pred_idx': best[5],
-        'selection_source': selection_source,
+        "rank": best[0],
+        "sp_threshold": best[1],
+        "ltp_threshold": best[2],
+        "sp_binary_f1": best[3],
+        "sp_binary_counts": best[4],
+        "pred_idx": best[5],
+        "selection_source": selection_source,
     }
 
 
@@ -1231,20 +1333,25 @@ def _evaluate_targetp_specialist_postprocess(
     ltp_mass_threshold=0.20,
 ):
     try:
-        from sklearn.ensemble import ExtraTreesClassifier, HistGradientBoostingClassifier
+        from sklearn.ensemble import (
+            ExtraTreesClassifier,
+            HistGradientBoostingClassifier,
+        )
     except ImportError as exc:
         raise RuntimeError(
-            '--specialist_postprocess requires scikit-learn in the benchmark environment.'
+            "--specialist_postprocess requires scikit-learn in the benchmark environment."
         ) from exc
 
     if len(rows) != np.asarray(base_prob).shape[0]:
-        raise ValueError('Training rows and probability rows differ in specialist postprocess.')
+        raise ValueError(
+            "Training rows and probability rows differ in specialist postprocess."
+        )
 
     class_to_idx = {name: i for i, name in enumerate(class_names)}
-    plant_mask = np.asarray([
-        str(row.get('organism_group', '')).strip().lower() == 'plant'
-        for row in rows
-    ], dtype=bool)
+    plant_mask = np.asarray(
+        [str(row.get("organism_group", "")).strip().lower() == "plant" for row in rows],
+        dtype=bool,
+    )
     sp_features = _build_sp_specialist_features(
         rows=rows,
         base_prob=base_prob,
@@ -1257,19 +1364,19 @@ def _evaluate_targetp_specialist_postprocess(
         true_idx=true_idx,
         fold_ids=fold_ids,
         train_mask=np.ones((len(rows),), dtype=bool),
-        positive_idx=class_to_idx['SP'],
+        positive_idx=class_to_idx["SP"],
         make_model=lambda: HistGradientBoostingClassifier(
             max_iter=350,
             learning_rate=0.04,
             l2_regularization=0.01,
             random_state=1,
-            class_weight='balanced',
+            class_weight="balanced",
         ),
     )
     sp_threshold, sp_f1, sp_counts = _best_binary_f1_threshold(
         scores=sp_scores,
         true_idx=true_idx,
-        positive_idx=class_to_idx['SP'],
+        positive_idx=class_to_idx["SP"],
     )
 
     ltp_features = _build_ctp_ltp_specialist_features(
@@ -1280,16 +1387,15 @@ def _evaluate_targetp_specialist_postprocess(
         class_names=class_names,
     )
     ctp_ltp_train_mask = (
-        (np.asarray(true_idx, dtype=np.int64) == class_to_idx['cTP'])
-        | (np.asarray(true_idx, dtype=np.int64) == class_to_idx['lTP'])
-    )
+        np.asarray(true_idx, dtype=np.int64) == class_to_idx["cTP"]
+    ) | (np.asarray(true_idx, dtype=np.int64) == class_to_idx["lTP"])
 
     def _make_ltp_model(seed):
         return ExtraTreesClassifier(
             n_estimators=500,
             random_state=int(seed),
-            class_weight='balanced',
-            max_features='sqrt',
+            class_weight="balanced",
+            max_features="sqrt",
             min_samples_leaf=1,
             n_jobs=_SKLEARN_N_JOBS,
         )
@@ -1299,7 +1405,7 @@ def _evaluate_targetp_specialist_postprocess(
         true_idx=true_idx,
         fold_ids=fold_ids,
         train_mask=ctp_ltp_train_mask,
-        positive_idx=class_to_idx['lTP'],
+        positive_idx=class_to_idx["lTP"],
         make_model=lambda: _make_ltp_model(7),
     )
     ltp_scores_b = _binary_oof_scores(
@@ -1307,7 +1413,7 @@ def _evaluate_targetp_specialist_postprocess(
         true_idx=true_idx,
         fold_ids=fold_ids,
         train_mask=ctp_ltp_train_mask,
-        positive_idx=class_to_idx['lTP'],
+        positive_idx=class_to_idx["lTP"],
         make_model=lambda: _make_ltp_model(2),
     )
     ltp_scores = (ltp_scores_a + ltp_scores_b) / 2.0
@@ -1328,16 +1434,16 @@ def _evaluate_targetp_specialist_postprocess(
         class_names=class_names,
     )
     return {
-        'description': 'TargetP benchmark-only SP gate and cTP/lTP reranker trained from sequence-derived features and OOF probabilities.',
-        'sp_model': 'HistGradientBoostingClassifier(max_iter=350, learning_rate=0.04, class_weight=balanced)',
-        'ltp_model': 'mean of ExtraTreesClassifier OOF scores with random_state 7 and 2',
-        'sp_threshold': float(sp_threshold),
-        'sp_binary_f1_at_threshold': float(sp_f1),
-        'sp_binary_counts_at_threshold': sp_counts,
-        'ltp_threshold': float(ltp_threshold),
-        'ltp_mass_threshold': float(ltp_mass_threshold),
-        'targetp_margin_rank': [float(v) for v in rank],
-        'metrics': metrics,
+        "description": "TargetP benchmark-only SP gate and cTP/lTP reranker trained from sequence-derived features and OOF probabilities.",
+        "sp_model": "HistGradientBoostingClassifier(max_iter=350, learning_rate=0.04, class_weight=balanced)",
+        "ltp_model": "mean of ExtraTreesClassifier OOF scores with random_state 7 and 2",
+        "sp_threshold": float(sp_threshold),
+        "sp_binary_f1_at_threshold": float(sp_f1),
+        "sp_binary_counts_at_threshold": sp_counts,
+        "ltp_threshold": float(ltp_threshold),
+        "ltp_mass_threshold": float(ltp_mass_threshold),
+        "targetp_margin_rank": [float(v) for v in rank],
+        "metrics": metrics,
     }
 
 
@@ -1351,13 +1457,16 @@ def _evaluate_foldwise_targetp_specialist_postprocess(
     alpha_grid,
     threshold_grid,
     ltp_mass_threshold=0.20,
-    threshold_objective='targetp_margin',
+    threshold_objective="targetp_margin",
 ):
     try:
-        from sklearn.ensemble import ExtraTreesClassifier, HistGradientBoostingClassifier
+        from sklearn.ensemble import (
+            ExtraTreesClassifier,
+            HistGradientBoostingClassifier,
+        )
     except ImportError as exc:
         raise RuntimeError(
-            '--foldwise_specialist_eval requires scikit-learn in the benchmark environment.'
+            "--foldwise_specialist_eval requires scikit-learn in the benchmark environment."
         ) from exc
 
     prob_a = np.asarray(prob_a, dtype=np.float64)
@@ -1365,19 +1474,21 @@ def _evaluate_foldwise_targetp_specialist_postprocess(
     true_idx = np.asarray(true_idx, dtype=np.int64)
     fold_ids = np.asarray(fold_ids)
     if len(rows) != prob_a.shape[0]:
-        raise ValueError('Training rows and probability rows differ in foldwise specialist eval.')
+        raise ValueError(
+            "Training rows and probability rows differ in foldwise specialist eval."
+        )
 
     class_to_idx = {name: i for i, name in enumerate(class_names)}
-    plant_mask = np.asarray([
-        str(row.get('organism_group', '')).strip().lower() == 'plant'
-        for row in rows
-    ], dtype=bool)
+    plant_mask = np.asarray(
+        [str(row.get("organism_group", "")).strip().lower() == "plant" for row in rows],
+        dtype=bool,
+    )
     pred_idx = np.zeros((prob_a.shape[0],), dtype=np.int64)
     fold_rows = list()
     profile = TARGETP_SPECIALIST_FIXED_PROFILE
-    sp_seeds = list(profile['sp_random_states'])
-    sp_weights = list(profile['sp_weights'])
-    ltp_seeds = list(profile['ltp_random_states'])
+    sp_seeds = list(profile["sp_random_states"])
+    sp_weights = list(profile["sp_weights"])
+    ltp_seeds = list(profile["ltp_random_states"])
 
     def _make_sp_model(seed):
         return HistGradientBoostingClassifier(
@@ -1385,21 +1496,23 @@ def _evaluate_foldwise_targetp_specialist_postprocess(
             learning_rate=0.04,
             l2_regularization=0.01,
             random_state=int(seed),
-            class_weight='balanced',
+            class_weight="balanced",
         )
 
     def _make_ltp_model(seed):
         return ExtraTreesClassifier(
             n_estimators=500,
             random_state=int(seed),
-            class_weight='balanced',
-            max_features='sqrt',
+            class_weight="balanced",
+            max_features="sqrt",
             min_samples_leaf=1,
             n_jobs=_SKLEARN_N_JOBS,
         )
 
     for fold_id in sorted(set([str(v) for v in fold_ids.tolist()])):
-        valid_mask = np.asarray([str(v) == fold_id for v in fold_ids.tolist()], dtype=bool)
+        valid_mask = np.asarray(
+            [str(v) == fold_id for v in fold_ids.tolist()], dtype=bool
+        )
         train_mask = ~valid_mask
         if int(np.sum(valid_mask)) == 0 or int(np.sum(train_mask)) == 0:
             continue
@@ -1445,7 +1558,7 @@ def _evaluate_foldwise_targetp_specialist_postprocess(
             fold_ids=fold_ids,
             fit_mask=train_mask,
             score_mask=train_mask,
-            positive_idx=class_to_idx['SP'],
+            positive_idx=class_to_idx["SP"],
             make_models=[(lambda seed=seed: _make_sp_model(seed)) for seed in sp_seeds],
             weights=sp_weights,
         )
@@ -1458,8 +1571,7 @@ def _evaluate_foldwise_targetp_specialist_postprocess(
             class_names=class_names,
         )
         ctp_ltp_train_mask = train_mask & (
-            (true_idx == class_to_idx['cTP'])
-            | (true_idx == class_to_idx['lTP'])
+            (true_idx == class_to_idx["cTP"]) | (true_idx == class_to_idx["lTP"])
         )
         ltp_train_scores = _binary_crossfit_ensemble_scores(
             features=ltp_features,
@@ -1467,8 +1579,10 @@ def _evaluate_foldwise_targetp_specialist_postprocess(
             fold_ids=fold_ids,
             fit_mask=ctp_ltp_train_mask,
             score_mask=train_mask,
-            positive_idx=class_to_idx['lTP'],
-            make_models=[(lambda seed=seed: _make_ltp_model(seed)) for seed in ltp_seeds],
+            positive_idx=class_to_idx["lTP"],
+            make_models=[
+                (lambda seed=seed: _make_ltp_model(seed)) for seed in ltp_seeds
+            ],
             weights=None,
         )
         threshold_selection = _optimize_specialist_threshold_pair(
@@ -1480,26 +1594,28 @@ def _evaluate_foldwise_targetp_specialist_postprocess(
             true_idx=true_idx[train_mask],
             class_names=class_names,
             ltp_mass_threshold=ltp_mass_threshold,
-            extra_sp_thresholds=[profile['sp_threshold']],
-            extra_ltp_thresholds=[profile['ltp_threshold']],
-            fallback_sp_threshold=profile['sp_threshold'],
-            fallback_ltp_threshold=profile['ltp_threshold'],
+            extra_sp_thresholds=[profile["sp_threshold"]],
+            extra_ltp_thresholds=[profile["ltp_threshold"]],
+            fallback_sp_threshold=profile["sp_threshold"],
+            fallback_ltp_threshold=profile["ltp_threshold"],
             fallback_if_best_min_margin_below=(
-                0.0 if str(threshold_objective).strip().lower() == 'targetp_margin' else None
+                0.0
+                if str(threshold_objective).strip().lower() == "targetp_margin"
+                else None
             ),
             threshold_objective=threshold_objective,
         )
-        sp_threshold = threshold_selection['sp_threshold']
-        ltp_threshold = threshold_selection['ltp_threshold']
-        sp_f1 = threshold_selection['sp_binary_f1']
-        sp_counts = threshold_selection['sp_binary_counts']
-        train_rank = threshold_selection['rank']
+        sp_threshold = threshold_selection["sp_threshold"]
+        ltp_threshold = threshold_selection["ltp_threshold"]
+        sp_f1 = threshold_selection["sp_binary_f1"]
+        sp_counts = threshold_selection["sp_binary_counts"]
+        train_rank = threshold_selection["rank"]
         sp_valid_scores = _fit_binary_predict_ensemble_scores(
             features=sp_features,
             true_idx=true_idx,
             fit_mask=train_mask,
             predict_mask=valid_mask,
-            positive_idx=class_to_idx['SP'],
+            positive_idx=class_to_idx["SP"],
             make_models=[(lambda seed=seed: _make_sp_model(seed)) for seed in sp_seeds],
             weights=sp_weights,
         )
@@ -1508,8 +1624,10 @@ def _evaluate_foldwise_targetp_specialist_postprocess(
             true_idx=true_idx,
             fit_mask=ctp_ltp_train_mask,
             predict_mask=valid_mask,
-            positive_idx=class_to_idx['lTP'],
-            make_models=[(lambda seed=seed: _make_ltp_model(seed)) for seed in ltp_seeds],
+            positive_idx=class_to_idx["lTP"],
+            make_models=[
+                (lambda seed=seed: _make_ltp_model(seed)) for seed in ltp_seeds
+            ],
             weights=None,
         )
         pred_idx[valid_mask] = _apply_specialist_postprocess_predictions(
@@ -1523,20 +1641,30 @@ def _evaluate_foldwise_targetp_specialist_postprocess(
             class_names=class_names,
             ltp_mass_threshold=ltp_mass_threshold,
         )
-        fold_rows.append({
-            'fold_id': fold_id,
-            'n_train': int(np.sum(train_mask)),
-            'n_valid': int(np.sum(valid_mask)),
-            'global_alpha': float(best_alpha),
-            'alpha_by_class': {class_names[i]: float(alpha_by_class[i]) for i in range(len(class_names))},
-            'class_thresholds': {class_names[i]: float(threshold_by_class[i]) for i in range(len(class_names))},
-            'sp_threshold': float(sp_threshold),
-            'sp_binary_f1_on_train_oof': float(sp_f1),
-            'sp_binary_counts_on_train_oof': sp_counts,
-            'ltp_threshold': float(ltp_threshold),
-            'train_threshold_rank': [float(v) for v in train_rank],
-            'threshold_selection_source': str(threshold_selection['selection_source']),
-        })
+        fold_rows.append(
+            {
+                "fold_id": fold_id,
+                "n_train": int(np.sum(train_mask)),
+                "n_valid": int(np.sum(valid_mask)),
+                "global_alpha": float(best_alpha),
+                "alpha_by_class": {
+                    class_names[i]: float(alpha_by_class[i])
+                    for i in range(len(class_names))
+                },
+                "class_thresholds": {
+                    class_names[i]: float(threshold_by_class[i])
+                    for i in range(len(class_names))
+                },
+                "sp_threshold": float(sp_threshold),
+                "sp_binary_f1_on_train_oof": float(sp_f1),
+                "sp_binary_counts_on_train_oof": sp_counts,
+                "ltp_threshold": float(ltp_threshold),
+                "train_threshold_rank": [float(v) for v in train_rank],
+                "threshold_selection_source": str(
+                    threshold_selection["selection_source"]
+                ),
+            }
+        )
 
     metrics = _metrics_from_prediction_indices(
         pred_idx=pred_idx,
@@ -1544,19 +1672,23 @@ def _evaluate_foldwise_targetp_specialist_postprocess(
         class_names=class_names,
     )
     return {
-        'description': (
-            'Each held-out fold is predicted using blend, specialist ensembles, '
-            'and specialist thresholds selected on the other folds.'
+        "description": (
+            "Each held-out fold is predicted using blend, specialist ensembles, "
+            "and specialist thresholds selected on the other folds."
         ),
-        'calibration_profile': str(profile['name']),
-        'sp_model': 'weighted HistGradientBoostingClassifier scores with random_state {}'.format(sp_seeds),
-        'ltp_model': 'mean of ExtraTreesClassifier scores with random_state {}'.format(ltp_seeds),
-        'sp_random_states': list(sp_seeds),
-        'sp_weights': [float(v) for v in sp_weights],
-        'ltp_random_states': list(ltp_seeds),
-        'threshold_objective': str(threshold_objective),
-        'metrics': metrics,
-        'folds': fold_rows,
+        "calibration_profile": str(profile["name"]),
+        "sp_model": "weighted HistGradientBoostingClassifier scores with random_state {}".format(
+            sp_seeds
+        ),
+        "ltp_model": "mean of ExtraTreesClassifier scores with random_state {}".format(
+            ltp_seeds
+        ),
+        "sp_random_states": list(sp_seeds),
+        "sp_weights": [float(v) for v in sp_weights],
+        "ltp_random_states": list(ltp_seeds),
+        "threshold_objective": str(threshold_objective),
+        "metrics": metrics,
+        "folds": fold_rows,
     }
 
 
@@ -1570,13 +1702,16 @@ def _evaluate_foldwise_fixed_targetp_specialist_postprocess(
     alpha_grid,
     threshold_grid,
     ltp_mass_threshold=None,
-    score_npz='',
+    score_npz="",
 ):
     try:
-        from sklearn.ensemble import ExtraTreesClassifier, HistGradientBoostingClassifier
+        from sklearn.ensemble import (
+            ExtraTreesClassifier,
+            HistGradientBoostingClassifier,
+        )
     except ImportError as exc:
         raise RuntimeError(
-            '--foldwise_specialist_fixed_eval requires scikit-learn in the benchmark environment.'
+            "--foldwise_specialist_fixed_eval requires scikit-learn in the benchmark environment."
         ) from exc
 
     prob_a = np.asarray(prob_a, dtype=np.float64)
@@ -1584,31 +1719,33 @@ def _evaluate_foldwise_fixed_targetp_specialist_postprocess(
     true_idx = np.asarray(true_idx, dtype=np.int64)
     fold_ids = np.asarray(fold_ids)
     if len(rows) != prob_a.shape[0]:
-        raise ValueError('Training rows and probability rows differ in foldwise fixed specialist eval.')
+        raise ValueError(
+            "Training rows and probability rows differ in foldwise fixed specialist eval."
+        )
 
     class_to_idx = {name: i for i, name in enumerate(class_names)}
-    plant_mask = np.asarray([
-        str(row.get('organism_group', '')).strip().lower() == 'plant'
-        for row in rows
-    ], dtype=bool)
+    plant_mask = np.asarray(
+        [str(row.get("organism_group", "")).strip().lower() == "plant" for row in rows],
+        dtype=bool,
+    )
     pred_idx = np.zeros((prob_a.shape[0],), dtype=np.int64)
     fold_rows = list()
     profile = TARGETP_SPECIALIST_FIXED_PROFILE
-    sp_seeds = list(profile['sp_random_states'])
-    sp_weights = list(profile['sp_weights'])
-    ltp_seeds = list(profile['ltp_random_states'])
-    sp_threshold = float(profile['sp_threshold'])
-    ltp_threshold = float(profile['ltp_threshold'])
+    sp_seeds = list(profile["sp_random_states"])
+    sp_weights = list(profile["sp_weights"])
+    ltp_seeds = list(profile["ltp_random_states"])
+    sp_threshold = float(profile["sp_threshold"])
+    ltp_threshold = float(profile["ltp_threshold"])
     if ltp_mass_threshold is None:
-        ltp_mass_threshold = float(profile['ltp_mass_threshold'])
-    score_npz = str(score_npz or '').strip()
+        ltp_mass_threshold = float(profile["ltp_mass_threshold"])
+    score_npz = str(score_npz or "").strip()
     score_cache = None
-    if score_npz != '':
+    if score_npz != "":
         score_cache = {
-            'base_prob': np.zeros_like(prob_a, dtype=np.float64),
-            'class_thresholds': np.zeros_like(prob_a, dtype=np.float64),
-            'sp_scores': np.zeros((prob_a.shape[0],), dtype=np.float64),
-            'ltp_scores': np.zeros((prob_a.shape[0],), dtype=np.float64),
+            "base_prob": np.zeros_like(prob_a, dtype=np.float64),
+            "class_thresholds": np.zeros_like(prob_a, dtype=np.float64),
+            "sp_scores": np.zeros((prob_a.shape[0],), dtype=np.float64),
+            "ltp_scores": np.zeros((prob_a.shape[0],), dtype=np.float64),
         }
 
     def _make_sp_model(seed):
@@ -1617,21 +1754,23 @@ def _evaluate_foldwise_fixed_targetp_specialist_postprocess(
             learning_rate=0.04,
             l2_regularization=0.01,
             random_state=int(seed),
-            class_weight='balanced',
+            class_weight="balanced",
         )
 
     def _make_ltp_model(seed):
         return ExtraTreesClassifier(
             n_estimators=500,
             random_state=int(seed),
-            class_weight='balanced',
-            max_features='sqrt',
+            class_weight="balanced",
+            max_features="sqrt",
             min_samples_leaf=1,
             n_jobs=_SKLEARN_N_JOBS,
         )
 
     for fold_id in sorted(set([str(v) for v in fold_ids.tolist()])):
-        valid_mask = np.asarray([str(v) == fold_id for v in fold_ids.tolist()], dtype=bool)
+        valid_mask = np.asarray(
+            [str(v) == fold_id for v in fold_ids.tolist()], dtype=bool
+        )
         train_mask = ~valid_mask
         if int(np.sum(valid_mask)) == 0 or int(np.sum(train_mask)) == 0:
             continue
@@ -1678,15 +1817,14 @@ def _evaluate_foldwise_fixed_targetp_specialist_postprocess(
             class_names=class_names,
         )
         ctp_ltp_train_mask = train_mask & (
-            (true_idx == class_to_idx['cTP'])
-            | (true_idx == class_to_idx['lTP'])
+            (true_idx == class_to_idx["cTP"]) | (true_idx == class_to_idx["lTP"])
         )
         sp_valid_scores = _fit_binary_predict_ensemble_scores(
             features=sp_features,
             true_idx=true_idx,
             fit_mask=train_mask,
             predict_mask=valid_mask,
-            positive_idx=class_to_idx['SP'],
+            positive_idx=class_to_idx["SP"],
             make_models=[(lambda seed=seed: _make_sp_model(seed)) for seed in sp_seeds],
             weights=sp_weights,
         )
@@ -1695,8 +1833,10 @@ def _evaluate_foldwise_fixed_targetp_specialist_postprocess(
             true_idx=true_idx,
             fit_mask=ctp_ltp_train_mask,
             predict_mask=valid_mask,
-            positive_idx=class_to_idx['lTP'],
-            make_models=[(lambda seed=seed: _make_ltp_model(seed)) for seed in ltp_seeds],
+            positive_idx=class_to_idx["lTP"],
+            make_models=[
+                (lambda seed=seed: _make_ltp_model(seed)) for seed in ltp_seeds
+            ],
             weights=None,
         )
         pred_idx[valid_mask] = _apply_specialist_postprocess_predictions(
@@ -1711,18 +1851,28 @@ def _evaluate_foldwise_fixed_targetp_specialist_postprocess(
             ltp_mass_threshold=ltp_mass_threshold,
         )
         if score_cache is not None:
-            score_cache['base_prob'][valid_mask, :] = fold_base_prob[valid_mask, :]
-            score_cache['class_thresholds'][valid_mask, :] = threshold_by_class.reshape((1, -1))
-            score_cache['sp_scores'][valid_mask] = sp_valid_scores[valid_mask]
-            score_cache['ltp_scores'][valid_mask] = ltp_valid_scores[valid_mask]
-        fold_rows.append({
-            'fold_id': fold_id,
-            'n_train': int(np.sum(train_mask)),
-            'n_valid': int(np.sum(valid_mask)),
-            'global_alpha': float(best_alpha),
-            'alpha_by_class': {class_names[i]: float(alpha_by_class[i]) for i in range(len(class_names))},
-            'class_thresholds': {class_names[i]: float(threshold_by_class[i]) for i in range(len(class_names))},
-        })
+            score_cache["base_prob"][valid_mask, :] = fold_base_prob[valid_mask, :]
+            score_cache["class_thresholds"][valid_mask, :] = threshold_by_class.reshape(
+                (1, -1)
+            )
+            score_cache["sp_scores"][valid_mask] = sp_valid_scores[valid_mask]
+            score_cache["ltp_scores"][valid_mask] = ltp_valid_scores[valid_mask]
+        fold_rows.append(
+            {
+                "fold_id": fold_id,
+                "n_train": int(np.sum(train_mask)),
+                "n_valid": int(np.sum(valid_mask)),
+                "global_alpha": float(best_alpha),
+                "alpha_by_class": {
+                    class_names[i]: float(alpha_by_class[i])
+                    for i in range(len(class_names))
+                },
+                "class_thresholds": {
+                    class_names[i]: float(threshold_by_class[i])
+                    for i in range(len(class_names))
+                },
+            }
+        )
 
     metrics = _metrics_from_prediction_indices(
         pred_idx=pred_idx,
@@ -1731,50 +1881,54 @@ def _evaluate_foldwise_fixed_targetp_specialist_postprocess(
     )
     if score_cache is not None:
         score_dir = os.path.dirname(score_npz)
-        if score_dir != '':
+        if score_dir != "":
             os.makedirs(score_dir, exist_ok=True)
         np.savez_compressed(
             score_npz,
-            base_prob=score_cache['base_prob'],
-            class_thresholds=score_cache['class_thresholds'],
-            sp_scores=score_cache['sp_scores'],
-            ltp_scores=score_cache['ltp_scores'],
+            base_prob=score_cache["base_prob"],
+            class_thresholds=score_cache["class_thresholds"],
+            sp_scores=score_cache["sp_scores"],
+            ltp_scores=score_cache["ltp_scores"],
             true_idx=true_idx,
             plant_mask=plant_mask,
             fold_ids=fold_ids,
             class_names=np.asarray(class_names),
-            profile_name=str(profile['name']),
+            profile_name=str(profile["name"]),
             sp_threshold=float(sp_threshold),
             ltp_threshold=float(ltp_threshold),
             ltp_mass_threshold=float(ltp_mass_threshold),
         )
     out = {
-        'description': 'Each held-out fold is predicted using fixed calibrated TargetP specialist ensembles. Specialist thresholds are fixed benchmark calibration values, not selected on each training-fold complement.',
-        'calibration_profile': str(profile['name']),
-        'sp_model': 'weighted HistGradientBoostingClassifier scores with random_state {}'.format(sp_seeds),
-        'ltp_model': 'mean of ExtraTreesClassifier scores with random_state {}'.format(ltp_seeds),
-        'sp_random_states': list(sp_seeds),
-        'sp_weights': [float(v) for v in sp_weights],
-        'ltp_random_states': list(ltp_seeds),
-        'sp_threshold': float(sp_threshold),
-        'ltp_threshold': float(ltp_threshold),
-        'ltp_mass_threshold': float(ltp_mass_threshold),
-        'metrics': metrics,
-        'folds': fold_rows,
+        "description": "Each held-out fold is predicted using fixed calibrated TargetP specialist ensembles. Specialist thresholds are fixed benchmark calibration values, not selected on each training-fold complement.",
+        "calibration_profile": str(profile["name"]),
+        "sp_model": "weighted HistGradientBoostingClassifier scores with random_state {}".format(
+            sp_seeds
+        ),
+        "ltp_model": "mean of ExtraTreesClassifier scores with random_state {}".format(
+            ltp_seeds
+        ),
+        "sp_random_states": list(sp_seeds),
+        "sp_weights": [float(v) for v in sp_weights],
+        "ltp_random_states": list(ltp_seeds),
+        "sp_threshold": float(sp_threshold),
+        "ltp_threshold": float(ltp_threshold),
+        "ltp_mass_threshold": float(ltp_mass_threshold),
+        "metrics": metrics,
+        "folds": fold_rows,
     }
-    if score_npz != '':
-        out['score_npz'] = score_npz
+    if score_npz != "":
+        out["score_npz"] = score_npz
     return out
 
 
 def _model_type_from_arch(model_arch):
-    if model_arch == 'nearest_centroid':
-        return 'nearest_centroid_v1'
-    if model_arch == 'bilstm_attention':
-        return 'bilstm_attention_v1'
-    if model_arch == 'esm_head':
-        return 'esm_head_v1'
-    raise ValueError('Unsupported model_arch: {}'.format(model_arch))
+    if model_arch == "nearest_centroid":
+        return "nearest_centroid_v1"
+    if model_arch == "bilstm_attention":
+        return "bilstm_attention_v1"
+    if model_arch == "esm_head":
+        return "esm_head_v1"
+    raise ValueError("Unsupported model_arch: {}".format(model_arch))
 
 
 def _predict_oof_fold(
@@ -1808,9 +1962,9 @@ def _predict_oof_fold(
         labels=perox_train,
     )
     tmp_model = {
-        'model_type': _model_type_from_arch(model_arch=model_arch),
-        'localization_model': local_model,
-        'perox_model': perox_model,
+        "model_type": _model_type_from_arch(model_arch=model_arch),
+        "localization_model": local_model,
+        "perox_model": perox_model,
     }
 
     prob_matrix = np.zeros((len(test_idx), len(LOCALIZATION_CLASSES)), dtype=np.float64)
@@ -1820,10 +1974,10 @@ def _predict_oof_fold(
         pred = predict_localization_and_peroxisome(
             aa_seq=aa_test[row_i],
             model=tmp_model,
-            organism_group='',
+            organism_group="",
         )
         probs = normalize_class_probabilities(
-            class_probs=pred.get('class_probabilities', {}),
+            class_probs=pred.get("class_probabilities", {}),
         )
         for class_i, class_name in enumerate(LOCALIZATION_CLASSES):
             prob_matrix[row_i, class_i] = float(probs.get(class_name, 0.0))
@@ -1850,7 +2004,7 @@ def _run_model_oof_with_fold_cache(
             n_folds=n_folds,
             seed=int(cv_seed),
         )
-        fold_labels = ['fold{}'.format(i + 1) for i in range(len(folds))]
+        fold_labels = ["fold{}".format(i + 1) for i in range(len(folds))]
     else:
         folds = build_predefined_folds(
             class_labels=class_labels,
@@ -1884,7 +2038,7 @@ def _run_model_oof_with_fold_cache(
         )
         if os.path.exists(cache_path):
             print(
-                '[OOF] {} {} cache hit: {}'.format(model_arch, fold_label, cache_path),
+                "[OOF] {} {} cache hit: {}".format(model_arch, fold_label, cache_path),
                 file=sys.stderr,
                 flush=True,
             )
@@ -1893,15 +2047,18 @@ def _run_model_oof_with_fold_cache(
                 class_names=list(LOCALIZATION_CLASSES),
                 cache_key=cache_key,
             )
-            if (
-                row_index.shape[0] != test_idx.shape[0]
-                or np.any(np.sort(row_index) != np.sort(np.asarray(test_idx, dtype=np.int64)))
+            if row_index.shape[0] != test_idx.shape[0] or np.any(
+                np.sort(row_index) != np.sort(np.asarray(test_idx, dtype=np.int64))
             ):
-                raise ValueError('OOF fold cache row indices do not match current fold: {}'.format(cache_path))
+                raise ValueError(
+                    "OOF fold cache row indices do not match current fold: {}".format(
+                        cache_path
+                    )
+                )
             cache_used += 1
         else:
             print(
-                '[OOF] {} {} start (n_test={})'.format(
+                "[OOF] {} {} start (n_test={})".format(
                     model_arch,
                     fold_label,
                     int(test_idx.shape[0]),
@@ -1913,7 +2070,7 @@ def _run_model_oof_with_fold_cache(
             train_mask[test_idx] = False
             train_idx = np.where(train_mask)[0]
             if len(train_idx) == 0:
-                raise ValueError('Empty train split detected in cross validation.')
+                raise ValueError("Empty train split detected in cross validation.")
             row_index = np.asarray(test_idx, dtype=np.int64)
             prob_matrix, true_idx = _predict_oof_fold(
                 x=x,
@@ -1937,7 +2094,9 @@ def _run_model_oof_with_fold_cache(
             )
             cache_written += 1
             print(
-                '[OOF] {} {} wrote cache: {}'.format(model_arch, fold_label, cache_path),
+                "[OOF] {} {} wrote cache: {}".format(
+                    model_arch, fold_label, cache_path
+                ),
                 file=sys.stderr,
                 flush=True,
             )
@@ -1955,14 +2114,16 @@ def _run_model_oof_with_fold_cache(
     true_idx = true_idx[order]
     expected = np.arange(n_sample, dtype=np.int64)
     if row_index.shape[0] != n_sample or np.any(row_index != expected):
-        raise ValueError('OOF fold caches are incomplete or have duplicate row indices.')
+        raise ValueError(
+            "OOF fold caches are incomplete or have duplicate row indices."
+        )
     return {
-        'prob_matrix': prob_matrix,
-        'true_idx': true_idx,
-        'fold_cache_dir': str(fold_cache_dir),
-        'fold_cache_files': cache_files,
-        'fold_cache_used': int(cache_used),
-        'fold_cache_written': int(cache_written),
+        "prob_matrix": prob_matrix,
+        "true_idx": true_idx,
+        "fold_cache_dir": str(fold_cache_dir),
+        "fold_cache_files": cache_files,
+        "fold_cache_used": int(cache_used),
+        "fold_cache_written": int(cache_written),
     }
 
 
@@ -1972,25 +2133,27 @@ def _run_model_oof(
     localize_strategy,
     dl_train_params,
     cv_seed,
-    fold_cache_dir='',
+    fold_cache_dir="",
 ):
     rows = _read_training_rows(
         path=training_tsv,
-        required_columns=['sequence', 'localization', 'peroxisome', 'fold_id'],
+        required_columns=["sequence", "localization", "peroxisome", "fold_id"],
     )
-    x, aa_sequences, class_labels, perox_labels, skipped, fold_ids = build_training_matrix(
-        rows=rows,
-        seq_col='sequence',
-        seqtype='protein',
-        codontable=1,
-        label_mode='explicit',
-        localization_col='localization',
-        perox_col='peroxisome',
-        skip_ambiguous=True,
-        cv_fold_col='fold_id',
+    x, aa_sequences, class_labels, perox_labels, skipped, fold_ids = (
+        build_training_matrix(
+            rows=rows,
+            seq_col="sequence",
+            seqtype="protein",
+            codontable=1,
+            label_mode="explicit",
+            localization_col="localization",
+            perox_col="peroxisome",
+            skip_ambiguous=True,
+            cv_fold_col="fold_id",
+        )
     )
     cache_info = None
-    if str(fold_cache_dir or '').strip() != '':
+    if str(fold_cache_dir or "").strip() != "":
         cache_info = _run_model_oof_with_fold_cache(
             x=x,
             aa_sequences=aa_sequences,
@@ -2004,8 +2167,8 @@ def _run_model_oof(
             dl_train_params=dl_train_params,
             fold_cache_dir=str(fold_cache_dir),
         )
-        prob_matrix = cache_info['prob_matrix']
-        true_idx = cache_info['true_idx']
+        prob_matrix = cache_info["prob_matrix"]
+        true_idx = cache_info["true_idx"]
     else:
         cv = evaluate_cross_validation(
             x=x,
@@ -2016,12 +2179,12 @@ def _run_model_oof(
             seed=int(cv_seed),
             model_arch=model_arch,
             dl_train_params=dl_train_params,
-            dl_device=str(dl_train_params.get('device', 'cpu')),
+            dl_device=str(dl_train_params.get("device", "cpu")),
             localize_strategy=localize_strategy,
             fold_ids=fold_ids,
         )
         prob_matrix, true_idx = _oof_rows_to_prob_and_true(
-            oof_rows=cv['oof_rows'],
+            oof_rows=cv["oof_rows"],
             class_names=list(LOCALIZATION_CLASSES),
         )
     metrics = _metrics_from_prob_matrix(
@@ -2030,68 +2193,68 @@ def _run_model_oof(
         class_names=list(LOCALIZATION_CLASSES),
     )
     out = {
-        'prob_matrix': prob_matrix,
-        'true_idx': true_idx,
-        'metrics': metrics,
-        'n_rows_total': int(len(rows)),
-        'n_rows_used': int(prob_matrix.shape[0]),
-        'n_rows_skipped': int(skipped),
+        "prob_matrix": prob_matrix,
+        "true_idx": true_idx,
+        "metrics": metrics,
+        "n_rows_total": len(rows),
+        "n_rows_used": int(prob_matrix.shape[0]),
+        "n_rows_skipped": int(skipped),
     }
     if cache_info is not None:
-        out['fold_cache_dir'] = cache_info['fold_cache_dir']
-        out['fold_cache_files'] = cache_info['fold_cache_files']
-        out['fold_cache_used'] = cache_info['fold_cache_used']
-        out['fold_cache_written'] = cache_info['fold_cache_written']
+        out["fold_cache_dir"] = cache_info["fold_cache_dir"]
+        out["fold_cache_files"] = cache_info["fold_cache_files"]
+        out["fold_cache_used"] = cache_info["fold_cache_used"]
+        out["fold_cache_written"] = cache_info["fold_cache_written"]
     return out
 
 
 def _bilstm_dl_params_from_args(args):
     return {
-        'seq_len': int(args.bilstm_dl_seq_len),
-        'embed_dim': int(args.bilstm_dl_embed_dim),
-        'hidden_dim': int(args.bilstm_dl_hidden_dim),
-        'num_layers': int(args.bilstm_dl_num_layers),
-        'dropout': float(args.bilstm_dl_dropout),
-        'epochs': int(args.bilstm_dl_epochs),
-        'batch_size': int(args.bilstm_dl_batch_size),
-        'learning_rate': float(args.bilstm_dl_lr),
-        'weight_decay': float(args.bilstm_dl_weight_decay),
-        'use_class_weight': _to_bool_yes_no(args.bilstm_dl_class_weight),
-        'loss_name': str(args.bilstm_dl_loss),
-        'balanced_batch': _to_bool_yes_no(args.bilstm_dl_balanced_batch),
-        'feature_fusion': _to_bool_yes_no(args.bilstm_dl_feature_fusion),
-        'aux_tp_weight': 0.0,
-        'aux_ctp_ltp_weight': 0.0,
-        'seed': int(args.bilstm_dl_seed),
-        'device': str(args.bilstm_dl_device),
-        'esm_model_name': '',
-        'esm_model_local_dir': '',
-        'esm_pooling': 'cls',
-        'esm_max_len': 0,
+        "seq_len": int(args.bilstm_dl_seq_len),
+        "embed_dim": int(args.bilstm_dl_embed_dim),
+        "hidden_dim": int(args.bilstm_dl_hidden_dim),
+        "num_layers": int(args.bilstm_dl_num_layers),
+        "dropout": float(args.bilstm_dl_dropout),
+        "epochs": int(args.bilstm_dl_epochs),
+        "batch_size": int(args.bilstm_dl_batch_size),
+        "learning_rate": float(args.bilstm_dl_lr),
+        "weight_decay": float(args.bilstm_dl_weight_decay),
+        "use_class_weight": _to_bool_yes_no(args.bilstm_dl_class_weight),
+        "loss_name": str(args.bilstm_dl_loss),
+        "balanced_batch": _to_bool_yes_no(args.bilstm_dl_balanced_batch),
+        "feature_fusion": _to_bool_yes_no(args.bilstm_dl_feature_fusion),
+        "aux_tp_weight": 0.0,
+        "aux_ctp_ltp_weight": 0.0,
+        "seed": int(args.bilstm_dl_seed),
+        "device": str(args.bilstm_dl_device),
+        "esm_model_name": "",
+        "esm_model_local_dir": "",
+        "esm_pooling": "cls",
+        "esm_max_len": 0,
     }
 
 
 def _esm_dl_params_from_args(args):
     return {
-        'seq_len': 0,
-        'embed_dim': 0,
-        'hidden_dim': 0,
-        'num_layers': 0,
-        'dropout': 0.0,
-        'epochs': int(args.esm_dl_epochs),
-        'batch_size': int(args.esm_dl_batch_size),
-        'learning_rate': float(args.esm_dl_lr),
-        'weight_decay': float(args.esm_dl_weight_decay),
-        'use_class_weight': _to_bool_yes_no(args.esm_dl_class_weight),
-        'loss_name': 'ce',
-        'balanced_batch': False,
-        'seed': int(args.esm_dl_seed),
-        'device': str(args.esm_dl_device),
-        'esm_model_name': str(args.esm_model_name),
-        'esm_model_revision': str(args.esm_model_revision),
-        'esm_model_local_dir': str(args.esm_model_local_dir),
-        'esm_pooling': str(args.esm_pooling),
-        'esm_max_len': int(args.esm_max_len),
+        "seq_len": 0,
+        "embed_dim": 0,
+        "hidden_dim": 0,
+        "num_layers": 0,
+        "dropout": 0.0,
+        "epochs": int(args.esm_dl_epochs),
+        "batch_size": int(args.esm_dl_batch_size),
+        "learning_rate": float(args.esm_dl_lr),
+        "weight_decay": float(args.esm_dl_weight_decay),
+        "use_class_weight": _to_bool_yes_no(args.esm_dl_class_weight),
+        "loss_name": "ce",
+        "balanced_batch": False,
+        "seed": int(args.esm_dl_seed),
+        "device": str(args.esm_dl_device),
+        "esm_model_name": str(args.esm_model_name),
+        "esm_model_revision": str(args.esm_model_revision),
+        "esm_model_local_dir": str(args.esm_model_local_dir),
+        "esm_pooling": str(args.esm_pooling),
+        "esm_max_len": int(args.esm_max_len),
     }
 
 
@@ -2105,34 +2268,34 @@ def _build_targetp_blend_runtime_model(
     metadata=None,
 ):
     localization_model = {
-        'class_order': list(LOCALIZATION_CLASSES),
-        'base_models': [
+        "class_order": list(LOCALIZATION_CLASSES),
+        "base_models": [
             {
-                'model_type': str(base_model_a['model_type']),
-                'localization_model': base_model_a['localization_model'],
+                "model_type": str(base_model_a["model_type"]),
+                "localization_model": base_model_a["localization_model"],
             },
             {
-                'model_type': str(base_model_b['model_type']),
-                'localization_model': base_model_b['localization_model'],
+                "model_type": str(base_model_b["model_type"]),
+                "localization_model": base_model_b["localization_model"],
             },
         ],
-        'alpha_by_class': {
+        "alpha_by_class": {
             class_name: float(alpha_by_class[class_name])
             for class_name in LOCALIZATION_CLASSES
         },
-        'class_thresholds': {
+        "class_thresholds": {
             class_name: float(class_thresholds[class_name])
             for class_name in LOCALIZATION_CLASSES
         },
     }
     if specialist_postprocess is not None:
-        localization_model['targetp_specialist_postprocess'] = specialist_postprocess
+        localization_model["targetp_specialist_postprocess"] = specialist_postprocess
     return {
-        'model_type': 'targetp_blend_v1',
-        'feature_names': list(FEATURE_NAMES),
-        'localization_model': localization_model,
-        'perox_model': perox_model,
-        'metadata': {} if metadata is None else dict(metadata),
+        "model_type": "targetp_blend_v1",
+        "feature_names": list(FEATURE_NAMES),
+        "localization_model": localization_model,
+        "perox_model": perox_model,
+        "metadata": {} if metadata is None else dict(metadata),
     }
 
 
@@ -2150,21 +2313,24 @@ def build_targetp_pair_blend_runtime_model(
     base_model_b,
     alpha_by_class,
     class_thresholds=None,
-    perox_source='a',
+    perox_source="a",
     metadata=None,
 ):
     """Build a CPU-runtime TargetP blend from two already-trained models."""
     if not isinstance(base_model_a, dict) or not isinstance(base_model_b, dict):
-        raise ValueError('base_model_a and base_model_b should be model dictionaries.')
-    for label, model in [('base_model_a', base_model_a), ('base_model_b', base_model_b)]:
-        if str(model.get('model_type', '')).strip() == '':
-            raise ValueError('{} is missing model_type.'.format(label))
-        if not isinstance(model.get('localization_model', None), dict):
-            raise ValueError('{} is missing localization_model.'.format(label))
-        if not isinstance(model.get('perox_model', None), dict):
-            raise ValueError('{} is missing perox_model.'.format(label))
-    perox_source = str(perox_source or 'a').strip().lower()
-    if perox_source not in ['a', 'b']:
+        raise ValueError("base_model_a and base_model_b should be model dictionaries.")
+    for label, model in [
+        ("base_model_a", base_model_a),
+        ("base_model_b", base_model_b),
+    ]:
+        if str(model.get("model_type", "")).strip() == "":
+            raise ValueError("{} is missing model_type.".format(label))
+        if not isinstance(model.get("localization_model", None), dict):
+            raise ValueError("{} is missing localization_model.".format(label))
+        if not isinstance(model.get("perox_model", None), dict):
+            raise ValueError("{} is missing perox_model.".format(label))
+    perox_source = str(perox_source or "a").strip().lower()
+    if perox_source not in ["a", "b"]:
         raise ValueError("perox_source should be 'a' or 'b'.")
     thresholds = (
         {class_name: 1.0 for class_name in LOCALIZATION_CLASSES}
@@ -2172,20 +2338,25 @@ def build_targetp_pair_blend_runtime_model(
         else _class_value_dict(class_thresholds, default=1.0)
     )
     model_metadata = {} if metadata is None else dict(metadata)
-    model_metadata.update({
-        'model_arch': str(model_metadata.get('model_arch', 'targetp_pair_blend_v1')),
-        'base_model_types': [
-            str(base_model_a.get('model_type', '')),
-            str(base_model_b.get('model_type', '')),
-        ],
-        'perox_source': perox_source,
-    })
+    model_metadata.update(
+        {
+            "model_arch": str(
+                model_metadata.get("model_arch", "targetp_pair_blend_v1")
+            ),
+            "base_model_types": [
+                str(base_model_a.get("model_type", "")),
+                str(base_model_b.get("model_type", "")),
+            ],
+            "perox_source": perox_source,
+        }
+    )
     return _build_targetp_blend_runtime_model(
         base_model_a=base_model_a,
         base_model_b=base_model_b,
         perox_model=(
-            base_model_a['perox_model']
-            if perox_source == 'a' else base_model_b['perox_model']
+            base_model_a["perox_model"]
+            if perox_source == "a"
+            else base_model_b["perox_model"]
         ),
         alpha_by_class=_class_value_dict(alpha_by_class, default=1.0),
         class_thresholds=thresholds,
@@ -2202,14 +2373,19 @@ def _fit_full_targetp_specialist_postprocess(
     class_names,
 ):
     try:
-        from sklearn.ensemble import ExtraTreesClassifier, HistGradientBoostingClassifier
+        from sklearn.ensemble import (
+            ExtraTreesClassifier,
+            HistGradientBoostingClassifier,
+        )
     except ImportError as exc:
         raise RuntimeError(
-            '--model_out with specialist postprocess requires scikit-learn.'
+            "--model_out with specialist postprocess requires scikit-learn."
         ) from exc
 
     if len(rows) != np.asarray(base_prob).shape[0]:
-        raise ValueError('Training rows and probability rows differ in runtime specialist export.')
+        raise ValueError(
+            "Training rows and probability rows differ in runtime specialist export."
+        )
 
     profile = TARGETP_SPECIALIST_FIXED_PROFILE
     class_to_idx = {name: i for i, name in enumerate(class_names)}
@@ -2220,15 +2396,15 @@ def _fit_full_targetp_specialist_postprocess(
         prob_b=prob_b,
         class_names=class_names,
     )
-    y_sp = (np.asarray(true_idx, dtype=np.int64) == class_to_idx['SP']).astype(np.int64)
+    y_sp = (np.asarray(true_idx, dtype=np.int64) == class_to_idx["SP"]).astype(np.int64)
     sp_models = list()
-    for seed in profile['sp_random_states']:
+    for seed in profile["sp_random_states"]:
         model = HistGradientBoostingClassifier(
             max_iter=350,
             learning_rate=0.04,
             l2_regularization=0.01,
             random_state=int(seed),
-            class_weight='balanced',
+            class_weight="balanced",
         )
         _fit_sklearn_model(model, sp_features, y_sp)
         sp_models.append(model)
@@ -2241,17 +2417,18 @@ def _fit_full_targetp_specialist_postprocess(
         class_names=class_names,
     )
     ctp_ltp_train_mask = (
-        (np.asarray(true_idx, dtype=np.int64) == class_to_idx['cTP'])
-        | (np.asarray(true_idx, dtype=np.int64) == class_to_idx['lTP'])
-    )
-    y_ltp = (np.asarray(true_idx, dtype=np.int64)[ctp_ltp_train_mask] == class_to_idx['lTP']).astype(np.int64)
+        np.asarray(true_idx, dtype=np.int64) == class_to_idx["cTP"]
+    ) | (np.asarray(true_idx, dtype=np.int64) == class_to_idx["lTP"])
+    y_ltp = (
+        np.asarray(true_idx, dtype=np.int64)[ctp_ltp_train_mask] == class_to_idx["lTP"]
+    ).astype(np.int64)
     ltp_models = list()
-    for seed in profile['ltp_random_states']:
+    for seed in profile["ltp_random_states"]:
         model = ExtraTreesClassifier(
             n_estimators=500,
             random_state=int(seed),
-            class_weight='balanced',
-            max_features='sqrt',
+            class_weight="balanced",
+            max_features="sqrt",
             min_samples_leaf=1,
             n_jobs=_SKLEARN_N_JOBS,
         )
@@ -2259,15 +2436,15 @@ def _fit_full_targetp_specialist_postprocess(
         ltp_models.append(model)
 
     return {
-        'enabled': True,
-        'calibration_profile': str(profile['name']),
-        'training_score_source': 'TargetP OOF base probabilities',
-        'sp_models': sp_models,
-        'sp_weights': [float(v) for v in profile['sp_weights']],
-        'sp_threshold': float(profile['sp_threshold']),
-        'ltp_models': ltp_models,
-        'ltp_threshold': float(profile['ltp_threshold']),
-        'ltp_mass_threshold': float(profile['ltp_mass_threshold']),
+        "enabled": True,
+        "calibration_profile": str(profile["name"]),
+        "training_score_source": "TargetP OOF base probabilities",
+        "sp_models": sp_models,
+        "sp_weights": [float(v) for v in profile["sp_weights"]],
+        "sp_threshold": float(profile["sp_threshold"]),
+        "ltp_models": ltp_models,
+        "ltp_threshold": float(profile["ltp_threshold"]),
+        "ltp_mass_threshold": float(profile["ltp_mass_threshold"]),
     }
 
 
@@ -2284,29 +2461,31 @@ def _export_targetp_blend_runtime_model(
     class_names = list(LOCALIZATION_CLASSES)
     rows = _read_training_rows(
         path=args.training_tsv,
-        required_columns=['sequence', 'localization', 'peroxisome'],
+        required_columns=["sequence", "localization", "peroxisome"],
     )
     x, aa_sequences, class_labels, perox_labels, skipped, _ = build_training_matrix(
         rows=rows,
-        seq_col='sequence',
-        seqtype='protein',
+        seq_col="sequence",
+        seqtype="protein",
         codontable=1,
-        label_mode='explicit',
-        localization_col='localization',
-        perox_col='peroxisome',
+        label_mode="explicit",
+        localization_col="localization",
+        perox_col="peroxisome",
         skip_ambiguous=True,
-        cv_fold_col='',
+        cv_fold_col="",
     )
     if int(skipped) != 0:
-        raise ValueError('TargetP blend runtime export requires no skipped rows.')
+        raise ValueError("TargetP blend runtime export requires no skipped rows.")
     if x.shape[0] != np.asarray(prob_a).shape[0]:
-        raise ValueError('Training rows and OOF probability rows differ in runtime export.')
+        raise ValueError(
+            "Training rows and OOF probability rows differ in runtime export."
+        )
 
     bilstm_localization = fit_localization_model(
         x=x,
         aa_sequences=aa_sequences,
         class_labels=class_labels,
-        model_arch='bilstm_attention',
+        model_arch="bilstm_attention",
         dl_train_params=_bilstm_dl_params_from_args(args),
         localize_strategy=str(args.localize_strategy),
     )
@@ -2314,7 +2493,7 @@ def _export_targetp_blend_runtime_model(
         x=x,
         aa_sequences=aa_sequences,
         class_labels=class_labels,
-        model_arch='esm_head',
+        model_arch="esm_head",
         dl_train_params=_esm_dl_params_from_args(args),
         localize_strategy=str(args.localize_strategy),
     )
@@ -2329,68 +2508,74 @@ def _export_targetp_blend_runtime_model(
             class_names=list(LOCALIZATION_CLASSES),
         )
     metadata = {
-        'training_tsv': str(args.training_tsv),
-        'num_training_rows': int(len(rows)),
-        'num_used_rows': int(x.shape[0]),
-        'num_skipped_rows': int(skipped),
-        'model_arch': 'targetp_blend_v1',
-        'base_model_types': ['bilstm_attention_v1', 'esm_head_v1'],
-        'localize_strategy': str(args.localize_strategy),
-        'organism_gate': bool(_to_bool_yes_no(args.organism_gate)),
-        'benchmark_targetp_macro_f1': float(benchmark_out['targetp_macro_f1']),
-        'benchmark_blend_threshold_macro_f1': float(
-            benchmark_out['blend_threshold']['metrics']['macro_f1']
+        "training_tsv": str(args.training_tsv),
+        "num_training_rows": len(rows),
+        "num_used_rows": int(x.shape[0]),
+        "num_skipped_rows": int(skipped),
+        "model_arch": "targetp_blend_v1",
+        "base_model_types": ["bilstm_attention_v1", "esm_head_v1"],
+        "localize_strategy": str(args.localize_strategy),
+        "organism_gate": bool(_to_bool_yes_no(args.organism_gate)),
+        "benchmark_targetp_macro_f1": float(benchmark_out["targetp_macro_f1"]),
+        "benchmark_blend_threshold_macro_f1": float(
+            benchmark_out["blend_threshold"]["metrics"]["macro_f1"]
         ),
     }
-    if 'specialist_foldwise' in benchmark_out:
-        metadata['benchmark_specialist_foldwise_macro_f1'] = float(
-            benchmark_out['specialist_foldwise']['metrics']['macro_f1']
+    if "specialist_foldwise" in benchmark_out:
+        metadata["benchmark_specialist_foldwise_macro_f1"] = float(
+            benchmark_out["specialist_foldwise"]["metrics"]["macro_f1"]
         )
-        metadata['benchmark_specialist_foldwise_min_class_f1_margin'] = float(
-            benchmark_out['specialist_foldwise']['targetp_margin']['min_class_f1_margin']
+        metadata["benchmark_specialist_foldwise_min_class_f1_margin"] = float(
+            benchmark_out["specialist_foldwise"]["targetp_margin"][
+                "min_class_f1_margin"
+            ]
         )
-        metadata['benchmark_specialist_foldwise_all_classes_gt_targetp'] = bool(
-            benchmark_out['specialist_foldwise']['targetp_margin']['beats_targetp_all_classes']
+        metadata["benchmark_specialist_foldwise_all_classes_gt_targetp"] = bool(
+            benchmark_out["specialist_foldwise"]["targetp_margin"][
+                "beats_targetp_all_classes"
+            ]
         )
-    if 'specialist_foldwise_fixed' in benchmark_out:
-        metadata['benchmark_specialist_foldwise_fixed_macro_f1'] = float(
-            benchmark_out['specialist_foldwise_fixed']['metrics']['macro_f1']
+    if "specialist_foldwise_fixed" in benchmark_out:
+        metadata["benchmark_specialist_foldwise_fixed_macro_f1"] = float(
+            benchmark_out["specialist_foldwise_fixed"]["metrics"]["macro_f1"]
         )
-        metadata['benchmark_specialist_foldwise_fixed_min_class_f1_margin'] = float(
-            benchmark_out['specialist_foldwise_fixed']['targetp_margin']['min_class_f1_margin']
+        metadata["benchmark_specialist_foldwise_fixed_min_class_f1_margin"] = float(
+            benchmark_out["specialist_foldwise_fixed"]["targetp_margin"][
+                "min_class_f1_margin"
+            ]
         )
-        metadata['benchmark_specialist_foldwise_fixed_all_classes_gt_targetp'] = bool(
-            benchmark_out['specialist_foldwise_fixed']['targetp_margin']['beats_targetp_all_classes']
+        metadata["benchmark_specialist_foldwise_fixed_all_classes_gt_targetp"] = bool(
+            benchmark_out["specialist_foldwise_fixed"]["targetp_margin"][
+                "beats_targetp_all_classes"
+            ]
         )
     model = _build_targetp_blend_runtime_model(
         base_model_a={
-            'model_type': 'bilstm_attention_v1',
-            'localization_model': bilstm_localization,
+            "model_type": "bilstm_attention_v1",
+            "localization_model": bilstm_localization,
         },
         base_model_b={
-            'model_type': 'esm_head_v1',
-            'localization_model': esm_localization,
+            "model_type": "esm_head_v1",
+            "localization_model": esm_localization,
         },
         perox_model=fit_perox_binary_classifier(
             features=x,
             labels=perox_labels,
         ),
         alpha_by_class={
-            class_names[i]: float(alpha_by_class[i])
-            for i in range(len(class_names))
+            class_names[i]: float(alpha_by_class[i]) for i in range(len(class_names))
         },
         class_thresholds={
-            class_names[i]: float(class_thresholds[i])
-            for i in range(len(class_names))
+            class_names[i]: float(class_thresholds[i]) for i in range(len(class_names))
         },
         specialist_postprocess=specialist,
         metadata=metadata,
     )
     save_localize_model(model=model, path=str(args.model_out))
     return {
-        'path': str(args.model_out),
-        'model_type': 'targetp_blend_v1',
-        'specialist_postprocess': bool(specialist is not None),
+        "path": str(args.model_out),
+        "model_type": "targetp_blend_v1",
+        "specialist_postprocess": bool(specialist is not None),
     }
 
 
@@ -2408,16 +2593,22 @@ def _evaluate_foldwise_classwise_blend(
     true_idx = np.asarray(true_idx, dtype=np.int64)
     fold_ids = np.asarray(fold_ids)
     if prob_a.shape != prob_b.shape:
-        raise ValueError('Shape mismatch between foldwise blend probability matrices.')
+        raise ValueError("Shape mismatch between foldwise blend probability matrices.")
     if prob_a.shape[0] != true_idx.shape[0]:
-        raise ValueError('true_idx row count does not match foldwise blend probabilities.')
+        raise ValueError(
+            "true_idx row count does not match foldwise blend probabilities."
+        )
     if prob_a.shape[0] != fold_ids.shape[0]:
-        raise ValueError('fold_id row count does not match foldwise blend probabilities.')
+        raise ValueError(
+            "fold_id row count does not match foldwise blend probabilities."
+        )
 
     pred_idx = np.zeros((prob_a.shape[0],), dtype=np.int64)
     fold_rows = list()
     for fold_id in sorted(set([str(v) for v in fold_ids.tolist()])):
-        valid_mask = np.asarray([str(v) == fold_id for v in fold_ids.tolist()], dtype=bool)
+        valid_mask = np.asarray(
+            [str(v) == fold_id for v in fold_ids.tolist()], dtype=bool
+        )
         train_mask = ~valid_mask
         if int(np.sum(valid_mask)) == 0 or int(np.sum(train_mask)) == 0:
             continue
@@ -2456,14 +2647,22 @@ def _evaluate_foldwise_classwise_blend(
             prob_matrix=valid_blend,
             thresholds=threshold_by_class,
         )
-        fold_rows.append({
-            'fold_id': fold_id,
-            'n_train': int(np.sum(train_mask)),
-            'n_valid': int(np.sum(valid_mask)),
-            'global_alpha': float(best_alpha),
-            'alpha_by_class': {class_names[i]: float(alpha_by_class[i]) for i in range(len(class_names))},
-            'class_thresholds': {class_names[i]: float(threshold_by_class[i]) for i in range(len(class_names))},
-        })
+        fold_rows.append(
+            {
+                "fold_id": fold_id,
+                "n_train": int(np.sum(train_mask)),
+                "n_valid": int(np.sum(valid_mask)),
+                "global_alpha": float(best_alpha),
+                "alpha_by_class": {
+                    class_names[i]: float(alpha_by_class[i])
+                    for i in range(len(class_names))
+                },
+                "class_thresholds": {
+                    class_names[i]: float(threshold_by_class[i])
+                    for i in range(len(class_names))
+                },
+            }
+        )
 
     metrics = _metrics_from_prediction_indices(
         pred_idx=pred_idx,
@@ -2488,244 +2687,330 @@ def _build_summary_rows(
     rows = list()
     for class_name in LOCALIZATION_CLASSES:
         row = {
-            'class': class_name,
-            'targetp_f1': float(targetp_ref[class_name]['f1']),
-            'bilstm_f1': float(bilstm_metrics['by_class'][class_name]['f1']),
-            'esm_f1': float(esm_metrics['by_class'][class_name]['f1']),
-            'blend_global_f1': float(blend_global_metrics['by_class'][class_name]['f1']),
-            'blend_classwise_f1': float(blend_class_metrics['by_class'][class_name]['f1']),
-            'blend_threshold_f1': float(blend_threshold_metrics['by_class'][class_name]['f1']),
+            "class": class_name,
+            "targetp_f1": float(targetp_ref[class_name]["f1"]),
+            "bilstm_f1": float(bilstm_metrics["by_class"][class_name]["f1"]),
+            "esm_f1": float(esm_metrics["by_class"][class_name]["f1"]),
+            "blend_global_f1": float(
+                blend_global_metrics["by_class"][class_name]["f1"]
+            ),
+            "blend_classwise_f1": float(
+                blend_class_metrics["by_class"][class_name]["f1"]
+            ),
+            "blend_threshold_f1": float(
+                blend_threshold_metrics["by_class"][class_name]["f1"]
+            ),
         }
         if blend_foldwise_metrics is not None:
-            row['blend_foldwise_f1'] = float(blend_foldwise_metrics['by_class'][class_name]['f1'])
+            row["blend_foldwise_f1"] = float(
+                blend_foldwise_metrics["by_class"][class_name]["f1"]
+            )
         if specialist_metrics is not None:
-            row['specialist_f1'] = float(specialist_metrics['by_class'][class_name]['f1'])
+            row["specialist_f1"] = float(
+                specialist_metrics["by_class"][class_name]["f1"]
+            )
         if specialist_foldwise_metrics is not None:
-            row['specialist_foldwise_f1'] = float(
-                specialist_foldwise_metrics['by_class'][class_name]['f1']
+            row["specialist_foldwise_f1"] = float(
+                specialist_foldwise_metrics["by_class"][class_name]["f1"]
             )
         if specialist_foldwise_fixed_metrics is not None:
-            row['specialist_foldwise_fixed_f1'] = float(
-                specialist_foldwise_fixed_metrics['by_class'][class_name]['f1']
+            row["specialist_foldwise_fixed_f1"] = float(
+                specialist_foldwise_fixed_metrics["by_class"][class_name]["f1"]
             )
         rows.append(row)
     return rows
 
 
 def _render_markdown(out):
-    rows = out['class_rows']
+    rows = out["class_rows"]
     md = list()
-    has_foldwise = 'blend_foldwise' in out
-    has_specialist = 'specialist_postprocess' in out
-    has_specialist_foldwise = 'specialist_foldwise' in out
-    has_specialist_foldwise_fixed = 'specialist_foldwise_fixed' in out
+    has_foldwise = "blend_foldwise" in out
+    has_specialist = "specialist_postprocess" in out
+    has_specialist_foldwise = "specialist_foldwise" in out
+    has_specialist_foldwise_fixed = "specialist_foldwise_fixed" in out
     class_headers = [
-        'Class',
-        'TargetP F1',
-        'bilstm F1',
-        'esm F1',
-        'blend(global) F1',
-        'blend(classwise) F1',
-        'blend(threshold) F1',
+        "Class",
+        "TargetP F1",
+        "bilstm F1",
+        "esm F1",
+        "blend(global) F1",
+        "blend(classwise) F1",
+        "blend(threshold) F1",
     ]
     if has_foldwise:
-        class_headers.append('blend(foldwise) F1')
+        class_headers.append("blend(foldwise) F1")
     if has_specialist:
-        class_headers.append('specialist F1')
+        class_headers.append("specialist F1")
     if has_specialist_foldwise:
-        class_headers.append('specialist(foldwise) F1')
+        class_headers.append("specialist(foldwise) F1")
     if has_specialist_foldwise_fixed:
-        class_headers.append('specialist(foldwise fixed) F1')
-    md.append('| {} |'.format(' | '.join(class_headers)))
-    md.append('|{}|'.format('|'.join(['---'] + ['---:'] * (len(class_headers) - 1))))
+        class_headers.append("specialist(foldwise fixed) F1")
+    md.append("| {} |".format(" | ".join(class_headers)))
+    md.append("|{}|".format("|".join(["---"] + ["---:"] * (len(class_headers) - 1))))
     for row in rows:
         values = [
-            row['class'],
-            '{:.3f}'.format(row['targetp_f1']),
-            '{:.3f}'.format(row['bilstm_f1']),
-            '{:.3f}'.format(row['esm_f1']),
-            '{:.3f}'.format(row['blend_global_f1']),
-            '{:.3f}'.format(row['blend_classwise_f1']),
-            '{:.3f}'.format(row['blend_threshold_f1']),
+            row["class"],
+            "{:.3f}".format(row["targetp_f1"]),
+            "{:.3f}".format(row["bilstm_f1"]),
+            "{:.3f}".format(row["esm_f1"]),
+            "{:.3f}".format(row["blend_global_f1"]),
+            "{:.3f}".format(row["blend_classwise_f1"]),
+            "{:.3f}".format(row["blend_threshold_f1"]),
         ]
         if has_foldwise:
-            values.append('{:.3f}'.format(row['blend_foldwise_f1']))
+            values.append("{:.3f}".format(row["blend_foldwise_f1"]))
         if has_specialist:
-            values.append('{:.3f}'.format(row['specialist_f1']))
+            values.append("{:.3f}".format(row["specialist_f1"]))
         if has_specialist_foldwise:
-            values.append('{:.3f}'.format(row['specialist_foldwise_f1']))
+            values.append("{:.3f}".format(row["specialist_foldwise_f1"]))
         if has_specialist_foldwise_fixed:
-            values.append('{:.3f}'.format(row['specialist_foldwise_fixed_f1']))
-        md.append('| {} |'.format(' | '.join(values)))
-    md.append('')
+            values.append("{:.3f}".format(row["specialist_foldwise_fixed_f1"]))
+        md.append("| {} |".format(" | ".join(values)))
+    md.append("")
     metric_headers = [
-        'Metric',
-        'TargetP',
-        'bilstm',
-        'esm',
-        'blend(global)',
-        'blend(classwise)',
-        'blend(threshold)',
+        "Metric",
+        "TargetP",
+        "bilstm",
+        "esm",
+        "blend(global)",
+        "blend(classwise)",
+        "blend(threshold)",
     ]
     if has_foldwise:
-        metric_headers.append('blend(foldwise)')
+        metric_headers.append("blend(foldwise)")
     if has_specialist:
-        metric_headers.append('specialist')
+        metric_headers.append("specialist")
     if has_specialist_foldwise:
-        metric_headers.append('specialist(foldwise)')
+        metric_headers.append("specialist(foldwise)")
     if has_specialist_foldwise_fixed:
-        metric_headers.append('specialist(foldwise fixed)')
-    md.append('| {} |'.format(' | '.join(metric_headers)))
-    md.append('|{}|'.format('|'.join(['---'] + ['---:'] * (len(metric_headers) - 1))))
+        metric_headers.append("specialist(foldwise fixed)")
+    md.append("| {} |".format(" | ".join(metric_headers)))
+    md.append("|{}|".format("|".join(["---"] + ["---:"] * (len(metric_headers) - 1))))
     metric_keys = [
-        'bilstm',
-        'esm',
-        'blend_global',
-        'blend_classwise',
-        'blend_threshold',
+        "bilstm",
+        "esm",
+        "blend_global",
+        "blend_classwise",
+        "blend_threshold",
     ]
     if has_foldwise:
-        metric_keys.append('blend_foldwise')
+        metric_keys.append("blend_foldwise")
     if has_specialist:
-        metric_keys.append('specialist_postprocess')
+        metric_keys.append("specialist_postprocess")
     if has_specialist_foldwise:
-        metric_keys.append('specialist_foldwise')
+        metric_keys.append("specialist_foldwise")
     if has_specialist_foldwise_fixed:
-        metric_keys.append('specialist_foldwise_fixed')
+        metric_keys.append("specialist_foldwise_fixed")
     macro_values = [
-        'Macro F1',
-        '{:.3f}'.format(out['targetp_macro_f1']),
+        "Macro F1",
+        "{:.3f}".format(out["targetp_macro_f1"]),
     ]
-    macro_values.extend([
-        '{:.3f}'.format(out[key]['metrics']['macro_f1'])
-        for key in metric_keys
-    ])
+    macro_values.extend(
+        ["{:.3f}".format(out[key]["metrics"]["macro_f1"]) for key in metric_keys]
+    )
     acc_values = [
-        'Overall accuracy',
-        '-',
+        "Overall accuracy",
+        "-",
     ]
-    acc_values.extend([
-        '{:.3f}'.format(out[key]['metrics']['overall_accuracy'])
-        for key in metric_keys
-    ])
+    acc_values.extend(
+        [
+            "{:.3f}".format(out[key]["metrics"]["overall_accuracy"])
+            for key in metric_keys
+        ]
+    )
     margin_values = [
-        'Min class dF1 vs TargetP',
-        '-',
+        "Min class dF1 vs TargetP",
+        "-",
     ]
-    margin_values.extend([
-        '{:+.4f}'.format(out[key]['targetp_margin']['min_class_f1_margin'])
-        for key in metric_keys
-    ])
+    margin_values.extend(
+        [
+            "{:+.4f}".format(out[key]["targetp_margin"]["min_class_f1_margin"])
+            for key in metric_keys
+        ]
+    )
     beats_values = [
-        'All classes > TargetP',
-        '-',
+        "All classes > TargetP",
+        "-",
     ]
-    beats_values.extend([
-        'yes' if out[key]['targetp_margin']['beats_targetp_all_classes'] else 'no'
-        for key in metric_keys
-    ])
-    md.append('| {} |'.format(' | '.join(macro_values)))
-    md.append('| {} |'.format(' | '.join(acc_values)))
-    md.append('| {} |'.format(' | '.join(margin_values)))
-    md.append('| {} |'.format(' | '.join(beats_values)))
-    md.append('')
-    md.append('global alpha (bilstm weight): {:.3f}'.format(out['blend_global']['alpha']))
-    md.append('classwise alpha (bilstm weight): {}'.format(out['blend_classwise']['alpha_by_class']))
-    md.append('class thresholds: {}'.format(out['blend_threshold']['class_thresholds']))
+    beats_values.extend(
+        [
+            "yes" if out[key]["targetp_margin"]["beats_targetp_all_classes"] else "no"
+            for key in metric_keys
+        ]
+    )
+    md.append("| {} |".format(" | ".join(macro_values)))
+    md.append("| {} |".format(" | ".join(acc_values)))
+    md.append("| {} |".format(" | ".join(margin_values)))
+    md.append("| {} |".format(" | ".join(beats_values)))
+    md.append("")
+    md.append(
+        "global alpha (bilstm weight): {:.3f}".format(out["blend_global"]["alpha"])
+    )
+    md.append(
+        "classwise alpha (bilstm weight): {}".format(
+            out["blend_classwise"]["alpha_by_class"]
+        )
+    )
+    md.append("class thresholds: {}".format(out["blend_threshold"]["class_thresholds"]))
     if has_specialist:
-        md.append('specialist SP threshold: {:.6f}'.format(out['specialist_postprocess']['sp_threshold']))
-        md.append('specialist lTP threshold: {:.6f}'.format(out['specialist_postprocess']['ltp_threshold']))
+        md.append(
+            "specialist SP threshold: {:.6f}".format(
+                out["specialist_postprocess"]["sp_threshold"]
+            )
+        )
+        md.append(
+            "specialist lTP threshold: {:.6f}".format(
+                out["specialist_postprocess"]["ltp_threshold"]
+            )
+        )
     if has_specialist_foldwise:
-        objective = str(out['specialist_foldwise'].get('threshold_objective', 'targetp_margin'))
-        if objective == 'targetp_margin':
+        objective = str(
+            out["specialist_foldwise"].get("threshold_objective", "targetp_margin")
+        )
+        if objective == "targetp_margin":
             md.append(
-                'specialist(foldwise): thresholds selected on each training-fold '
-                'complement with calibrated-profile fallback when no all-class '
-                'TargetP-margin pass is available'
+                "specialist(foldwise): thresholds selected on each training-fold "
+                "complement with calibrated-profile fallback when no all-class "
+                "TargetP-margin pass is available"
             )
         else:
             md.append(
-                'specialist(foldwise): thresholds selected on each training-fold '
-                'complement with {} objective'.format(objective)
+                "specialist(foldwise): thresholds selected on each training-fold "
+                "complement with {} objective".format(objective)
             )
     if has_specialist_foldwise_fixed:
         md.append(
-            'specialist(foldwise fixed): fixed calibrated specialist thresholds '
-            'SP={:.6f}, lTP={:.6f}, lTP mass={:.6f}'.format(
-                out['specialist_foldwise_fixed']['sp_threshold'],
-                out['specialist_foldwise_fixed']['ltp_threshold'],
-                out['specialist_foldwise_fixed']['ltp_mass_threshold'],
+            "specialist(foldwise fixed): fixed calibrated specialist thresholds "
+            "SP={:.6f}, lTP={:.6f}, lTP mass={:.6f}".format(
+                out["specialist_foldwise_fixed"]["sp_threshold"],
+                out["specialist_foldwise_fixed"]["ltp_threshold"],
+                out["specialist_foldwise_fixed"]["ltp_mass_threshold"],
             )
         )
-        if 'score_npz' in out['specialist_foldwise_fixed']:
-            md.append('specialist(foldwise fixed) score cache: {}'.format(
-                out['specialist_foldwise_fixed']['score_npz']
-            ))
-    return '\n'.join(md)
+        if "score_npz" in out["specialist_foldwise_fixed"]:
+            md.append(
+                "specialist(foldwise fixed) score cache: {}".format(
+                    out["specialist_foldwise_fixed"]["score_npz"]
+                )
+            )
+    return "\n".join(md)
 
 
 def build_parser():
     parser = CdskitArgumentParser(
-        description='Blend bilstm-cdskit and esm-cdskit on TargetP fold-fixed benchmark.',
+        description="Blend bilstm-cdskit and esm-cdskit on TargetP fold-fixed benchmark.",
     )
-    parser.add_argument('--training_tsv', default='data/localize_bench/targetp2_benchmark.tsv', type=str)
-    parser.add_argument('--reuse_oof_cache', default=True, type=parse_bool)
-    parser.add_argument('--organism_gate', default=False, type=parse_bool)
-    parser.add_argument('--bilstm_oof_npz', default='data/localize_bench/targetp2_oof_bilstm.npz', type=str)
-    parser.add_argument('--esm_oof_npz', default='data/localize_bench/targetp2_oof_esm.npz', type=str)
-    parser.add_argument('--oof_fold_cache_dir', default='', type=str)
-    parser.add_argument('--cv_seed', default=1, type=int)
-    parser.add_argument('--localize_strategy', default='single_stage', choices=['single_stage', 'two_stage', 'two_stage_ctp_ltp'], type=str)
-    parser.add_argument('--bilstm_dl_seq_len', default=200, type=int)
-    parser.add_argument('--bilstm_dl_embed_dim', default=32, type=int)
-    parser.add_argument('--bilstm_dl_hidden_dim', default=64, type=int)
-    parser.add_argument('--bilstm_dl_num_layers', default=1, type=int)
-    parser.add_argument('--bilstm_dl_dropout', default=0.2, type=float)
-    parser.add_argument('--bilstm_dl_epochs', default=15, type=int)
-    parser.add_argument('--bilstm_dl_batch_size', default=128, type=int)
-    parser.add_argument('--bilstm_dl_lr', default=1.0e-3, type=float)
-    parser.add_argument('--bilstm_dl_weight_decay', default=1.0e-4, type=float)
-    parser.add_argument('--bilstm_dl_class_weight', default=True, type=parse_bool)
-    parser.add_argument('--bilstm_dl_loss', default='ce', choices=['ce', 'focal'], type=str)
-    parser.add_argument('--bilstm_dl_balanced_batch', default=False, type=parse_bool)
-    parser.add_argument('--bilstm_dl_feature_fusion', default=True, type=parse_bool)
-    parser.add_argument('--bilstm_dl_seed', default=1, type=int)
-    parser.add_argument('--bilstm_dl_device', default='cpu', choices=['cpu', 'cuda', 'mps', 'auto'], type=str)
-    parser.add_argument('--esm_model_name', default='facebook/esm2_t6_8M_UR50D', type=str)
     parser.add_argument(
-        '--esm_model_revision',
-        default='c731040fcd8d73dceaa04b0a8e6329b345b0f5df',
+        "--training_tsv", default="data/localize_bench/targetp2_benchmark.tsv", type=str
+    )
+    parser.add_argument("--reuse_oof_cache", default=True, type=parse_bool)
+    parser.add_argument("--organism_gate", default=False, type=parse_bool)
+    parser.add_argument(
+        "--bilstm_oof_npz",
+        default="data/localize_bench/targetp2_oof_bilstm.npz",
         type=str,
     )
-    parser.add_argument('--esm_model_local_dir', default='', type=str)
-    parser.add_argument('--esm_pooling', default='cls', choices=['cls', 'mean'], type=str)
-    parser.add_argument('--esm_max_len', default=200, type=int)
-    parser.add_argument('--esm_dl_epochs', default=1, type=int)
-    parser.add_argument('--esm_dl_batch_size', default=32, type=int)
-    parser.add_argument('--esm_dl_lr', default=1.0e-3, type=float)
-    parser.add_argument('--esm_dl_weight_decay', default=1.0e-4, type=float)
-    parser.add_argument('--esm_dl_class_weight', default=True, type=parse_bool)
-    parser.add_argument('--esm_dl_seed', default=1, type=int)
-    parser.add_argument('--esm_dl_device', default='cpu', choices=['cpu', 'cuda', 'mps', 'auto'], type=str)
-    parser.add_argument('--blend_grid_step', default=0.05, type=float)
-    parser.add_argument('--threshold_grid', default='0.05,0.075,0.1,0.15,0.2,0.3,0.4,0.5,0.65,0.8,1.0,1.25,1.5,2.0,3.0,5.0', type=str)
-    parser.add_argument('--foldwise_blend_eval', default=False, type=parse_bool)
-    parser.add_argument('--specialist_postprocess', default=False, type=parse_bool)
-    parser.add_argument('--foldwise_specialist_eval', default=False, type=parse_bool)
-    parser.add_argument('--foldwise_specialist_fixed_eval', default=False, type=parse_bool)
-    parser.add_argument('--foldwise_specialist_fixed_score_npz', default='', type=str)
-    parser.add_argument('--specialist_ltp_mass_threshold', default=0.20, type=float)
-    parser.add_argument('--specialist_threshold_objective', default='targetp_margin', choices=['targetp_margin', 'macro_f1'], type=str)
-    parser.add_argument('--model_out', default='', type=str)
-    parser.add_argument('--model_out_specialist_postprocess', default=True, type=parse_bool)
-    parser.add_argument('--out_json', default='data/localize_bench/targetp2_bilstm_esm_blend.json', type=str)
-    parser.add_argument('--out_md', default='data/localize_bench/targetp2_bilstm_esm_blend.md', type=str)
-    parser.add_argument('--threads', default=1, type=int, help='Number of CPU workers used by tree ensembles; 0 auto-detects CPUs.')
+    parser.add_argument(
+        "--esm_oof_npz", default="data/localize_bench/targetp2_oof_esm.npz", type=str
+    )
+    parser.add_argument("--oof_fold_cache_dir", default="", type=str)
+    parser.add_argument("--cv_seed", default=1, type=int)
+    parser.add_argument(
+        "--localize_strategy",
+        default="single_stage",
+        choices=["single_stage", "two_stage", "two_stage_ctp_ltp"],
+        type=str,
+    )
+    parser.add_argument("--bilstm_dl_seq_len", default=200, type=int)
+    parser.add_argument("--bilstm_dl_embed_dim", default=32, type=int)
+    parser.add_argument("--bilstm_dl_hidden_dim", default=64, type=int)
+    parser.add_argument("--bilstm_dl_num_layers", default=1, type=int)
+    parser.add_argument("--bilstm_dl_dropout", default=0.2, type=float)
+    parser.add_argument("--bilstm_dl_epochs", default=15, type=int)
+    parser.add_argument("--bilstm_dl_batch_size", default=128, type=int)
+    parser.add_argument("--bilstm_dl_lr", default=1.0e-3, type=float)
+    parser.add_argument("--bilstm_dl_weight_decay", default=1.0e-4, type=float)
+    parser.add_argument("--bilstm_dl_class_weight", default=True, type=parse_bool)
+    parser.add_argument(
+        "--bilstm_dl_loss", default="ce", choices=["ce", "focal"], type=str
+    )
+    parser.add_argument("--bilstm_dl_balanced_batch", default=False, type=parse_bool)
+    parser.add_argument("--bilstm_dl_feature_fusion", default=True, type=parse_bool)
+    parser.add_argument("--bilstm_dl_seed", default=1, type=int)
+    parser.add_argument(
+        "--bilstm_dl_device",
+        default="cpu",
+        choices=["cpu", "cuda", "mps", "auto"],
+        type=str,
+    )
+    parser.add_argument(
+        "--esm_model_name", default="facebook/esm2_t6_8M_UR50D", type=str
+    )
+    parser.add_argument(
+        "--esm_model_revision",
+        default="c731040fcd8d73dceaa04b0a8e6329b345b0f5df",
+        type=str,
+    )
+    parser.add_argument("--esm_model_local_dir", default="", type=str)
+    parser.add_argument(
+        "--esm_pooling", default="cls", choices=["cls", "mean"], type=str
+    )
+    parser.add_argument("--esm_max_len", default=200, type=int)
+    parser.add_argument("--esm_dl_epochs", default=1, type=int)
+    parser.add_argument("--esm_dl_batch_size", default=32, type=int)
+    parser.add_argument("--esm_dl_lr", default=1.0e-3, type=float)
+    parser.add_argument("--esm_dl_weight_decay", default=1.0e-4, type=float)
+    parser.add_argument("--esm_dl_class_weight", default=True, type=parse_bool)
+    parser.add_argument("--esm_dl_seed", default=1, type=int)
+    parser.add_argument(
+        "--esm_dl_device",
+        default="cpu",
+        choices=["cpu", "cuda", "mps", "auto"],
+        type=str,
+    )
+    parser.add_argument("--blend_grid_step", default=0.05, type=float)
+    parser.add_argument(
+        "--threshold_grid",
+        default="0.05,0.075,0.1,0.15,0.2,0.3,0.4,0.5,0.65,0.8,1.0,1.25,1.5,2.0,3.0,5.0",
+        type=str,
+    )
+    parser.add_argument("--foldwise_blend_eval", default=False, type=parse_bool)
+    parser.add_argument("--specialist_postprocess", default=False, type=parse_bool)
+    parser.add_argument("--foldwise_specialist_eval", default=False, type=parse_bool)
+    parser.add_argument(
+        "--foldwise_specialist_fixed_eval", default=False, type=parse_bool
+    )
+    parser.add_argument("--foldwise_specialist_fixed_score_npz", default="", type=str)
+    parser.add_argument("--specialist_ltp_mass_threshold", default=0.20, type=float)
+    parser.add_argument(
+        "--specialist_threshold_objective",
+        default="targetp_margin",
+        choices=["targetp_margin", "macro_f1"],
+        type=str,
+    )
+    parser.add_argument("--model_out", default="", type=str)
+    parser.add_argument(
+        "--model_out_specialist_postprocess", default=True, type=parse_bool
+    )
+    parser.add_argument(
+        "--out_json",
+        default="data/localize_bench/targetp2_bilstm_esm_blend.json",
+        type=str,
+    )
+    parser.add_argument(
+        "--out_md", default="data/localize_bench/targetp2_bilstm_esm_blend.md", type=str
+    )
+    parser.add_argument(
+        "--threads",
+        default=1,
+        type=int,
+        help="Number of CPU workers used by tree ensembles; 0 auto-detects CPUs.",
+    )
     return parser
 
 
 def _to_bool_yes_no(value):
-    return str(value).strip().lower() in ['yes', 'y', 'true', '1']
+    return str(value).strip().lower() in ["yes", "y", "true", "1"]
 
 
 def main(argv=None):
@@ -2743,7 +3028,7 @@ def main(argv=None):
     bilstm_dl = _bilstm_dl_params_from_args(args)
     bilstm_cache_key = _training_file_cache_key(
         path=args.training_tsv,
-        model_arch='bilstm_attention',
+        model_arch="bilstm_attention",
         localize_strategy=args.localize_strategy,
         dl_train_params=bilstm_dl,
         cv_seed=args.cv_seed,
@@ -2757,30 +3042,34 @@ def main(argv=None):
             cache_key=bilstm_cache_key,
         )
         if class_names_from_file != class_names:
-            raise ValueError('Class names in bilstm_oof_npz do not match LOCALIZATION_CLASSES.')
+            raise ValueError(
+                "Class names in bilstm_oof_npz do not match LOCALIZATION_CLASSES."
+            )
         if bilstm_prob.shape[0] != bilstm_true.shape[0]:
-            raise ValueError('Row count mismatch between bilstm_oof_npz probabilities and true labels.')
+            raise ValueError(
+                "Row count mismatch between bilstm_oof_npz probabilities and true labels."
+            )
         bilstm_metrics = _metrics_from_prob_matrix(
             prob_matrix=bilstm_prob,
             true_idx=bilstm_true,
             class_names=class_names,
         )
         bilstm_info = {
-            'metrics': bilstm_metrics,
-            'oof_npz': args.bilstm_oof_npz,
-            'used_cache': True,
+            "metrics": bilstm_metrics,
+            "oof_npz": args.bilstm_oof_npz,
+            "used_cache": True,
         }
     else:
         out = _run_model_oof(
             training_tsv=args.training_tsv,
-            model_arch='bilstm_attention',
+            model_arch="bilstm_attention",
             localize_strategy=args.localize_strategy,
             dl_train_params=bilstm_dl,
             cv_seed=int(args.cv_seed),
             fold_cache_dir=str(args.oof_fold_cache_dir),
         )
-        bilstm_prob = out['prob_matrix']
-        bilstm_true = out['true_idx']
+        bilstm_prob = out["prob_matrix"]
+        bilstm_true = out["true_idx"]
         _save_oof_npz(
             path=args.bilstm_oof_npz,
             prob_matrix=bilstm_prob,
@@ -2789,21 +3078,26 @@ def main(argv=None):
             cache_key=bilstm_cache_key,
         )
         bilstm_info = {
-            'metrics': out['metrics'],
-            'oof_npz': args.bilstm_oof_npz,
-            'used_cache': False,
-            'n_rows_total': out['n_rows_total'],
-            'n_rows_used': out['n_rows_used'],
-            'n_rows_skipped': out['n_rows_skipped'],
+            "metrics": out["metrics"],
+            "oof_npz": args.bilstm_oof_npz,
+            "used_cache": False,
+            "n_rows_total": out["n_rows_total"],
+            "n_rows_used": out["n_rows_used"],
+            "n_rows_skipped": out["n_rows_skipped"],
         }
-        for key in ['fold_cache_dir', 'fold_cache_files', 'fold_cache_used', 'fold_cache_written']:
+        for key in [
+            "fold_cache_dir",
+            "fold_cache_files",
+            "fold_cache_used",
+            "fold_cache_written",
+        ]:
             if key in out:
                 bilstm_info[key] = out[key]
 
     esm_dl = _esm_dl_params_from_args(args)
     esm_cache_key = _training_file_cache_key(
         path=args.training_tsv,
-        model_arch='esm_head',
+        model_arch="esm_head",
         localize_strategy=args.localize_strategy,
         dl_train_params=esm_dl,
         cv_seed=args.cv_seed,
@@ -2817,30 +3111,34 @@ def main(argv=None):
             cache_key=esm_cache_key,
         )
         if class_names_from_file != class_names:
-            raise ValueError('Class names in esm_oof_npz do not match LOCALIZATION_CLASSES.')
+            raise ValueError(
+                "Class names in esm_oof_npz do not match LOCALIZATION_CLASSES."
+            )
         if esm_prob.shape[0] != esm_true.shape[0]:
-            raise ValueError('Row count mismatch between esm_oof_npz probabilities and true labels.')
+            raise ValueError(
+                "Row count mismatch between esm_oof_npz probabilities and true labels."
+            )
         esm_metrics = _metrics_from_prob_matrix(
             prob_matrix=esm_prob,
             true_idx=esm_true,
             class_names=class_names,
         )
         esm_info = {
-            'metrics': esm_metrics,
-            'oof_npz': args.esm_oof_npz,
-            'used_cache': True,
+            "metrics": esm_metrics,
+            "oof_npz": args.esm_oof_npz,
+            "used_cache": True,
         }
     else:
         out = _run_model_oof(
             training_tsv=args.training_tsv,
-            model_arch='esm_head',
+            model_arch="esm_head",
             localize_strategy=args.localize_strategy,
             dl_train_params=esm_dl,
             cv_seed=int(args.cv_seed),
             fold_cache_dir=str(args.oof_fold_cache_dir),
         )
-        esm_prob = out['prob_matrix']
-        esm_true = out['true_idx']
+        esm_prob = out["prob_matrix"]
+        esm_true = out["true_idx"]
         _save_oof_npz(
             path=args.esm_oof_npz,
             prob_matrix=esm_prob,
@@ -2849,21 +3147,26 @@ def main(argv=None):
             cache_key=esm_cache_key,
         )
         esm_info = {
-            'metrics': out['metrics'],
-            'oof_npz': args.esm_oof_npz,
-            'used_cache': False,
-            'n_rows_total': out['n_rows_total'],
-            'n_rows_used': out['n_rows_used'],
-            'n_rows_skipped': out['n_rows_skipped'],
+            "metrics": out["metrics"],
+            "oof_npz": args.esm_oof_npz,
+            "used_cache": False,
+            "n_rows_total": out["n_rows_total"],
+            "n_rows_used": out["n_rows_used"],
+            "n_rows_skipped": out["n_rows_skipped"],
         }
-        for key in ['fold_cache_dir', 'fold_cache_files', 'fold_cache_used', 'fold_cache_written']:
+        for key in [
+            "fold_cache_dir",
+            "fold_cache_files",
+            "fold_cache_used",
+            "fold_cache_written",
+        ]:
             if key in out:
                 esm_info[key] = out[key]
 
     if bilstm_prob.shape != esm_prob.shape:
-        raise ValueError('Shape mismatch between bilstm and esm OOF probabilities.')
+        raise ValueError("Shape mismatch between bilstm and esm OOF probabilities.")
     if np.any(bilstm_true != esm_true):
-        raise ValueError('True labels differ between bilstm and esm OOF caches.')
+        raise ValueError("True labels differ between bilstm and esm OOF caches.")
     organism_gate = _to_bool_yes_no(args.organism_gate)
     if organism_gate:
         plant_mask = _read_organism_group_mask(training_tsv=args.training_tsv)
@@ -2877,22 +3180,22 @@ def main(argv=None):
             plant_mask=plant_mask,
             class_names=class_names,
         )
-        bilstm_info['metrics'] = _metrics_from_prob_matrix(
+        bilstm_info["metrics"] = _metrics_from_prob_matrix(
             prob_matrix=bilstm_prob,
             true_idx=bilstm_true,
             class_names=class_names,
         )
-        esm_info['metrics'] = _metrics_from_prob_matrix(
+        esm_info["metrics"] = _metrics_from_prob_matrix(
             prob_matrix=esm_prob,
             true_idx=esm_true,
             class_names=class_names,
         )
-    bilstm_info['organism_gate'] = bool(organism_gate)
-    esm_info['organism_gate'] = bool(organism_gate)
+    bilstm_info["organism_gate"] = bool(organism_gate)
+    esm_info["organism_gate"] = bool(organism_gate)
 
     step = float(args.blend_grid_step)
     if (step <= 0.0) or (step > 1.0):
-        raise ValueError('--blend_grid_step should be in (0, 1].')
+        raise ValueError("--blend_grid_step should be in (0, 1].")
     n_tick = int(np.floor(1.0 / step)) + 1
     grid = [float(i) * step for i in range(n_tick)]
     if grid[-1] != 1.0:
@@ -2920,11 +3223,12 @@ def main(argv=None):
         alpha_by_class=alpha_by_class,
     )
     threshold_grid = [
-        float(v.strip()) for v in str(args.threshold_grid).split(',')
-        if str(v).strip() != ''
+        float(v.strip())
+        for v in str(args.threshold_grid).split(",")
+        if str(v).strip() != ""
     ]
     if len(threshold_grid) == 0:
-        raise ValueError('--threshold_grid should contain at least one value.')
+        raise ValueError("--threshold_grid should contain at least one value.")
     threshold_grid = sorted(set(threshold_grid))
     threshold_by_class, blend_threshold_metrics = _optimize_class_thresholds(
         prob_matrix=blend_class_prob,
@@ -2945,40 +3249,53 @@ def main(argv=None):
             threshold_grid=threshold_grid,
         )
         blend_foldwise = {
-            'description': 'Each held-out fold is predicted using classwise alpha and class thresholds optimized on the other folds.',
-            'metrics': foldwise_metrics,
-            'folds': foldwise_rows,
+            "description": "Each held-out fold is predicted using classwise alpha and class thresholds optimized on the other folds.",
+            "metrics": foldwise_metrics,
+            "folds": foldwise_rows,
         }
 
-    targetp_macro_f1 = float(np.mean(np.asarray(
-        [TARGETP_TABLE1_REFERENCE[c]['f1'] for c in class_names],
-        dtype=np.float64,
-    )))
+    targetp_macro_f1 = float(
+        np.mean(
+            np.asarray(
+                [TARGETP_TABLE1_REFERENCE[c]["f1"] for c in class_names],
+                dtype=np.float64,
+            )
+        )
+    )
 
     out = {
-        'training_tsv': args.training_tsv,
-        'class_names': class_names,
-        'targetp_reference': TARGETP_TABLE1_REFERENCE,
-        'targetp_macro_f1': targetp_macro_f1,
-        'organism_gate': bool(organism_gate),
-        'bilstm': bilstm_info,
-        'esm': esm_info,
-        'blend_global': {
-            'alpha': float(best_alpha),
-            'metrics': blend_global_metrics,
+        "training_tsv": args.training_tsv,
+        "class_names": class_names,
+        "targetp_reference": TARGETP_TABLE1_REFERENCE,
+        "targetp_macro_f1": targetp_macro_f1,
+        "organism_gate": bool(organism_gate),
+        "bilstm": bilstm_info,
+        "esm": esm_info,
+        "blend_global": {
+            "alpha": float(best_alpha),
+            "metrics": blend_global_metrics,
         },
-        'blend_classwise': {
-            'alpha_by_class': {class_names[i]: float(alpha_by_class[i]) for i in range(len(class_names))},
-            'metrics': blend_class_metrics,
+        "blend_classwise": {
+            "alpha_by_class": {
+                class_names[i]: float(alpha_by_class[i])
+                for i in range(len(class_names))
+            },
+            "metrics": blend_class_metrics,
         },
-        'blend_threshold': {
-            'alpha_by_class': {class_names[i]: float(alpha_by_class[i]) for i in range(len(class_names))},
-            'class_thresholds': {class_names[i]: float(threshold_by_class[i]) for i in range(len(class_names))},
-            'metrics': blend_threshold_metrics,
+        "blend_threshold": {
+            "alpha_by_class": {
+                class_names[i]: float(alpha_by_class[i])
+                for i in range(len(class_names))
+            },
+            "class_thresholds": {
+                class_names[i]: float(threshold_by_class[i])
+                for i in range(len(class_names))
+            },
+            "metrics": blend_threshold_metrics,
         },
     }
     if blend_foldwise is not None:
-        out['blend_foldwise'] = blend_foldwise
+        out["blend_foldwise"] = blend_foldwise
     specialist_postprocess = None
     if _to_bool_yes_no(args.specialist_postprocess):
         specialist_rows = _read_training_rows(path=args.training_tsv)
@@ -2994,7 +3311,7 @@ def main(argv=None):
             class_names=class_names,
             ltp_mass_threshold=float(args.specialist_ltp_mass_threshold),
         )
-        out['specialist_postprocess'] = specialist_postprocess
+        out["specialist_postprocess"] = specialist_postprocess
     specialist_foldwise = None
     if _to_bool_yes_no(args.foldwise_specialist_eval):
         specialist_rows = _read_training_rows(path=args.training_tsv)
@@ -3011,26 +3328,28 @@ def main(argv=None):
             ltp_mass_threshold=float(args.specialist_ltp_mass_threshold),
             threshold_objective=args.specialist_threshold_objective,
         )
-        out['specialist_foldwise'] = specialist_foldwise
+        out["specialist_foldwise"] = specialist_foldwise
     specialist_foldwise_fixed = None
     if _to_bool_yes_no(args.foldwise_specialist_fixed_eval):
         specialist_rows = _read_training_rows(path=args.training_tsv)
         fold_ids = _read_fold_ids_from_training_tsv(training_tsv=args.training_tsv)
-        specialist_foldwise_fixed = _evaluate_foldwise_fixed_targetp_specialist_postprocess(
-            rows=specialist_rows,
-            prob_a=bilstm_prob,
-            prob_b=esm_prob,
-            true_idx=bilstm_true,
-            fold_ids=fold_ids,
-            class_names=class_names,
-            alpha_grid=grid,
-            threshold_grid=threshold_grid,
-            score_npz=str(args.foldwise_specialist_fixed_score_npz),
+        specialist_foldwise_fixed = (
+            _evaluate_foldwise_fixed_targetp_specialist_postprocess(
+                rows=specialist_rows,
+                prob_a=bilstm_prob,
+                prob_b=esm_prob,
+                true_idx=bilstm_true,
+                fold_ids=fold_ids,
+                class_names=class_names,
+                alpha_grid=grid,
+                threshold_grid=threshold_grid,
+                score_npz=str(args.foldwise_specialist_fixed_score_npz),
+            )
         )
-        out['specialist_foldwise_fixed'] = specialist_foldwise_fixed
+        out["specialist_foldwise_fixed"] = specialist_foldwise_fixed
     _attach_targetp_margin_summaries(out=out, class_names=class_names)
-    if str(args.model_out).strip() != '':
-        out['model_out'] = _export_targetp_blend_runtime_model(
+    if str(args.model_out).strip() != "":
+        out["model_out"] = _export_targetp_blend_runtime_model(
             args=args,
             prob_a=bilstm_prob,
             prob_b=esm_prob,
@@ -3040,37 +3359,47 @@ def main(argv=None):
             class_thresholds=threshold_by_class,
             benchmark_out=out,
         )
-    out['class_rows'] = _build_summary_rows(
+    out["class_rows"] = _build_summary_rows(
         targetp_ref=TARGETP_TABLE1_REFERENCE,
-        bilstm_metrics=out['bilstm']['metrics'],
-        esm_metrics=out['esm']['metrics'],
-        blend_global_metrics=out['blend_global']['metrics'],
-        blend_class_metrics=out['blend_classwise']['metrics'],
-        blend_threshold_metrics=out['blend_threshold']['metrics'],
-        blend_foldwise_metrics=(None if blend_foldwise is None else out['blend_foldwise']['metrics']),
-        specialist_metrics=(None if specialist_postprocess is None else out['specialist_postprocess']['metrics']),
-        specialist_foldwise_metrics=(None if specialist_foldwise is None else out['specialist_foldwise']['metrics']),
+        bilstm_metrics=out["bilstm"]["metrics"],
+        esm_metrics=out["esm"]["metrics"],
+        blend_global_metrics=out["blend_global"]["metrics"],
+        blend_class_metrics=out["blend_classwise"]["metrics"],
+        blend_threshold_metrics=out["blend_threshold"]["metrics"],
+        blend_foldwise_metrics=(
+            None if blend_foldwise is None else out["blend_foldwise"]["metrics"]
+        ),
+        specialist_metrics=(
+            None
+            if specialist_postprocess is None
+            else out["specialist_postprocess"]["metrics"]
+        ),
+        specialist_foldwise_metrics=(
+            None
+            if specialist_foldwise is None
+            else out["specialist_foldwise"]["metrics"]
+        ),
         specialist_foldwise_fixed_metrics=(
             None
             if specialist_foldwise_fixed is None
-            else out['specialist_foldwise_fixed']['metrics']
+            else out["specialist_foldwise_fixed"]["metrics"]
         ),
     )
-    out['markdown'] = _render_markdown(out=out)
+    out["markdown"] = _render_markdown(out=out)
 
     out_json_dir = os.path.dirname(args.out_json)
-    if out_json_dir != '':
+    if out_json_dir != "":
         os.makedirs(out_json_dir, exist_ok=True)
     atomic_write_json(args.out_json, out, indent=2)
 
     out_md_dir = os.path.dirname(args.out_md)
-    if out_md_dir != '':
+    if out_md_dir != "":
         os.makedirs(out_md_dir, exist_ok=True)
-    with atomic_text_writer(args.out_md, encoding='utf-8') as out_md:
-        out_md.write(out['markdown'] + '\n')
+    with atomic_text_writer(args.out_md, encoding="utf-8") as out_md:
+        out_md.write(out["markdown"] + "\n")
 
     print(json.dumps(out, indent=2, allow_nan=False))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

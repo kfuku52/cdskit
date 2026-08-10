@@ -14,10 +14,10 @@ from cdskit.util import (
 
 def parsegb_record(record, seqnamefmt, extract_cds=False, list_seqname_keys=False):
     if list_seqname_keys:
-        sys.stderr.write(str(record.annotations) + '\n')
+        sys.stderr.write(str(record.annotations) + "\n")
 
-    record.name = ''
-    record.description = ''
+    record.name = ""
+    record.description = ""
     record.id = get_seqname(record, seqnamefmt=seqnamefmt)
     if extract_cds:
         return replace_seq2cds(record)
@@ -25,12 +25,14 @@ def parsegb_record(record, seqnamefmt, extract_cds=False, list_seqname_keys=Fals
 
 
 def parsegb_main(args):
-    if str(args.inseqformat).lower() not in ('genbank', 'gb'):
-        txt = 'parsegb requires --in_seq_format genbank (or gb), but got "{}". Exiting.\n'
-        raise Exception(txt.format(args.inseqformat))
+    if str(args.inseqformat).lower() not in ("genbank", "gb"):
+        txt = (
+            'parsegb requires --in_seq_format genbank (or gb), but got "{}". Exiting.\n'
+        )
+        raise ValueError(txt.format(args.inseqformat))
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
-    stop_if_not_dna(records=records, label='--seq_file')
-    threads = resolve_threads(getattr(args, 'threads', 1))
+    stop_if_not_dna(records=records, label="--seq_file")
+    threads = resolve_threads(getattr(args, "threads", 1))
     if args.list_seqname_keys:
         # Keep deterministic key listing order in stderr output.
         threads = 1

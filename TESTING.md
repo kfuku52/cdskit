@@ -14,55 +14,76 @@ and `serial` markers document execution constraints.
 
 ## Install
 
-Install only what the selected check needs:
+CI and local development use the committed `uv.lock`. Install only what the
+selected check needs:
 
 ```bash
-python -m pip install -e ".[test]"
-python -m pip install -e ".[test,coverage,ml]"
-python -m pip install -e ".[quality]"
-python -m pip install -e ".[build]"
-python -m pip install -e ".[security]"
+uv sync --locked --no-dev --group test
+uv sync --locked --no-dev --group test --group coverage --extra ml
+uv sync --locked --only-group quality
+uv sync --locked --only-group build
+uv sync --locked --only-group security
 ```
 
-`.[dev]` installs all of these groups for a complete development environment.
+Use `uv sync --locked --extra ml` for the complete development environment.
+The PEP 621 extras remain available to pip users, for example
+`python -m pip install -e ".[test,coverage]"`.
+
+Refresh the lock only as an intentional dependency update, then review and
+test the diff:
+
+```bash
+uv lock --upgrade
+uv lock --check
+```
 
 ## Common commands
 
 Use the dependency-light suite for the normal edit/test loop:
 
 ```bash
-python -m pytest -q tests/unit tests/integration -m "not ml and not subprocess"
+uv run --no-sync python -m pytest -q tests/unit tests/integration -m "not ml and not subprocess"
 ```
 
 Run one boundary or the optional ML tests:
 
 ```bash
-python -m pytest -q tests/unit
-python -m pytest -q tests/integration -m "not ml"
-python -m pytest -q -m ml
+uv run --no-sync python -m pytest -q tests/unit
+uv run --no-sync python -m pytest -q tests/integration -m "not ml"
+uv run --no-sync python -m pytest -q -m ml
 ```
 
 Run every installed test:
 
 ```bash
-python -m pytest -q
+uv run --no-sync python -m pytest -q
 ```
 
 Run the same parallel coverage check used by CI:
 
 ```bash
-python -m pytest -q -n 2 --dist=worksteal \
-  --cov=cdskit --cov-report=term-missing --cov-fail-under=75
+uv run --no-sync python -m pytest -q -n 2 --dist=worksteal \
+  --cov=cdskit --cov-report=term-missing --cov-report=json:coverage.json
+uv run --no-sync python scripts/check_coverage.py coverage.json
 ```
+
+Coverage is branch-aware. The project-wide 74% floor is complemented by
+higher module-specific floors for transactional I/O, command dispatch,
+pretrained-model downloads, and TargetP training configuration.
 
 Run the security and complexity guards used by CI:
 
 ```bash
-python -m pip_audit --local --skip-editable
-python -m bandit -q -r cdskit -lll
-python -m ruff check cdskit --select C901 \
-  --config lint.mccabe.max-complexity=38
+uv run --no-sync python -m ruff format --check cdskit scripts tests
+uv run --no-sync python -m ruff check cdskit scripts tests
+uv run --no-sync python -m mypy cdskit
+uv run --no-sync python -m pip_audit --local --skip-editable
+uv run --no-sync python -m bandit -q -r cdskit -lll
+uv run --no-sync python -m ruff check cdskit --select C901
 ```
+
+The complexity ceiling is 35. A scheduled GitHub Actions workflow runs the
+full CPU hot-path benchmark weekly and retains its JSON result for 90 days.
 
 Dependency minimums express API compatibility, not a recommendation to retain
 old releases indefinitely. Use a freshly resolved environment for production

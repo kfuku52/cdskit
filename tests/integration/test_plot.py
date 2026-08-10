@@ -127,7 +127,7 @@ class TestPlotMain:
             top_n=1,
         )
 
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             plot_main(args)
         assert "correctly aligned" in str(exc_info.value)
 
@@ -148,7 +148,7 @@ class TestPlotMain:
             top_n=1,
         )
 
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             plot_main(args)
         assert "between 0 and 1 inclusive" in str(exc_info.value)
 
@@ -290,7 +290,9 @@ class TestPlotMain:
         assert "alpha" in svg
         assert "Top ambiguous sequences" not in svg
 
-    def test_plot_msa_mode_rejects_wrap_not_multiple_of_three(self, temp_dir, mock_args):
+    def test_plot_msa_mode_rejects_wrap_not_multiple_of_three(
+        self, temp_dir, mock_args
+    ):
         input_path = temp_dir / "input.fasta"
         records = [
             SeqRecord(Seq("ATGAAATGA---"), id="seq1", description=""),
@@ -306,14 +308,17 @@ class TestPlotMain:
             wrap=10,
         )
 
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(ValueError) as excinfo:
             plot_main(args)
         assert "multiple of three" in str(excinfo.value)
 
     @pytest.mark.parametrize(
         "records, message",
         [
-            ([SeqRecord(Seq("ATGAAAT"), id="short", description="")], "multiple of three"),
+            (
+                [SeqRecord(Seq("ATGAAAT"), id="short", description="")],
+                "multiple of three",
+            ),
             (
                 [
                     SeqRecord(Seq("ATGAAA"), id="seq1", description=""),
@@ -327,9 +332,11 @@ class TestPlotMain:
     def test_plot_map_mode_validates_input(self, temp_dir, mock_args, records, message):
         input_path = temp_dir / "input.fasta"
         Bio.SeqIO.write(records, str(input_path), "fasta")
-        args = mock_args(seqfile=str(input_path), outfile="-", mode="map", plotformat="svg")
+        args = mock_args(
+            seqfile=str(input_path), outfile="-", mode="map", plotformat="svg"
+        )
 
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(ValueError) as excinfo:
             plot_main(args)
         assert message in str(excinfo.value)
 
@@ -344,6 +351,6 @@ class TestPlotMain:
             mode="weird",
         )
 
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             plot_main(args)
         assert "Invalid --mode" in str(exc_info.value)

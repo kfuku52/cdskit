@@ -46,47 +46,47 @@ class TestPadSeqs:
 
     def test_no_padding_needed(self):
         """Test sequence already multiple of 3."""
-        ps = padseqs(original_seq="ATGAAA", codon_table=1, padchar='N')
+        ps = padseqs(original_seq="ATGAAA", codon_table=1, padchar="N")
         ps.add(headn=0, tailn=0)
         result = ps.get_minimum_num_stop()
-        assert str(result['new_seq']) == "ATGAAA"
-        assert result['headn'] == 0
-        assert result['tailn'] == 0
+        assert str(result["new_seq"]) == "ATGAAA"
+        assert result["headn"] == 0
+        assert result["tailn"] == 0
 
     def test_tail_padding(self):
         """Test adding tail padding."""
-        ps = padseqs(original_seq="ATGAA", codon_table=1, padchar='N')
+        ps = padseqs(original_seq="ATGAA", codon_table=1, padchar="N")
         ps.add(headn=0, tailn=1)
         result = ps.get_minimum_num_stop()
-        assert str(result['new_seq']) == "ATGAAN"
-        assert len(result['new_seq']) == 6
+        assert str(result["new_seq"]) == "ATGAAN"
+        assert len(result["new_seq"]) == 6
 
     def test_head_padding(self):
         """Test adding head padding."""
-        ps = padseqs(original_seq="TGAAA", codon_table=1, padchar='N')
+        ps = padseqs(original_seq="TGAAA", codon_table=1, padchar="N")
         ps.add(headn=1, tailn=0)
         result = ps.get_minimum_num_stop()
-        assert str(result['new_seq']) == "NTGAAA"
-        assert len(result['new_seq']) == 6
+        assert str(result["new_seq"]) == "NTGAAA"
+        assert len(result["new_seq"]) == 6
 
     def test_minimum_stop_selection(self):
         """Test that minimum stop codon option is selected."""
         # Original: ATGA (4 nt) - needs 2 padding
         # Option 1: ATGANN (tail) -> ATG ANN -> M X (0 stops)
         # Option 2: NNATGA (head) -> NNA TGA -> X * (1 stop)
-        ps = padseqs(original_seq="ATGA", codon_table=1, padchar='N')
+        ps = padseqs(original_seq="ATGA", codon_table=1, padchar="N")
         ps.add(headn=0, tailn=2)  # ATGANN -> 0 internal stops
         ps.add(headn=2, tailn=0)  # NNATGA -> TGA is stop
         result = ps.get_minimum_num_stop()
         # Should pick the option with fewer stops
-        assert result['num_stop'] <= 1
+        assert result["num_stop"] <= 1
 
     def test_gap_padding_char(self):
         """Test using '-' as padding character."""
-        ps = padseqs(original_seq="ATGAA", codon_table=1, padchar='-')
+        ps = padseqs(original_seq="ATGAA", codon_table=1, padchar="-")
         ps.add(headn=0, tailn=1)
         result = ps.get_minimum_num_stop()
-        assert str(result['new_seq']) == "ATGAA-"
+        assert str(result["new_seq"]) == "ATGAA-"
 
 
 class TestPadMain:
@@ -102,11 +102,11 @@ class TestPadMain:
             seqfile=str(input_path),
             outfile=str(output_path),
             codontable=999,
-            padchar='N',
+            padchar="N",
             nopseudo=False,
         )
 
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             pad_main(args)
         assert "Invalid --codon_table" in str(exc_info.value)
 
@@ -122,7 +122,7 @@ class TestPadMain:
             seqfile=str(input_path),
             outfile=str(output_path),
             codontable=1,
-            padchar='N',
+            padchar="N",
             nopseudo=False,
         )
 
@@ -133,7 +133,7 @@ class TestPadMain:
         expected = list(Bio.SeqIO.parse(str(expected_path), "fasta"))
 
         assert len(result) == len(expected)
-        for r, e in zip(result, expected):
+        for r, e in zip(result, expected, strict=False):
             assert str(r.seq) == str(e.seq), f"Mismatch for {r.id}"
 
     def test_pad_sequences_become_multiple_of_three(self, temp_dir, mock_args):
@@ -154,7 +154,7 @@ class TestPadMain:
             seqfile=str(input_path),
             outfile=str(output_path),
             codontable=1,
-            padchar='N',
+            padchar="N",
             nopseudo=False,
         )
 
@@ -163,7 +163,9 @@ class TestPadMain:
         # Verify all sequences are multiples of 3
         result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
         for r in result:
-            assert len(r.seq) % 3 == 0, f"{r.id} length {len(r.seq)} is not multiple of 3"
+            assert len(r.seq) % 3 == 0, (
+                f"{r.id} length {len(r.seq)} is not multiple of 3"
+            )
 
     def test_pad_with_nopseudo_flag(self, temp_dir, mock_args):
         """Test --nopseudo flag filters out sequences with stop codons."""
@@ -172,8 +174,12 @@ class TestPadMain:
 
         # Create sequences - one with stop, one without
         records = [
-            SeqRecord(Seq("ATGAAATGA"), id="with_stop", description=""),  # M K * (has stop)
-            SeqRecord(Seq("ATGAAACCC"), id="no_stop", description=""),  # M K P (no internal stop)
+            SeqRecord(
+                Seq("ATGAAATGA"), id="with_stop", description=""
+            ),  # M K * (has stop)
+            SeqRecord(
+                Seq("ATGAAACCC"), id="no_stop", description=""
+            ),  # M K P (no internal stop)
         ]
         Bio.SeqIO.write(records, str(input_path), "fasta")
 
@@ -181,7 +187,7 @@ class TestPadMain:
             seqfile=str(input_path),
             outfile=str(output_path),
             codontable=1,
-            padchar='N',
+            padchar="N",
             nopseudo=True,
         )
 
@@ -199,7 +205,9 @@ class TestPadMain:
 
         # Sequence that needs padding - X will be replaced with N during processing
         records = [
-            SeqRecord(Seq("ATGXXXA"), id="seq_with_x", description=""),  # 7 nt, needs padding
+            SeqRecord(
+                Seq("ATGXXXA"), id="seq_with_x", description=""
+            ),  # 7 nt, needs padding
         ]
         Bio.SeqIO.write(records, str(input_path), "fasta")
 
@@ -207,7 +215,7 @@ class TestPadMain:
             seqfile=str(input_path),
             outfile=str(output_path),
             codontable=1,
-            padchar='N',
+            padchar="N",
             nopseudo=False,
         )
 
@@ -216,7 +224,7 @@ class TestPadMain:
         result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
         # X should be replaced with N and sequence padded to multiple of 3
         assert len(result[0].seq) % 3 == 0
-        assert 'X' not in str(result[0].seq)
+        assert "X" not in str(result[0].seq)
 
     def test_pad_02_data(self, data_dir, temp_dir, mock_args):
         """Test pad command with pad_02 test data."""
@@ -230,7 +238,7 @@ class TestPadMain:
             seqfile=str(input_path),
             outfile=str(output_path),
             codontable=1,
-            padchar='N',
+            padchar="N",
             nopseudo=False,
         )
 
@@ -240,7 +248,7 @@ class TestPadMain:
         expected = list(Bio.SeqIO.parse(str(expected_path), "fasta"))
 
         assert len(result) == len(expected)
-        for r, e in zip(result, expected):
+        for r, e in zip(result, expected, strict=False):
             assert str(r.seq) == str(e.seq), f"Mismatch for {r.id}"
 
     def test_pad_issue7_head_padding_applied(self, temp_dir, mock_args, capsys):
@@ -286,7 +294,7 @@ class TestPadMain:
             seqfile=str(input_path),
             outfile=str(output_path),
             codontable=1,
-            padchar='N',
+            padchar="N",
             nopseudo=False,
         )
 
@@ -299,9 +307,11 @@ class TestPadMain:
         # Verify padding was actually added (should have N characters)
         seq_str = str(result[0].seq)
         # The original sequence didn't have N, so any N must be padding
-        assert 'N' in seq_str
+        assert "N" in seq_str
 
-    def test_pad_issue8_no_report_when_no_padding_needed(self, temp_dir, mock_args, capsys):
+    def test_pad_issue8_no_report_when_no_padding_needed(
+        self, temp_dir, mock_args, capsys
+    ):
         """Test Issue #8: pad should not report padding when no padding needed.
 
         Issue: Sequences that don't need padding but have stop codons were
@@ -313,7 +323,9 @@ class TestPadMain:
         # Sequence that's already a multiple of 3, has terminal stop but no internal stops
         # Should NOT be reported as "padded" since no padding was added
         records = [
-            SeqRecord(Seq("ATGAAACCCGGGTGA"), id="Dr00005842-RA", description=""),  # 15 nt, multiple of 3
+            SeqRecord(
+                Seq("ATGAAACCCGGGTGA"), id="Dr00005842-RA", description=""
+            ),  # 15 nt, multiple of 3
         ]
         Bio.SeqIO.write(records, str(input_path), "fasta")
 
@@ -321,7 +333,7 @@ class TestPadMain:
             seqfile=str(input_path),
             outfile=str(output_path),
             codontable=1,
-            padchar='N',
+            padchar="N",
             nopseudo=False,
         )
 
@@ -352,7 +364,9 @@ class TestPadMain:
         # Sequence with XXX that needs padding (11 nt, not multiple of 3)
         # This triggers the padding logic which replaces X with N
         records = [
-            SeqRecord(Seq("ATGXXXAAATG"), id="seq_with_xxx", description=""),  # 11 nt, needs padding
+            SeqRecord(
+                Seq("ATGXXXAAATG"), id="seq_with_xxx", description=""
+            ),  # 11 nt, needs padding
         ]
         Bio.SeqIO.write(records, str(input_path), "fasta")
 
@@ -360,7 +374,7 @@ class TestPadMain:
             seqfile=str(input_path),
             outfile=str(output_path),
             codontable=1,
-            padchar='N',
+            padchar="N",
             nopseudo=False,
         )
 
@@ -369,7 +383,7 @@ class TestPadMain:
 
         result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
         # X should be replaced with N (when padding is needed)
-        assert 'X' not in str(result[0].seq)
+        assert "X" not in str(result[0].seq)
         # Length should be multiple of 3
         assert len(result[0].seq) % 3 == 0
 
@@ -385,7 +399,9 @@ class TestPadMain:
         # Sequence with XXX and internal stop codon (TGA)
         # This triggers stop codon minimization logic which replaces X with N
         records = [
-            SeqRecord(Seq("ATGXXXTGACCC"), id="xxx_with_stop", description=""),  # 12 nt, has stop
+            SeqRecord(
+                Seq("ATGXXXTGACCC"), id="xxx_with_stop", description=""
+            ),  # 12 nt, has stop
         ]
         Bio.SeqIO.write(records, str(input_path), "fasta")
 
@@ -393,7 +409,7 @@ class TestPadMain:
             seqfile=str(input_path),
             outfile=str(output_path),
             codontable=1,
-            padchar='N',
+            padchar="N",
             nopseudo=False,
         )
 
@@ -402,7 +418,7 @@ class TestPadMain:
 
         result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
         # X should be replaced with N
-        assert 'X' not in str(result[0].seq)
+        assert "X" not in str(result[0].seq)
         # Length should be multiple of 3
         assert len(result[0].seq) % 3 == 0
 
@@ -418,7 +434,9 @@ class TestPadMain:
 
         # Sequence with XXX but already valid (12 nt, no internal stops)
         records = [
-            SeqRecord(Seq("ATGXXXAAACCC"), id="valid_xxx", description=""),  # 12 nt, no stops
+            SeqRecord(
+                Seq("ATGXXXAAACCC"), id="valid_xxx", description=""
+            ),  # 12 nt, no stops
         ]
         Bio.SeqIO.write(records, str(input_path), "fasta")
 
@@ -426,7 +444,7 @@ class TestPadMain:
             seqfile=str(input_path),
             outfile=str(output_path),
             codontable=1,
-            padchar='N',
+            padchar="N",
             nopseudo=False,
         )
 
@@ -454,7 +472,7 @@ class TestPadMain:
             seqfile=str(input_path),
             outfile=str(out_single),
             codontable=1,
-            padchar='N',
+            padchar="N",
             nopseudo=False,
             threads=1,
         )
@@ -462,7 +480,7 @@ class TestPadMain:
             seqfile=str(input_path),
             outfile=str(out_threaded),
             codontable=1,
-            padchar='N',
+            padchar="N",
             nopseudo=False,
             threads=4,
         )
@@ -473,4 +491,6 @@ class TestPadMain:
         result_single = list(Bio.SeqIO.parse(str(out_single), "fasta"))
         result_threaded = list(Bio.SeqIO.parse(str(out_threaded), "fasta"))
         assert [r.id for r in result_single] == [r.id for r in result_threaded]
-        assert [str(r.seq) for r in result_single] == [str(r.seq) for r in result_threaded]
+        assert [str(r.seq) for r in result_single] == [
+            str(r.seq) for r in result_threaded
+        ]

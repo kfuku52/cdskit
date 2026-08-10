@@ -44,13 +44,15 @@ def problematic_rate(seq, problematic_chars):
     return num_problematic_char / seq_len
 
 
-def should_remove_record(record, seqname_pattern, problematic_percent, problematic_chars):
-    if hasattr(seqname_pattern, 'fullmatch'):
+def should_remove_record(
+    record, seqname_pattern, problematic_percent, problematic_chars
+):
+    if hasattr(seqname_pattern, "fullmatch"):
         matched = seqname_pattern.fullmatch(record.id) is not None
     else:
         compiled = compile_safe_regex(
             seqname_pattern,
-            label='regex in --seq_name_regex',
+            label="regex in --seq_name_regex",
         )
         matched = compiled.fullmatch(record.id) is not None
     if matched:
@@ -76,24 +78,24 @@ def should_keep_record(record, seqname_pattern, problematic_percent, problematic
 def compile_seqname_regex(seqname_pattern):
     return compile_safe_regex(
         seqname_pattern,
-        label='regex in --seq_name_regex',
+        label="regex in --seq_name_regex",
     )
 
 
 def validate_problematic_percent(problematic_percent):
     if not math.isfinite(problematic_percent):
-        txt = '--problematic_percent should be finite within [0, 100], but got {}. Exiting.\n'
-        raise Exception(txt.format(problematic_percent))
+        txt = "--problematic_percent should be finite within [0, 100], but got {}. Exiting.\n"
+        raise ValueError(txt.format(problematic_percent))
     if (problematic_percent < 0) or (problematic_percent > 100):
-        txt = '--problematic_percent should be within [0, 100], but got {}. Exiting.\n'
-        raise Exception(txt.format(problematic_percent))
+        txt = "--problematic_percent should be within [0, 100], but got {}. Exiting.\n"
+        raise ValueError(txt.format(problematic_percent))
 
 
 def validate_problematic_chars(problematic_chars, problematic_percent):
     normalized_chars = normalize_problematic_chars(problematic_chars)
     if (problematic_percent > 0) and (len(normalized_chars) == 0):
-        txt = '--problematic_chars must contain at least one character when --problematic_percent > 0. Exiting.\n'
-        raise Exception(txt)
+        txt = "--problematic_chars must contain at least one character when --problematic_percent > 0. Exiting.\n"
+        raise ValueError(txt)
     return normalized_chars
 
 
@@ -101,8 +103,8 @@ def rmseq_main(args):
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
     stop_if_not_seqtype(
         records=records,
-        seqtype=getattr(args, 'seqtype', 'auto'),
-        label='--seq_file',
+        seqtype=getattr(args, "seqtype", "auto"),
+        label="--seq_file",
     )
     validate_problematic_percent(args.problematic_percent)
     normalized_problematic_chars = validate_problematic_chars(
@@ -110,7 +112,7 @@ def rmseq_main(args):
         problematic_percent=args.problematic_percent,
     )
     compiled_pattern = compile_seqname_regex(args.seqname)
-    threads = resolve_threads(getattr(args, 'threads', 1))
+    threads = resolve_threads(getattr(args, "threads", 1))
     worker = partial(
         should_keep_record,
         seqname_pattern=compiled_pattern,
@@ -118,5 +120,9 @@ def rmseq_main(args):
         problematic_chars=normalized_problematic_chars,
     )
     keep_flags = parallel_map_ordered(items=records, worker=worker, threads=threads)
-    new_records = [record for record, keep in zip(records, keep_flags) if keep]
-    write_seqs(records=new_records, outfile=args.outfile, outseqformat=args.outseqformat)
+    new_records = [
+        record for record, keep in zip(records, keep_flags, strict=False) if keep
+    ]
+    write_seqs(
+        records=new_records, outfile=args.outfile, outseqformat=args.outseqformat
+    )

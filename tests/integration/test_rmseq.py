@@ -16,11 +16,11 @@ class TestRmseqHelpers:
 
     def test_problematic_rate_multiple_char_sets(self):
         seq = "ATN-X?"
-        rate = problematic_rate(seq, ['N', '-', 'X', '?'])
+        rate = problematic_rate(seq, ["N", "-", "X", "?"])
         assert rate == pytest.approx(4 / 6)
 
     def test_problematic_rate_empty_sequence(self):
-        rate = problematic_rate("", ['N', '-', 'X', '?'])
+        rate = problematic_rate("", ["N", "-", "X", "?"])
         assert rate == 0.0
 
     def test_problematic_rate_deduplicates_problematic_chars(self):
@@ -28,26 +28,30 @@ class TestRmseqHelpers:
         assert rate == pytest.approx(2 / 4)
 
     def test_problematic_rate_is_case_insensitive(self):
-        rate = problematic_rate("ATGnnn", ['N'])
+        rate = problematic_rate("ATGnnn", ["N"])
         assert rate == pytest.approx(3 / 6)
 
     def test_should_remove_record_by_name_pattern(self):
-        record = SeqRecord(Seq("ATGAAA"), id="remove_me", name="remove_me", description="")
+        record = SeqRecord(
+            Seq("ATGAAA"), id="remove_me", name="remove_me", description=""
+        )
         remove = should_remove_record(
             record=record,
             seqname_pattern="remove.*",
             problematic_percent=0,
-            problematic_chars=['N'],
+            problematic_chars=["N"],
         )
         assert remove is True
 
     def test_should_remove_record_matches_id_not_name(self):
-        record = SeqRecord(Seq("ATGAAA"), id="remove_me", name="other_name", description="")
+        record = SeqRecord(
+            Seq("ATGAAA"), id="remove_me", name="other_name", description=""
+        )
         remove = should_remove_record(
             record=record,
             seqname_pattern="remove.*",
             problematic_percent=0,
-            problematic_chars=['N'],
+            problematic_chars=["N"],
         )
         assert remove is True
 
@@ -57,7 +61,7 @@ class TestRmseqHelpers:
             record=record,
             seqname_pattern="$^",
             problematic_percent=50,
-            problematic_chars=['N'],
+            problematic_chars=["N"],
         )
         assert remove is True
 
@@ -80,9 +84,9 @@ class TestRmseqMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            seqname='remove.*',  # Regex to match sequences to remove
+            seqname="remove.*",  # Regex to match sequences to remove
             problematic_percent=0,
-            problematic_char=['N', 'X', '-', '?'],
+            problematic_char=["N", "X", "-", "?"],
         )
 
         rmseq_main(args)
@@ -109,9 +113,9 @@ class TestRmseqMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            seqname='$^',  # Regex that matches nothing
+            seqname="$^",  # Regex that matches nothing
             problematic_percent=50,  # Remove if >= 50% problematic
-            problematic_char=['N'],
+            problematic_char=["N"],
         )
 
         rmseq_main(args)
@@ -133,9 +137,9 @@ class TestRmseqMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            seqname='$^',
+            seqname="$^",
             problematic_percent=10,
-            problematic_char=['N'],
+            problematic_char=["N"],
         )
 
         rmseq_main(args)
@@ -157,9 +161,9 @@ class TestRmseqMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            seqname='$^',
+            seqname="$^",
             problematic_percent=50,
-            problematic_char=['N', 'X', '-', '?'],
+            problematic_char=["N", "X", "-", "?"],
         )
 
         rmseq_main(args)
@@ -183,9 +187,9 @@ class TestRmseqMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            seqname='bad.*',
+            seqname="bad.*",
             problematic_percent=50,
-            problematic_char=['N'],
+            problematic_char=["N"],
         )
 
         rmseq_main(args)
@@ -208,9 +212,9 @@ class TestRmseqMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            seqname='$^',  # Matches nothing
+            seqname="$^",  # Matches nothing
             problematic_percent=0,  # No character filtering
-            problematic_char=['N'],
+            problematic_char=["N"],
         )
 
         rmseq_main(args)
@@ -230,9 +234,9 @@ class TestRmseqMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            seqname='$^',
+            seqname="$^",
             problematic_percent=50,
-            problematic_char=['N', '-'],
+            problematic_char=["N", "-"],
         )
 
         rmseq_main(args)
@@ -254,34 +258,58 @@ class TestRmseqMain:
 
         # Simulate wiki example data
         records = [
-            SeqRecord(Seq("AGAGTTCAATATGCTTTGAGTCGAATTCGTAACAATGCTAGAAATCTTCTTACTCTTGAT"),
-                      id="Aquilegia_coerulea_1", description=""),
-            SeqRecord(Seq("AGAGTTCAATATGCTTTAAGTCGAATTCGAAACAATGCTAGAAATCTTCTCACTCTGGAT"),
-                      id="Aquilegia_coerulea_2", description=""),
-            SeqRecord(Seq("AGAGTTCAATATGCTTTAAGTCGAATTCGTAACAATGCAAGAAATCTTCTTACACTTGAT"),
-                      id="Aquilegia_coerulea_3", description=""),
+            SeqRecord(
+                Seq("AGAGTTCAATATGCTTTGAGTCGAATTCGTAACAATGCTAGAAATCTTCTTACTCTTGAT"),
+                id="Aquilegia_coerulea_1",
+                description="",
+            ),
+            SeqRecord(
+                Seq("AGAGTTCAATATGCTTTAAGTCGAATTCGAAACAATGCTAGAAATCTTCTCACTCTGGAT"),
+                id="Aquilegia_coerulea_2",
+                description="",
+            ),
+            SeqRecord(
+                Seq("AGAGTTCAATATGCTTTAAGTCGAATTCGTAACAATGCAAGAAATCTTCTTACACTTGAT"),
+                id="Aquilegia_coerulea_3",
+                description="",
+            ),
             # This should be removed - over 50% N
-            SeqRecord(Seq("AGGGTCCAATATGTTCTGAGCCGTATCCNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"),
-                      id="Hylocereus_undatus_1", description=""),
-            SeqRecord(Seq("AGGGTTCAATACGTTCTGAGCCGTATCCGTAATGCTGCAAGGCATCTTCTTACCCTGGAT"),
-                      id="Hylocereus_undatus_2", description=""),
+            SeqRecord(
+                Seq("AGGGTCCAATATGTTCTGAGCCGTATCCNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"),
+                id="Hylocereus_undatus_1",
+                description="",
+            ),
+            SeqRecord(
+                Seq("AGGGTTCAATACGTTCTGAGCCGTATCCGTAATGCTGCAAGGCATCTTCTTACCCTGGAT"),
+                id="Hylocereus_undatus_2",
+                description="",
+            ),
             # This should be removed - over 50% N
-            SeqRecord(Seq("NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNTGCGGCAAGGCACCTTCTCACTCTGGAT"),
-                      id="Hylocereus_undatus_3", description=""),
+            SeqRecord(
+                Seq("NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNTGCGGCAAGGCACCTTCTCACTCTGGAT"),
+                id="Hylocereus_undatus_3",
+                description="",
+            ),
             # These should be removed - match Arabidopsis regex
-            SeqRecord(Seq("AGAGTTCAATATACACTTAGCAGAATCCGTAATGCTGCAAGAGAACTCTTAACTCTTGAT"),
-                      id="Arabidopsis_thaliana_1", description=""),
-            SeqRecord(Seq("AGAGTGCAGTACTCTCTTAGCCGTATCCGTAATGCTGCTAGAGATCTTTTGACTCTTGAT"),
-                      id="Arabidopsis_thaliana_2", description=""),
+            SeqRecord(
+                Seq("AGAGTTCAATATACACTTAGCAGAATCCGTAATGCTGCAAGAGAACTCTTAACTCTTGAT"),
+                id="Arabidopsis_thaliana_1",
+                description="",
+            ),
+            SeqRecord(
+                Seq("AGAGTGCAGTACTCTCTTAGCCGTATCCGTAATGCTGCTAGAGATCTTTTGACTCTTGAT"),
+                id="Arabidopsis_thaliana_2",
+                description="",
+            ),
         ]
         Bio.SeqIO.write(records, str(input_path), "fasta")
 
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            seqname='Arabidopsis_thaliana.*',  # Wiki example regex
+            seqname="Arabidopsis_thaliana.*",  # Wiki example regex
             problematic_percent=50,
-            problematic_char=['N'],
+            problematic_char=["N"],
         )
 
         rmseq_main(args)
@@ -311,14 +339,16 @@ class TestRmseqMain:
         output_path = temp_dir / "output.fasta"
 
         assert input_path.exists(), "required tracked fixture rmseq_01 input is missing"
-        assert expected_path.exists(), "required tracked fixture rmseq_01 output is missing"
+        assert expected_path.exists(), (
+            "required tracked fixture rmseq_01 output is missing"
+        )
 
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            seqname='Arabidopsis_thaliana.*',
+            seqname="Arabidopsis_thaliana.*",
             problematic_percent=50,
-            problematic_char=['N'],
+            problematic_char=["N"],
         )
 
         rmseq_main(args)
@@ -346,9 +376,9 @@ class TestRmseqMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            seqname='$^',
+            seqname="$^",
             problematic_percent=50,
-            problematic_char=['-'],  # Only count gaps
+            problematic_char=["-"],  # Only count gaps
         )
 
         rmseq_main(args)
@@ -375,17 +405,17 @@ class TestRmseqMain:
         args_single = mock_args(
             seqfile=str(input_path),
             outfile=str(out_single),
-            seqname='remove.*',
+            seqname="remove.*",
             problematic_percent=50,
-            problematic_char=['N'],
+            problematic_char=["N"],
             threads=1,
         )
         args_threaded = mock_args(
             seqfile=str(input_path),
             outfile=str(out_threaded),
-            seqname='remove.*',
+            seqname="remove.*",
             problematic_percent=50,
-            problematic_char=['N'],
+            problematic_char=["N"],
             threads=4,
         )
 
@@ -395,7 +425,9 @@ class TestRmseqMain:
         result_single = list(Bio.SeqIO.parse(str(out_single), "fasta"))
         result_threaded = list(Bio.SeqIO.parse(str(out_threaded), "fasta"))
         assert [r.id for r in result_single] == [r.id for r in result_threaded]
-        assert [str(r.seq) for r in result_single] == [str(r.seq) for r in result_threaded]
+        assert [str(r.seq) for r in result_single] == [
+            str(r.seq) for r in result_threaded
+        ]
 
     def test_rmseq_boundary_percent(self, temp_dir, mock_args):
         """Test behavior at exactly the boundary percent."""
@@ -411,9 +443,9 @@ class TestRmseqMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            seqname='$^',
+            seqname="$^",
             problematic_percent=50,
-            problematic_char=['N'],
+            problematic_char=["N"],
         )
 
         rmseq_main(args)
@@ -437,9 +469,9 @@ class TestRmseqMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            seqname='$^',
+            seqname="$^",
             problematic_percent=50,
-            problematic_char='N',
+            problematic_char="N",
         )
 
         rmseq_main(args)
@@ -455,16 +487,20 @@ class TestRmseqMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            seqname='[',
+            seqname="[",
             problematic_percent=0,
-            problematic_char=['N'],
+            problematic_char=["N"],
         )
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             rmseq_main(args)
-        assert 'Invalid regex in --seq_name_regex' in str(exc_info.value)
+        assert "Invalid regex in --seq_name_regex" in str(exc_info.value)
 
-    @pytest.mark.parametrize('problematic_percent', [-1, 101, float('nan'), float('inf')])
-    def test_rmseq_rejects_invalid_problematic_percent(self, temp_dir, mock_args, problematic_percent):
+    @pytest.mark.parametrize(
+        "problematic_percent", [-1, 101, float("nan"), float("inf")]
+    )
+    def test_rmseq_rejects_invalid_problematic_percent(
+        self, temp_dir, mock_args, problematic_percent
+    ):
         input_path = temp_dir / "input.fasta"
         output_path = temp_dir / "output.fasta"
         records = [SeqRecord(Seq("ATGAAA"), id="seq1", description="")]
@@ -473,15 +509,17 @@ class TestRmseqMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            seqname='$^',
+            seqname="$^",
             problematic_percent=problematic_percent,
-            problematic_char=['N'],
+            problematic_char=["N"],
         )
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             rmseq_main(args)
-        assert '--problematic_percent should be' in str(exc_info.value)
+        assert "--problematic_percent should be" in str(exc_info.value)
 
-    def test_rmseq_rejects_empty_problematic_char_when_percent_positive(self, temp_dir, mock_args):
+    def test_rmseq_rejects_empty_problematic_char_when_percent_positive(
+        self, temp_dir, mock_args
+    ):
         input_path = temp_dir / "input.fasta"
         output_path = temp_dir / "output.fasta"
         records = [SeqRecord(Seq("ATGAAA"), id="seq1", description="")]
@@ -490,13 +528,15 @@ class TestRmseqMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            seqname='$^',
+            seqname="$^",
             problematic_percent=1,
-            problematic_char='',
+            problematic_char="",
         )
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             rmseq_main(args)
-        assert '--problematic_chars must contain at least one character' in str(exc_info.value)
+        assert "--problematic_chars must contain at least one character" in str(
+            exc_info.value
+        )
 
     def test_rmseq_rejects_non_dna_input(self, temp_dir, mock_args):
         input_path = temp_dir / "input.fasta"
@@ -507,16 +547,18 @@ class TestRmseqMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            seqname='$^',
+            seqname="$^",
             problematic_percent=0,
-            problematic_char=['N'],
-            seqtype='dna',
+            problematic_char=["N"],
+            seqtype="dna",
         )
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             rmseq_main(args)
-        assert 'DNA-only input is required' in str(exc_info.value)
+        assert "DNA-only input is required" in str(exc_info.value)
 
-    def test_rmseq_accepts_protein_input_when_seqtype_protein(self, temp_dir, mock_args):
+    def test_rmseq_accepts_protein_input_when_seqtype_protein(
+        self, temp_dir, mock_args
+    ):
         input_path = temp_dir / "input.fasta"
         output_path = temp_dir / "output.fasta"
         records = [
@@ -528,10 +570,10 @@ class TestRmseqMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            seqname='prot_remove',
+            seqname="prot_remove",
             problematic_percent=0,
-            problematic_char=['X'],
-            seqtype='protein',
+            problematic_char=["X"],
+            seqtype="protein",
         )
         rmseq_main(args)
 

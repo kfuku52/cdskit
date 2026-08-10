@@ -19,12 +19,14 @@ class TestValidateHelpers:
 
     def test_summarize_records_mixed_issues(self):
         records = [
-            SeqRecord(Seq("ATGAAATGA"), id="seqA", description=""),   # terminal stop only
-            SeqRecord(Seq("ATGTGACCC"), id="seqB", description=""),   # internal stop
-            SeqRecord(Seq("ATGAAACCC"), id="seqB", description=""),   # duplicate id
-            SeqRecord(Seq("ATGNNNCCC"), id="seqC", description=""),   # ambiguous codon
-            SeqRecord(Seq("---------"), id="seqD", description=""),   # gap-only
-            SeqRecord(Seq("ATGAA"), id="seqE", description=""),       # non-triplet
+            SeqRecord(
+                Seq("ATGAAATGA"), id="seqA", description=""
+            ),  # terminal stop only
+            SeqRecord(Seq("ATGTGACCC"), id="seqB", description=""),  # internal stop
+            SeqRecord(Seq("ATGAAACCC"), id="seqB", description=""),  # duplicate id
+            SeqRecord(Seq("ATGNNNCCC"), id="seqC", description=""),  # ambiguous codon
+            SeqRecord(Seq("---------"), id="seqD", description=""),  # gap-only
+            SeqRecord(Seq("ATGAA"), id="seqE", description=""),  # non-triplet
         ]
         summary = summarize_records(records=records, codontable=1)
 
@@ -70,7 +72,7 @@ class TestValidateMain:
         args = mock_args(
             seqfile=str(input_path),
             codontable=1,
-            report='',
+            report="",
         )
         validate_main(args)
         captured = capsys.readouterr()
@@ -118,13 +120,17 @@ class TestValidateMain:
 
         rows, fieldnames = read_tsv(str(report_path), return_fieldnames=True)
         assert fieldnames == [
-            'schema_version', 'section', 'metric', 'value', 'ids',
+            "schema_version",
+            "section",
+            "metric",
+            "value",
+            "ids",
         ]
-        assert {row['schema_version'] for row in rows} == {'2'}
+        assert {row["schema_version"] for row in rows} == {"2"}
         assert any(
-            row['section'] == 'summary'
-            and row['metric'] == 'num_sequences'
-            and row['value'] == '2'
+            row["section"] == "summary"
+            and row["metric"] == "num_sequences"
+            and row["value"] == "2"
             for row in rows
         )
 
@@ -134,7 +140,7 @@ class TestValidateMain:
         args = mock_args(
             seqfile=str(input_path),
             codontable=1,
-            report='',
+            report="",
         )
         validate_main(args)
         captured = capsys.readouterr()
@@ -180,9 +186,9 @@ class TestValidateMain:
         args = mock_args(
             seqfile=str(input_path),
             codontable=999,
-            report='',
+            report="",
         )
 
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             validate_main(args)
         assert "Invalid --codon_table" in str(exc_info.value)

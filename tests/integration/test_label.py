@@ -30,7 +30,7 @@ class TestLabelHelpers:
         ["abc", "a--b--c", "--_", "abc--", "abc--xy"],
     )
     def test_parse_replace_chars_rejects_invalid_format(self, replace_chars):
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             parse_replace_chars(replace_chars)
         assert "--replace_chars" in str(exc_info.value)
 
@@ -65,7 +65,9 @@ class TestLabelHelpers:
 
     def test_clip_label_ids_clears_stale_description_on_change(self):
         records = [
-            SeqRecord(Seq("ATG"), id="long_name_here", description="long_name_here old"),
+            SeqRecord(
+                Seq("ATG"), id="long_name_here", description="long_name_here old"
+            ),
         ]
         clipped = clip_label_ids(records, 5)
         assert clipped == 1
@@ -115,7 +117,7 @@ class TestLabelMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            replace_chars=':--_',  # Replace : with _
+            replace_chars=":--_",  # Replace : with _
             clip_len=0,
             unique=False,
         )
@@ -125,7 +127,9 @@ class TestLabelMain:
         result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
         assert result[0].id == "seq_1_name"
 
-    def test_label_replace_chars_output_header_not_mixed_with_old_id(self, temp_dir, mock_args):
+    def test_label_replace_chars_output_header_not_mixed_with_old_id(
+        self, temp_dir, mock_args
+    ):
         input_path = temp_dir / "input.fasta"
         output_path = temp_dir / "output.fasta"
 
@@ -137,7 +141,7 @@ class TestLabelMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            replace_chars='1--2',
+            replace_chars="1--2",
             clip_len=0,
             unique=False,
         )
@@ -160,7 +164,7 @@ class TestLabelMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            replace_chars='',
+            replace_chars="",
             clip_len=10,
             unique=False,
         )
@@ -187,7 +191,7 @@ class TestLabelMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            replace_chars='',
+            replace_chars="",
             clip_len=0,
             unique=True,
         )
@@ -210,14 +214,16 @@ class TestLabelMain:
 
         records = [
             SeqRecord(Seq("ATGAAA"), id="long_sequence_name_here", description=""),
-            SeqRecord(Seq("ATGCCC"), id="long_sequence_name_here", description=""),  # Duplicate
+            SeqRecord(
+                Seq("ATGCCC"), id="long_sequence_name_here", description=""
+            ),  # Duplicate
         ]
         Bio.SeqIO.write(records, str(input_path), "fasta")
 
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            replace_chars='',
+            replace_chars="",
             clip_len=15,
             unique=True,
         )
@@ -243,10 +249,10 @@ class TestLabelMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            replace_chars='',
+            replace_chars="",
             clip_len=0,
             unique=False,
-            seqtype='dna',
+            seqtype="dna",
         )
 
         label_main(args)
@@ -268,7 +274,7 @@ class TestLabelMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            replace_chars='|--_',  # Replace | with _
+            replace_chars="|--_",  # Replace | with _
             clip_len=0,
             unique=False,
         )
@@ -293,7 +299,7 @@ class TestLabelMain:
         args_single = mock_args(
             seqfile=str(input_path),
             outfile=str(out_single),
-            replace_chars=':|--_',
+            replace_chars=":|--_",
             clip_len=12,
             unique=True,
             threads=1,
@@ -301,7 +307,7 @@ class TestLabelMain:
         args_threaded = mock_args(
             seqfile=str(input_path),
             outfile=str(out_threaded),
-            replace_chars=':|--_',
+            replace_chars=":|--_",
             clip_len=12,
             unique=True,
             threads=4,
@@ -313,7 +319,9 @@ class TestLabelMain:
         result_single = list(Bio.SeqIO.parse(str(out_single), "fasta"))
         result_threaded = list(Bio.SeqIO.parse(str(out_threaded), "fasta"))
         assert [r.id for r in result_single] == [r.id for r in result_threaded]
-        assert [str(r.seq) for r in result_single] == [str(r.seq) for r in result_threaded]
+        assert [str(r.seq) for r in result_single] == [
+            str(r.seq) for r in result_threaded
+        ]
 
     def test_label_rejects_negative_clip_len(self, temp_dir, mock_args):
         input_path = temp_dir / "input.fasta"
@@ -324,13 +332,13 @@ class TestLabelMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            replace_chars='',
+            replace_chars="",
             clip_len=-1,
             unique=False,
         )
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             label_main(args)
-        assert '--clip_len should be >= 0' in str(exc_info.value)
+        assert "--clip_len should be >= 0" in str(exc_info.value)
 
     def test_label_rejects_non_dna_input(self, temp_dir, mock_args):
         input_path = temp_dir / "input.fasta"
@@ -341,16 +349,18 @@ class TestLabelMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            replace_chars='',
+            replace_chars="",
             clip_len=0,
             unique=False,
-            seqtype='dna',
+            seqtype="dna",
         )
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             label_main(args)
-        assert 'DNA-only input is required' in str(exc_info.value)
+        assert "DNA-only input is required" in str(exc_info.value)
 
-    def test_label_accepts_protein_input_when_seqtype_protein(self, temp_dir, mock_args):
+    def test_label_accepts_protein_input_when_seqtype_protein(
+        self, temp_dir, mock_args
+    ):
         input_path = temp_dir / "input.fasta"
         output_path = temp_dir / "output.fasta"
         records = [SeqRecord(Seq("MKT"), id="prot.1", description="")]
@@ -359,10 +369,10 @@ class TestLabelMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            replace_chars='.--_',
+            replace_chars=".--_",
             clip_len=0,
             unique=False,
-            seqtype='protein',
+            seqtype="protein",
         )
         label_main(args)
 

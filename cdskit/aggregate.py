@@ -3,6 +3,8 @@
 import sys
 from functools import partial
 
+from Bio.SeqRecord import SeqRecord
+
 from cdskit.util import (
     compile_safe_regex,
     parallel_map_ordered,
@@ -16,54 +18,61 @@ from cdskit.util import (
 def aggregate_name(name, expressions):
     aggregated = name
     for expr in expressions:
-        if not hasattr(expr, 'sub'):
-            expr = compile_safe_regex(expr, label='regex in --expression')
-        aggregated = expr.sub('', aggregated)
+        if not hasattr(expr, "sub"):
+            expr = compile_safe_regex(expr, label="regex in --expression")
+        aggregated = expr.sub("", aggregated)
     return aggregated
 
 
 def select_aggregate_record(existing_record, candidate_record, mode):
-    if mode == 'longest':
+    if mode == "longest":
         if len(existing_record.seq) < len(candidate_record.seq):
             return candidate_record
         return existing_record
-    sys.stderr.write('different modes to be supported in future.')
+    sys.stderr.write("different modes to be supported in future.")
     return existing_record
 
 
 def validate_aggregate_expressions(expressions):
     return [
-        compile_safe_regex(expr, label='regex in --expression')
-        for expr in expressions
+        compile_safe_regex(expr, label="regex in --expression") for expr in expressions
     ]
 
 
 def aggregate_main(args):
-    expressions = list(getattr(args, 'expression', []) or [])
+    expressions = list(getattr(args, "expression", []) or [])
     if len(expressions) == 0:
-        sys.stderr.write('Regular expressions for aggregating sequences: (none)\n')
+        sys.stderr.write("Regular expressions for aggregating sequences: (none)\n")
     else:
-        sys.stderr.write('Regular expressions for aggregating sequences: ' + ' '.join(expressions) + '\n')
-    sys.stderr.write('Criterion for aggregated sequences to retain: '+args.mode+'\n')
+        sys.stderr.write(
+            "Regular expressions for aggregating sequences: "
+            + " ".join(expressions)
+            + "\n"
+        )
+    sys.stderr.write(
+        "Criterion for aggregated sequences to retain: " + args.mode + "\n"
+    )
     expressions = validate_aggregate_expressions(expressions)
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
     stop_if_not_seqtype(
         records=records,
-        seqtype=getattr(args, 'seqtype', 'auto'),
-        label='--seq_file',
+        seqtype=getattr(args, "seqtype", "auto"),
+        label="--seq_file",
     )
     if len(expressions) == 0:
-        write_seqs(records=records, outfile=args.outfile, outseqformat=args.outseqformat)
+        write_seqs(
+            records=records, outfile=args.outfile, outseqformat=args.outseqformat
+        )
         return
-    threads = resolve_threads(getattr(args, 'threads', 1))
+    threads = resolve_threads(getattr(args, "threads", 1))
     worker = partial(aggregate_name, expressions=expressions)
     aggregated_names = parallel_map_ordered(
         items=[record.id for record in records],
         worker=worker,
         threads=threads,
     )
-    uniq = {}
-    for record, newname in zip(records, aggregated_names):
+    uniq: dict[str, SeqRecord] = {}
+    for record, newname in zip(records, aggregated_names, strict=True):
         if newname in uniq:
             uniq[newname] = select_aggregate_record(
                 existing_record=uniq[newname],
@@ -73,4 +82,6 @@ def aggregate_main(args):
         else:
             uniq[newname] = record
     out_records = list(uniq.values())
-    write_seqs(records=out_records, outfile=args.outfile, outseqformat=args.outseqformat)
+    write_seqs(
+        records=out_records, outfile=args.outfile, outseqformat=args.outseqformat
+    )

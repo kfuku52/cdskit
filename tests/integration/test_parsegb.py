@@ -12,7 +12,9 @@ from Bio.SeqFeature import SeqFeature, FeatureLocation
 from cdskit.parsegb import parsegb_main, parsegb_record
 
 
-def create_genbank_record(seq, record_id, organism="Test organism", accession="TEST001"):
+def create_genbank_record(
+    seq, record_id, organism="Test organism", accession="TEST001"
+):
     """Helper to create a minimal GenBank record for testing."""
     record = SeqRecord(
         Seq(seq),
@@ -26,14 +28,16 @@ def create_genbank_record(seq, record_id, organism="Test organism", accession="T
     return record
 
 
-def create_genbank_with_cds(seq, cds_start, cds_end, record_id, organism="Test organism"):
+def create_genbank_with_cds(
+    seq, cds_start, cds_end, record_id, organism="Test organism"
+):
     """Helper to create a GenBank record with CDS feature."""
     record = create_genbank_record(seq, record_id, organism)
     # Add CDS feature
     cds_feature = SeqFeature(
         FeatureLocation(cds_start, cds_end),
         type="CDS",
-        qualifiers={"product": ["test protein"]}
+        qualifiers={"product": ["test protein"]},
     )
     record.features.append(cds_feature)
     return record
@@ -54,8 +58,8 @@ class TestParsegbMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            inseqformat='genbank',
-            seqnamefmt='organism_accessions',
+            inseqformat="genbank",
+            seqnamefmt="organism_accessions",
             extract_cds=False,
             list_seqname_keys=False,
         )
@@ -80,8 +84,8 @@ class TestParsegbMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            inseqformat='genbank',
-            seqnamefmt='organism_accessions',
+            inseqformat="genbank",
+            seqnamefmt="organism_accessions",
             extract_cds=True,
             list_seqname_keys=False,
         )
@@ -105,8 +109,8 @@ class TestParsegbMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            inseqformat='genbank',
-            seqnamefmt='organism_accessions',
+            inseqformat="genbank",
+            seqnamefmt="organism_accessions",
             extract_cds=True,
             list_seqname_keys=False,
         )
@@ -132,8 +136,8 @@ class TestParsegbMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            inseqformat='genbank',
-            seqnamefmt='organism_accessions',
+            inseqformat="genbank",
+            seqnamefmt="organism_accessions",
             extract_cds=False,
             list_seqname_keys=False,
         )
@@ -148,15 +152,17 @@ class TestParsegbMain:
         input_path = temp_dir / "input.gb"
         output_path = temp_dir / "output.fasta"
 
-        record = create_genbank_record("ATGAAACCC", "TEST001", "Homo sapiens", "HSA12345")
+        record = create_genbank_record(
+            "ATGAAACCC", "TEST001", "Homo sapiens", "HSA12345"
+        )
         Bio.SeqIO.write([record], str(input_path), "genbank")
 
         # Test organism_accessions format
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            inseqformat='genbank',
-            seqnamefmt='organism_accessions',
+            inseqformat="genbank",
+            seqnamefmt="organism_accessions",
             extract_cds=False,
             list_seqname_keys=False,
         )
@@ -178,8 +184,8 @@ class TestParsegbMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            inseqformat='genbank',
-            seqnamefmt='organism_accessions',
+            inseqformat="genbank",
+            seqnamefmt="organism_accessions",
             extract_cds=True,
             list_seqname_keys=False,
         )
@@ -194,7 +200,7 @@ class TestParsegbMain:
             expected = list(Bio.SeqIO.parse(str(expected_path), "fasta"))
             assert len(result) == len(expected)
             # Check sequences match
-            for r, e in zip(result, expected):
+            for r, e in zip(result, expected, strict=False):
                 assert str(r.seq) == str(e.seq)
 
     def test_parsegb_preserves_sequence_content(self, temp_dir, mock_args):
@@ -209,8 +215,8 @@ class TestParsegbMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            inseqformat='genbank',
-            seqnamefmt='organism_accessions',
+            inseqformat="genbank",
+            seqnamefmt="organism_accessions",
             extract_cds=False,
             list_seqname_keys=False,
         )
@@ -225,14 +231,16 @@ class TestParsegbMain:
         input_path = temp_dir / "input.gb"
         output_path = temp_dir / "output.fasta"
 
-        record = create_genbank_record("ATGAAA", "TEST001", "Homo sapiens neanderthalensis")
+        record = create_genbank_record(
+            "ATGAAA", "TEST001", "Homo sapiens neanderthalensis"
+        )
         Bio.SeqIO.write([record], str(input_path), "genbank")
 
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            inseqformat='genbank',
-            seqnamefmt='organism_accessions',
+            inseqformat="genbank",
+            seqnamefmt="organism_accessions",
             extract_cds=False,
             list_seqname_keys=False,
         )
@@ -258,8 +266,8 @@ class TestParsegbMain:
         args_single = mock_args(
             seqfile=str(input_path),
             outfile=str(out_single),
-            inseqformat='genbank',
-            seqnamefmt='organism_accessions',
+            inseqformat="genbank",
+            seqnamefmt="organism_accessions",
             extract_cds=False,
             list_seqname_keys=False,
             threads=1,
@@ -267,8 +275,8 @@ class TestParsegbMain:
         args_threaded = mock_args(
             seqfile=str(input_path),
             outfile=str(out_threaded),
-            inseqformat='genbank',
-            seqnamefmt='organism_accessions',
+            inseqformat="genbank",
+            seqnamefmt="organism_accessions",
             extract_cds=False,
             list_seqname_keys=False,
             threads=4,
@@ -280,7 +288,9 @@ class TestParsegbMain:
         result_single = list(Bio.SeqIO.parse(str(out_single), "fasta"))
         result_threaded = list(Bio.SeqIO.parse(str(out_threaded), "fasta"))
         assert [r.id for r in result_single] == [r.id for r in result_threaded]
-        assert [str(r.seq) for r in result_single] == [str(r.seq) for r in result_threaded]
+        assert [str(r.seq) for r in result_single] == [
+            str(r.seq) for r in result_threaded
+        ]
 
     def test_parsegb_rejects_non_genbank_inseqformat(self, temp_dir, mock_args):
         input_path = temp_dir / "input.fasta"
@@ -291,15 +301,15 @@ class TestParsegbMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            inseqformat='fasta',
-            seqnamefmt='organism_accessions',
+            inseqformat="fasta",
+            seqnamefmt="organism_accessions",
             extract_cds=False,
             list_seqname_keys=False,
         )
 
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             parsegb_main(args)
-        assert 'parsegb requires --in_seq_format genbank' in str(exc_info.value)
+        assert "parsegb requires --in_seq_format genbank" in str(exc_info.value)
 
 
 class TestParsegbHelpers:

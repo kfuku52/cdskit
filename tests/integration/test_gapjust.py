@@ -50,10 +50,12 @@ class TestVectorizedCoordinateUpdate:
         starts = np.array([10, 20, 30])
         ends = np.array([15, 25, 35])
         justifications = [
-            {'original_edit_start': 5, 'edit_length': 5}  # Insert 5 at position 5
+            {"original_edit_start": 5, "edit_length": 5}  # Insert 5 at position 5
         ]
 
-        new_starts, new_ends = vectorized_coordinate_update(starts, ends, justifications)
+        new_starts, new_ends = vectorized_coordinate_update(
+            starts, ends, justifications
+        )
 
         # All coordinates after position 6 (1-based) should shift by 5
         assert list(new_starts) == [15, 25, 35]
@@ -64,10 +66,12 @@ class TestVectorizedCoordinateUpdate:
         starts = np.array([10, 20, 30])
         ends = np.array([15, 25, 35])
         justifications = [
-            {'original_edit_start': 5, 'edit_length': -3}  # Delete 3 at position 5
+            {"original_edit_start": 5, "edit_length": -3}  # Delete 3 at position 5
         ]
 
-        new_starts, new_ends = vectorized_coordinate_update(starts, ends, justifications)
+        new_starts, new_ends = vectorized_coordinate_update(
+            starts, ends, justifications
+        )
 
         # All coordinates after position 6 (1-based) should shift by -3
         assert list(new_starts) == [7, 17, 27]
@@ -77,11 +81,11 @@ class TestVectorizedCoordinateUpdate:
         """Test that zero edit length causes no change."""
         starts = np.array([10, 20, 30])
         ends = np.array([15, 25, 35])
-        justifications = [
-            {'original_edit_start': 5, 'edit_length': 0}
-        ]
+        justifications = [{"original_edit_start": 5, "edit_length": 0}]
 
-        new_starts, new_ends = vectorized_coordinate_update(starts, ends, justifications)
+        new_starts, new_ends = vectorized_coordinate_update(
+            starts, ends, justifications
+        )
 
         assert list(new_starts) == [10, 20, 30]
         assert list(new_ends) == [15, 25, 35]
@@ -91,11 +95,13 @@ class TestVectorizedCoordinateUpdate:
         starts = np.array([10, 50])
         ends = np.array([20, 60])
         justifications = [
-            {'original_edit_start': 5, 'edit_length': 10},   # Insert 10 at pos 5
-            {'original_edit_start': 30, 'edit_length': 5},   # Insert 5 at pos 30
+            {"original_edit_start": 5, "edit_length": 10},  # Insert 10 at pos 5
+            {"original_edit_start": 30, "edit_length": 5},  # Insert 5 at pos 30
         ]
 
-        new_starts, new_ends = vectorized_coordinate_update(starts, ends, justifications)
+        new_starts, new_ends = vectorized_coordinate_update(
+            starts, ends, justifications
+        )
 
         # First coordinate (10) shifts by 10 from first edit
         # Second coordinate (50) shifts by 10 + 5 = 15 from both edits
@@ -107,16 +113,20 @@ class TestVectorizedCoordinateUpdate:
         starts = np.array([10, 50])
         ends = np.array([20, 60])
         dict_justifications = [
-            {'original_edit_start': 30, 'edit_length': 5},
-            {'original_edit_start': 5, 'edit_length': 10},
+            {"original_edit_start": 30, "edit_length": 5},
+            {"original_edit_start": 5, "edit_length": 10},
         ]
         tuple_justifications = [
             (5, 10),
             (30, 5),
         ]
 
-        dict_starts, dict_ends = vectorized_coordinate_update(starts.copy(), ends.copy(), dict_justifications)
-        tuple_starts, tuple_ends = vectorized_coordinate_update(starts.copy(), ends.copy(), tuple_justifications)
+        dict_starts, dict_ends = vectorized_coordinate_update(
+            starts.copy(), ends.copy(), dict_justifications
+        )
+        tuple_starts, tuple_ends = vectorized_coordinate_update(
+            starts.copy(), ends.copy(), tuple_justifications
+        )
 
         assert list(tuple_starts) == list(dict_starts)
         assert list(tuple_ends) == list(dict_ends)
@@ -144,7 +154,9 @@ class TestVectorizedCoordinateUpdate:
             (20, 5),
         ]
 
-        new_starts, new_ends = vectorized_coordinate_update(starts, ends, justifications)
+        new_starts, new_ends = vectorized_coordinate_update(
+            starts, ends, justifications
+        )
 
         # Manual replay of edits:
         # start 8: 8>11 no shift, then 8>6 shift +5 -> 13
@@ -167,7 +179,9 @@ class TestVectorizedCoordinateUpdate:
             (197, -18),
         ]
 
-        new_starts, new_ends = vectorized_coordinate_update(starts, ends, justifications)
+        new_starts, new_ends = vectorized_coordinate_update(
+            starts, ends, justifications
+        )
 
         # Manual replay:
         # start 180 -> 176 -> 184 -> 197 -> 212 -> 212 -> 212
@@ -178,13 +192,15 @@ class TestVectorizedCoordinateUpdate:
     def test_shortened_gap_preserves_retained_coordinates(self):
         starts = np.array([5, 9])
         ends = np.array([5, 9])
-        justifications = [{
-            'original_gap_start': 3,
-            'original_gap_length': 5,
-            'target_gap_length': 2,
-            'original_edit_start': 3,
-            'edit_length': -3,
-        }]
+        justifications = [
+            {
+                "original_gap_start": 3,
+                "original_gap_length": 5,
+                "target_gap_length": 2,
+                "original_edit_start": 3,
+                "edit_length": -3,
+            }
+        ]
 
         new_starts, new_ends = vectorized_coordinate_update(
             starts,
@@ -226,7 +242,7 @@ class TestGapjustMain:
         # Sequence with variable gap lengths
         records = [
             SeqRecord(Seq("ATGNNNNNNAAA"), id="seq1", description=""),  # 6 Ns
-            SeqRecord(Seq("ATGNNNAAA"), id="seq2", description=""),     # 3 Ns
+            SeqRecord(Seq("ATGNNNAAA"), id="seq2", description=""),  # 3 Ns
         ]
         Bio.SeqIO.write(records, str(input_path), "fasta")
 
@@ -244,7 +260,7 @@ class TestGapjustMain:
         # All gaps should now be 5 Ns
         for r in result:
             seq_str = str(r.seq)
-            n_count = seq_str.count('N')
+            n_count = seq_str.count("N")
             # Each sequence should have exactly 5 Ns (one gap of length 5)
             assert n_count == 5, f"{r.id} has {n_count} Ns, expected 5"
 
@@ -270,8 +286,8 @@ class TestGapjustMain:
 
         result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
         # Should have uppercase N, not lowercase n
-        assert 'n' not in str(result[0].seq)
-        assert 'N' in str(result[0].seq)
+        assert "n" not in str(result[0].seq)
+        assert "N" in str(result[0].seq)
 
     def test_gapjust_no_gaps(self, temp_dir, mock_args):
         """Test gapjust with sequence without gaps."""
@@ -297,7 +313,9 @@ class TestGapjustMain:
         # Sequence should be unchanged
         assert str(result[0].seq) == "ATGAAATGA"
 
-    def test_gapjust_reports_no_edits_when_all_gaps_already_target(self, temp_dir, mock_args, capsys):
+    def test_gapjust_reports_no_edits_when_all_gaps_already_target(
+        self, temp_dir, mock_args, capsys
+    ):
         """Summary should report no edits when target already matches all gaps."""
         input_path = temp_dir / "input.fasta"
         output_path = temp_dir / "output.fasta"
@@ -322,14 +340,16 @@ class TestGapjustMain:
         assert "Number of gap justifications: 0" in captured.err
         assert "No gap edits were made." in captured.err
 
-    def test_gapjust_reports_min_max_original_gap_lengths(self, temp_dir, mock_args, capsys):
+    def test_gapjust_reports_min_max_original_gap_lengths(
+        self, temp_dir, mock_args, capsys
+    ):
         """Summary should report min/max original gap lengths for edited gaps."""
         input_path = temp_dir / "input.fasta"
         output_path = temp_dir / "output.fasta"
 
         records = [
-            SeqRecord(Seq("ATGNNAAA"), id="seq1", description=""),        # 2 Ns
-            SeqRecord(Seq("CCCNNNNNNTTT"), id="seq2", description=""),    # 6 Ns
+            SeqRecord(Seq("ATGNNAAA"), id="seq1", description=""),  # 2 Ns
+            SeqRecord(Seq("CCCNNNNNNTTT"), id="seq2", description=""),  # 6 Ns
         ]
         Bio.SeqIO.write(records, str(input_path), "fasta")
 
@@ -392,8 +412,7 @@ class TestGapjustMain:
         ]
         Bio.SeqIO.write(records, str(input_fasta), "fasta")
         input_gff.write_text(
-            "##gff-version 3\n"
-            "dup\tsource\tgene\t1\t9\t.\t+\t.\tID=gene1\n"
+            "##gff-version 3\ndup\tsource\tgene\t1\t9\t.\t+\t.\tID=gene1\n"
         )
 
         args = mock_args(
@@ -404,9 +423,11 @@ class TestGapjustMain:
             outgff=str(output_gff),
         )
 
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             gapjust_main(args)
-        assert "Duplicate sequence IDs are not supported with --in_gff" in str(exc_info.value)
+        assert "Duplicate sequence IDs are not supported with --in_gff" in str(
+            exc_info.value
+        )
         assert not output_fasta.exists()
         assert not output_gff.exists()
 
@@ -434,7 +455,7 @@ class TestGapjustMain:
         result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
         seq_str = str(result[0].seq)
         # Should have two gaps of 5 Ns each = 10 total Ns
-        assert seq_str.count('N') == 10
+        assert seq_str.count("N") == 10
 
     def test_gapjust_with_test_data(self, data_dir, temp_dir, mock_args):
         """Test gapjust with gapjust_01 test data."""
@@ -464,8 +485,12 @@ class TestGapjustMain:
         expected_fasta = data_dir / "gapjust_01" / "output.fasta"
         output_fasta = temp_dir / "output.fasta"
 
-        assert input_fasta.exists(), "required tracked fixture gapjust_01 input is missing"
-        assert expected_fasta.exists(), "required tracked fixture gapjust_01 output is missing"
+        assert input_fasta.exists(), (
+            "required tracked fixture gapjust_01 input is missing"
+        )
+        assert expected_fasta.exists(), (
+            "required tracked fixture gapjust_01 output is missing"
+        )
 
         # Read expected to determine gap length
         expected = list(Bio.SeqIO.parse(str(expected_fasta), "fasta"))
@@ -474,8 +499,9 @@ class TestGapjustMain:
         # Determine gap length from expected output
         # Count N stretches and their lengths
         import re
+
         expected_seq = str(expected[0].seq)
-        n_runs = re.findall(r'N+', expected_seq)
+        n_runs = re.findall(r"N+", expected_seq)
         if n_runs:
             gap_len = len(n_runs[0])  # Use first gap's length as target
         else:
@@ -496,9 +522,11 @@ class TestGapjustMain:
         # Verify all gap runs have uniform length
         for r in result:
             seq_str = str(r.seq)
-            n_runs = re.findall(r'N+', seq_str)
+            n_runs = re.findall(r"N+", seq_str)
             for run in n_runs:
-                assert len(run) == gap_len, f"Gap length {len(run)} != expected {gap_len}"
+                assert len(run) == gap_len, (
+                    f"Gap length {len(run)} != expected {gap_len}"
+                )
 
     def test_gapjust_threads_matches_single_thread(self, temp_dir, mock_args):
         input_path = temp_dir / "input.fasta"
@@ -535,7 +563,9 @@ class TestGapjustMain:
         result_single = list(Bio.SeqIO.parse(str(out_single), "fasta"))
         result_threaded = list(Bio.SeqIO.parse(str(out_threaded), "fasta"))
         assert [r.id for r in result_single] == [r.id for r in result_threaded]
-        assert [str(r.seq) for r in result_single] == [str(r.seq) for r in result_threaded]
+        assert [str(r.seq) for r in result_single] == [
+            str(r.seq) for r in result_threaded
+        ]
 
     def test_gapjust_shrink_gaps(self, temp_dir, mock_args):
         """Test gapjust can shrink gaps."""
@@ -560,7 +590,7 @@ class TestGapjustMain:
 
         result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
         seq_str = str(result[0].seq)
-        assert seq_str.count('N') == 3
+        assert seq_str.count("N") == 3
 
     def test_gapjust_preserves_non_n_content(self, temp_dir, mock_args):
         """Test gapjust preserves non-N sequence content."""
@@ -586,7 +616,7 @@ class TestGapjustMain:
         seq_str = str(result[0].seq)
 
         # Non-N content should be preserved
-        seq_without_n = seq_str.replace('N', '')
+        seq_without_n = seq_str.replace("N", "")
         original_without_n = "ATGCCCGGGAAATTT"
         assert seq_without_n == original_without_n
 
@@ -596,8 +626,8 @@ class TestGapjustMain:
         output_path = temp_dir / "output.fasta"
 
         records = [
-            SeqRecord(Seq("ATGNNAAA"), id="skip_small_gap", description=""),       # 2 Ns
-            SeqRecord(Seq("ATGNNNNAAA"), id="extend_large_gap", description=""),   # 4 Ns
+            SeqRecord(Seq("ATGNNAAA"), id="skip_small_gap", description=""),  # 2 Ns
+            SeqRecord(Seq("ATGNNNNAAA"), id="extend_large_gap", description=""),  # 4 Ns
         ]
         Bio.SeqIO.write(records, str(input_path), "fasta")
 
@@ -622,8 +652,12 @@ class TestGapjustMain:
         output_path = temp_dir / "output.fasta"
 
         records = [
-            SeqRecord(Seq("ATGNNNNNNNNAAA"), id="skip_large_gap", description=""),      # 8 Ns
-            SeqRecord(Seq("ATGNNNNNNAAA"), id="shorten_allowed_gap", description=""),    # 6 Ns
+            SeqRecord(
+                Seq("ATGNNNNNNNNAAA"), id="skip_large_gap", description=""
+            ),  # 8 Ns
+            SeqRecord(
+                Seq("ATGNNNNNNAAA"), id="shorten_allowed_gap", description=""
+            ),  # 6 Ns
         ]
         Bio.SeqIO.write(records, str(input_path), "fasta")
 
@@ -650,7 +684,9 @@ class TestGapjustMain:
         output_fasta = temp_dir / "output.fasta"
         output_gff = temp_dir / "output.gff"
 
-        assert input_fasta.exists(), "required tracked fixture gapjust_01 input is missing"
+        assert input_fasta.exists(), (
+            "required tracked fixture gapjust_01 input is missing"
+        )
         assert input_gff.exists(), "required tracked fixture gapjust_01 GFF is missing"
 
         args = mock_args(
@@ -669,9 +705,17 @@ class TestGapjustMain:
         # If expected GFF exists, compare coordinates
         if expected_gff.exists():
             with open(output_gff) as f:
-                result_lines = [line for line in f.readlines() if not line.startswith('#') and line.strip()]
+                result_lines = [
+                    line
+                    for line in f.readlines()
+                    if not line.startswith("#") and line.strip()
+                ]
             with open(expected_gff) as f:
-                expected_lines = [line for line in f.readlines() if not line.startswith('#') and line.strip()]
+                expected_lines = [
+                    line
+                    for line in f.readlines()
+                    if not line.startswith("#") and line.strip()
+                ]
 
             # Same number of records
             assert len(result_lines) == len(expected_lines)

@@ -28,7 +28,7 @@ class TestCheckSameSeqNum:
             SeqRecord(Seq("ATGCCC"), id="seq2"),
         ]
         pep_records = [SeqRecord(Seq("MK"), id="seq1")]
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             check_same_seq_num(cdn_records, pep_records)
 
 
@@ -117,7 +117,9 @@ class TestBacktrimMain:
         # Should have kept only M and K codons
         assert len(result[0].seq) == 6
 
-    def test_backtrim_handles_question_codon_as_missing_not_error(self, temp_dir, mock_args):
+    def test_backtrim_handles_question_codon_as_missing_not_error(
+        self, temp_dir, mock_args
+    ):
         cdn_path = temp_dir / "codon.fasta"
         pep_path = temp_dir / "protein.fasta"
         output_path = temp_dir / "output.fasta"
@@ -199,11 +201,13 @@ class TestBacktrimMain:
             codontable=1,
         )
 
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             backtrim_main(args)
         assert "Sequence IDs did not match between CDS" in str(exc_info.value)
 
-    def test_backtrim_multiple_matches_uses_first_site(self, temp_dir, mock_args, capsys):
+    def test_backtrim_multiple_matches_uses_first_site(
+        self, temp_dir, mock_args, capsys
+    ):
         """When multiple codon sites match one protein column, first site is used."""
         cdn_path = temp_dir / "codon.fasta"
         pep_path = temp_dir / "protein.fasta"
@@ -235,7 +239,9 @@ class TestBacktrimMain:
         result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
         assert [str(r.seq) for r in result] == ["ATG", "ATG"]
 
-    def test_backtrim_multiple_matches_preserves_column_order(self, temp_dir, mock_args):
+    def test_backtrim_multiple_matches_preserves_column_order(
+        self, temp_dir, mock_args
+    ):
         """When duplicate AA patterns exist, selected codon sites should stay in forward order."""
         cdn_path = temp_dir / "codon.fasta"
         pep_path = temp_dir / "protein.fasta"
@@ -269,7 +275,9 @@ class TestBacktrimMain:
         result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
         assert [str(r.seq) for r in result] == ["CCTGCC", "TGTGCA"]
 
-    def test_backtrim_excludes_sites_that_would_reverse_codon_order(self, temp_dir, mock_args):
+    def test_backtrim_excludes_sites_that_would_reverse_codon_order(
+        self, temp_dir, mock_args
+    ):
         """Trimmed AA columns not preserving original order should be excluded, not reordered."""
         cdn_path = temp_dir / "codon.fasta"
         pep_path = temp_dir / "protein.fasta"
@@ -319,7 +327,7 @@ class TestBacktrimMain:
             codontable=1,
         )
 
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             backtrim_main(args)
         assert "multiple of three" in str(exc_info.value)
 
@@ -340,7 +348,7 @@ class TestBacktrimMain:
             codontable=999,
         )
 
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             backtrim_main(args)
         assert "Invalid --codon_table" in str(exc_info.value)
 
@@ -370,7 +378,9 @@ class TestBacktrimMain:
 
         cdn_records = [
             SeqRecord(Seq("ATGAAA"), id="seq1", description=""),  # 6 nt
-            SeqRecord(Seq("ATGAAACCC"), id="seq2", description=""),  # 9 nt - different length
+            SeqRecord(
+                Seq("ATGAAACCC"), id="seq2", description=""
+            ),  # 9 nt - different length
         ]
         Bio.SeqIO.write(cdn_records, str(cdn_path), "fasta")
 
@@ -387,7 +397,7 @@ class TestBacktrimMain:
             codontable=1,
         )
 
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             backtrim_main(args)
         assert "not identical" in str(exc_info.value)
 
@@ -413,7 +423,7 @@ class TestBacktrimMain:
         if expected_path.exists():
             expected = list(Bio.SeqIO.parse(str(expected_path), "fasta"))
             assert len(result) == len(expected)
-            for r, e in zip(result, expected):
+            for r, e in zip(result, expected, strict=False):
                 assert str(r.seq) == str(e.seq), f"Mismatch for {r.id}"
 
     def test_backtrim_with_test_data_02(self, data_dir, temp_dir, mock_args):
@@ -480,4 +490,6 @@ class TestBacktrimMain:
         result_single = list(Bio.SeqIO.parse(str(out_single), "fasta"))
         result_threaded = list(Bio.SeqIO.parse(str(out_threaded), "fasta"))
         assert [r.id for r in result_single] == [r.id for r in result_threaded]
-        assert [str(r.seq) for r in result_single] == [str(r.seq) for r in result_threaded]
+        assert [str(r.seq) for r in result_single] == [
+            str(r.seq) for r in result_threaded
+        ]

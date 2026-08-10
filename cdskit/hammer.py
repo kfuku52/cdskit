@@ -16,9 +16,11 @@ from cdskit.util import (
     write_seqs,
 )
 
-GAP_ONLY_CHARS = frozenset('-NXnxn?.')
-GAP_ONLY_CHARS_BYTES = np.array([ch.encode('ascii') for ch in sorted(GAP_ONLY_CHARS)], dtype='S1')
-AA_MISSING_CODES = np.array([ord('-'), ord('?'), ord('X'), ord('*')], dtype=np.uint8)
+GAP_ONLY_CHARS = frozenset("-NXnxn?.")
+GAP_ONLY_CHARS_BYTES = np.array(
+    [ch.encode("ascii") for ch in sorted(GAP_ONLY_CHARS)], dtype="S1"
+)
+AA_MISSING_CODES = np.array([ord("-"), ord("?"), ord("X"), ord("*")], dtype=np.uint8)
 
 
 def codon_is_gap_like(codon):
@@ -29,18 +31,18 @@ def codon_is_gap_like(codon):
 
 
 def resolve_nail_value(nail, num_records):
-    if nail == 'all':
+    if nail == "all":
         nail_value = num_records
-        txt = '--nail all was specified. Set to {:,}\n'
+        txt = "--nail all was specified. Set to {:,}\n"
         sys.stderr.write(txt.format(nail_value))
         return nail_value
 
     nail_value = int(nail)
     if nail_value <= 0:
         txt = '--nail should be a positive integer or "all", but got {}. Exiting.\n'
-        raise Exception(txt.format(nail))
+        raise ValueError(txt.format(nail))
     if nail_value > num_records:
-        txt = '--nail ({:,}) is greater than the number of input sequences ({:,}). Decreased to {:,}\n'
+        txt = "--nail ({:,}) is greater than the number of input sequences ({:,}). Decreased to {:,}\n"
         sys.stderr.write(txt.format(nail_value, num_records, num_records))
         return num_records
     return nail_value
@@ -54,8 +56,8 @@ def build_codon_gap_like_matrix(records):
     if seq_len == 0:
         return np.zeros((num_records, 0), dtype=bool)
 
-    seq_bytes = ''.join([str(record.seq) for record in records]).encode('ascii')
-    nt_matrix = np.frombuffer(seq_bytes, dtype='S1').reshape(num_records, seq_len)
+    seq_bytes = "".join([str(record.seq) for record in records]).encode("ascii")
+    nt_matrix = np.frombuffer(seq_bytes, dtype="S1").reshape(num_records, seq_len)
     codon_matrix = nt_matrix.reshape(num_records, seq_len // 3, 3)
     return np.isin(codon_matrix, GAP_ONLY_CHARS_BYTES).all(axis=2)
 
@@ -69,13 +71,20 @@ def build_non_missing_site(records, codontable, threads):
     if seq_len == 0:
         return np.zeros(0, dtype=int)
     amino_acids = translate_sequence_codes(
-        seq_str=''.join(str(record.seq) for record in records),
+        seq_str="".join(str(record.seq) for record in records),
         codontable=codontable,
     ).reshape(num_records, seq_len // 3)
     return (~np.isin(amino_acids, AA_MISSING_CODES)).sum(axis=0)
 
 
-def select_codon_site_indices(non_missing_site, nail_value, max_len, prevent_gap_only, codon_gap_like_matrix, original_records):
+def select_codon_site_indices(
+    non_missing_site,
+    nail_value,
+    max_len,
+    prevent_gap_only,
+    codon_gap_like_matrix,
+    original_records,
+):
     selected_non_missing_idx = None
     last_non_missing_idx = np.array([], dtype=int)
 
@@ -83,13 +92,21 @@ def select_codon_site_indices(non_missing_site, nail_value, max_len, prevent_gap
         non_missing_idx = np.flatnonzero(non_missing_site >= current_nail)
         last_non_missing_idx = non_missing_idx
         num_removed_site = max_len - non_missing_idx.shape[0]
-        sys.stderr.write('{:,} out of {:,} codon sites will be removed.\n'.format(num_removed_site, max_len))
+        sys.stderr.write(
+            "{:,} out of {:,} codon sites will be removed.\n".format(
+                num_removed_site, max_len
+            )
+        )
         if prevent_gap_only:
             gap_only_mask = np.all(codon_gap_like_matrix[:, non_missing_idx], axis=1)
             if np.any(gap_only_mask):
                 for i in np.flatnonzero(gap_only_mask):
-                    txt = 'A gap-only sequence was generated with --nail {}. Will try --nail {}: {}\n'
-                    sys.stderr.write(txt.format(current_nail, current_nail - 1, original_records[i].name))
+                    txt = "A gap-only sequence was generated with --nail {}. Will try --nail {}: {}\n"
+                    sys.stderr.write(
+                        txt.format(
+                            current_nail, current_nail - 1, original_records[i].name
+                        )
+                    )
                 continue
         selected_non_missing_idx = non_missing_idx
         break
@@ -118,7 +135,7 @@ def codon_sites_to_nucleotide_ranges(codon_sites):
 
 def build_hammer_output_record(record, selected_nucleotide_ranges):
     seq_str = str(record.seq)
-    new_seq = ''.join([seq_str[start:end] for start, end in selected_nucleotide_ranges])
+    new_seq = "".join([seq_str[start:end] for start, end in selected_nucleotide_ranges])
     return SeqRecord(
         seq=Seq(new_seq),
         id=record.id,
@@ -129,12 +146,16 @@ def build_hammer_output_record(record, selected_nucleotide_ranges):
 
 def hammer_main(args):
     original_records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
-    stop_if_not_dna(records=original_records, label='--seq_file')
+    stop_if_not_dna(records=original_records, label="--seq_file")
     stop_if_invalid_codontable(args.codontable)
     if len(original_records) == 0:
-        write_seqs(records=original_records, outfile=args.outfile, outseqformat=args.outseqformat)
+        write_seqs(
+            records=original_records,
+            outfile=args.outfile,
+            outseqformat=args.outseqformat,
+        )
         return
-    threads = resolve_threads(getattr(args, 'threads', 1))
+    threads = resolve_threads(getattr(args, "threads", 1))
     stop_if_not_multiple_of_three(original_records)
     stop_if_not_aligned(original_records)
     nail_value = resolve_nail_value(args.nail, len(original_records))
@@ -155,7 +176,9 @@ def hammer_main(args):
         codon_gap_like_matrix=codon_gap_like_matrix,
         original_records=original_records,
     )
-    selected_nucleotide_ranges = codon_sites_to_nucleotide_ranges(selected_non_missing_idx.tolist())
+    selected_nucleotide_ranges = codon_sites_to_nucleotide_ranges(
+        selected_non_missing_idx.tolist()
+    )
     worker = partial(
         build_hammer_output_record,
         selected_nucleotide_ranges=selected_nucleotide_ranges,

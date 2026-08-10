@@ -25,13 +25,13 @@ _MASK_DECISION_CACHE: dict = {}
 
 
 def codon_chunks(nucseq):
-    return [nucseq[i:i + 3] for i in range(0, len(nucseq), 3)]
+    return [nucseq[i : i + 3] for i in range(0, len(nucseq), 3)]
 
 
 def mask_partial_gap_codons(codons, mask_triplet):
     changed = False
     for i, codon in enumerate(codons):
-        if ('-' in codon) and (codon != '---'):
+        if ("-" in codon) and (codon != "---"):
             codons[i] = mask_triplet
             changed = True
     return changed
@@ -39,11 +39,11 @@ def mask_partial_gap_codons(codons, mask_triplet):
 
 def should_mask_amino_acid(aa, mask_ambiguous, mask_stop):
     if mask_ambiguous and mask_stop:
-        return aa in ['X', '*']
+        return aa in ["X", "*"]
     if mask_ambiguous:
-        return aa == 'X'
+        return aa == "X"
     if mask_stop:
-        return aa == '*'
+        return aa == "*"
     return False
 
 
@@ -83,8 +83,8 @@ def get_mask_decision_cache(codontable, mask_ambiguous, mask_stop):
 def mask_sequence_string(nucseq, codontable, mask_triplet, mask_ambiguous, mask_stop):
     if len(nucseq) == 0:
         return nucseq
-    sequence = np.frombuffer(nucseq.encode('ascii'), dtype='S1').reshape(-1, 3)
-    gap_positions = sequence == b'-'
+    sequence = np.frombuffer(nucseq.encode("ascii"), dtype="S1").reshape(-1, 3)
+    gap_positions = sequence == b"-"
     should_mask = np.any(gap_positions, axis=1) & ~np.all(gap_positions, axis=1)
     if mask_ambiguous or mask_stop:
         amino_acids = translate_sequence_codes(
@@ -92,14 +92,14 @@ def mask_sequence_string(nucseq, codontable, mask_triplet, mask_ambiguous, mask_
             codontable=codontable,
         )
         if mask_ambiguous:
-            should_mask |= amino_acids == ord('X')
+            should_mask |= amino_acids == ord("X")
         if mask_stop:
-            should_mask |= amino_acids == ord('*')
+            should_mask |= amino_acids == ord("*")
     if not np.any(should_mask):
         return nucseq
-    output = np.frombuffer(bytearray(nucseq.encode('ascii')), dtype='S1').reshape(-1, 3)
-    output[should_mask, :] = np.frombuffer(mask_triplet.encode('ascii'), dtype='S1')
-    return output.tobytes().decode('ascii')
+    output = np.frombuffer(bytearray(nucseq.encode("ascii")), dtype="S1").reshape(-1, 3)
+    output[should_mask, :] = np.frombuffer(mask_triplet.encode("ascii"), dtype="S1")
+    return output.tobytes().decode("ascii")
 
 
 def mask_record(record, codontable, mask_triplet, mask_ambiguous, mask_stop):
@@ -125,7 +125,9 @@ def mask_payload(payload, codontable, mask_triplet, mask_ambiguous, mask_stop):
     return seq_id, masked
 
 
-def mask_payloads_process_parallel(payloads, codontable, mask_triplet, mask_ambiguous, mask_stop, threads):
+def mask_payloads_process_parallel(
+    payloads, codontable, mask_triplet, mask_ambiguous, mask_stop, threads
+):
     worker = partial(
         mask_payload,
         codontable=codontable,
@@ -141,21 +143,21 @@ def mask_payloads_process_parallel(payloads, codontable, mask_triplet, mask_ambi
 
 def mask_main(args):
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
-    stop_if_not_dna(records=records, label='--seq_file')
+    stop_if_not_dna(records=records, label="--seq_file")
     stop_if_invalid_codontable(args.codontable)
     stop_if_not_multiple_of_three(records)
     mask_triplet = args.maskchar * 3
     mask_ambiguous = (
         args.ambiguouscodon
         if isinstance(args.ambiguouscodon, bool)
-        else str(args.ambiguouscodon).strip().lower() in ['yes', 'true', '1']
+        else str(args.ambiguouscodon).strip().lower() in ["yes", "true", "1"]
     )
     mask_stop = (
         args.stopcodon
         if isinstance(args.stopcodon, bool)
-        else str(args.stopcodon).strip().lower() in ['yes', 'true', '1']
+        else str(args.stopcodon).strip().lower() in ["yes", "true", "1"]
     )
-    threads = resolve_threads(getattr(args, 'threads', 1))
+    threads = resolve_threads(getattr(args, "threads", 1))
     masked_seqs = None
     if should_use_process_pool(records=records, threads=threads):
         try:
@@ -179,8 +181,10 @@ def mask_main(args):
             mask_ambiguous=mask_ambiguous,
             mask_stop=mask_stop,
         )
-        masked_seqs = parallel_map_ordered(items=records, worker=worker, threads=threads)
-    for record, masked_seq in zip(records, masked_seqs):
+        masked_seqs = parallel_map_ordered(
+            items=records, worker=worker, threads=threads
+        )
+    for record, masked_seq in zip(records, masked_seqs, strict=False):
         if str(record.seq) != masked_seq:
             record.seq = Bio.Seq.Seq(masked_seq)
     write_seqs(records=records, outfile=args.outfile, outseqformat=args.outseqformat)

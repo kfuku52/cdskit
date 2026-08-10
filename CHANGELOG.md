@@ -4,6 +4,51 @@ This project follows semantic versioning. Deprecated CLI spellings remain
 available for at least the 0.24 release series and print their canonical
 replacement to standard error.
 
+## 0.27.0 — 2026-08-10
+
+### Development
+
+- Migrated package metadata, extras, entry points, and tool configuration to
+  `pyproject.toml`; replaced the legacy setup and pytest files with one source
+  of truth.
+- Added a committed `uv.lock`, task-specific dependency groups, cached locked
+  CI installs, and pull-request concurrency cancellation. Pull requests now
+  run a representative four-environment matrix while pushes retain the full
+  nine-environment compatibility matrix.
+- Standardized the repository with Ruff formatting and enabled BugBear,
+  performance, and Ruff-specific maintenance rules. Tightened the cyclomatic
+  complexity ceiling from 38 to 35.
+
+### Changed
+
+- Extracted typed transactional file operations from the high-fan-in utility
+  module while retaining compatibility re-exports.
+- Replaced repeated CLI command wrappers with a typed, lazily imported command
+  runtime, and split TargetP training configuration, resume options, metric
+  selection, and scheduler decisions into independently tested pure helpers.
+- Enabled checks inside previously untyped functions and require complete
+  annotations for the new shared modules and selected common modules.
+- Replaced generic user-input exceptions with `ValueError` and made tests
+  assert the concrete failure type.
+
+### Testing
+
+- Enabled branch-aware coverage with a project-wide floor and higher floors
+  for transactional I/O, CLI dispatch, pretrained-model downloads, and
+  TargetP training helpers.
+- Raised pretrained-model resolver coverage from 57% to 95%, including
+  successful atomic downloads, declared and streamed size limits, network
+  failures, cleanup, offline mode, checksums, and unpublished assets.
+- Added installed-wheel smoke tests for both sequence processing and plotting,
+  plus a scheduled full CPU benchmark whose JSON results are retained as CI
+  artifacts.
+
+### Security
+
+- Run dependency audits from a fresh locked environment and retain the weekly
+  high-severity source scan. Model downloads remain checksum-verified and now
+  have explicit failure-path regression coverage.
+
 ## 0.26.0 — 2026-08-09
 
 ### Security

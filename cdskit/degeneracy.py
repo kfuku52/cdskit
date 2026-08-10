@@ -3,36 +3,38 @@ import sys
 
 from cdskit.codonutil import degeneracy_fold_by_position
 from cdskit.split import resolve_output_prefix
-from cdskit.util import (
+from cdskit.atomicio import (
     atomic_output_paths,
     atomic_write_json,
+    validate_distinct_paths,
+)
+from cdskit.util import (
     read_seqs,
     replace_record_sequence,
     stop_if_invalid_codontable,
     stop_if_not_aligned,
     stop_if_not_dna,
     stop_if_not_multiple_of_three,
-    validate_distinct_paths,
     write_seqs,
 )
 from cdskit.tsvio import write_tsv
 
 
 def build_degeneracy_output_path(prefix, fold, outseqformat):
-    return f'{prefix}_{fold}fold_positions.{outseqformat}'
+    return f"{prefix}_{fold}fold_positions.{outseqformat}"
 
 
 def classify_alignment_columns(records, codontable):
-    assignments = list()
+    assignments: list[int | None] = []
     counts_by_fold = {0: 0, 2: 0, 3: 0, 4: 0}
     num_conflict_sites = 0
     num_unassigned_sites = 0
     seq_strings = [str(record.seq) for record in records]
-    for codon_start in range(0, len(records[0].seq), 3):
-        fold_values_by_position = [list(), list(), list()]
+    for codon_start in range(0, len(records[0]), 3):
+        fold_values_by_position: list[list[int]] = [[], [], []]
         for seq_str in seq_strings:
             folds = degeneracy_fold_by_position(
-                codon=seq_str[codon_start:codon_start + 3],
+                codon=seq_str[codon_start : codon_start + 3],
                 codontable=codontable,
             )
             if folds is None:
@@ -53,75 +55,82 @@ def classify_alignment_columns(records, codontable):
             assignments.append(fold)
             counts_by_fold[fold] += 1
     return {
-        'assignments': assignments,
-        'counts_by_fold': counts_by_fold,
-        'num_conflict_sites': num_conflict_sites,
-        'num_unassigned_sites': num_unassigned_sites,
+        "assignments": assignments,
+        "counts_by_fold": counts_by_fold,
+        "num_conflict_sites": num_conflict_sites,
+        "num_unassigned_sites": num_unassigned_sites,
     }
 
 
 def trim_record_to_positions(record, positions):
     trimmed = copy.copy(record)
     seq_str = str(record.seq)
-    replace_record_sequence(trimmed, ''.join(seq_str[pos] for pos in positions))
+    replace_record_sequence(trimmed, "".join(seq_str[pos] for pos in positions))
     return trimmed
 
 
 def write_degeneracy_report(report_path, summary):
-    if report_path == '':
+    if report_path == "":
         return
-    if report_path.lower().endswith('.json'):
+    if report_path.lower().endswith(".json"):
         atomic_write_json(report_path, summary, indent=2)
         return
     rows = [
-        {'metric': key, 'value': summary[key]}
+        {"metric": key, "value": summary[key]}
         for key in [
-            'num_sequences', 'num_input_nt_sites', 'num_input_codon_sites',
-            'num_conflict_sites', 'num_unassigned_sites',
+            "num_sequences",
+            "num_input_nt_sites",
+            "num_input_codon_sites",
+            "num_conflict_sites",
+            "num_unassigned_sites",
         ]
     ]
-    rows.extend([
-        {
-            'metric': 'num_{}fold_sites'.format(fold),
-            'value': summary['counts_by_fold'][str(fold)],
-        }
-        for fold in [0, 2, 3, 4]
-    ])
-    write_tsv(path=report_path, rows=rows, fieldnames=['metric', 'value'])
+    rows.extend(
+        [
+            {
+                "metric": "num_{}fold_sites".format(fold),
+                "value": summary["counts_by_fold"][str(fold)],
+            }
+            for fold in [0, 2, 3, 4]
+        ]
+    )
+    write_tsv(path=report_path, rows=rows, fieldnames=["metric", "value"])
 
 
 def degeneracy_main(args):
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
-    stop_if_not_dna(records=records, label='--seq_file')
+    stop_if_not_dna(records=records, label="--seq_file")
     stop_if_not_aligned(records=records)
     stop_if_not_multiple_of_three(records=records)
     stop_if_invalid_codontable(args.codontable)
     selected_folds = sorted(set(int(fold) for fold in args.fold))
     summary = {
-        'num_sequences': len(records),
-        'num_input_nt_sites': 0,
-        'num_input_codon_sites': 0,
-        'num_conflict_sites': 0,
-        'num_unassigned_sites': 0,
-        'counts_by_fold': {'0': 0, '2': 0, '3': 0, '4': 0},
-        'selected_folds': selected_folds,
+        "num_sequences": len(records),
+        "num_input_nt_sites": 0,
+        "num_input_codon_sites": 0,
+        "num_conflict_sites": 0,
+        "num_unassigned_sites": 0,
+        "counts_by_fold": {"0": 0, "2": 0, "3": 0, "4": 0},
+        "selected_folds": selected_folds,
     }
     prefix_str = resolve_output_prefix(args)
     assignments = []
     if records:
-        classification = classify_alignment_columns(records=records, codontable=args.codontable)
-        assignments = classification['assignments']
+        classification = classify_alignment_columns(
+            records=records, codontable=args.codontable
+        )
+        assignments = classification["assignments"]
         summary = {
-            'num_sequences': len(records),
-            'num_input_nt_sites': len(records[0].seq),
-            'num_input_codon_sites': len(records[0].seq) // 3,
-            'num_conflict_sites': classification['num_conflict_sites'],
-            'num_unassigned_sites': classification['num_unassigned_sites'],
-            'counts_by_fold': {
+            "num_sequences": len(records),
+            "num_input_nt_sites": len(records[0]),
+            "num_input_codon_sites": len(records[0]) // 3,
+            "num_conflict_sites": classification["num_conflict_sites"],
+            "num_unassigned_sites": classification["num_unassigned_sites"],
+            "counts_by_fold": {
                 str(key): value
-                for key, value in classification['counts_by_fold'].items()
+                for key, value in classification["counts_by_fold"].items()
             },
-            'selected_folds': selected_folds,
+            "selected_folds": selected_folds,
         }
 
     sequence_outputs = [
@@ -135,18 +144,17 @@ def degeneracy_main(args):
     outputs = sequence_outputs + ([args.report] if args.report else [])
     validate_distinct_paths(inputs=[args.seqfile], outputs=outputs)
     with atomic_output_paths(outputs) as staged_outputs:
-        staged = dict(zip(outputs, staged_outputs))
+        staged = dict(zip(outputs, staged_outputs, strict=False))
         write_degeneracy_report(
-            report_path=staged.get(args.report, ''),
+            report_path=staged.get(args.report, ""),
             summary=summary,
         )
-        for fold, outfile in zip(selected_folds, sequence_outputs):
+        for fold, outfile in zip(selected_folds, sequence_outputs, strict=False):
             positions = [
-                idx for idx, assignment in enumerate(assignments)
-                if assignment == fold
+                idx for idx, assignment in enumerate(assignments) if assignment == fold
             ]
             sys.stderr.write(
-                f'Writing {fold}-fold positions ({len(positions)} sites).\n'
+                f"Writing {fold}-fold positions ({len(positions)} sites).\n"
             )
             out_records = [
                 trim_record_to_positions(record=record, positions=positions)

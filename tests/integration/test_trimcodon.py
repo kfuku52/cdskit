@@ -31,7 +31,7 @@ class TestTrimcodonMain:
             seqfile=str(input_path),
             outfile=str(output_path),
             min_clean_fraction=0.67,
-            report='',
+            report="",
         )
 
         trimcodon_main(args)
@@ -53,7 +53,7 @@ class TestTrimcodonMain:
             seqfile=str(input_path),
             outfile=str(output_path),
             min_clean_fraction=1.0,
-            report='',
+            report="",
         )
 
         trimcodon_main(args)
@@ -107,10 +107,10 @@ class TestTrimcodonMain:
         trimcodon_main(args)
 
         rows, fieldnames = read_tsv(str(report_path), return_fieldnames=True)
-        assert fieldnames[:2] == ['schema_version', 'section']
-        assert {row['schema_version'] for row in rows} == {'2'}
-        assert any(row['section'] == 'summary' for row in rows)
-        assert any(row['section'] == 'site' for row in rows)
+        assert fieldnames[:2] == ["schema_version", "section"]
+        assert {row["schema_version"] for row in rows} == {"2"}
+        assert any(row["section"] == "summary" for row in rows)
+        assert any(row["section"] == "site" for row in rows)
 
     def test_trimcodon_rejects_unaligned_input(self, temp_dir, mock_args):
         input_path = temp_dir / "input.fasta"
@@ -125,9 +125,9 @@ class TestTrimcodonMain:
             seqfile=str(input_path),
             outfile=str(temp_dir / "output.fasta"),
             min_clean_fraction=0.5,
-            report='',
+            report="",
         )
 
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             trimcodon_main(args)
         assert "correctly aligned" in str(exc_info.value)

@@ -28,24 +28,32 @@ class TestMaskHelpers:
     def test_should_mask_amino_acid(self):
         assert should_mask_amino_acid("X", mask_ambiguous=True, mask_stop=False) is True
         assert should_mask_amino_acid("*", mask_ambiguous=False, mask_stop=True) is True
-        assert should_mask_amino_acid("X", mask_ambiguous=False, mask_stop=True) is False
+        assert (
+            should_mask_amino_acid("X", mask_ambiguous=False, mask_stop=True) is False
+        )
         assert should_mask_amino_acid("M", mask_ambiguous=True, mask_stop=True) is False
 
     def test_iupac_codons_use_translation_semantics(self):
-        assert mask_sequence_string(
-            'TGY',
-            codontable=1,
-            mask_triplet='NNN',
-            mask_ambiguous=True,
-            mask_stop=False,
-        ) == 'TGY'
-        assert mask_sequence_string(
-            'TAR',
-            codontable=1,
-            mask_triplet='NNN',
-            mask_ambiguous=False,
-            mask_stop=True,
-        ) == 'NNN'
+        assert (
+            mask_sequence_string(
+                "TGY",
+                codontable=1,
+                mask_triplet="NNN",
+                mask_ambiguous=True,
+                mask_stop=False,
+            )
+            == "TGY"
+        )
+        assert (
+            mask_sequence_string(
+                "TAR",
+                codontable=1,
+                mask_triplet="NNN",
+                mask_ambiguous=False,
+                mask_stop=True,
+            )
+            == "NNN"
+        )
 
 
 class TestMaskMain:
@@ -66,9 +74,9 @@ class TestMaskMain:
             seqfile=str(input_path),
             outfile=str(output_path),
             codontable=1,
-            maskchar='N',
-            ambiguouscodon='no',
-            stopcodon='no',
+            maskchar="N",
+            ambiguouscodon="no",
+            stopcodon="no",
         )
 
         mask_main(args)
@@ -93,9 +101,9 @@ class TestMaskMain:
             seqfile=str(input_path),
             outfile=str(output_path),
             codontable=1,
-            maskchar='N',
-            ambiguouscodon='yes',
-            stopcodon='no',
+            maskchar="N",
+            ambiguouscodon="yes",
+            stopcodon="no",
         )
 
         mask_main(args)
@@ -120,9 +128,9 @@ class TestMaskMain:
             seqfile=str(input_path),
             outfile=str(output_path),
             codontable=1,
-            maskchar='N',
-            ambiguouscodon='no',
-            stopcodon='yes',
+            maskchar="N",
+            ambiguouscodon="no",
+            stopcodon="yes",
         )
 
         mask_main(args)
@@ -147,9 +155,9 @@ class TestMaskMain:
             seqfile=str(input_path),
             outfile=str(output_path),
             codontable=1,
-            maskchar='N',
-            ambiguouscodon='yes',
-            stopcodon='yes',
+            maskchar="N",
+            ambiguouscodon="yes",
+            stopcodon="yes",
         )
 
         mask_main(args)
@@ -173,9 +181,9 @@ class TestMaskMain:
             seqfile=str(input_path),
             outfile=str(output_path),
             codontable=1,
-            maskchar='-',
-            ambiguouscodon='yes',
-            stopcodon='no',
+            maskchar="-",
+            ambiguouscodon="yes",
+            stopcodon="no",
         )
 
         mask_main(args)
@@ -198,9 +206,9 @@ class TestMaskMain:
             seqfile=str(input_path),
             outfile=str(output_path),
             codontable=1,
-            maskchar='N',
-            ambiguouscodon='yes',
-            stopcodon='yes',
+            maskchar="N",
+            ambiguouscodon="yes",
+            stopcodon="yes",
         )
 
         mask_main(args)
@@ -222,12 +230,12 @@ class TestMaskMain:
             seqfile=str(input_path),
             outfile=str(output_path),
             codontable=1,
-            maskchar='N',
-            ambiguouscodon='yes',
-            stopcodon='yes',
+            maskchar="N",
+            ambiguouscodon="yes",
+            stopcodon="yes",
         )
 
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             mask_main(args)
         assert "multiple of three" in str(exc_info.value)
 
@@ -244,12 +252,12 @@ class TestMaskMain:
             seqfile=str(input_path),
             outfile=str(output_path),
             codontable=999,
-            maskchar='N',
-            ambiguouscodon='yes',
-            stopcodon='yes',
+            maskchar="N",
+            ambiguouscodon="yes",
+            stopcodon="yes",
         )
 
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             mask_main(args)
         assert "Invalid --codon_table" in str(exc_info.value)
 
@@ -268,9 +276,9 @@ class TestMaskMain:
             seqfile=str(input_path),
             outfile=str(output_path),
             codontable=1,
-            maskchar='N',
-            ambiguouscodon='no',
-            stopcodon='yes',
+            maskchar="N",
+            ambiguouscodon="no",
+            stopcodon="yes",
         )
 
         mask_main(args)
@@ -285,15 +293,17 @@ class TestMaskMain:
         input_path = data_dir / "example_mask.fasta"
         output_path = temp_dir / "output.fasta"
 
-        assert input_path.exists(), "required tracked fixture example_mask.fasta is missing"
+        assert input_path.exists(), (
+            "required tracked fixture example_mask.fasta is missing"
+        )
 
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
             codontable=1,
-            maskchar='N',
-            ambiguouscodon='yes',
-            stopcodon='yes',
+            maskchar="N",
+            ambiguouscodon="yes",
+            stopcodon="yes",
         )
 
         mask_main(args)
@@ -322,9 +332,9 @@ class TestMaskMain:
             seqfile=str(input_path),
             outfile=str(output_path),
             codontable=1,
-            maskchar='N',
-            ambiguouscodon='no',
-            stopcodon='yes',
+            maskchar="N",
+            ambiguouscodon="no",
+            stopcodon="yes",
         )
 
         mask_main(args)
@@ -332,7 +342,9 @@ class TestMaskMain:
         result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
         seq = str(result[0].seq)
         # TAA (positions 7-9) should be masked to NNN
-        assert "TAA" not in seq or seq.count("TAA") < "---ATGTAAATTATGTTGAAG---".count("TAA")
+        assert "TAA" not in seq or seq.count("TAA") < "---ATGTAAATTATGTTGAAG---".count(
+            "TAA"
+        )
         assert seq == "---ATGNNNATTATGTTGAAG---"
 
     def test_mask_wiki_example_ambiguous(self, temp_dir, mock_args):
@@ -349,9 +361,9 @@ class TestMaskMain:
             seqfile=str(input_path),
             outfile=str(output_path),
             codontable=1,
-            maskchar='N',
-            ambiguouscodon='yes',
-            stopcodon='no',
+            maskchar="N",
+            ambiguouscodon="yes",
+            stopcodon="no",
         )
 
         mask_main(args)
@@ -376,9 +388,9 @@ class TestMaskMain:
             seqfile=str(input_path),
             outfile=str(output_path),
             codontable=1,
-            maskchar='N',
-            ambiguouscodon='no',
-            stopcodon='no',
+            maskchar="N",
+            ambiguouscodon="no",
+            stopcodon="no",
         )
 
         mask_main(args)
@@ -393,15 +405,17 @@ class TestMaskMain:
         input_path = data_dir / "example_mask.fasta"
         output_path = temp_dir / "output.fasta"
 
-        assert input_path.exists(), "required tracked fixture example_mask.fasta is missing"
+        assert input_path.exists(), (
+            "required tracked fixture example_mask.fasta is missing"
+        )
 
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
             codontable=1,
-            maskchar='N',
-            ambiguouscodon='yes',
-            stopcodon='yes',
+            maskchar="N",
+            ambiguouscodon="yes",
+            stopcodon="yes",
         )
 
         mask_main(args)
@@ -436,9 +450,9 @@ class TestMaskMain:
             seqfile=str(input_path),
             outfile=str(output_path),
             codontable=1,
-            maskchar='N',
-            ambiguouscodon='yes',
-            stopcodon='yes',
+            maskchar="N",
+            ambiguouscodon="yes",
+            stopcodon="yes",
         )
 
         mask_main(args)
@@ -465,18 +479,18 @@ class TestMaskMain:
             seqfile=str(input_path),
             outfile=str(out_single),
             codontable=1,
-            maskchar='N',
-            ambiguouscodon='yes',
-            stopcodon='yes',
+            maskchar="N",
+            ambiguouscodon="yes",
+            stopcodon="yes",
             threads=1,
         )
         args_threaded = mock_args(
             seqfile=str(input_path),
             outfile=str(out_threaded),
             codontable=1,
-            maskchar='N',
-            ambiguouscodon='yes',
-            stopcodon='yes',
+            maskchar="N",
+            ambiguouscodon="yes",
+            stopcodon="yes",
             threads=4,
         )
 
@@ -486,4 +500,6 @@ class TestMaskMain:
         result_single = list(Bio.SeqIO.parse(str(out_single), "fasta"))
         result_threaded = list(Bio.SeqIO.parse(str(out_threaded), "fasta"))
         assert [r.id for r in result_single] == [r.id for r in result_threaded]
-        assert [str(r.seq) for r in result_single] == [str(r.seq) for r in result_threaded]
+        assert [str(r.seq) for r in result_single] == [
+            str(r.seq) for r in result_threaded
+        ]

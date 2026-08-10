@@ -12,12 +12,12 @@ from cdskit.translate import translate_main, translate_sequence_string
 
 
 @pytest.mark.parametrize(
-    'sequence,expected',
+    "sequence,expected",
     [
-        ('-', '-'),
-        ('.', '-'),
-        ('?', 'X'),
-        ('ATG?', 'MX'),
+        ("-", "-"),
+        (".", "-"),
+        ("?", "X"),
+        ("ATG?", "MX"),
     ],
 )
 def test_translate_sequence_string_preserves_partial_missing_codons(sequence, expected):
@@ -25,7 +25,7 @@ def test_translate_sequence_string_preserves_partial_missing_codons(sequence, ex
 
 
 def test_translate_to_stop_ignores_invalid_codons_after_stop():
-    assert translate_sequence_string('TAAXRK', codontable=1, to_stop=True) == ''
+    assert translate_sequence_string("TAAXRK", codontable=1, to_stop=True) == ""
 
 
 class TestTranslateMain:
@@ -97,7 +97,9 @@ class TestTranslateMain:
             ("ATG...TGA", "M-*"),
         ],
     )
-    def test_translate_handles_missing_question_and_dot_codons(self, temp_dir, mock_args, seq, expected):
+    def test_translate_handles_missing_question_and_dot_codons(
+        self, temp_dir, mock_args, seq, expected
+    ):
         input_path = temp_dir / "input.fasta"
         output_path = temp_dir / "output.fasta"
 
@@ -131,7 +133,7 @@ class TestTranslateMain:
             codontable=1,
             to_stop=False,
         )
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             translate_main(args)
         assert "multiple of three" in str(exc_info.value)
 
@@ -148,7 +150,7 @@ class TestTranslateMain:
             codontable=1,
             to_stop=False,
         )
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             translate_main(args)
         assert "DNA-only input is required" in str(exc_info.value)
 
@@ -165,7 +167,7 @@ class TestTranslateMain:
             codontable=999,
             to_stop=False,
         )
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             translate_main(args)
         assert "Invalid --codon_table" in str(exc_info.value)
 
@@ -220,4 +222,6 @@ class TestTranslateMain:
         result_threaded = list(Bio.SeqIO.parse(str(out_threaded), "fasta"))
 
         assert [r.id for r in result_single] == [r.id for r in result_threaded]
-        assert [str(r.seq) for r in result_single] == [str(r.seq) for r in result_threaded]
+        assert [str(r.seq) for r in result_single] == [
+            str(r.seq) for r in result_threaded
+        ]

@@ -16,7 +16,7 @@ class TestAggregateHelpers:
 
     def test_aggregate_name_applies_expressions_in_order(self):
         name = "prefix_gene_suffix.1"
-        expressions = [r'^prefix_', r'_suffix', r'\.[0-9]+$']
+        expressions = [r"^prefix_", r"_suffix", r"\.[0-9]+$"]
         assert aggregate_name(name, expressions) == "gene"
 
     def test_select_aggregate_record_longest_mode(self):
@@ -36,8 +36,12 @@ class TestAggregateMain:
 
         # gene_A.1 and gene_A.2 should aggregate to gene_A
         records = [
-            SeqRecord(Seq("ATGAAA"), id="gene_A.1", name="gene_A.1", description=""),  # 6 nt
-            SeqRecord(Seq("ATGAAACCC"), id="gene_A.2", name="gene_A.2", description=""),  # 9 nt - longer
+            SeqRecord(
+                Seq("ATGAAA"), id="gene_A.1", name="gene_A.1", description=""
+            ),  # 6 nt
+            SeqRecord(
+                Seq("ATGAAACCC"), id="gene_A.2", name="gene_A.2", description=""
+            ),  # 9 nt - longer
             SeqRecord(Seq("ATGCCC"), id="gene_B.1", name="gene_B.1", description=""),
         ]
         Bio.SeqIO.write(records, str(input_path), "fasta")
@@ -45,8 +49,8 @@ class TestAggregateMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            expression=[r'\.[0-9]+$'],  # Remove .N suffix
-            mode='longest',
+            expression=[r"\.[0-9]+$"],  # Remove .N suffix
+            mode="longest",
         )
 
         aggregate_main(args)
@@ -55,7 +59,7 @@ class TestAggregateMain:
         # Should have 2 sequences: gene_A (longest) and gene_B
         assert len(result) == 2
         # Find gene_A entry - should be the longer one
-        gene_a = [r for r in result if "gene_A" in r.id][0]
+        gene_a = next(r for r in result if "gene_A" in r.id)
         assert len(gene_a.seq) == 9
 
     def test_aggregate_keep_longest(self, temp_dir, mock_args):
@@ -66,15 +70,17 @@ class TestAggregateMain:
         records = [
             SeqRecord(Seq("ATG"), id="seq_1", name="seq_1", description=""),  # 3 nt
             SeqRecord(Seq("ATGAAA"), id="seq_2", name="seq_2", description=""),  # 6 nt
-            SeqRecord(Seq("ATGAAACCC"), id="seq_3", name="seq_3", description=""),  # 9 nt - longest
+            SeqRecord(
+                Seq("ATGAAACCC"), id="seq_3", name="seq_3", description=""
+            ),  # 9 nt - longest
         ]
         Bio.SeqIO.write(records, str(input_path), "fasta")
 
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            expression=[r'_[0-9]+$'],  # All become "seq"
-            mode='longest',
+            expression=[r"_[0-9]+$"],  # All become "seq"
+            mode="longest",
         )
 
         aggregate_main(args)
@@ -97,8 +103,8 @@ class TestAggregateMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            expression=[r'XXXX'],  # Won't match anything
-            mode='longest',
+            expression=[r"XXXX"],  # Won't match anything
+            mode="longest",
         )
 
         aggregate_main(args)
@@ -122,7 +128,7 @@ class TestAggregateMain:
             seqfile=str(input_path),
             outfile=str(output_path),
             expression=[],
-            mode='longest',
+            mode="longest",
         )
 
         aggregate_main(args)
@@ -131,7 +137,9 @@ class TestAggregateMain:
         assert [r.id for r in result] == ["A-1", "A1"]
         assert [str(r.seq) for r in result] == ["ATGAAA", "ATGCCC"]
 
-    def test_aggregate_without_expression_keeps_duplicate_ids(self, temp_dir, mock_args):
+    def test_aggregate_without_expression_keeps_duplicate_ids(
+        self, temp_dir, mock_args
+    ):
         """No --expression should not collapse duplicate IDs."""
         input_path = temp_dir / "input.fasta"
         output_path = temp_dir / "output.fasta"
@@ -146,7 +154,7 @@ class TestAggregateMain:
             seqfile=str(input_path),
             outfile=str(output_path),
             expression=[],
-            mode='longest',
+            mode="longest",
         )
 
         aggregate_main(args)
@@ -162,16 +170,30 @@ class TestAggregateMain:
 
         # Names like "prefix_gene_A_suffix.1"
         records = [
-            SeqRecord(Seq("ATGAAA"), id="prefix_gene_suffix.1", name="prefix_gene_suffix.1", description=""),
-            SeqRecord(Seq("ATGAAACCC"), id="prefix_gene_suffix.2", name="prefix_gene_suffix.2", description=""),
+            SeqRecord(
+                Seq("ATGAAA"),
+                id="prefix_gene_suffix.1",
+                name="prefix_gene_suffix.1",
+                description="",
+            ),
+            SeqRecord(
+                Seq("ATGAAACCC"),
+                id="prefix_gene_suffix.2",
+                name="prefix_gene_suffix.2",
+                description="",
+            ),
         ]
         Bio.SeqIO.write(records, str(input_path), "fasta")
 
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            expression=[r'^prefix_', r'_suffix', r'\.[0-9]+$'],  # Remove prefix, suffix, and version
-            mode='longest',
+            expression=[
+                r"^prefix_",
+                r"_suffix",
+                r"\.[0-9]+$",
+            ],  # Remove prefix, suffix, and version
+            mode="longest",
         )
 
         aggregate_main(args)
@@ -195,8 +217,8 @@ class TestAggregateMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            expression=[r'\.[0-9]+$'],
-            mode='longest',
+            expression=[r"\.[0-9]+$"],
+            mode="longest",
         )
 
         aggregate_main(args)
@@ -210,13 +232,15 @@ class TestAggregateMain:
         input_path = data_dir / "example_aggregate.fasta"
         output_path = temp_dir / "output.fasta"
 
-        assert input_path.exists(), "required tracked fixture example_aggregate.fasta is missing"
+        assert input_path.exists(), (
+            "required tracked fixture example_aggregate.fasta is missing"
+        )
 
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            expression=[r'_[0-9]+$'],
-            mode='longest',
+            expression=[r"_[0-9]+$"],
+            mode="longest",
         )
 
         aggregate_main(args)
@@ -235,19 +259,35 @@ class TestAggregateMain:
         output_path = temp_dir / "output.fasta"
 
         records = [
-            SeqRecord(Seq("ATGAAA"), id="seq1:1", name="seq1:1", description=""),  # 6 nt
-            SeqRecord(Seq("ATGAAACCC"), id="seq1:2", name="seq1:2", description=""),  # 9 nt
-            SeqRecord(Seq("ATGAAACCCGGGAAATTTCCCGGGAAATTTCCC"), id="seq1:3", name="seq1:3", description=""),  # 33 nt - longest
-            SeqRecord(Seq("ATGCCC"), id="seq2|1", name="seq2|1", description=""),  # 6 nt
-            SeqRecord(Seq("ATGCCCGGGAAATTTCCCGGGAAATTTCCCGGGAAATTTCCCGGGAAATTTCCC"), id="seq2|2", name="seq2|2", description=""),  # 54 nt - longest
+            SeqRecord(
+                Seq("ATGAAA"), id="seq1:1", name="seq1:1", description=""
+            ),  # 6 nt
+            SeqRecord(
+                Seq("ATGAAACCC"), id="seq1:2", name="seq1:2", description=""
+            ),  # 9 nt
+            SeqRecord(
+                Seq("ATGAAACCCGGGAAATTTCCCGGGAAATTTCCC"),
+                id="seq1:3",
+                name="seq1:3",
+                description="",
+            ),  # 33 nt - longest
+            SeqRecord(
+                Seq("ATGCCC"), id="seq2|1", name="seq2|1", description=""
+            ),  # 6 nt
+            SeqRecord(
+                Seq("ATGCCCGGGAAATTTCCCGGGAAATTTCCCGGGAAATTTCCCGGGAAATTTCCC"),
+                id="seq2|2",
+                name="seq2|2",
+                description="",
+            ),  # 54 nt - longest
         ]
         Bio.SeqIO.write(records, str(input_path), "fasta")
 
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            expression=[r':.*', r'\|.*'],  # Wiki example expressions
-            mode='longest',
+            expression=[r":.*", r"\|.*"],  # Wiki example expressions
+            mode="longest",
         )
 
         aggregate_main(args)
@@ -258,10 +298,10 @@ class TestAggregateMain:
 
         # Verify longest were kept
         # seq1:3 becomes seq1 after removing :3
-        seq1_result = [r for r in result if 'seq1' in r.id][0]
+        seq1_result = next(r for r in result if "seq1" in r.id)
         assert len(seq1_result.seq) == 33
         # seq2|2 becomes seq2 after removing |2
-        seq2_result = [r for r in result if 'seq2' in r.id][0]
+        seq2_result = next(r for r in result if "seq2" in r.id)
         assert len(seq2_result.seq) == 54
 
     def test_aggregate_species_isoforms(self, temp_dir, mock_args):
@@ -271,18 +311,38 @@ class TestAggregateMain:
 
         # Multiple isoforms per species
         records = [
-            SeqRecord(Seq("ATGAAA"), id="Homo_sapiens_isoform1", name="Homo_sapiens_isoform1", description=""),
-            SeqRecord(Seq("ATGAAACCCGGG"), id="Homo_sapiens_isoform2", name="Homo_sapiens_isoform2", description=""),  # longest
-            SeqRecord(Seq("ATGCCC"), id="Mus_musculus_isoform1", name="Mus_musculus_isoform1", description=""),  # longest
-            SeqRecord(Seq("ATG"), id="Mus_musculus_isoform2", name="Mus_musculus_isoform2", description=""),
+            SeqRecord(
+                Seq("ATGAAA"),
+                id="Homo_sapiens_isoform1",
+                name="Homo_sapiens_isoform1",
+                description="",
+            ),
+            SeqRecord(
+                Seq("ATGAAACCCGGG"),
+                id="Homo_sapiens_isoform2",
+                name="Homo_sapiens_isoform2",
+                description="",
+            ),  # longest
+            SeqRecord(
+                Seq("ATGCCC"),
+                id="Mus_musculus_isoform1",
+                name="Mus_musculus_isoform1",
+                description="",
+            ),  # longest
+            SeqRecord(
+                Seq("ATG"),
+                id="Mus_musculus_isoform2",
+                name="Mus_musculus_isoform2",
+                description="",
+            ),
         ]
         Bio.SeqIO.write(records, str(input_path), "fasta")
 
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            expression=[r'_isoform[0-9]+$'],  # Remove isoform suffix
-            mode='longest',
+            expression=[r"_isoform[0-9]+$"],  # Remove isoform suffix
+            mode="longest",
         )
 
         aggregate_main(args)
@@ -291,11 +351,11 @@ class TestAggregateMain:
         assert len(result) == 2
 
         # Homo_sapiens should be 12nt (longest isoform)
-        human = [r for r in result if 'Homo' in r.id][0]
+        human = next(r for r in result if "Homo" in r.id)
         assert len(human.seq) == 12
 
         # Mus_musculus should be 6nt (longest isoform)
-        mouse = [r for r in result if 'Mus' in r.id][0]
+        mouse = next(r for r in result if "Mus" in r.id)
         assert len(mouse.seq) == 6
 
     def test_aggregate_threads_matches_single_thread(self, temp_dir, mock_args):
@@ -314,15 +374,15 @@ class TestAggregateMain:
         args_single = mock_args(
             seqfile=str(input_path),
             outfile=str(out_single),
-            expression=[r'\.[0-9]+$'],
-            mode='longest',
+            expression=[r"\.[0-9]+$"],
+            mode="longest",
             threads=1,
         )
         args_threaded = mock_args(
             seqfile=str(input_path),
             outfile=str(out_threaded),
-            expression=[r'\.[0-9]+$'],
-            mode='longest',
+            expression=[r"\.[0-9]+$"],
+            mode="longest",
             threads=4,
         )
 
@@ -332,7 +392,9 @@ class TestAggregateMain:
         result_single = list(Bio.SeqIO.parse(str(out_single), "fasta"))
         result_threaded = list(Bio.SeqIO.parse(str(out_threaded), "fasta"))
         assert [r.id for r in result_single] == [r.id for r in result_threaded]
-        assert [str(r.seq) for r in result_single] == [str(r.seq) for r in result_threaded]
+        assert [str(r.seq) for r in result_single] == [
+            str(r.seq) for r in result_threaded
+        ]
 
     def test_aggregate_rejects_invalid_regex(self, temp_dir, mock_args):
         input_path = temp_dir / "input.fasta"
@@ -343,12 +405,12 @@ class TestAggregateMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            expression=['['],
-            mode='longest',
+            expression=["["],
+            mode="longest",
         )
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             aggregate_main(args)
-        assert 'Invalid regex in --expression' in str(exc_info.value)
+        assert "Invalid regex in --expression" in str(exc_info.value)
 
     def test_aggregate_rejects_non_dna_input(self, temp_dir, mock_args):
         input_path = temp_dir / "input.fasta"
@@ -359,15 +421,17 @@ class TestAggregateMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            expression=[r'prot'],
-            mode='longest',
-            seqtype='dna',
+            expression=[r"prot"],
+            mode="longest",
+            seqtype="dna",
         )
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             aggregate_main(args)
-        assert 'DNA-only input is required' in str(exc_info.value)
+        assert "DNA-only input is required" in str(exc_info.value)
 
-    def test_aggregate_accepts_protein_input_when_seqtype_protein(self, temp_dir, mock_args):
+    def test_aggregate_accepts_protein_input_when_seqtype_protein(
+        self, temp_dir, mock_args
+    ):
         input_path = temp_dir / "input.fasta"
         output_path = temp_dir / "output.fasta"
         records = [
@@ -380,9 +444,9 @@ class TestAggregateMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            expression=[r'\.[0-9]+$'],
-            mode='longest',
-            seqtype='protein',
+            expression=[r"\.[0-9]+$"],
+            mode="longest",
+            seqtype="protein",
         )
         aggregate_main(args)
 

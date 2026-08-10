@@ -1,11 +1,192 @@
 [build-system]
-requires = ["setuptools>=61", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
+[project]
+name = "cdskit"
+dynamic = ["version"]
+description = "Tools for processing codon sequences"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "BSD-3-Clause"
+authors = [
+  {name = "Kenji Fukushima", email = "kfuku52@gmail.com"},
+]
+keywords = ["bioinformatics", "codon", "coding sequence", "DNA"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Operating System :: OS Independent",
+  "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
+dependencies = [
+  "numpy>=1.23",
+  "biopython>=1.80",
+  "matplotlib>=3.6",
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest>=7",
+]
+coverage = [
+  "pytest-cov>=5",
+  "pytest-xdist>=3",
+]
+quality = [
+  "mypy>=1.10",
+  "ruff>=0.6",
+]
+build = [
+  "build>=1",
+]
+security = [
+  "bandit>=1.9",
+  "pip-audit>=2.10",
+]
+ml = [
+  "torch>=2.2",
+  "scikit-learn>=1.4",
+  "transformers>=4.40",
+]
+dev = [
+  "pytest>=7",
+  "pytest-cov>=5",
+  "pytest-xdist>=3",
+  "mypy>=1.10",
+  "ruff>=0.6",
+  "build>=1",
+  "bandit>=1.9",
+  "pip-audit>=2.10",
+  "torch>=2.2",
+  "scikit-learn>=1.4",
+  "transformers>=4.40",
+]
+
+[project.urls]
+Repository = "https://github.com/kfuku52/cdskit"
+Issues = "https://github.com/kfuku52/cdskit/issues"
+
+[project.scripts]
+cdskit = "cdskit.cli:main"
+
+[dependency-groups]
+test = [
+  "pytest>=7",
+]
+coverage = [
+  "pytest-cov>=5",
+  "pytest-xdist>=3",
+]
+quality = [
+  "mypy>=1.10",
+  "ruff>=0.6",
+]
+build = [
+  "build>=1",
+]
+security = [
+  "bandit>=1.9",
+  "pip-audit>=2.10",
+]
+dev = [
+  {include-group = "test"},
+  {include-group = "coverage"},
+  {include-group = "quality"},
+  {include-group = "build"},
+  {include-group = "security"},
+]
+
+[tool.setuptools.dynamic]
+version = {attr = "cdskit.__version__"}
+
+[tool.setuptools.packages.find]
+include = ["cdskit*"]
+
+[tool.mypy]
+python_version = "3.10"
+files = ["cdskit"]
+check_untyped_defs = true
+explicit_package_bases = true
+ignore_missing_imports = true
+show_error_codes = true
+warn_redundant_casts = true
+warn_unused_configs = true
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = [
+  "cdskit.atomicio",
+  "cdskit.cliutil",
+  "cdskit.codonutil",
+  "cdskit.command_runtime",
+  "cdskit.localize_models",
+  "cdskit.targetp_training",
+  "cdskit.tsvio",
+  "cdskit.util",
+]
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = [
+  "cdskit.localize_bilstm",
+  "cdskit.localize_learn",
+  "cdskit.perox_benchmark",
+  "cdskit.targetp_blend",
+  "cdskit.targetp_external_aug",
+  "cdskit.targetp_external_eval",
+  "cdskit.targetp_pair_blend",
+  "cdskit.targetp_stack",
+  "cdskit.targetp_torch",
+]
+check_untyped_defs = false
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "--tb=short --strict-config --strict-markers -ra"
+markers = [
+  "unit: pure, isolated tests without command-level I/O",
+  "integration: command and multi-component integration tests",
+  "ml: tests requiring optional machine-learning dependencies",
+  "slow: deliberately expensive end-to-end or training tests",
+  "subprocess: tests that start a child process",
+  "serial: tests that must not run concurrently",
+]
+filterwarnings = [
+  "error::DeprecationWarning:cdskit.*",
+  "ignore::DeprecationWarning:matplotlib.*",
+  "ignore::DeprecationWarning:Bio.*",
+]
+
+[tool.coverage.run]
+branch = true
+relative_files = true
+source = ["cdskit"]
+
+[tool.coverage.report]
+fail_under = 74.0
+precision = 1
+show_missing = true
+skip_covered = true
+
+[tool.ruff]
+target-version = "py310"
+
 [tool.ruff.lint]
-# Keep CI behavior stable across Ruff releases. These are Ruff's traditional
-# correctness-focused defaults; broader style migrations should be opt-in.
-select = ["E4", "E7", "E9", "F"]
+select = ["E4", "E7", "E9", "F", "B", "PERF", "RUF"]
 
 [tool.ruff.lint.per-file-ignores]
 "cdskit/plot.py" = ["E402"]
+"tests/unit/test_tsvio.py" = ["RUF001"]  # Intentional Unicode round-trip fixture.
+
+[tool.ruff.lint.mccabe]
+max-complexity = 35

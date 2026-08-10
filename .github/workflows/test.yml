@@ -10,8 +10,13 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: test-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 env:
   PIP_DISABLE_PIP_VERSION_CHECK: '1'
+  UV_VERSION: '0.12.3'
 
 jobs:
   test:
@@ -20,16 +25,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - {os: ubuntu-latest, python-version: '3.10'}
-          - {os: ubuntu-latest, python-version: '3.11'}
-          - {os: ubuntu-latest, python-version: '3.12'}
-          - {os: ubuntu-latest, python-version: '3.13'}
-          - {os: ubuntu-latest, python-version: '3.14'}
-          - {os: macos-latest, python-version: '3.12'}
-          - {os: macos-latest, python-version: '3.14'}
-          - {os: windows-latest, python-version: '3.12'}
-          - {os: windows-latest, python-version: '3.14'}
+        include: ${{ fromJSON(github.event_name == 'pull_request' && '[{"os":"ubuntu-latest","python-version":"3.10"},{"os":"ubuntu-latest","python-version":"3.14"},{"os":"macos-latest","python-version":"3.14"},{"os":"windows-latest","python-version":"3.14"}]' || '[{"os":"ubuntu-latest","python-version":"3.10"},{"os":"ubuntu-latest","python-version":"3.11"},{"os":"ubuntu-latest","python-version":"3.12"},{"os":"ubuntu-latest","python-version":"3.13"},{"os":"ubuntu-latest","python-version":"3.14"},{"os":"macos-latest","python-version":"3.12"},{"os":"macos-latest","python-version":"3.14"},{"os":"windows-latest","python-version":"3.12"},{"os":"windows-latest","python-version":"3.14"}]') }}
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -37,14 +33,18 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
-          cache: pip
-          cache-dependency-path: setup.py
+
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
 
       - name: Install
-        run: python -m pip install -e ".[test]"
+        run: uv sync --locked --no-dev --group test
 
       - name: Test core suite
-        run: python -m pytest -q tests/unit tests/integration -m "not ml" --durations=20 --durations-min=0.05
+        run: uv run --no-sync python -m pytest -q tests/unit tests/integration -m "not ml" --durations=20 --durations-min=0.05
 
   ml-coverage:
     name: ML and coverage / ubuntu-latest / Python 3.12
@@ -55,19 +55,24 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
-          cache: pip
-          cache-dependency-path: setup.py
+
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
 
       - name: Install test, ML, and security dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e ".[test,coverage,ml,security]"
+        run: uv sync --locked --no-dev --group test --group coverage --group security --extra ml
 
       - name: Test with coverage
-        run: python -m pytest -q -n 2 --dist=worksteal --cov=cdskit --cov-report=term-missing --cov-fail-under=75 --durations=20 --durations-min=0.05
+        run: uv run --no-sync python -m pytest -q -n 2 --dist=worksteal --cov=cdskit --cov-report=term-missing --cov-report=json:coverage.json --durations=20 --durations-min=0.05
+
+      - name: Check critical module coverage floors
+        run: uv run --no-sync python scripts/check_coverage.py coverage.json
 
       - name: Audit resolved dependencies
-        run: python -m pip_audit --local --skip-editable
+        run: uv run --no-sync python -m pip_audit --local --skip-editable
 
   quality:
     name: Ruff and mypy / ubuntu-latest / Python 3.12
@@ -78,23 +83,30 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
-          cache: pip
-          cache-dependency-path: setup.py
+
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
 
       - name: Install quality and security dependencies
-        run: python -m pip install -e ".[quality,security]"
+        run: uv sync --locked --only-group quality --only-group security
 
       - name: Lint
-        run: python -m ruff check cdskit scripts tests
+        run: uv run --no-sync python -m ruff check cdskit scripts tests
+
+      - name: Format
+        run: uv run --no-sync python -m ruff format --check cdskit scripts tests
 
       - name: Type check
-        run: python -m mypy cdskit/*.py --ignore-missing-imports --explicit-package-bases
+        run: uv run --no-sync python -m mypy cdskit
 
       - name: Reject new high-severity security findings
-        run: python -m bandit -q -r cdskit -lll
+        run: uv run --no-sync python -m bandit -q -r cdskit -lll
 
       - name: Guard maximum cyclomatic complexity
-        run: python -m ruff check cdskit --select C901 --config lint.mccabe.max-complexity=38
+        run: uv run --no-sync python -m ruff check cdskit --select C901
 
   package:
     name: Build and wheel / ubuntu-latest / Python 3.12
@@ -105,19 +117,26 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
-          cache: pip
-          cache-dependency-path: setup.py
+
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
 
       - name: Install build dependencies
-        run: python -m pip install -e ".[build]"
+        run: uv sync --locked --only-group build
 
       - name: Build distributions
-        run: python -m build
+        run: uv run --no-sync python -m build
 
       - name: Validate wheel installation
         shell: bash
         run: |
-          python -m venv /tmp/cdskit-wheel
-          /tmp/cdskit-wheel/bin/python -m pip install dist/*.whl
+          uv venv /tmp/cdskit-wheel --python python
+          uv pip install --python /tmp/cdskit-wheel/bin/python dist/*.whl
           /tmp/cdskit-wheel/bin/cdskit --version
-          /tmp/cdskit-wheel/bin/python -m pip check
+          printf '>wheel-smoke\nATGA\n' | /tmp/cdskit-wheel/bin/cdskit pad | grep -q '^ATGANN$'
+          /tmp/cdskit-wheel/bin/cdskit plot --seq_file tests/fixtures/example_plot.fasta --out_file /tmp/cdskit-wheel/smoke.svg --format svg
+          test -s /tmp/cdskit-wheel/smoke.svg
+          uv pip check --python /tmp/cdskit-wheel/bin/python

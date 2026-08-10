@@ -16,39 +16,28 @@ from cdskit.targetp_benchmark import (
 
 
 def _write_text(path, text):
-    with open(path, 'w', encoding='utf-8') as out:
+    with open(path, "w", encoding="utf-8") as out:
         out.write(text)
 
 
 def test_prepare_targetp_benchmark_tsv_from_small_fixture(temp_dir):
-    fasta_path = temp_dir / 'targetp.fasta'
-    tab_path = temp_dir / 'swissprot_annotated_proteins.tab'
-    npz_path = temp_dir / 'targetp_data.npz'
-    out_tsv = temp_dir / 'targetp2_benchmark.tsv'
-    report_json = temp_dir / 'targetp2_prepare_report.json'
+    fasta_path = temp_dir / "targetp.fasta"
+    tab_path = temp_dir / "swissprot_annotated_proteins.tab"
+    npz_path = temp_dir / "targetp_data.npz"
+    out_tsv = temp_dir / "targetp2_benchmark.tsv"
+    report_json = temp_dir / "targetp2_prepare_report.json"
 
     _write_text(
         fasta_path,
-        (
-            '>A0A0001\n'
-            'MAAA\n'
-            '>A0A0002\n'
-            'MBBB\n'
-            '>A0A0003\n'
-            'MCCC\n'
-        ),
+        (">A0A0001\nMAAA\n>A0A0002\nMBBB\n>A0A0003\nMCCC\n"),
     )
     _write_text(
         tab_path,
-        (
-            'A0A0001\tSP\t21\n'
-            'A0A0002\tOther\t0\n'
-            'A0A0003\tMT\t34\n'
-        ),
+        ("A0A0001\tSP\t21\nA0A0002\tOther\t0\nA0A0003\tMT\t34\n"),
     )
     np.savez(
         npz_path,
-        ids=np.asarray(['A0A0001', 'A0A0002', 'A0A0003']),
+        ids=np.asarray(["A0A0001", "A0A0002", "A0A0003"]),
         fold=np.asarray([0, 1, 0], dtype=np.int32),
         org=np.asarray([1, 0, 1], dtype=np.int32),
         y_type=np.asarray([1, 0, 2], dtype=np.int32),
@@ -62,84 +51,84 @@ def test_prepare_targetp_benchmark_tsv_from_small_fixture(temp_dir):
         report_json_path=str(report_json),
     )
 
-    assert report['n_rows'] == 3
-    assert report['class_counts']['SP'] == 1
-    assert report['class_counts']['noTP'] == 1
-    assert report['class_counts']['mTP'] == 1
-    assert report['fold_counts']['fold1'] == 2
-    assert report['fold_counts']['fold2'] == 1
-    assert report['y_type_mismatch_count'] == 0
+    assert report["n_rows"] == 3
+    assert report["class_counts"]["SP"] == 1
+    assert report["class_counts"]["noTP"] == 1
+    assert report["class_counts"]["mTP"] == 1
+    assert report["fold_counts"]["fold1"] == 2
+    assert report["fold_counts"]["fold2"] == 1
+    assert report["y_type_mismatch_count"] == 0
 
-    with open(out_tsv, 'r', encoding='utf-8', newline='') as inp:
-        rows = list(csv.DictReader(inp, delimiter='\t'))
+    with open(out_tsv, "r", encoding="utf-8", newline="") as inp:
+        rows = list(csv.DictReader(inp, delimiter="\t"))
     assert len(rows) == 3
 
     first = rows[0]
-    assert first['accession'] == 'A0A0001'
-    assert first['sequence'] == 'MAAA'
-    assert first['localization'] == 'SP'
-    assert first['peroxisome'] == 'no'
-    assert first['fold_id'] == 'fold1'
-    assert first['organism_group'] == 'plant'
+    assert first["accession"] == "A0A0001"
+    assert first["sequence"] == "MAAA"
+    assert first["localization"] == "SP"
+    assert first["peroxisome"] == "no"
+    assert first["fold_id"] == "fold1"
+    assert first["organism_group"] == "plant"
 
 
 def test_compute_prf_by_class_and_comparison_table():
-    classes = ['noTP', 'SP', 'mTP']
-    true_labels = ['noTP', 'SP', 'SP', 'mTP', 'mTP']
-    pred_labels = ['noTP', 'noTP', 'SP', 'mTP', 'SP']
+    classes = ["noTP", "SP", "mTP"]
+    true_labels = ["noTP", "SP", "SP", "mTP", "mTP"]
+    pred_labels = ["noTP", "noTP", "SP", "mTP", "SP"]
 
     by_class = compute_prf_by_class(
         true_classes=true_labels,
         pred_classes=pred_labels,
         class_names=classes,
     )
-    assert by_class['noTP']['tp'] == 1
-    assert by_class['SP']['tp'] == 1
-    assert by_class['SP']['fp'] == 1
-    assert by_class['mTP']['fn'] == 1
+    assert by_class["noTP"]["tp"] == 1
+    assert by_class["SP"]["tp"] == 1
+    assert by_class["SP"]["fp"] == 1
+    assert by_class["mTP"]["fn"] == 1
 
     fake_oof_by_class = dict()
     for class_name in TARGETP_TABLE1_REFERENCE.keys():
         fake_oof_by_class[class_name] = {
-            'precision': 0.50,
-            'recall': 0.50,
-            'f1': 0.50,
-            'tp': 1,
-            'fp': 1,
-            'fn': 1,
-            'support': 2,
+            "precision": 0.50,
+            "recall": 0.50,
+            "f1": 0.50,
+            "tp": 1,
+            "fp": 1,
+            "fn": 1,
+            "support": 2,
         }
     comparison = build_targetp_comparison_table(
         cdskit_result={
-            'oof_by_class': fake_oof_by_class,
-            'oof_macro_f1': 0.50,
+            "oof_by_class": fake_oof_by_class,
+            "oof_macro_f1": 0.50,
         }
     )
-    assert len(comparison['rows']) == 5
-    assert comparison['targetp_macro_f1'] > 0.5
-    assert comparison['delta_macro_f1_cdskit_minus_targetp'] < 0.0
+    assert len(comparison["rows"]) == 5
+    assert comparison["targetp_macro_f1"] > 0.5
+    assert comparison["delta_macro_f1_cdskit_minus_targetp"] < 0.0
 
     md = render_markdown_table(comparison=comparison)
-    assert '| Class | TargetP P | TargetP R | TargetP F1 |' in md
-    assert '| Macro F1 (5-class) |' in md
+    assert "| Class | TargetP P | TargetP R | TargetP F1 |" in md
+    assert "| Macro F1 (5-class) |" in md
 
 
 def test_targetp_label_mapping_constants_are_consistent():
-    for y_type, label in TARGETP_YTYPE_TO_LABEL.items():
+    for label in TARGETP_YTYPE_TO_LABEL.values():
         assert label in TARGETP_LABEL_TO_LOCALIZATION
         loc = TARGETP_LABEL_TO_LOCALIZATION[label]
         assert loc in TARGETP_TABLE1_REFERENCE
 
 
 def test_targetp_npz_rejects_pickle_backed_object_arrays(temp_dir):
-    npz_path = temp_dir / 'unsafe.npz'
+    npz_path = temp_dir / "unsafe.npz"
     np.savez(
         npz_path,
-        ids=np.asarray(['A0A0001'], dtype=object),
+        ids=np.asarray(["A0A0001"], dtype=object),
         fold=np.asarray([0], dtype=np.int32),
         org=np.asarray([1], dtype=np.int32),
         y_type=np.asarray([1], dtype=np.int32),
     )
 
-    with pytest.raises(ValueError, match='Object arrays cannot be loaded'):
+    with pytest.raises(ValueError, match="Object arrays cannot be loaded"):
         _read_targetp_npz(str(npz_path))

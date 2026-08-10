@@ -238,9 +238,13 @@ The dependency-light development loop runs unit and integration tests without
 loading optional ML frameworks:
 
 ```bash
-python -m pip install -e ".[test]"
-python -m pytest -q tests/unit tests/integration -m "not ml and not subprocess"
+uv sync --locked --no-dev --group test
+uv run --no-sync python -m pytest -q tests/unit tests/integration -m "not ml and not subprocess"
 ```
+
+The committed `uv.lock` is the reproducible development and CI resolution.
+Package consumers can continue to install cdskit with pip; the lock is not an
+upper-bound policy for the library's declared compatibility ranges.
 
 See [TESTING.md](TESTING.md) for the ML, coverage, quality, package, and focused
 rerun commands, plus the test layout and fixture conventions.

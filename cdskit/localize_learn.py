@@ -34,28 +34,29 @@ from cdskit.localize_model import (
     write_rows_tsv,
 )
 from cdskit.tsvio import read_tsv, write_tsv
-from cdskit.util import atomic_output_paths, stop_if_invalid_codontable
+from cdskit.atomicio import atomic_output_paths
+from cdskit.util import stop_if_invalid_codontable
 
-UNIPROT_SEARCH_URL = 'https://rest.uniprot.org/uniprotkb/search'
+UNIPROT_SEARCH_URL = "https://rest.uniprot.org/uniprotkb/search"
 UNIPROT_MAX_PAGE_SIZE = 500
 UNIPROT_MAX_PAGES = 10_000
 UNIPROT_MAX_RESPONSE_BYTES = 64 * 1024 * 1024
-UNIPROT_DEFAULT_FIELDS = ('accession', 'sequence', 'cc_subcellular_location')
+UNIPROT_DEFAULT_FIELDS = ("accession", "sequence", "cc_subcellular_location")
 TWO_STAGE_CTP_LTP_GATE_GRID = [0.0, 0.10, 0.20, 0.30, 0.40, 0.50]
 TWO_STAGE_CTP_LTP_BETA_GRID = [0.0, 0.25, 0.50, 0.75, 1.0]
 TWO_STAGE_CTP_LTP_LTP_THRESHOLD_GRID = [0.40, 0.50, 0.60, 0.70]
 UNIPROT_PRESET_QUERIES = {
-    'none': '',
-    'viridiplantae': 'taxonomy_id:33090',
-    'eukaryota': 'taxonomy_id:2759',
-    'metazoa': 'taxonomy_id:33208',
-    'fungi': 'taxonomy_id:4751',
-    'non_viridiplantae_euk': '(taxonomy_id:2759) AND (NOT taxonomy_id:33090)',
-    'protist_core': (
-        '(taxonomy_id:2759) AND (NOT taxonomy_id:33090) '
-        'AND (NOT taxonomy_id:33208) AND (NOT taxonomy_id:4751)'
+    "none": "",
+    "viridiplantae": "taxonomy_id:33090",
+    "eukaryota": "taxonomy_id:2759",
+    "metazoa": "taxonomy_id:33208",
+    "fungi": "taxonomy_id:4751",
+    "non_viridiplantae_euk": "(taxonomy_id:2759) AND (NOT taxonomy_id:33090)",
+    "protist_core": (
+        "(taxonomy_id:2759) AND (NOT taxonomy_id:33090) "
+        "AND (NOT taxonomy_id:33208) AND (NOT taxonomy_id:4751)"
     ),
-    'bacteria_hard_negative': 'taxonomy_id:2',
+    "bacteria_hard_negative": "taxonomy_id:2",
 }
 
 
@@ -63,7 +64,7 @@ def _installed_package_version(name):
     try:
         return package_version(name)
     except PackageNotFoundError:
-        return ''
+        return ""
 
 
 def read_training_tsv(path, required_columns=None, return_fieldnames=False):
@@ -77,7 +78,7 @@ def read_training_tsv(path, required_columns=None, return_fieldnames=False):
 def parse_uniprot_fields(field_text):
     if field_text is None:
         return list(UNIPROT_DEFAULT_FIELDS)
-    fields = [f.strip() for f in str(field_text).split(',') if f.strip() != '']
+    fields = [f.strip() for f in str(field_text).split(",") if f.strip() != ""]
     if len(fields) == 0:
         return list(UNIPROT_DEFAULT_FIELDS)
     out = list()
@@ -91,27 +92,27 @@ def parse_uniprot_fields(field_text):
 
 
 def resolve_uniprot_query(uniprot_query, uniprot_preset):
-    preset_name = str(uniprot_preset or 'none').strip().lower()
-    if preset_name == '':
-        preset_name = 'none'
+    preset_name = str(uniprot_preset or "none").strip().lower()
+    if preset_name == "":
+        preset_name = "none"
     if preset_name not in UNIPROT_PRESET_QUERIES:
-        valid = ','.join(sorted(UNIPROT_PRESET_QUERIES.keys()))
-        txt = 'Invalid --uniprot_preset: {}. Supported: {}.'
+        valid = ",".join(sorted(UNIPROT_PRESET_QUERIES.keys()))
+        txt = "Invalid --uniprot_preset: {}. Supported: {}."
         raise ValueError(txt.format(uniprot_preset, valid))
     preset_query = UNIPROT_PRESET_QUERIES[preset_name]
 
-    query = str(uniprot_query or '').strip()
-    if (preset_query != '') and (query != ''):
-        return '({}) AND ({})'.format(preset_query, query), preset_name
-    if preset_query != '':
+    query = str(uniprot_query or "").strip()
+    if (preset_query != "") and (query != ""):
+        return "({}) AND ({})".format(preset_query, query), preset_name
+    if preset_query != "":
         return preset_query, preset_name
     return query, preset_name
 
 
 def parse_uniprot_next_link(link_header):
-    if (link_header is None) or (link_header == ''):
+    if (link_header is None) or (link_header == ""):
         return None
-    match = re.search(r'<([^>]+)>;\s*rel=\"next\"', str(link_header))
+    match = re.search(r"<([^>]+)>;\s*rel=\"next\"", str(link_header))
     if match is None:
         return None
     return match.group(1)
@@ -120,12 +121,12 @@ def parse_uniprot_next_link(link_header):
 def _validate_uniprot_url(url):
     parsed = urllib_parse.urlparse(str(url))
     if (
-        parsed.scheme != 'https'
-        or parsed.hostname != 'rest.uniprot.org'
+        parsed.scheme != "https"
+        or parsed.hostname != "rest.uniprot.org"
         or parsed.port not in (None, 443)
-        or parsed.path != '/uniprotkb/search'
+        or parsed.path != "/uniprotkb/search"
     ):
-        raise ValueError('Refusing unexpected UniProt pagination URL: {}'.format(url))
+        raise ValueError("Refusing unexpected UniProt pagination URL: {}".format(url))
 
 
 def _fetch_url_text(url, timeout_sec, retries):
@@ -135,12 +136,14 @@ def _fetch_url_text(url, timeout_sec, retries):
         try:
             with urllib_request.urlopen(url, timeout=timeout_sec) as response:
                 _validate_uniprot_url(response.geturl())
-                content_length = response.headers.get('Content-Length')
+                content_length = response.headers.get("Content-Length")
                 if (
                     content_length is not None
                     and int(content_length) > UNIPROT_MAX_RESPONSE_BYTES
                 ):
-                    raise ValueError('UniProt response exceeds the 64 MiB safety limit.')
+                    raise ValueError(
+                        "UniProt response exceeds the 64 MiB safety limit."
+                    )
                 chunks = []
                 total = 0
                 while True:
@@ -149,54 +152,53 @@ def _fetch_url_text(url, timeout_sec, retries):
                         break
                     total += len(chunk)
                     if total > UNIPROT_MAX_RESPONSE_BYTES:
-                        raise ValueError('UniProt response exceeds the 64 MiB safety limit.')
+                        raise ValueError(
+                            "UniProt response exceeds the 64 MiB safety limit."
+                        )
                     chunks.append(chunk)
-                body = b''.join(chunks).decode('utf-8')
-                link_header = response.headers.get('Link', '')
+                body = b"".join(chunks).decode("utf-8")
+                link_header = response.headers.get("Link", "")
                 return body, link_header
         except urllib_error.URLError as exc:
             last_exc = exc
             if attempt >= retries:
                 break
             time.sleep(1.0 + attempt)
-    txt = 'Failed to download UniProt data: {}'
-    raise Exception(txt.format(str(last_exc)))
+    txt = "Failed to download UniProt data: {}"
+    raise ValueError(txt.format(str(last_exc)))
 
 
 def parse_uniprot_tsv_text(tsv_text, field_order):
     rows = list()
-    if tsv_text.strip() == '':
+    if tsv_text.strip() == "":
         return rows
-    reader = csv.reader(io.StringIO(tsv_text), delimiter='\t')
+    reader = csv.reader(io.StringIO(tsv_text), delimiter="\t")
     try:
         header = next(reader)
     except StopIteration:
         return rows
     num_field = len(field_order)
-    if len(header) != num_field or any(str(value).strip() == '' for value in header):
+    if len(header) != num_field or any(str(value).strip() == "" for value in header):
         raise ValueError(
-            'Unexpected UniProt TSV header width: expected {} columns, got {}.'.format(
+            "Unexpected UniProt TSV header width: expected {} columns, got {}.".format(
                 num_field,
                 len(header),
             )
         )
     if len(set(header)) != len(header):
-        raise ValueError('UniProt TSV header contains duplicate columns.')
+        raise ValueError("UniProt TSV header contains duplicate columns.")
     for line_number, raw_row in enumerate(reader, start=2):
         if len(raw_row) == 0:
             continue
         if len(raw_row) != num_field:
             raise ValueError(
-                'UniProt TSV row width mismatch at line {}: expected {}, got {}.'.format(
+                "UniProt TSV row width mismatch at line {}: expected {}, got {}.".format(
                     line_number,
                     num_field,
                     len(raw_row),
                 )
             )
-        row = {
-            field_name: raw_row[i]
-            for i, field_name in enumerate(field_order)
-        }
+        row = {field_name: raw_row[i] for i, field_name in enumerate(field_order)}
         rows.append(row)
     return rows
 
@@ -210,40 +212,40 @@ def fetch_uniprot_training_rows(
     max_rows,
     timeout_sec,
     retries,
-    sampling_mode='head',
+    sampling_mode="head",
     sampling_seed=1,
 ):
     if query is None:
-        query = ''
+        query = ""
     query = str(query).strip()
-    if query == '':
-        query = '*'
+    if query == "":
+        query = "*"
     if reviewed:
-        query = '({}) AND (reviewed:true)'.format(query)
+        query = "({}) AND (reviewed:true)".format(query)
     if exclude_fragments:
-        query = '({}) AND (NOT fragment:true)'.format(query)
+        query = "({}) AND (NOT fragment:true)".format(query)
 
     page_size = int(page_size)
     if page_size < 1:
-        raise ValueError('--uniprot_page_size should be >= 1.')
+        raise ValueError("--uniprot_page_size should be >= 1.")
     if page_size > UNIPROT_MAX_PAGE_SIZE:
         page_size = UNIPROT_MAX_PAGE_SIZE
 
     max_rows = int(max_rows)
     if max_rows < 0:
-        raise ValueError('--uniprot_max_rows should be >= 0.')
+        raise ValueError("--uniprot_max_rows should be >= 0.")
     sampling_mode = str(sampling_mode).strip().lower()
-    if sampling_mode not in ['head', 'random']:
-        raise ValueError('--uniprot_sampling should be head or random.')
+    if sampling_mode not in ["head", "random"]:
+        raise ValueError("--uniprot_sampling should be head or random.")
     sampling_seed = int(sampling_seed)
 
     params = {
-        'query': query,
-        'format': 'tsv',
-        'fields': ','.join(fields),
-        'size': str(page_size),
+        "query": query,
+        "format": "tsv",
+        "fields": ",".join(fields),
+        "size": str(page_size),
     }
-    next_url = '{}?{}'.format(UNIPROT_SEARCH_URL, urllib_parse.urlencode(params))
+    next_url = "{}?{}".format(UNIPROT_SEARCH_URL, urllib_parse.urlencode(params))
     all_rows = list()
     rng = np.random.default_rng(sampling_seed)
     seen_count = 0
@@ -252,12 +254,12 @@ def fetch_uniprot_training_rows(
     while next_url is not None:
         _validate_uniprot_url(next_url)
         if next_url in visited_urls:
-            raise ValueError('UniProt pagination loop detected.')
+            raise ValueError("UniProt pagination loop detected.")
         visited_urls.add(next_url)
         page_count += 1
         if page_count > UNIPROT_MAX_PAGES:
             raise ValueError(
-                'UniProt pagination exceeds {} pages.'.format(UNIPROT_MAX_PAGES)
+                "UniProt pagination exceeds {} pages.".format(UNIPROT_MAX_PAGES)
             )
         body, link_header = _fetch_url_text(
             url=next_url,
@@ -267,7 +269,7 @@ def fetch_uniprot_training_rows(
         new_rows = parse_uniprot_tsv_text(tsv_text=body, field_order=fields)
         if max_rows == 0:
             all_rows.extend(new_rows)
-        elif sampling_mode == 'head':
+        elif sampling_mode == "head":
             remain = max_rows - len(all_rows)
             if remain > 0:
                 all_rows.extend(new_rows[:remain])
@@ -292,13 +294,13 @@ def write_uniprot_rows_tsv(rows, fields, out_path):
 
 
 def resolve_sequence_mode(seq_str, seqtype):
-    if seqtype == 'dna':
-        return 'dna'
-    if seqtype == 'protein':
-        return 'protein'
+    if seqtype == "dna":
+        return "dna"
+    if seqtype == "protein":
+        return "protein"
     if is_dna_like(seq_str):
-        return 'dna'
-    return 'protein'
+        return "dna"
+    return "protein"
 
 
 def parse_training_row(
@@ -311,55 +313,55 @@ def parse_training_row(
     localization_col,
     perox_col,
     skip_ambiguous,
-    cv_fold_col='',
+    cv_fold_col="",
 ):
-    seq_raw = row.get(seq_col, '')
+    seq_raw = row.get(seq_col, "")
     if seq_raw is None:
-        seq_raw = ''
+        seq_raw = ""
     seq_raw = str(seq_raw).strip()
-    if seq_raw == '':
-        txt = 'Empty sequence at row {} in training table.'
+    if seq_raw == "":
+        txt = "Empty sequence at row {} in training table."
         raise ValueError(txt.format(row_index + 1))
 
     seq_mode = resolve_sequence_mode(seq_str=seq_raw, seqtype=seqtype)
-    if seq_mode == 'dna':
+    if seq_mode == "dna":
         aa_seq = translate_inframe_cds_to_aa(
             cds_seq=seq_raw,
             codontable=codontable,
-            seq_id='training_row_{}'.format(row_index + 1),
+            seq_id="training_row_{}".format(row_index + 1),
         )
     else:
         aa_seq = to_canonical_aa_sequence(seq_raw)
 
-    if label_mode == 'explicit':
-        class_label = normalize_localization_label(row.get(localization_col, ''))
-        perox_label = normalize_yes_no(row.get(perox_col, 'no'), default='no')
-    elif label_mode == 'uniprot_cc':
-        location_text = row.get(localization_col, '')
-        if (location_text is None) or (str(location_text).strip() == ''):
+    if label_mode == "explicit":
+        class_label = normalize_localization_label(row.get(localization_col, ""))
+        perox_label = normalize_yes_no(row.get(perox_col, "no"), default="no")
+    elif label_mode == "uniprot_cc":
+        location_text = row.get(localization_col, "")
+        if (location_text is None) or (str(location_text).strip() == ""):
             for alt_key in (
-                'cc_subcellular_location',
-                'Subcellular location [CC]',
-                'subcellular_location',
-                'localization',
+                "cc_subcellular_location",
+                "Subcellular location [CC]",
+                "subcellular_location",
+                "localization",
             ):
-                if alt_key in row and str(row.get(alt_key, '')).strip() != '':
-                    location_text = row.get(alt_key, '')
+                if alt_key in row and str(row.get(alt_key, "")).strip() != "":
+                    location_text = row.get(alt_key, "")
                     break
         class_label, perox_label, ambiguous = infer_labels_from_uniprot_cc(
             location_text=location_text,
         )
         if ambiguous and skip_ambiguous:
             return None
-        perox_label = normalize_yes_no(perox_label, default='no')
+        perox_label = normalize_yes_no(perox_label, default="no")
     else:
-        raise ValueError('Unsupported --label_mode: {}'.format(label_mode))
+        raise ValueError("Unsupported --label_mode: {}".format(label_mode))
 
     fold_id = None
-    cv_fold_col = str(cv_fold_col or '').strip()
-    if cv_fold_col != '':
+    cv_fold_col = str(cv_fold_col or "").strip()
+    if cv_fold_col != "":
         fold_raw = row.get(cv_fold_col, None)
-        if (fold_raw is None) or (str(fold_raw).strip() == ''):
+        if (fold_raw is None) or (str(fold_raw).strip() == ""):
             txt = 'Missing fold value in column "{}" at row {} in training table.'
             raise ValueError(txt.format(cv_fold_col, row_index + 1))
         fold_id = str(fold_raw).strip()
@@ -377,14 +379,14 @@ def build_training_matrix(
     localization_col,
     perox_col,
     skip_ambiguous,
-    cv_fold_col='',
+    cv_fold_col="",
 ):
     features = list()
     aa_sequences = list()
     class_labels = list()
     perox_labels = list()
     fold_ids = None
-    if str(cv_fold_col or '').strip() != '':
+    if str(cv_fold_col or "").strip() != "":
         fold_ids = list()
     skipped = 0
     for i, row in enumerate(rows):
@@ -411,7 +413,7 @@ def build_training_matrix(
         if fold_ids is not None:
             fold_ids.append(fold_id)
     if len(features) == 0:
-        raise ValueError('No valid training sample remained after filtering.')
+        raise ValueError("No valid training sample remained after filtering.")
     x = np.asarray(features, dtype=np.float64)
     return x, aa_sequences, class_labels, perox_labels, skipped, fold_ids
 
@@ -440,19 +442,21 @@ def calculate_training_metrics(
         true_class = class_labels[i]
         true_perox = perox_labels[i]
         class_total[true_class] = class_total.get(true_class, 0) + 1
-        if pred['predicted_class'] == true_class:
+        if pred["predicted_class"] == true_class:
             correct_class += 1
             class_correct[true_class] = class_correct.get(true_class, 0) + 1
-        pred_perox = 'yes' if pred['perox_probability_yes'] >= 0.5 else 'no'
+        pred_perox = "yes" if pred["perox_probability_yes"] >= 0.5 else "no"
         if pred_perox == true_perox:
             correct_perox += 1
-        rows.append({
-            'index': i,
-            'true_class': true_class,
-            'predicted_class': pred['predicted_class'],
-            'true_perox': true_perox,
-            'predicted_perox': pred_perox,
-        })
+        rows.append(
+            {
+                "index": i,
+                "true_class": true_class,
+                "predicted_class": pred["predicted_class"],
+                "true_perox": true_perox,
+                "predicted_perox": pred_perox,
+            }
+        )
     n = float(x.shape[0])
     class_accuracy_by_class = dict()
     for class_name in LOCALIZATION_CLASSES:
@@ -460,21 +464,23 @@ def calculate_training_metrics(
         if denom <= 0:
             class_accuracy_by_class[class_name] = 0.0
         else:
-            class_accuracy_by_class[class_name] = float(class_correct.get(class_name, 0)) / denom
+            class_accuracy_by_class[class_name] = (
+                float(class_correct.get(class_name, 0)) / denom
+            )
     return {
-        'class_train_accuracy': float(correct_class) / n,
-        'perox_train_accuracy': float(correct_perox) / n,
-        'class_accuracy_by_class': class_accuracy_by_class,
-        'rows': rows,
+        "class_train_accuracy": float(correct_class) / n,
+        "perox_train_accuracy": float(correct_perox) / n,
+        "class_accuracy_by_class": class_accuracy_by_class,
+        "rows": rows,
     }
 
 
 def _fit_constant_localization_model(class_label):
     class_label = str(class_label)
     return {
-        'mode': 'constant',
-        'class_label': class_label,
-        'class_order': [class_label],
+        "mode": "constant",
+        "class_label": class_label,
+        "class_order": [class_label],
     }
 
 
@@ -490,66 +496,68 @@ def _fit_arch_specific_localization_model(
     labels = list(labels)
     class_order = list(class_order)
     if len(labels) == 0:
-        raise ValueError('No training sample was provided to localization classifier.')
+        raise ValueError("No training sample was provided to localization classifier.")
     observed = sorted(set(labels))
     if len(observed) == 1:
         return _fit_constant_localization_model(class_label=observed[0])
-    if model_arch == 'nearest_centroid':
+    if model_arch == "nearest_centroid":
         return fit_nearest_centroid_classifier(
             features=x,
             labels=labels,
             class_order=class_order,
         )
-    if model_arch == 'bilstm_attention':
+    if model_arch == "bilstm_attention":
         from cdskit.localize_bilstm import fit_bilstm_attention_classifier
+
         feature_matrix = x
-        if not bool(dl_train_params.get('feature_fusion', True)):
+        if not bool(dl_train_params.get("feature_fusion", True)):
             feature_matrix = None
         return fit_bilstm_attention_classifier(
             aa_sequences=aa_sequences,
             feature_matrix=feature_matrix,
             labels=labels,
             class_order=class_order,
-            seq_len=dl_train_params['seq_len'],
-            embed_dim=dl_train_params['embed_dim'],
-            hidden_dim=dl_train_params['hidden_dim'],
-            num_layers=dl_train_params['num_layers'],
-            dropout=dl_train_params['dropout'],
-            epochs=dl_train_params['epochs'],
-            batch_size=dl_train_params['batch_size'],
-            learning_rate=dl_train_params['learning_rate'],
-            weight_decay=dl_train_params['weight_decay'],
-            seed=dl_train_params['seed'],
-            use_class_weight=dl_train_params['use_class_weight'],
-            device=dl_train_params['device'],
-            loss_name=dl_train_params['loss_name'],
-            balanced_batch=dl_train_params['balanced_batch'],
-            aux_tp_weight=dl_train_params['aux_tp_weight'],
-            aux_ctp_ltp_weight=dl_train_params['aux_ctp_ltp_weight'],
+            seq_len=dl_train_params["seq_len"],
+            embed_dim=dl_train_params["embed_dim"],
+            hidden_dim=dl_train_params["hidden_dim"],
+            num_layers=dl_train_params["num_layers"],
+            dropout=dl_train_params["dropout"],
+            epochs=dl_train_params["epochs"],
+            batch_size=dl_train_params["batch_size"],
+            learning_rate=dl_train_params["learning_rate"],
+            weight_decay=dl_train_params["weight_decay"],
+            seed=dl_train_params["seed"],
+            use_class_weight=dl_train_params["use_class_weight"],
+            device=dl_train_params["device"],
+            loss_name=dl_train_params["loss_name"],
+            balanced_batch=dl_train_params["balanced_batch"],
+            aux_tp_weight=dl_train_params["aux_tp_weight"],
+            aux_ctp_ltp_weight=dl_train_params["aux_ctp_ltp_weight"],
             soft_label_matrix=soft_label_matrix,
-            distill_weight=dl_train_params.get('distill_weight', 0.0),
-            distill_temperature=dl_train_params.get('distill_temperature', 1.0),
+            distill_weight=dl_train_params.get("distill_weight", 0.0),
+            distill_temperature=dl_train_params.get("distill_temperature", 1.0),
         )
-    if model_arch == 'esm_head':
+    if model_arch == "esm_head":
         from cdskit.localize_esm_head import fit_esm_head_classifier
+
         return fit_esm_head_classifier(
             aa_sequences=aa_sequences,
             labels=labels,
             class_order=class_order,
-            model_name=dl_train_params['esm_model_name'],
-            model_local_dir=dl_train_params['esm_model_local_dir'],
-            max_len=dl_train_params['esm_max_len'],
-            pooling=dl_train_params['esm_pooling'],
-            epochs=dl_train_params['epochs'],
-            batch_size=dl_train_params['batch_size'],
-            learning_rate=dl_train_params['learning_rate'],
-            weight_decay=dl_train_params['weight_decay'],
-            seed=dl_train_params['seed'],
-            use_class_weight=dl_train_params['use_class_weight'],
-            device=dl_train_params['device'],
-            model_revision=dl_train_params['esm_model_revision'],
+            model_name=dl_train_params["esm_model_name"],
+            model_local_dir=dl_train_params["esm_model_local_dir"],
+            max_len=dl_train_params["esm_max_len"],
+            pooling=dl_train_params["esm_pooling"],
+            epochs=dl_train_params["epochs"],
+            batch_size=dl_train_params["batch_size"],
+            learning_rate=dl_train_params["learning_rate"],
+            weight_decay=dl_train_params["weight_decay"],
+            seed=dl_train_params["seed"],
+            use_class_weight=dl_train_params["use_class_weight"],
+            device=dl_train_params["device"],
+            model_revision=dl_train_params["esm_model_revision"],
         )
-    raise ValueError('Unsupported model_arch: {}'.format(model_arch))
+    raise ValueError("Unsupported model_arch: {}".format(model_arch))
 
 
 def fit_localization_model(
@@ -558,16 +566,18 @@ def fit_localization_model(
     class_labels,
     model_arch,
     dl_train_params,
-    localize_strategy='single_stage',
+    localize_strategy="single_stage",
     soft_label_matrix=None,
 ):
-    localize_strategy = str(localize_strategy or 'single_stage').strip().lower()
-    if localize_strategy not in ['single_stage', 'two_stage', 'two_stage_ctp_ltp']:
-        raise ValueError('Unsupported localize_strategy: {}'.format(localize_strategy))
-    if (soft_label_matrix is not None) and (localize_strategy != 'single_stage'):
-        raise ValueError('Distillation soft labels are currently supported only with single_stage strategy.')
+    localize_strategy = str(localize_strategy or "single_stage").strip().lower()
+    if localize_strategy not in ["single_stage", "two_stage", "two_stage_ctp_ltp"]:
+        raise ValueError("Unsupported localize_strategy: {}".format(localize_strategy))
+    if (soft_label_matrix is not None) and (localize_strategy != "single_stage"):
+        raise ValueError(
+            "Distillation soft labels are currently supported only with single_stage strategy."
+        )
 
-    if localize_strategy == 'single_stage':
+    if localize_strategy == "single_stage":
         return _fit_arch_specific_localization_model(
             x=x,
             aa_sequences=aa_sequences,
@@ -578,19 +588,19 @@ def fit_localization_model(
             soft_label_matrix=soft_label_matrix,
         )
 
-    stage1_labels = ['noTP' if cls == 'noTP' else 'TP' for cls in class_labels]
+    stage1_labels = ["noTP" if cls == "noTP" else "TP" for cls in class_labels]
     stage1_model = _fit_arch_specific_localization_model(
         x=x,
         aa_sequences=aa_sequences,
         labels=stage1_labels,
-        class_order=('noTP', 'TP'),
+        class_order=("noTP", "TP"),
         model_arch=model_arch,
         dl_train_params=dl_train_params,
     )
 
-    tp_indices = [i for i, cls in enumerate(class_labels) if cls != 'noTP']
+    tp_indices = [i for i, cls in enumerate(class_labels) if cls != "noTP"]
     if len(tp_indices) == 0:
-        raise ValueError('two_stage strategy requires at least one TP sample.')
+        raise ValueError("two_stage strategy requires at least one TP sample.")
     x_tp = x[tp_indices, :]
     aa_tp = [aa_sequences[i] for i in tp_indices]
     labels_tp = [class_labels[i] for i in tp_indices]
@@ -604,24 +614,28 @@ def fit_localization_model(
         dl_train_params=dl_train_params,
     )
 
-    if localize_strategy == 'two_stage':
+    if localize_strategy == "two_stage":
         return {
-            'strategy': 'two_stage',
-            'class_order': list(LOCALIZATION_CLASSES),
-            'stage1_class_order': ['noTP', 'TP'],
-            'stage2_class_order': list(stage2_class_order),
-            'stage1_model': stage1_model,
-            'stage2_model': stage2_model,
+            "strategy": "two_stage",
+            "class_order": list(LOCALIZATION_CLASSES),
+            "stage1_class_order": ["noTP", "TP"],
+            "stage2_class_order": list(stage2_class_order),
+            "stage1_model": stage1_model,
+            "stage2_model": stage2_model,
         }
 
-    ctp_ltp_indices = [i for i, cls in enumerate(class_labels) if cls in CTP_LTP_STAGE_CLASSES]
+    ctp_ltp_indices = [
+        i for i, cls in enumerate(class_labels) if cls in CTP_LTP_STAGE_CLASSES
+    ]
     stage3_model = dict()
     stage3_class_order = list()
     if len(ctp_ltp_indices) > 0:
         x_ctp_ltp = x[ctp_ltp_indices, :]
         aa_ctp_ltp = [aa_sequences[i] for i in ctp_ltp_indices]
         labels_ctp_ltp = [class_labels[i] for i in ctp_ltp_indices]
-        stage3_class_order = [c for c in CTP_LTP_STAGE_CLASSES if c in set(labels_ctp_ltp)]
+        stage3_class_order = [
+            c for c in CTP_LTP_STAGE_CLASSES if c in set(labels_ctp_ltp)
+        ]
         stage3_model = _fit_arch_specific_localization_model(
             x=x_ctp_ltp,
             aa_sequences=aa_ctp_ltp,
@@ -632,14 +646,14 @@ def fit_localization_model(
         )
 
     return {
-        'strategy': 'two_stage_ctp_ltp',
-        'class_order': list(LOCALIZATION_CLASSES),
-        'stage1_class_order': ['noTP', 'TP'],
-        'stage2_class_order': list(stage2_class_order),
-        'stage3_class_order': list(stage3_class_order),
-        'stage1_model': stage1_model,
-        'stage2_model': stage2_model,
-        'stage3_model': stage3_model,
+        "strategy": "two_stage_ctp_ltp",
+        "class_order": list(LOCALIZATION_CLASSES),
+        "stage1_class_order": ["noTP", "TP"],
+        "stage2_class_order": list(stage2_class_order),
+        "stage3_class_order": list(stage3_class_order),
+        "stage1_model": stage1_model,
+        "stage2_model": stage2_model,
+        "stage3_model": stage3_model,
     }
 
 
@@ -648,26 +662,26 @@ def _validate_cross_validation_labels(class_labels):
     present_classes = [c for c in LOCALIZATION_CLASSES if counts.get(c, 0) > 0]
     if len(present_classes) < 2:
         txt = (
-            'Cross validation requires at least 2 localization classes '
-            'with at least one sample each.'
+            "Cross validation requires at least 2 localization classes "
+            "with at least one sample each."
         )
         raise ValueError(txt)
     insufficient = [c for c in present_classes if counts.get(c, 0) < 2]
     if len(insufficient) > 0:
         txt = (
-            'Cross validation requires at least 2 samples for each observed class. '
-            'Insufficient classes: {}.'
+            "Cross validation requires at least 2 samples for each observed class. "
+            "Insufficient classes: {}."
         )
-        raise ValueError(txt.format(', '.join(insufficient)))
+        raise ValueError(txt.format(", ".join(insufficient)))
 
 
 def build_stratified_folds(class_labels, n_folds, seed):
     if n_folds < 2:
-        raise ValueError('--cv_folds should be >= 2 when cross validation is enabled.')
+        raise ValueError("--cv_folds should be >= 2 when cross validation is enabled.")
     labels = list(class_labels)
     n_sample = len(labels)
     if n_sample < n_folds:
-        txt = '--cv_folds ({}) should be <= number of samples ({}).'
+        txt = "--cv_folds ({}) should be <= number of samples ({})."
         raise ValueError(txt.format(n_folds, n_sample))
 
     _validate_cross_validation_labels(class_labels=labels)
@@ -684,7 +698,7 @@ def build_stratified_folds(class_labels, n_folds, seed):
     folds = list()
     for idx_list in fold_buckets:
         if len(idx_list) == 0:
-            raise ValueError('At least one fold became empty. Reduce --cv_folds.')
+            raise ValueError("At least one fold became empty. Reduce --cv_folds.")
         fold = np.asarray(sorted(idx_list), dtype=np.int64)
         folds.append(fold)
     return folds
@@ -694,27 +708,27 @@ def build_predefined_folds(class_labels, fold_ids):
     labels = list(class_labels)
     fold_ids = list(fold_ids)
     if len(labels) != len(fold_ids):
-        raise ValueError('Length mismatch between class labels and fold ids.')
+        raise ValueError("Length mismatch between class labels and fold ids.")
     _validate_cross_validation_labels(class_labels=labels)
 
     fold_to_indices = dict()
     for i, fold_id in enumerate(fold_ids):
         key = str(fold_id).strip()
-        if key == '':
-            raise ValueError('Empty fold id was detected in predefined folds.')
+        if key == "":
+            raise ValueError("Empty fold id was detected in predefined folds.")
         if key not in fold_to_indices:
             fold_to_indices[key] = list()
         fold_to_indices[key].append(int(i))
 
     ordered_keys = sorted(fold_to_indices.keys())
     if len(ordered_keys) < 2:
-        raise ValueError('Predefined folds should contain at least 2 unique fold ids.')
+        raise ValueError("Predefined folds should contain at least 2 unique fold ids.")
 
     folds = list()
     for key in ordered_keys:
         idx_list = fold_to_indices[key]
         if len(idx_list) == 0:
-            raise ValueError('At least one predefined fold became empty.')
+            raise ValueError("At least one predefined fold became empty.")
         folds.append(np.asarray(sorted(idx_list), dtype=np.int64))
     return folds
 
@@ -725,17 +739,21 @@ def _safe_probability_matrix_from_oof(oof_rows):
     true_idx = list()
     fold_idx = list()
     for row in oof_rows:
-        true_class = str(row.get('true_class', '')).strip()
+        true_class = str(row.get("true_class", "")).strip()
         if true_class not in class_to_idx:
             continue
         class_probs = normalize_class_probabilities(
-            class_probs=row.get('class_probabilities', {}),
+            class_probs=row.get("class_probabilities", {}),
         )
-        probs.append([float(class_probs[class_name]) for class_name in LOCALIZATION_CLASSES])
+        probs.append(
+            [float(class_probs[class_name]) for class_name in LOCALIZATION_CLASSES]
+        )
         true_idx.append(int(class_to_idx[true_class]))
-        fold_idx.append(int(row.get('fold', 0)))
+        fold_idx.append(int(row.get("fold", 0)))
     if len(probs) == 0:
-        raise ValueError('No valid out-of-fold predictions were available for postprocessing.')
+        raise ValueError(
+            "No valid out-of-fold predictions were available for postprocessing."
+        )
     return (
         np.asarray(probs, dtype=np.float64),
         np.asarray(true_idx, dtype=np.int64),
@@ -786,12 +804,12 @@ def _accuracy_from_indices(true_idx, pred_idx):
     pred_idx = np.asarray(pred_idx, dtype=np.int64)
     n = int(true_idx.shape[0])
     if n == 0:
-        raise ValueError('No prediction was available to compute accuracy.')
+        raise ValueError("No prediction was available to compute accuracy.")
     overall = float(np.mean(pred_idx == true_idx))
     by_class = dict()
     class_acc = list()
     for class_i, class_name in enumerate(LOCALIZATION_CLASSES):
-        mask = (true_idx == class_i)
+        mask = true_idx == class_i
         denom = int(np.sum(mask))
         if denom <= 0:
             acc = 0.0
@@ -825,11 +843,13 @@ def fit_temperature_from_oof(oof_rows):
 
 
 def optimize_class_thresholds_from_oof(oof_rows, temperature, objective):
-    obj = str(objective or 'macro').strip().lower()
-    if obj not in ['overall', 'macro']:
-        raise ValueError('Invalid threshold objective: {}'.format(objective))
+    obj = str(objective or "macro").strip().lower()
+    if obj not in ["overall", "macro"]:
+        raise ValueError("Invalid threshold objective: {}".format(objective))
     prob_matrix, true_idx, _ = _safe_probability_matrix_from_oof(oof_rows=oof_rows)
-    prob_matrix = _apply_temperature_to_matrix(prob_matrix=prob_matrix, temperature=temperature)
+    prob_matrix = _apply_temperature_to_matrix(
+        prob_matrix=prob_matrix, temperature=temperature
+    )
 
     thresholds = {class_name: 1.0 for class_name in LOCALIZATION_CLASSES}
     candidates = [0.60, 0.75, 0.90, 1.00, 1.10, 1.25, 1.40]
@@ -842,7 +862,7 @@ def optimize_class_thresholds_from_oof(oof_rows, temperature, objective):
         true_idx=true_idx,
         pred_idx=pred_idx,
     )
-    best_score = best_overall if obj == 'overall' else best_macro
+    best_score = best_overall if obj == "overall" else best_macro
 
     for _ in range(2):
         improved = False
@@ -863,7 +883,7 @@ def optimize_class_thresholds_from_oof(oof_rows, temperature, objective):
                     true_idx=true_idx,
                     pred_idx=trial_pred,
                 )
-                trial_score = trial_overall if obj == 'overall' else trial_macro
+                trial_score = trial_overall if obj == "overall" else trial_macro
                 if trial_score > class_best_score + 1.0e-12:
                     class_best_value = float(cand)
                     class_best_overall = trial_overall
@@ -884,12 +904,18 @@ def optimize_class_thresholds_from_oof(oof_rows, temperature, objective):
                 improved = True
         if not improved:
             break
-    return {class_name: float(thresholds[class_name]) for class_name in LOCALIZATION_CLASSES}
+    return {
+        class_name: float(thresholds[class_name]) for class_name in LOCALIZATION_CLASSES
+    }
 
 
 def evaluate_oof_postprocess(oof_rows, temperature=1.0, class_thresholds=None):
-    prob_matrix, true_idx, fold_idx = _safe_probability_matrix_from_oof(oof_rows=oof_rows)
-    prob_matrix = _apply_temperature_to_matrix(prob_matrix=prob_matrix, temperature=temperature)
+    prob_matrix, true_idx, fold_idx = _safe_probability_matrix_from_oof(
+        oof_rows=oof_rows
+    )
+    prob_matrix = _apply_temperature_to_matrix(
+        prob_matrix=prob_matrix, temperature=temperature
+    )
     pred_idx = _prediction_indices_from_scores(
         prob_matrix=prob_matrix,
         class_thresholds=class_thresholds,
@@ -903,15 +929,17 @@ def evaluate_oof_postprocess(oof_rows, temperature=1.0, class_thresholds=None):
     unique_folds = sorted(set(fold_idx.tolist()))
     fold_acc = list()
     for fold_id in unique_folds:
-        mask = (fold_idx == int(fold_id))
+        mask = fold_idx == int(fold_id)
         if int(np.sum(mask)) <= 0:
             continue
         fold_acc_value = float(np.mean(pred_idx[mask] == true_idx[mask]))
         fold_acc.append(fold_acc_value)
-        fold_rows.append({
-            'fold': int(fold_id),
-            'class_accuracy': fold_acc_value,
-        })
+        fold_rows.append(
+            {
+                "fold": int(fold_id),
+                "class_accuracy": fold_acc_value,
+            }
+        )
     if len(fold_acc) == 0:
         fold_mean = overall
         fold_std = 0.0
@@ -920,37 +948,39 @@ def evaluate_oof_postprocess(oof_rows, temperature=1.0, class_thresholds=None):
         fold_mean = float(fold_arr.mean())
         fold_std = float(fold_arr.std())
     return {
-        'class_accuracy_overall': float(overall),
-        'class_accuracy_macro5': float(macro),
-        'class_accuracy_by_class': dict(by_class),
-        'fold_class_accuracy_mean': float(fold_mean),
-        'fold_class_accuracy_std': float(fold_std),
-        'folds': fold_rows,
+        "class_accuracy_overall": float(overall),
+        "class_accuracy_macro5": float(macro),
+        "class_accuracy_by_class": dict(by_class),
+        "fold_class_accuracy_mean": float(fold_mean),
+        "fold_class_accuracy_std": float(fold_std),
+        "folds": fold_rows,
     }
 
 
 def _safe_two_stage_ctp_ltp_arrays_from_oof(oof_rows):
     class_to_idx = {class_name: i for i, class_name in enumerate(LOCALIZATION_CLASSES)}
-    rows = sorted(oof_rows, key=lambda r: int(r.get('index', -1)))
+    rows = sorted(oof_rows, key=lambda r: int(r.get("index", -1)))
 
     base_probs = list()
     stage3_probs = list()
     true_idx = list()
     fold_idx = list()
     for row in rows:
-        true_class = str(row.get('true_class', '')).strip()
+        true_class = str(row.get("true_class", "")).strip()
         if true_class not in class_to_idx:
             continue
-        details = row.get('two_stage_ctp_ltp_details', {})
+        details = row.get("two_stage_ctp_ltp_details", {})
         if not isinstance(details, dict):
             continue
         base = normalize_class_probabilities(
-            class_probs=details.get('base_class_probabilities', row.get('class_probabilities', {})),
+            class_probs=details.get(
+                "base_class_probabilities", row.get("class_probabilities", {})
+            ),
         )
-        s3 = details.get('stage3_ctp_ltp_probabilities', {})
+        s3 = details.get("stage3_ctp_ltp_probabilities", {})
         try:
-            p_ctp = float(s3.get('cTP', 0.0))
-            p_ltp = float(s3.get('lTP', 0.0))
+            p_ctp = float(s3.get("cTP", 0.0))
+            p_ltp = float(s3.get("lTP", 0.0))
         except Exception:
             p_ctp = 0.0
             p_ltp = 0.0
@@ -966,14 +996,16 @@ def _safe_two_stage_ctp_ltp_arrays_from_oof(oof_rows):
             p_ctp = p_ctp / s3_total
             p_ltp = p_ltp / s3_total
 
-        base_probs.append([float(base[class_name]) for class_name in LOCALIZATION_CLASSES])
+        base_probs.append(
+            [float(base[class_name]) for class_name in LOCALIZATION_CLASSES]
+        )
         stage3_probs.append([float(p_ctp), float(p_ltp)])
         true_idx.append(int(class_to_idx[true_class]))
-        fold_idx.append(int(row.get('fold', 0)))
+        fold_idx.append(int(row.get("fold", 0)))
 
     if len(base_probs) == 0:
         raise ValueError(
-            'No valid two_stage_ctp_ltp OOF details were available for stage3 tuning.'
+            "No valid two_stage_ctp_ltp OOF details were available for stage3 tuning."
         )
     return (
         np.asarray(base_probs, dtype=np.float64),
@@ -983,7 +1015,9 @@ def _safe_two_stage_ctp_ltp_arrays_from_oof(oof_rows):
     )
 
 
-def _compose_two_stage_ctp_ltp_prob_matrix(base_prob_matrix, stage3_prob_matrix, gate, beta, ltp_threshold):
+def _compose_two_stage_ctp_ltp_prob_matrix(
+    base_prob_matrix, stage3_prob_matrix, gate, beta, ltp_threshold
+):
     out = np.asarray(base_prob_matrix, dtype=np.float64).copy()
     stage3 = np.asarray(stage3_prob_matrix, dtype=np.float64)
 
@@ -991,8 +1025,8 @@ def _compose_two_stage_ctp_ltp_prob_matrix(base_prob_matrix, stage3_prob_matrix,
     beta = float(max(0.0, min(1.0, beta)))
     ltp_threshold = float(max(1.0e-3, min(1.0 - 1.0e-3, ltp_threshold)))
 
-    ctp_idx = LOCALIZATION_CLASSES.index('cTP')
-    ltp_idx = LOCALIZATION_CLASSES.index('lTP')
+    ctp_idx = LOCALIZATION_CLASSES.index("cTP")
+    ltp_idx = LOCALIZATION_CLASSES.index("lTP")
     mass = out[:, ctp_idx] + out[:, ltp_idx]
     gate_mask = (mass > 0.0) & (mass >= gate)
     if not np.any(gate_mask):
@@ -1000,7 +1034,7 @@ def _compose_two_stage_ctp_ltp_prob_matrix(base_prob_matrix, stage3_prob_matrix,
 
     stage2_ctp_frac = np.full_like(mass, 0.5, dtype=np.float64)
     stage2_ltp_frac = np.full_like(mass, 0.5, dtype=np.float64)
-    nonzero_mask = (mass > 0.0)
+    nonzero_mask = mass > 0.0
     stage2_ctp_frac[nonzero_mask] = out[nonzero_mask, ctp_idx] / mass[nonzero_mask]
     stage2_ltp_frac[nonzero_mask] = out[nonzero_mask, ltp_idx] / mass[nonzero_mask]
 
@@ -1032,11 +1066,11 @@ def _classification_summary_from_indices(true_idx, pred_idx):
     pred_idx = np.asarray(pred_idx, dtype=np.int64)
     n = int(true_idx.shape[0])
     if n <= 0:
-        raise ValueError('No OOF sample was provided.')
+        raise ValueError("No OOF sample was provided.")
     overall = float(np.mean(true_idx == pred_idx))
 
     f1_vals = list()
-    ltp_idx = LOCALIZATION_CLASSES.index('lTP')
+    ltp_idx = LOCALIZATION_CLASSES.index("lTP")
     ltp_precision = 0.0
     ltp_recall = 0.0
     ltp_f1 = 0.0
@@ -1046,24 +1080,30 @@ def _classification_summary_from_indices(true_idx, pred_idx):
         fn = int(np.sum((pred_idx != class_i) & (true_idx == class_i)))
         precision = 0.0 if (tp + fp) <= 0 else (float(tp) / float(tp + fp))
         recall = 0.0 if (tp + fn) <= 0 else (float(tp) / float(tp + fn))
-        f1 = 0.0 if (precision + recall) <= 0 else ((2.0 * precision * recall) / (precision + recall))
+        f1 = (
+            0.0
+            if (precision + recall) <= 0
+            else ((2.0 * precision * recall) / (precision + recall))
+        )
         f1_vals.append(float(f1))
         if class_i == ltp_idx:
             ltp_precision = float(precision)
             ltp_recall = float(recall)
             ltp_f1 = float(f1)
     return {
-        'overall_accuracy': float(overall),
-        'macro_f1': float(np.mean(np.asarray(f1_vals, dtype=np.float64))),
-        'ltp_precision': float(ltp_precision),
-        'ltp_recall': float(ltp_recall),
-        'ltp_f1': float(ltp_f1),
+        "overall_accuracy": float(overall),
+        "macro_f1": float(np.mean(np.asarray(f1_vals, dtype=np.float64))),
+        "ltp_precision": float(ltp_precision),
+        "ltp_recall": float(ltp_recall),
+        "ltp_f1": float(ltp_f1),
     }
 
 
 def optimize_two_stage_ctp_ltp_from_oof(oof_rows, min_ltp_precision=0.0):
     min_ltp_precision = float(max(0.0, min(1.0, min_ltp_precision)))
-    base_prob, stage3_prob, true_idx, _ = _safe_two_stage_ctp_ltp_arrays_from_oof(oof_rows=oof_rows)
+    base_prob, stage3_prob, true_idx, _ = _safe_two_stage_ctp_ltp_arrays_from_oof(
+        oof_rows=oof_rows
+    )
 
     best = None
     best_prob = None
@@ -1082,20 +1122,20 @@ def optimize_two_stage_ctp_ltp_from_oof(oof_rows, min_ltp_precision=0.0):
                     true_idx=true_idx,
                     pred_idx=pred_idx,
                 )
-                if summary['ltp_precision'] + 1.0e-12 < min_ltp_precision:
+                if summary["ltp_precision"] + 1.0e-12 < min_ltp_precision:
                     continue
                 key = (
-                    float(summary['macro_f1']),
-                    float(summary['ltp_f1']),
-                    float(summary['overall_accuracy']),
+                    float(summary["macro_f1"]),
+                    float(summary["ltp_f1"]),
+                    float(summary["overall_accuracy"]),
                 )
-                if (best is None) or (key > best['key']):
+                if (best is None) or (key > best["key"]):
                     best = {
-                        'key': key,
-                        'gate_threshold': float(gate),
-                        'blend_beta': float(beta),
-                        'ltp_threshold': float(ltp_threshold),
-                        'summary': summary,
+                        "key": key,
+                        "gate_threshold": float(gate),
+                        "blend_beta": float(beta),
+                        "ltp_threshold": float(ltp_threshold),
+                        "summary": summary,
                     }
                     best_prob = prob
 
@@ -1109,25 +1149,33 @@ def optimize_two_stage_ctp_ltp_from_oof(oof_rows, min_ltp_precision=0.0):
         )
         pred_idx = np.argmax(prob, axis=1).astype(np.int64)
         best = {
-            'key': (
-                _classification_summary_from_indices(true_idx=true_idx, pred_idx=pred_idx)['macro_f1'],
-                _classification_summary_from_indices(true_idx=true_idx, pred_idx=pred_idx)['ltp_f1'],
-                _classification_summary_from_indices(true_idx=true_idx, pred_idx=pred_idx)['overall_accuracy'],
+            "key": (
+                _classification_summary_from_indices(
+                    true_idx=true_idx, pred_idx=pred_idx
+                )["macro_f1"],
+                _classification_summary_from_indices(
+                    true_idx=true_idx, pred_idx=pred_idx
+                )["ltp_f1"],
+                _classification_summary_from_indices(
+                    true_idx=true_idx, pred_idx=pred_idx
+                )["overall_accuracy"],
             ),
-            'gate_threshold': 0.0,
-            'blend_beta': 1.0,
-            'ltp_threshold': 0.5,
-            'summary': _classification_summary_from_indices(true_idx=true_idx, pred_idx=pred_idx),
+            "gate_threshold": 0.0,
+            "blend_beta": 1.0,
+            "ltp_threshold": 0.5,
+            "summary": _classification_summary_from_indices(
+                true_idx=true_idx, pred_idx=pred_idx
+            ),
         }
         best_prob = prob
 
     return {
-        'stage3_gate_threshold': float(best['gate_threshold']),
-        'stage3_blend_beta': float(best['blend_beta']),
-        'stage3_ltp_threshold': float(best['ltp_threshold']),
-        'min_ltp_precision': float(min_ltp_precision),
-        'summary': dict(best['summary']),
-        'best_prob_matrix': best_prob,
+        "stage3_gate_threshold": float(best["gate_threshold"]),
+        "stage3_blend_beta": float(best["blend_beta"]),
+        "stage3_ltp_threshold": float(best["ltp_threshold"]),
+        "min_ltp_precision": float(min_ltp_precision),
+        "summary": dict(best["summary"]),
+        "best_prob_matrix": best_prob,
     }
 
 
@@ -1138,12 +1186,14 @@ def apply_two_stage_ctp_ltp_params_to_oof_rows(
     stage3_ltp_threshold,
 ):
     out_rows = list()
-    for row in sorted(oof_rows, key=lambda r: int(r.get('index', -1))):
+    for row in sorted(oof_rows, key=lambda r: int(r.get("index", -1))):
         out_row = dict(row)
-        details = out_row.get('two_stage_ctp_ltp_details', {})
+        details = out_row.get("two_stage_ctp_ltp_details", {})
         if isinstance(details, dict) and (len(details) > 0):
-            base_probs = details.get('base_class_probabilities', out_row.get('class_probabilities', {}))
-            stage3_probs = details.get('stage3_ctp_ltp_probabilities', {})
+            base_probs = details.get(
+                "base_class_probabilities", out_row.get("class_probabilities", {})
+            )
+            stage3_probs = details.get("stage3_ctp_ltp_probabilities", {})
             tuned_probs, tuned_detail = compose_two_stage_ctp_ltp_probabilities(
                 base_class_probs=base_probs,
                 stage3_ctp_ltp_probs=stage3_probs,
@@ -1152,12 +1202,14 @@ def apply_two_stage_ctp_ltp_params_to_oof_rows(
                 stage3_ltp_threshold=stage3_ltp_threshold,
             )
             tuned_details = dict(details)
-            tuned_details['gate_threshold'] = float(tuned_detail['gate_threshold'])
-            tuned_details['blend_beta'] = float(tuned_detail['blend_beta'])
-            tuned_details['ltp_threshold'] = float(tuned_detail['ltp_threshold'])
-            tuned_details['gate_active'] = bool(tuned_detail['gate_active'])
-            out_row['two_stage_ctp_ltp_details'] = tuned_details
-            out_row['class_probabilities'] = normalize_class_probabilities(class_probs=tuned_probs)
+            tuned_details["gate_threshold"] = float(tuned_detail["gate_threshold"])
+            tuned_details["blend_beta"] = float(tuned_detail["blend_beta"])
+            tuned_details["ltp_threshold"] = float(tuned_detail["ltp_threshold"])
+            tuned_details["gate_active"] = bool(tuned_detail["gate_active"])
+            out_row["two_stage_ctp_ltp_details"] = tuned_details
+            out_row["class_probabilities"] = normalize_class_probabilities(
+                class_probs=tuned_probs
+            )
         out_rows.append(out_row)
     return out_rows
 
@@ -1172,7 +1224,7 @@ def evaluate_cross_validation(
     model_arch,
     dl_train_params,
     dl_device,
-    localize_strategy='single_stage',
+    localize_strategy="single_stage",
     fold_ids=None,
     organism_groups=None,
     soft_label_matrix=None,
@@ -1199,10 +1251,10 @@ def evaluate_cross_validation(
     for fold_i, test_idx in enumerate(folds):
         if verbose:
             print(
-                '[CV] fold {}/{} start (n_test={})'.format(
+                "[CV] fold {}/{} start (n_test={})".format(
                     int(fold_i + 1),
-                    int(len(folds)),
-                    int(len(test_idx)),
+                    len(folds),
+                    len(test_idx),
                 ),
                 flush=True,
             )
@@ -1210,7 +1262,7 @@ def evaluate_cross_validation(
         train_mask[test_idx] = False
         train_idx = np.where(train_mask)[0]
         if len(train_idx) == 0:
-            raise ValueError('Empty train split detected in cross validation.')
+            raise ValueError("Empty train split detected in cross validation.")
         x_train = x[train_idx, :]
         x_test = x[test_idx, :]
         aa_train = [aa_sequences[i] for i in train_idx.tolist()]
@@ -1221,7 +1273,9 @@ def evaluate_cross_validation(
         perox_test = [perox_labels[i] for i in test_idx.tolist()]
         soft_label_train = None
         if soft_label_matrix is not None:
-            soft_label_train = np.asarray(soft_label_matrix, dtype=np.float32)[train_idx, :]
+            soft_label_train = np.asarray(soft_label_matrix, dtype=np.float32)[
+                train_idx, :
+            ]
         organism_test = None
         if organism_groups is not None:
             organism_test = [organism_groups[i] for i in test_idx.tolist()]
@@ -1239,18 +1293,18 @@ def evaluate_cross_validation(
             features=x_train,
             labels=perox_train,
         )
-        if model_arch == 'nearest_centroid':
-            tmp_model_type = 'nearest_centroid_v1'
-        elif model_arch == 'bilstm_attention':
-            tmp_model_type = 'bilstm_attention_v1'
-        elif model_arch == 'esm_head':
-            tmp_model_type = 'esm_head_v1'
+        if model_arch == "nearest_centroid":
+            tmp_model_type = "nearest_centroid_v1"
+        elif model_arch == "bilstm_attention":
+            tmp_model_type = "bilstm_attention_v1"
+        elif model_arch == "esm_head":
+            tmp_model_type = "esm_head_v1"
         else:
-            raise ValueError('Unsupported model_arch: {}'.format(model_arch))
+            raise ValueError("Unsupported model_arch: {}".format(model_arch))
         tmp_model = {
-            'model_type': tmp_model_type,
-            'localization_model': local_model,
-            'perox_model': perox_model,
+            "model_type": tmp_model_type,
+            "localization_model": local_model,
+            "perox_model": perox_model,
         }
 
         class_correct_fold = 0
@@ -1260,27 +1314,29 @@ def evaluate_cross_validation(
             pred = predict_localization_and_peroxisome(
                 aa_seq=aa_test[row_i],
                 model=tmp_model,
-                organism_group='' if organism_test is None else organism_test[row_i],
+                organism_group="" if organism_test is None else organism_test[row_i],
             )
             true_class = class_test[row_i]
-            pred_class = pred['predicted_class']
+            pred_class = pred["predicted_class"]
             oof_row = {
-                'index': int(test_idx[row_i]),
-                'fold': int(fold_i + 1),
-                'true_class': true_class,
-                'class_probabilities': normalize_class_probabilities(
-                    class_probs=pred.get('class_probabilities', {}),
+                "index": int(test_idx[row_i]),
+                "fold": int(fold_i + 1),
+                "true_class": true_class,
+                "class_probabilities": normalize_class_probabilities(
+                    class_probs=pred.get("class_probabilities", {}),
                 ),
             }
-            stage3_details = pred.get('two_stage_ctp_ltp_details', {})
+            stage3_details = pred.get("two_stage_ctp_ltp_details", {})
             if isinstance(stage3_details, dict) and (len(stage3_details) > 0):
-                oof_row['two_stage_ctp_ltp_details'] = stage3_details
+                oof_row["two_stage_ctp_ltp_details"] = stage3_details
             oof_rows.append(oof_row)
             class_total[true_class] = class_total.get(true_class, 0) + 1
             if pred_class == true_class:
                 class_correct_fold += 1
-                class_correct_by_class[true_class] = class_correct_by_class.get(true_class, 0) + 1
-            pred_perox = 'yes' if pred['perox_probability_yes'] >= 0.5 else 'no'
+                class_correct_by_class[true_class] = (
+                    class_correct_by_class.get(true_class, 0) + 1
+                )
+            pred_perox = "yes" if pred["perox_probability_yes"] >= 0.5 else "no"
             if pred_perox == perox_test[row_i]:
                 perox_correct += 1
 
@@ -1289,18 +1345,20 @@ def evaluate_cross_validation(
         perox_acc = float(perox_correct) / test_n
         class_accs.append(class_acc)
         perox_accs.append(perox_acc)
-        fold_rows.append({
-            'fold': int(fold_i + 1),
-            'n_train': int(x_train.shape[0]),
-            'n_test': int(x_test.shape[0]),
-            'class_accuracy': class_acc,
-            'perox_accuracy': perox_acc,
-        })
+        fold_rows.append(
+            {
+                "fold": int(fold_i + 1),
+                "n_train": int(x_train.shape[0]),
+                "n_test": int(x_test.shape[0]),
+                "class_accuracy": class_acc,
+                "perox_accuracy": perox_acc,
+            }
+        )
         if verbose:
             print(
-                '[CV] fold {}/{} done: class_acc={:.4f}, perox_acc={:.4f}'.format(
+                "[CV] fold {}/{} done: class_acc={:.4f}, perox_acc={:.4f}".format(
                     int(fold_i + 1),
-                    int(len(folds)),
+                    len(folds),
                     float(class_acc),
                     float(perox_acc),
                 ),
@@ -1315,16 +1373,18 @@ def evaluate_cross_validation(
         if denom <= 0:
             class_accuracy_by_class[class_name] = 0.0
         else:
-            class_accuracy_by_class[class_name] = float(class_correct_by_class.get(class_name, 0)) / denom
+            class_accuracy_by_class[class_name] = (
+                float(class_correct_by_class.get(class_name, 0)) / denom
+            )
     return {
-        'n_folds': int(len(folds)),
-        'class_accuracy_mean': float(class_arr.mean()),
-        'class_accuracy_std': float(class_arr.std()),
-        'class_accuracy_by_class': class_accuracy_by_class,
-        'perox_accuracy_mean': float(perox_arr.mean()),
-        'perox_accuracy_std': float(perox_arr.std()),
-        'folds': fold_rows,
-        'oof_rows': oof_rows,
+        "n_folds": len(folds),
+        "class_accuracy_mean": float(class_arr.mean()),
+        "class_accuracy_std": float(class_arr.std()),
+        "class_accuracy_by_class": class_accuracy_by_class,
+        "perox_accuracy_mean": float(perox_arr.mean()),
+        "perox_accuracy_std": float(perox_arr.std()),
+        "folds": fold_rows,
+        "oof_rows": oof_rows,
     }
 
 
@@ -1348,115 +1408,117 @@ def _validate_deep_learning_options(
     esm_max_len,
 ):
     finite_values = {
-        '--dl_dropout': dl_dropout,
-        '--dl_lr': dl_lr,
-        '--dl_weight_decay': dl_weight_decay,
-        '--dl_aux_tp_weight': dl_aux_tp_weight,
-        '--dl_aux_ctp_ltp_weight': dl_aux_ctp_ltp_weight,
+        "--dl_dropout": dl_dropout,
+        "--dl_lr": dl_lr,
+        "--dl_weight_decay": dl_weight_decay,
+        "--dl_aux_tp_weight": dl_aux_tp_weight,
+        "--dl_aux_ctp_ltp_weight": dl_aux_ctp_ltp_weight,
     }
     for option, value in finite_values.items():
         if not math.isfinite(value):
-            raise ValueError('{} should be finite.'.format(option))
+            raise ValueError("{} should be finite.".format(option))
     if dl_seq_len < 1:
-        raise ValueError('--dl_seq_len should be >= 1.')
+        raise ValueError("--dl_seq_len should be >= 1.")
     if dl_embed_dim < 1:
-        raise ValueError('--dl_embed_dim should be >= 1.')
+        raise ValueError("--dl_embed_dim should be >= 1.")
     if dl_hidden_dim < 1:
-        raise ValueError('--dl_hidden_dim should be >= 1.')
+        raise ValueError("--dl_hidden_dim should be >= 1.")
     if dl_num_layers < 1:
-        raise ValueError('--dl_num_layers should be >= 1.')
+        raise ValueError("--dl_num_layers should be >= 1.")
     if dl_dropout < 0:
-        raise ValueError('--dl_dropout should be >= 0.')
+        raise ValueError("--dl_dropout should be >= 0.")
     if dl_epochs < 1:
-        raise ValueError('--dl_epochs should be >= 1.')
+        raise ValueError("--dl_epochs should be >= 1.")
     if dl_batch_size < 1:
-        raise ValueError('--dl_batch_size should be >= 1.')
+        raise ValueError("--dl_batch_size should be >= 1.")
     if dl_lr <= 0:
-        raise ValueError('--dl_lr should be > 0.')
+        raise ValueError("--dl_lr should be > 0.")
     if dl_weight_decay < 0:
-        raise ValueError('--dl_weight_decay should be >= 0.')
-    if dl_loss not in ['ce', 'focal']:
-        raise ValueError('--dl_loss should be ce or focal.')
+        raise ValueError("--dl_weight_decay should be >= 0.")
+    if dl_loss not in ["ce", "focal"]:
+        raise ValueError("--dl_loss should be ce or focal.")
     if dl_aux_tp_weight < 0.0:
-        raise ValueError('--dl_aux_tp_weight should be >= 0.')
+        raise ValueError("--dl_aux_tp_weight should be >= 0.")
     if dl_aux_ctp_ltp_weight < 0.0:
-        raise ValueError('--dl_aux_ctp_ltp_weight should be >= 0.')
-    if esm_pooling not in ['cls', 'mean']:
-        raise ValueError('--esm_pooling should be cls or mean.')
+        raise ValueError("--dl_aux_ctp_ltp_weight should be >= 0.")
+    if esm_pooling not in ["cls", "mean"]:
+        raise ValueError("--esm_pooling should be cls or mean.")
     if esm_max_len < 4:
-        raise ValueError('--esm_max_len should be >= 4.')
-    if model_arch == 'bilstm_attention':
+        raise ValueError("--esm_max_len should be >= 4.")
+    if model_arch == "bilstm_attention":
         from cdskit.localize_bilstm import require_torch
+
         require_torch()
-    if model_arch == 'esm_head':
+    if model_arch == "esm_head":
         from cdskit.localize_esm_head import require_transformers
+
         require_transformers()
     if cv_folds < 0:
-        raise ValueError('--cv_folds should be >= 0.')
-    if (cv_fold_col == '') and (cv_folds == 1):
-        raise ValueError('--cv_folds should be 0 (disabled) or >= 2.')
+        raise ValueError("--cv_folds should be >= 0.")
+    if (cv_fold_col == "") and (cv_folds == 1):
+        raise ValueError("--cv_folds should be 0 (disabled) or >= 2.")
 
 
 def _load_training_rows(args, cv_fold_col):
-    training_tsv = getattr(args, 'training_tsv', '')
-    uniprot_query = getattr(args, 'uniprot_query', '')
-    uniprot_preset = getattr(args, 'uniprot_preset', 'none')
+    training_tsv = getattr(args, "training_tsv", "")
+    uniprot_query = getattr(args, "uniprot_query", "")
+    uniprot_preset = getattr(args, "uniprot_preset", "none")
     source = {
-        'has_training_tsv': str(training_tsv).strip() != '',
-        'uniprot_reviewed': getattr(args, 'uniprot_reviewed', True),
-        'uniprot_exclude_fragments': getattr(args, 'uniprot_exclude_fragments', True),
-        'uniprot_sampling': getattr(args, 'uniprot_sampling', 'head'),
-        'uniprot_sampling_seed': int(getattr(args, 'uniprot_sampling_seed', 1)),
+        "has_training_tsv": str(training_tsv).strip() != "",
+        "uniprot_reviewed": getattr(args, "uniprot_reviewed", True),
+        "uniprot_exclude_fragments": getattr(args, "uniprot_exclude_fragments", True),
+        "uniprot_sampling": getattr(args, "uniprot_sampling", "head"),
+        "uniprot_sampling_seed": int(getattr(args, "uniprot_sampling_seed", 1)),
     }
     resolved_query, preset_name = resolve_uniprot_query(
         uniprot_query=uniprot_query,
         uniprot_preset=uniprot_preset,
     )
-    source['resolved_uniprot_query'] = resolved_query
-    source['preset_name'] = preset_name
-    has_uniprot_source = str(resolved_query).strip() != ''
-    if source['has_training_tsv'] and has_uniprot_source:
-        raise Exception(
-            'Use either --training_tsv or --uniprot_query/--uniprot_preset, not both.'
+    source["resolved_uniprot_query"] = resolved_query
+    source["preset_name"] = preset_name
+    has_uniprot_source = str(resolved_query).strip() != ""
+    if source["has_training_tsv"] and has_uniprot_source:
+        raise ValueError(
+            "Use either --training_tsv or --uniprot_query/--uniprot_preset, not both."
         )
-    if (not source['has_training_tsv']) and (not has_uniprot_source):
-        raise Exception(
-            'Either --training_tsv or --uniprot_query/--uniprot_preset should be specified.'
+    if (not source["has_training_tsv"]) and (not has_uniprot_source):
+        raise ValueError(
+            "Either --training_tsv or --uniprot_query/--uniprot_preset should be specified."
         )
 
-    if source['has_training_tsv']:
+    if source["has_training_tsv"]:
         required_columns = [args.seq_col]
-        if args.label_mode == 'explicit':
+        if args.label_mode == "explicit":
             required_columns.extend([args.localization_col, args.perox_col])
-        if cv_fold_col != '':
+        if cv_fold_col != "":
             required_columns.append(cv_fold_col)
         rows, input_fieldnames = read_training_tsv(
             path=training_tsv,
             required_columns=required_columns,
             return_fieldnames=True,
         )
-        if args.label_mode == 'uniprot_cc':
+        if args.label_mode == "uniprot_cc":
             location_candidates = [
                 args.localization_col,
-                'cc_subcellular_location',
-                'Subcellular location [CC]',
-                'subcellular_location',
-                'localization',
+                "cc_subcellular_location",
+                "Subcellular location [CC]",
+                "subcellular_location",
+                "localization",
             ]
             if not any(name in input_fieldnames for name in location_candidates):
-                expected = ', '.join(dict.fromkeys(location_candidates))
+                expected = ", ".join(dict.fromkeys(location_candidates))
                 raise ValueError(
-                    'Missing required localization text column in {}: '
-                    'expected one of {}.'.format(training_tsv, expected)
+                    "Missing required localization text column in {}: "
+                    "expected one of {}.".format(training_tsv, expected)
                 )
         return rows, source
 
     fields = parse_uniprot_fields(
-        field_text=getattr(args, 'uniprot_fields', ','.join(UNIPROT_DEFAULT_FIELDS))
+        field_text=getattr(args, "uniprot_fields", ",".join(UNIPROT_DEFAULT_FIELDS))
     )
     if args.seq_col not in fields:
         fields.append(args.seq_col)
-    if args.label_mode == 'explicit':
+    if args.label_mode == "explicit":
         missing = [
             column
             for column in (args.localization_col, args.perox_col)
@@ -1464,28 +1526,28 @@ def _load_training_rows(args, cv_fold_col):
         ]
         if missing:
             raise ValueError(
-                'In --label_mode explicit with UniProt source, '
-                '--uniprot_fields should include: {}.'.format(', '.join(missing))
+                "In --label_mode explicit with UniProt source, "
+                "--uniprot_fields should include: {}.".format(", ".join(missing))
             )
-    elif 'cc_subcellular_location' not in fields:
+    elif "cc_subcellular_location" not in fields:
         # Keep UniProt request valid with default CLI arguments.
-        fields.append('cc_subcellular_location')
+        fields.append("cc_subcellular_location")
     rows = fetch_uniprot_training_rows(
         query=resolved_query,
         fields=fields,
-        reviewed=source['uniprot_reviewed'],
-        exclude_fragments=source['uniprot_exclude_fragments'],
-        page_size=getattr(args, 'uniprot_page_size', UNIPROT_MAX_PAGE_SIZE),
-        max_rows=getattr(args, 'uniprot_max_rows', 0),
-        timeout_sec=getattr(args, 'uniprot_timeout_sec', 60),
-        retries=getattr(args, 'uniprot_retries', 2),
-        sampling_mode=source['uniprot_sampling'],
-        sampling_seed=source['uniprot_sampling_seed'],
+        reviewed=source["uniprot_reviewed"],
+        exclude_fragments=source["uniprot_exclude_fragments"],
+        page_size=getattr(args, "uniprot_page_size", UNIPROT_MAX_PAGE_SIZE),
+        max_rows=getattr(args, "uniprot_max_rows", 0),
+        timeout_sec=getattr(args, "uniprot_timeout_sec", 60),
+        retries=getattr(args, "uniprot_retries", 2),
+        sampling_mode=source["uniprot_sampling"],
+        sampling_seed=source["uniprot_sampling_seed"],
     )
     if not rows:
-        raise Exception('No row was downloaded from UniProt. Exiting.')
-    uniprot_out_tsv = getattr(args, 'uniprot_out_tsv', '')
-    if str(uniprot_out_tsv).strip() != '':
+        raise ValueError("No row was downloaded from UniProt. Exiting.")
+    uniprot_out_tsv = getattr(args, "uniprot_out_tsv", "")
+    if str(uniprot_out_tsv).strip() != "":
         write_uniprot_rows_tsv(
             rows=rows,
             fields=fields,
@@ -1502,72 +1564,79 @@ def _resolve_cross_validation(
     localize_threshold_tune,
 ):
     effective_cv_folds = int(cv_folds)
-    predefined_folds_active = cv_fold_col != ''
+    predefined_folds_active = cv_fold_col != ""
     if predefined_folds_active:
         unique_folds = sorted(set(fold_ids))
         if len(unique_folds) < 2:
-            raise ValueError('--cv_fold_col should contain at least 2 unique fold ids.')
+            raise ValueError("--cv_fold_col should contain at least 2 unique fold ids.")
         if cv_folds not in [0, len(unique_folds)]:
             raise ValueError(
-                'When --cv_fold_col is used, --cv_folds should be 0 or match '
-                'the number of unique fold ids ({}).'.format(len(unique_folds))
+                "When --cv_fold_col is used, --cv_folds should be 0 or match "
+                "the number of unique fold ids ({}).".format(len(unique_folds))
             )
         effective_cv_folds = len(unique_folds)
     if (localize_temperature_scale or localize_threshold_tune) and (
         effective_cv_folds < 2
     ):
         raise ValueError(
-            '--localize_temperature_scale/--localize_threshold_tune requires '
-            'cross validation (--cv_folds >= 2 or --cv_fold_col).'
+            "--localize_temperature_scale/--localize_threshold_tune requires "
+            "cross validation (--cv_folds >= 2 or --cv_fold_col)."
         )
     return effective_cv_folds, predefined_folds_active
 
 
 def localize_learn_main(args):
-    stop_if_invalid_codontable(codontable=args.codontable, label='--codon_table')
-    cv_folds = int(getattr(args, 'cv_folds', 0))
-    cv_seed = int(getattr(args, 'cv_seed', 1))
-    cv_fold_col = str(getattr(args, 'cv_fold_col', '')).strip()
-    model_arch = str(getattr(args, 'model_arch', 'nearest_centroid')).strip().lower()
-    if model_arch not in ['nearest_centroid', 'bilstm_attention', 'esm_head']:
-        raise ValueError('Unsupported --model_arch: {}'.format(model_arch))
-    localize_strategy = str(getattr(args, 'localize_strategy', 'single_stage')).strip().lower()
-    if localize_strategy not in ['single_stage', 'two_stage', 'two_stage_ctp_ltp']:
-        txt = '--localize_strategy should be single_stage, two_stage, or two_stage_ctp_ltp.'
+    stop_if_invalid_codontable(codontable=args.codontable, label="--codon_table")
+    cv_folds = int(getattr(args, "cv_folds", 0))
+    cv_seed = int(getattr(args, "cv_seed", 1))
+    cv_fold_col = str(getattr(args, "cv_fold_col", "")).strip()
+    model_arch = str(getattr(args, "model_arch", "nearest_centroid")).strip().lower()
+    if model_arch not in ["nearest_centroid", "bilstm_attention", "esm_head"]:
+        raise ValueError("Unsupported --model_arch: {}".format(model_arch))
+    localize_strategy = (
+        str(getattr(args, "localize_strategy", "single_stage")).strip().lower()
+    )
+    if localize_strategy not in ["single_stage", "two_stage", "two_stage_ctp_ltp"]:
+        txt = "--localize_strategy should be single_stage, two_stage, or two_stage_ctp_ltp."
         raise ValueError(txt)
-    localize_temperature_scale = bool(getattr(args, 'localize_temperature_scale', False))
-    localize_threshold_tune = bool(getattr(args, 'localize_threshold_tune', False))
-    localize_threshold_objective = str(
-        getattr(args, 'localize_threshold_objective', 'macro')
-    ).strip().lower()
-    if localize_threshold_objective not in ['overall', 'macro']:
-        raise ValueError('--localize_threshold_objective should be overall or macro.')
+    localize_temperature_scale = bool(
+        getattr(args, "localize_temperature_scale", False)
+    )
+    localize_threshold_tune = bool(getattr(args, "localize_threshold_tune", False))
+    localize_threshold_objective = (
+        str(getattr(args, "localize_threshold_objective", "macro")).strip().lower()
+    )
+    if localize_threshold_objective not in ["overall", "macro"]:
+        raise ValueError("--localize_threshold_objective should be overall or macro.")
 
-    dl_seq_len = int(getattr(args, 'dl_seq_len', 200))
-    dl_embed_dim = int(getattr(args, 'dl_embed_dim', 32))
-    dl_hidden_dim = int(getattr(args, 'dl_hidden_dim', 64))
-    dl_num_layers = int(getattr(args, 'dl_num_layers', 1))
-    dl_dropout = float(getattr(args, 'dl_dropout', 0.2))
-    dl_epochs = int(getattr(args, 'dl_epochs', 15))
-    dl_batch_size = int(getattr(args, 'dl_batch_size', 128))
-    dl_lr = float(getattr(args, 'dl_lr', 1.0e-3))
-    dl_weight_decay = float(getattr(args, 'dl_weight_decay', 1.0e-4))
-    dl_class_weight = bool(getattr(args, 'dl_class_weight', True))
-    dl_loss = str(getattr(args, 'dl_loss', 'ce')).strip().lower()
-    dl_balanced_batch = bool(getattr(args, 'dl_balanced_batch', False))
-    dl_aux_tp_weight = float(getattr(args, 'dl_aux_tp_weight', 0.0))
-    dl_aux_ctp_ltp_weight = float(getattr(args, 'dl_aux_ctp_ltp_weight', 0.0))
-    dl_feature_fusion = bool(getattr(args, 'dl_feature_fusion', True))
-    dl_seed = int(getattr(args, 'dl_seed', 1))
-    dl_device = str(getattr(args, 'dl_device', 'auto')).strip().lower()
-    esm_model_name = str(getattr(args, 'esm_model_name', 'facebook/esm2_t6_8M_UR50D')).strip()
-    from cdskit.localize_esm_head import DEFAULT_ESM_MODEL_REVISION
-    esm_model_revision = str(
-        getattr(args, 'esm_model_revision', DEFAULT_ESM_MODEL_REVISION)
+    dl_seq_len = int(getattr(args, "dl_seq_len", 200))
+    dl_embed_dim = int(getattr(args, "dl_embed_dim", 32))
+    dl_hidden_dim = int(getattr(args, "dl_hidden_dim", 64))
+    dl_num_layers = int(getattr(args, "dl_num_layers", 1))
+    dl_dropout = float(getattr(args, "dl_dropout", 0.2))
+    dl_epochs = int(getattr(args, "dl_epochs", 15))
+    dl_batch_size = int(getattr(args, "dl_batch_size", 128))
+    dl_lr = float(getattr(args, "dl_lr", 1.0e-3))
+    dl_weight_decay = float(getattr(args, "dl_weight_decay", 1.0e-4))
+    dl_class_weight = bool(getattr(args, "dl_class_weight", True))
+    dl_loss = str(getattr(args, "dl_loss", "ce")).strip().lower()
+    dl_balanced_batch = bool(getattr(args, "dl_balanced_batch", False))
+    dl_aux_tp_weight = float(getattr(args, "dl_aux_tp_weight", 0.0))
+    dl_aux_ctp_ltp_weight = float(getattr(args, "dl_aux_ctp_ltp_weight", 0.0))
+    dl_feature_fusion = bool(getattr(args, "dl_feature_fusion", True))
+    dl_seed = int(getattr(args, "dl_seed", 1))
+    dl_device = str(getattr(args, "dl_device", "auto")).strip().lower()
+    esm_model_name = str(
+        getattr(args, "esm_model_name", "facebook/esm2_t6_8M_UR50D")
     ).strip()
-    esm_model_local_dir = str(getattr(args, 'esm_model_local_dir', '')).strip()
-    esm_pooling = str(getattr(args, 'esm_pooling', 'cls')).strip().lower()
-    esm_max_len = int(getattr(args, 'esm_max_len', 200))
+    from cdskit.localize_esm_head import DEFAULT_ESM_MODEL_REVISION
+
+    esm_model_revision = str(
+        getattr(args, "esm_model_revision", DEFAULT_ESM_MODEL_REVISION)
+    ).strip()
+    esm_model_local_dir = str(getattr(args, "esm_model_local_dir", "")).strip()
+    esm_pooling = str(getattr(args, "esm_pooling", "cls")).strip().lower()
+    esm_max_len = int(getattr(args, "esm_max_len", 200))
     _validate_deep_learning_options(
         model_arch=model_arch,
         cv_folds=cv_folds,
@@ -1590,41 +1659,43 @@ def localize_learn_main(args):
 
     rows, source = _load_training_rows(args=args, cv_fold_col=cv_fold_col)
 
-    x, aa_sequences, class_labels, perox_labels, skipped, fold_ids = build_training_matrix(
-        rows=rows,
-        seq_col=args.seq_col,
-        seqtype=args.seqtype,
-        codontable=args.codontable,
-        label_mode=args.label_mode,
-        localization_col=args.localization_col,
-        perox_col=args.perox_col,
-        skip_ambiguous=args.skip_ambiguous,
-        cv_fold_col=cv_fold_col,
+    x, aa_sequences, class_labels, perox_labels, skipped, fold_ids = (
+        build_training_matrix(
+            rows=rows,
+            seq_col=args.seq_col,
+            seqtype=args.seqtype,
+            codontable=args.codontable,
+            label_mode=args.label_mode,
+            localization_col=args.localization_col,
+            perox_col=args.perox_col,
+            skip_ambiguous=args.skip_ambiguous,
+            cv_fold_col=cv_fold_col,
+        )
     )
 
     dl_train_params = {
-        'seq_len': dl_seq_len,
-        'embed_dim': dl_embed_dim,
-        'hidden_dim': dl_hidden_dim,
-        'num_layers': dl_num_layers,
-        'dropout': dl_dropout,
-        'epochs': dl_epochs,
-        'batch_size': dl_batch_size,
-        'learning_rate': dl_lr,
-        'weight_decay': dl_weight_decay,
-        'seed': dl_seed,
-        'use_class_weight': dl_class_weight,
-        'device': dl_device,
-        'loss_name': dl_loss,
-        'balanced_batch': dl_balanced_batch,
-        'aux_tp_weight': dl_aux_tp_weight,
-        'aux_ctp_ltp_weight': dl_aux_ctp_ltp_weight,
-        'feature_fusion': dl_feature_fusion,
-        'esm_model_name': esm_model_name,
-        'esm_model_revision': esm_model_revision,
-        'esm_model_local_dir': esm_model_local_dir,
-        'esm_pooling': esm_pooling,
-        'esm_max_len': esm_max_len,
+        "seq_len": dl_seq_len,
+        "embed_dim": dl_embed_dim,
+        "hidden_dim": dl_hidden_dim,
+        "num_layers": dl_num_layers,
+        "dropout": dl_dropout,
+        "epochs": dl_epochs,
+        "batch_size": dl_batch_size,
+        "learning_rate": dl_lr,
+        "weight_decay": dl_weight_decay,
+        "seed": dl_seed,
+        "use_class_weight": dl_class_weight,
+        "device": dl_device,
+        "loss_name": dl_loss,
+        "balanced_batch": dl_balanced_batch,
+        "aux_tp_weight": dl_aux_tp_weight,
+        "aux_ctp_ltp_weight": dl_aux_ctp_ltp_weight,
+        "feature_fusion": dl_feature_fusion,
+        "esm_model_name": esm_model_name,
+        "esm_model_revision": esm_model_revision,
+        "esm_model_local_dir": esm_model_local_dir,
+        "esm_pooling": esm_pooling,
+        "esm_max_len": esm_max_len,
     }
     localization_model = fit_localization_model(
         x=x,
@@ -1634,14 +1705,14 @@ def localize_learn_main(args):
         dl_train_params=dl_train_params,
         localize_strategy=localize_strategy,
     )
-    if model_arch == 'nearest_centroid':
-        model_type = 'nearest_centroid_v1'
-    elif model_arch == 'bilstm_attention':
-        model_type = 'bilstm_attention_v1'
-    elif model_arch == 'esm_head':
-        model_type = 'esm_head_v1'
+    if model_arch == "nearest_centroid":
+        model_type = "nearest_centroid_v1"
+    elif model_arch == "bilstm_attention":
+        model_type = "bilstm_attention_v1"
+    elif model_arch == "esm_head":
+        model_type = "esm_head_v1"
     else:
-        raise ValueError('Unsupported --model_arch: {}'.format(model_arch))
+        raise ValueError("Unsupported --model_arch: {}".format(model_arch))
     perox_model = fit_perox_binary_classifier(
         features=x,
         labels=perox_labels,
@@ -1656,47 +1727,47 @@ def localize_learn_main(args):
     )
 
     model = {
-        'model_type': model_type,
-        'feature_names': list(FEATURE_NAMES),
-        'localization_model': localization_model,
-        'perox_model': perox_model,
-        'metadata': {
-            'cdskit_version': __version__,
-            'numpy_version': np.__version__,
-            'scikit_learn_version': _installed_package_version('scikit-learn'),
-            'num_training_rows': int(len(rows)),
-            'num_used_rows': int(x.shape[0]),
-            'num_skipped_rows': int(skipped),
-            'seq_col': args.seq_col,
-            'seqtype': args.seqtype,
-            'label_mode': args.label_mode,
-            'localization_col': args.localization_col,
-            'perox_col': args.perox_col,
-            'codontable': int(args.codontable),
-            'model_arch': model_arch,
-            'localize_strategy': localize_strategy,
-            'localize_temperature_scale': bool(localize_temperature_scale),
-            'localize_threshold_tune': bool(localize_threshold_tune),
-            'localize_threshold_objective': str(localize_threshold_objective),
-            'data_source': (
-                'training_tsv' if source['has_training_tsv'] else 'uniprot_query'
+        "model_type": model_type,
+        "feature_names": list(FEATURE_NAMES),
+        "localization_model": localization_model,
+        "perox_model": perox_model,
+        "metadata": {
+            "cdskit_version": __version__,
+            "numpy_version": np.__version__,
+            "scikit_learn_version": _installed_package_version("scikit-learn"),
+            "num_training_rows": len(rows),
+            "num_used_rows": int(x.shape[0]),
+            "num_skipped_rows": int(skipped),
+            "seq_col": args.seq_col,
+            "seqtype": args.seqtype,
+            "label_mode": args.label_mode,
+            "localization_col": args.localization_col,
+            "perox_col": args.perox_col,
+            "codontable": int(args.codontable),
+            "model_arch": model_arch,
+            "localize_strategy": localize_strategy,
+            "localize_temperature_scale": bool(localize_temperature_scale),
+            "localize_threshold_tune": bool(localize_threshold_tune),
+            "localize_threshold_objective": str(localize_threshold_objective),
+            "data_source": (
+                "training_tsv" if source["has_training_tsv"] else "uniprot_query"
             ),
-            'uniprot_query': (
-                ''
-                if source['has_training_tsv']
-                else str(source['resolved_uniprot_query'])
+            "uniprot_query": (
+                ""
+                if source["has_training_tsv"]
+                else str(source["resolved_uniprot_query"])
             ),
-            'uniprot_preset': (
-                '' if source['has_training_tsv'] else source['preset_name']
+            "uniprot_preset": (
+                "" if source["has_training_tsv"] else source["preset_name"]
             ),
-            'uniprot_reviewed': bool(source['uniprot_reviewed']),
-            'uniprot_exclude_fragments': bool(source['uniprot_exclude_fragments']),
-            'uniprot_sampling': str(source['uniprot_sampling']),
-            'uniprot_sampling_seed': int(source['uniprot_sampling_seed']),
-            'cv_fold_col': cv_fold_col,
-            'cv_predefined_folds': bool(predefined_folds_active),
-            'class_counts': dict(Counter(class_labels)),
-            'perox_counts': dict(Counter(perox_labels)),
+            "uniprot_reviewed": bool(source["uniprot_reviewed"]),
+            "uniprot_exclude_fragments": bool(source["uniprot_exclude_fragments"]),
+            "uniprot_sampling": str(source["uniprot_sampling"]),
+            "uniprot_sampling_seed": int(source["uniprot_sampling_seed"]),
+            "cv_fold_col": cv_fold_col,
+            "cv_predefined_folds": bool(predefined_folds_active),
+            "class_counts": dict(Counter(class_labels)),
+            "perox_counts": dict(Counter(perox_labels)),
         },
     }
     metrics = calculate_training_metrics(
@@ -1708,7 +1779,9 @@ def localize_learn_main(args):
         model_arch=model_arch,
         dl_device=dl_device,
     )
-    model['metadata']['class_train_accuracy_by_class'] = dict(metrics['class_accuracy_by_class'])
+    model["metadata"]["class_train_accuracy_by_class"] = dict(
+        metrics["class_accuracy_by_class"]
+    )
     cv_metrics = None
     postproc_metrics = None
     two_stage_ctp_ltp_tune = None
@@ -1726,73 +1799,85 @@ def localize_learn_main(args):
             localize_strategy=localize_strategy,
             fold_ids=fold_ids if predefined_folds_active else None,
         )
-        model['metadata']['cv_folds'] = int(cv_metrics['n_folds'])
-        model['metadata']['cv_seed'] = int(cv_seed)
-        model['metadata']['cv_class_accuracy_mean'] = float(cv_metrics['class_accuracy_mean'])
-        model['metadata']['cv_class_accuracy_std'] = float(cv_metrics['class_accuracy_std'])
-        model['metadata']['cv_class_accuracy_by_class'] = dict(cv_metrics['class_accuracy_by_class'])
-        model['metadata']['cv_perox_accuracy_mean'] = float(cv_metrics['perox_accuracy_mean'])
-        model['metadata']['cv_perox_accuracy_std'] = float(cv_metrics['perox_accuracy_std'])
+        model["metadata"]["cv_folds"] = int(cv_metrics["n_folds"])
+        model["metadata"]["cv_seed"] = int(cv_seed)
+        model["metadata"]["cv_class_accuracy_mean"] = float(
+            cv_metrics["class_accuracy_mean"]
+        )
+        model["metadata"]["cv_class_accuracy_std"] = float(
+            cv_metrics["class_accuracy_std"]
+        )
+        model["metadata"]["cv_class_accuracy_by_class"] = dict(
+            cv_metrics["class_accuracy_by_class"]
+        )
+        model["metadata"]["cv_perox_accuracy_mean"] = float(
+            cv_metrics["perox_accuracy_mean"]
+        )
+        model["metadata"]["cv_perox_accuracy_std"] = float(
+            cv_metrics["perox_accuracy_std"]
+        )
 
-        if localize_strategy == 'two_stage_ctp_ltp':
+        if localize_strategy == "two_stage_ctp_ltp":
             two_stage_ctp_ltp_tune = optimize_two_stage_ctp_ltp_from_oof(
-                oof_rows=cv_metrics.get('oof_rows', []),
+                oof_rows=cv_metrics.get("oof_rows", []),
                 min_ltp_precision=0.0,
             )
-            localization_model['stage3_gate_threshold'] = float(
-                two_stage_ctp_ltp_tune['stage3_gate_threshold']
+            localization_model["stage3_gate_threshold"] = float(
+                two_stage_ctp_ltp_tune["stage3_gate_threshold"]
             )
-            localization_model['stage3_blend_beta'] = float(
-                two_stage_ctp_ltp_tune['stage3_blend_beta']
+            localization_model["stage3_blend_beta"] = float(
+                two_stage_ctp_ltp_tune["stage3_blend_beta"]
             )
-            localization_model['stage3_ltp_threshold'] = float(
-                two_stage_ctp_ltp_tune['stage3_ltp_threshold']
+            localization_model["stage3_ltp_threshold"] = float(
+                two_stage_ctp_ltp_tune["stage3_ltp_threshold"]
             )
-            model['metadata']['two_stage_ctp_ltp_stage3_gate_threshold'] = float(
-                two_stage_ctp_ltp_tune['stage3_gate_threshold']
+            model["metadata"]["two_stage_ctp_ltp_stage3_gate_threshold"] = float(
+                two_stage_ctp_ltp_tune["stage3_gate_threshold"]
             )
-            model['metadata']['two_stage_ctp_ltp_stage3_blend_beta'] = float(
-                two_stage_ctp_ltp_tune['stage3_blend_beta']
+            model["metadata"]["two_stage_ctp_ltp_stage3_blend_beta"] = float(
+                two_stage_ctp_ltp_tune["stage3_blend_beta"]
             )
-            model['metadata']['two_stage_ctp_ltp_stage3_ltp_threshold'] = float(
-                two_stage_ctp_ltp_tune['stage3_ltp_threshold']
+            model["metadata"]["two_stage_ctp_ltp_stage3_ltp_threshold"] = float(
+                two_stage_ctp_ltp_tune["stage3_ltp_threshold"]
             )
-            model['metadata']['two_stage_ctp_ltp_oof_macro_f1'] = float(
-                two_stage_ctp_ltp_tune['summary']['macro_f1']
+            model["metadata"]["two_stage_ctp_ltp_oof_macro_f1"] = float(
+                two_stage_ctp_ltp_tune["summary"]["macro_f1"]
             )
-            model['metadata']['two_stage_ctp_ltp_oof_ltp_precision'] = float(
-                two_stage_ctp_ltp_tune['summary']['ltp_precision']
+            model["metadata"]["two_stage_ctp_ltp_oof_ltp_precision"] = float(
+                two_stage_ctp_ltp_tune["summary"]["ltp_precision"]
             )
-            model['metadata']['two_stage_ctp_ltp_oof_ltp_recall'] = float(
-                two_stage_ctp_ltp_tune['summary']['ltp_recall']
+            model["metadata"]["two_stage_ctp_ltp_oof_ltp_recall"] = float(
+                two_stage_ctp_ltp_tune["summary"]["ltp_recall"]
             )
-            model['metadata']['two_stage_ctp_ltp_oof_ltp_f1'] = float(
-                two_stage_ctp_ltp_tune['summary']['ltp_f1']
+            model["metadata"]["two_stage_ctp_ltp_oof_ltp_f1"] = float(
+                two_stage_ctp_ltp_tune["summary"]["ltp_f1"]
             )
-            cv_metrics['oof_rows'] = apply_two_stage_ctp_ltp_params_to_oof_rows(
-                oof_rows=cv_metrics.get('oof_rows', []),
-                stage3_gate_threshold=two_stage_ctp_ltp_tune['stage3_gate_threshold'],
-                stage3_blend_beta=two_stage_ctp_ltp_tune['stage3_blend_beta'],
-                stage3_ltp_threshold=two_stage_ctp_ltp_tune['stage3_ltp_threshold'],
+            cv_metrics["oof_rows"] = apply_two_stage_ctp_ltp_params_to_oof_rows(
+                oof_rows=cv_metrics.get("oof_rows", []),
+                stage3_gate_threshold=two_stage_ctp_ltp_tune["stage3_gate_threshold"],
+                stage3_blend_beta=two_stage_ctp_ltp_tune["stage3_blend_beta"],
+                stage3_ltp_threshold=two_stage_ctp_ltp_tune["stage3_ltp_threshold"],
             )
     else:
-        model['metadata']['cv_folds'] = 0
-        model['metadata']['cv_seed'] = int(cv_seed)
-        model['metadata']['cv_class_accuracy_by_class'] = dict()
-        if localize_strategy == 'two_stage_ctp_ltp':
-            localization_model['stage3_gate_threshold'] = 0.0
-            localization_model['stage3_blend_beta'] = 1.0
-            localization_model['stage3_ltp_threshold'] = 0.5
-    if cv_metrics is not None and (localize_temperature_scale or localize_threshold_tune):
-        oof_rows = cv_metrics.get('oof_rows', [])
+        model["metadata"]["cv_folds"] = 0
+        model["metadata"]["cv_seed"] = int(cv_seed)
+        model["metadata"]["cv_class_accuracy_by_class"] = dict()
+        if localize_strategy == "two_stage_ctp_ltp":
+            localization_model["stage3_gate_threshold"] = 0.0
+            localization_model["stage3_blend_beta"] = 1.0
+            localization_model["stage3_ltp_threshold"] = 0.5
+    if cv_metrics is not None and (
+        localize_temperature_scale or localize_threshold_tune
+    ):
+        oof_rows = cv_metrics.get("oof_rows", [])
         tuned_temperature = 1.0
         if localize_temperature_scale:
             tuned_temperature = fit_temperature_from_oof(oof_rows=oof_rows)
-            localization_model['probability_calibration'] = {
-                'method': 'temperature',
-                'temperature': float(tuned_temperature),
+            localization_model["probability_calibration"] = {
+                "method": "temperature",
+                "temperature": float(tuned_temperature),
             }
-            model['metadata']['localize_temperature'] = float(tuned_temperature)
+            model["metadata"]["localize_temperature"] = float(tuned_temperature)
         tuned_thresholds = None
         if localize_threshold_tune:
             tuned_thresholds = optimize_class_thresholds_from_oof(
@@ -1800,21 +1885,21 @@ def localize_learn_main(args):
                 temperature=tuned_temperature,
                 objective=localize_threshold_objective,
             )
-            localization_model['class_thresholds'] = dict(tuned_thresholds)
-            model['metadata']['localize_class_thresholds'] = dict(tuned_thresholds)
+            localization_model["class_thresholds"] = dict(tuned_thresholds)
+            model["metadata"]["localize_class_thresholds"] = dict(tuned_thresholds)
         postproc_metrics = evaluate_oof_postprocess(
             oof_rows=oof_rows,
             temperature=tuned_temperature,
             class_thresholds=tuned_thresholds,
         )
-        model['metadata']['cv_postproc_class_accuracy_overall'] = float(
-            postproc_metrics['class_accuracy_overall']
+        model["metadata"]["cv_postproc_class_accuracy_overall"] = float(
+            postproc_metrics["class_accuracy_overall"]
         )
-        model['metadata']['cv_postproc_class_accuracy_macro5'] = float(
-            postproc_metrics['class_accuracy_macro5']
+        model["metadata"]["cv_postproc_class_accuracy_macro5"] = float(
+            postproc_metrics["class_accuracy_macro5"]
         )
-        model['metadata']['cv_postproc_class_accuracy_by_class'] = dict(
-            postproc_metrics['class_accuracy_by_class']
+        model["metadata"]["cv_postproc_class_accuracy_by_class"] = dict(
+            postproc_metrics["class_accuracy_by_class"]
         )
         metrics = calculate_training_metrics(
             x=x,
@@ -1825,167 +1910,231 @@ def localize_learn_main(args):
             model_arch=model_arch,
             dl_device=dl_device,
         )
-        model['metadata']['class_train_accuracy_by_class'] = dict(
-            metrics['class_accuracy_by_class']
+        model["metadata"]["class_train_accuracy_by_class"] = dict(
+            metrics["class_accuracy_by_class"]
         )
-    if model_arch == 'bilstm_attention':
-        model['metadata']['dl_seq_len'] = int(dl_seq_len)
-        model['metadata']['dl_embed_dim'] = int(dl_embed_dim)
-        model['metadata']['dl_hidden_dim'] = int(dl_hidden_dim)
-        model['metadata']['dl_num_layers'] = int(dl_num_layers)
-        model['metadata']['dl_dropout'] = float(dl_dropout)
-        model['metadata']['dl_epochs'] = int(dl_epochs)
-        model['metadata']['dl_batch_size'] = int(dl_batch_size)
-        model['metadata']['dl_lr'] = float(dl_lr)
-        model['metadata']['dl_weight_decay'] = float(dl_weight_decay)
-        model['metadata']['dl_class_weight'] = bool(dl_class_weight)
-        model['metadata']['dl_loss'] = str(dl_loss)
-        model['metadata']['dl_balanced_batch'] = bool(dl_balanced_batch)
-        model['metadata']['dl_aux_tp_weight'] = float(dl_aux_tp_weight)
-        model['metadata']['dl_aux_ctp_ltp_weight'] = float(dl_aux_ctp_ltp_weight)
-        model['metadata']['dl_feature_fusion'] = bool(dl_feature_fusion)
-        model['metadata']['dl_seed'] = int(dl_seed)
-        model['metadata']['dl_device'] = str(dl_device)
-    if model_arch == 'esm_head':
-        model['metadata']['esm_model_name'] = str(esm_model_name)
-        model['metadata']['esm_model_revision'] = str(esm_model_revision)
-        model['metadata']['esm_model_local_dir'] = str(esm_model_local_dir)
-        model['metadata']['esm_pooling'] = str(esm_pooling)
-        model['metadata']['esm_max_len'] = int(esm_max_len)
-        model['metadata']['dl_epochs'] = int(dl_epochs)
-        model['metadata']['dl_batch_size'] = int(dl_batch_size)
-        model['metadata']['dl_lr'] = float(dl_lr)
-        model['metadata']['dl_weight_decay'] = float(dl_weight_decay)
-        model['metadata']['dl_class_weight'] = bool(dl_class_weight)
-        model['metadata']['dl_seed'] = int(dl_seed)
-        model['metadata']['dl_device'] = str(dl_device)
+    if model_arch == "bilstm_attention":
+        model["metadata"]["dl_seq_len"] = int(dl_seq_len)
+        model["metadata"]["dl_embed_dim"] = int(dl_embed_dim)
+        model["metadata"]["dl_hidden_dim"] = int(dl_hidden_dim)
+        model["metadata"]["dl_num_layers"] = int(dl_num_layers)
+        model["metadata"]["dl_dropout"] = float(dl_dropout)
+        model["metadata"]["dl_epochs"] = int(dl_epochs)
+        model["metadata"]["dl_batch_size"] = int(dl_batch_size)
+        model["metadata"]["dl_lr"] = float(dl_lr)
+        model["metadata"]["dl_weight_decay"] = float(dl_weight_decay)
+        model["metadata"]["dl_class_weight"] = bool(dl_class_weight)
+        model["metadata"]["dl_loss"] = str(dl_loss)
+        model["metadata"]["dl_balanced_batch"] = bool(dl_balanced_batch)
+        model["metadata"]["dl_aux_tp_weight"] = float(dl_aux_tp_weight)
+        model["metadata"]["dl_aux_ctp_ltp_weight"] = float(dl_aux_ctp_ltp_weight)
+        model["metadata"]["dl_feature_fusion"] = bool(dl_feature_fusion)
+        model["metadata"]["dl_seed"] = int(dl_seed)
+        model["metadata"]["dl_device"] = str(dl_device)
+    if model_arch == "esm_head":
+        model["metadata"]["esm_model_name"] = str(esm_model_name)
+        model["metadata"]["esm_model_revision"] = str(esm_model_revision)
+        model["metadata"]["esm_model_local_dir"] = str(esm_model_local_dir)
+        model["metadata"]["esm_pooling"] = str(esm_pooling)
+        model["metadata"]["esm_max_len"] = int(esm_max_len)
+        model["metadata"]["dl_epochs"] = int(dl_epochs)
+        model["metadata"]["dl_batch_size"] = int(dl_batch_size)
+        model["metadata"]["dl_lr"] = float(dl_lr)
+        model["metadata"]["dl_weight_decay"] = float(dl_weight_decay)
+        model["metadata"]["dl_class_weight"] = bool(dl_class_weight)
+        model["metadata"]["dl_seed"] = int(dl_seed)
+        model["metadata"]["dl_device"] = str(dl_device)
 
     report_rows = list()
-    report_rows.append({
-        'metric': 'num_training_rows',
-        'value': int(len(rows)),
-    })
-    report_rows.append({
-        'metric': 'num_used_rows',
-        'value': int(x.shape[0]),
-    })
-    report_rows.append({
-        'metric': 'num_skipped_rows',
-        'value': int(skipped),
-    })
-    report_rows.append({
-        'metric': 'class_train_accuracy',
-        'value': float(metrics['class_train_accuracy']),
-    })
-    report_rows.append({
-        'metric': 'perox_train_accuracy',
-        'value': float(metrics['perox_train_accuracy']),
-    })
-    for class_name in LOCALIZATION_CLASSES:
-        report_rows.append({
-            'metric': 'class_train_accuracy_{}'.format(class_name),
-            'value': float(metrics['class_accuracy_by_class'].get(class_name, 0.0)),
-        })
+    report_rows.append(
+        {
+            "metric": "num_training_rows",
+            "value": len(rows),
+        }
+    )
+    report_rows.append(
+        {
+            "metric": "num_used_rows",
+            "value": int(x.shape[0]),
+        }
+    )
+    report_rows.append(
+        {
+            "metric": "num_skipped_rows",
+            "value": int(skipped),
+        }
+    )
+    report_rows.append(
+        {
+            "metric": "class_train_accuracy",
+            "value": float(metrics["class_train_accuracy"]),
+        }
+    )
+    report_rows.append(
+        {
+            "metric": "perox_train_accuracy",
+            "value": float(metrics["perox_train_accuracy"]),
+        }
+    )
+    report_rows.extend(
+        [
+            {
+                "metric": "class_train_accuracy_{}".format(class_name),
+                "value": float(metrics["class_accuracy_by_class"].get(class_name, 0.0)),
+            }
+            for class_name in LOCALIZATION_CLASSES
+        ]
+    )
     if cv_metrics is not None:
-        report_rows.append({
-            'metric': 'cv_folds',
-            'value': int(cv_metrics['n_folds']),
-        })
-        report_rows.append({
-            'metric': 'cv_class_accuracy_mean',
-            'value': float(cv_metrics['class_accuracy_mean']),
-        })
-        report_rows.append({
-            'metric': 'cv_class_accuracy_std',
-            'value': float(cv_metrics['class_accuracy_std']),
-        })
-        report_rows.append({
-            'metric': 'cv_perox_accuracy_mean',
-            'value': float(cv_metrics['perox_accuracy_mean']),
-        })
-        report_rows.append({
-            'metric': 'cv_perox_accuracy_std',
-            'value': float(cv_metrics['perox_accuracy_std']),
-        })
-        for class_name in LOCALIZATION_CLASSES:
-            report_rows.append({
-                'metric': 'cv_class_accuracy_{}'.format(class_name),
-                'value': float(cv_metrics['class_accuracy_by_class'].get(class_name, 0.0)),
-            })
-        for fold_row in cv_metrics['folds']:
-            fold_id = int(fold_row['fold'])
-            report_rows.append({
-                'metric': 'cv_fold{}_class_accuracy'.format(fold_id),
-                'value': float(fold_row['class_accuracy']),
-            })
-            report_rows.append({
-                'metric': 'cv_fold{}_perox_accuracy'.format(fold_id),
-                'value': float(fold_row['perox_accuracy']),
-            })
+        report_rows.append(
+            {
+                "metric": "cv_folds",
+                "value": int(cv_metrics["n_folds"]),
+            }
+        )
+        report_rows.append(
+            {
+                "metric": "cv_class_accuracy_mean",
+                "value": float(cv_metrics["class_accuracy_mean"]),
+            }
+        )
+        report_rows.append(
+            {
+                "metric": "cv_class_accuracy_std",
+                "value": float(cv_metrics["class_accuracy_std"]),
+            }
+        )
+        report_rows.append(
+            {
+                "metric": "cv_perox_accuracy_mean",
+                "value": float(cv_metrics["perox_accuracy_mean"]),
+            }
+        )
+        report_rows.append(
+            {
+                "metric": "cv_perox_accuracy_std",
+                "value": float(cv_metrics["perox_accuracy_std"]),
+            }
+        )
+        report_rows.extend(
+            [
+                {
+                    "metric": "cv_class_accuracy_{}".format(class_name),
+                    "value": float(
+                        cv_metrics["class_accuracy_by_class"].get(class_name, 0.0)
+                    ),
+                }
+                for class_name in LOCALIZATION_CLASSES
+            ]
+        )
+        for fold_row in cv_metrics["folds"]:
+            fold_id = int(fold_row["fold"])
+            report_rows.append(
+                {
+                    "metric": "cv_fold{}_class_accuracy".format(fold_id),
+                    "value": float(fold_row["class_accuracy"]),
+                }
+            )
+            report_rows.append(
+                {
+                    "metric": "cv_fold{}_perox_accuracy".format(fold_id),
+                    "value": float(fold_row["perox_accuracy"]),
+                }
+            )
     if postproc_metrics is not None:
         if localize_temperature_scale:
-            report_rows.append({
-                'metric': 'postproc_temperature',
-                'value': float(model['metadata'].get('localize_temperature', 1.0)),
-            })
+            report_rows.append(
+                {
+                    "metric": "postproc_temperature",
+                    "value": float(model["metadata"].get("localize_temperature", 1.0)),
+                }
+            )
         if localize_threshold_tune:
-            saved_thresholds = model['metadata'].get('localize_class_thresholds', {})
-            for class_name in LOCALIZATION_CLASSES:
-                report_rows.append({
-                    'metric': 'postproc_threshold_{}'.format(class_name),
-                    'value': float(saved_thresholds.get(class_name, 1.0)),
-                })
-        report_rows.append({
-            'metric': 'cv_postproc_class_accuracy_overall',
-            'value': float(postproc_metrics['class_accuracy_overall']),
-        })
-        report_rows.append({
-            'metric': 'cv_postproc_class_accuracy_macro5',
-            'value': float(postproc_metrics['class_accuracy_macro5']),
-        })
-        report_rows.append({
-            'metric': 'cv_postproc_fold_class_accuracy_mean',
-            'value': float(postproc_metrics['fold_class_accuracy_mean']),
-        })
-        report_rows.append({
-            'metric': 'cv_postproc_fold_class_accuracy_std',
-            'value': float(postproc_metrics['fold_class_accuracy_std']),
-        })
-        for class_name in LOCALIZATION_CLASSES:
-            report_rows.append({
-                'metric': 'cv_postproc_class_accuracy_{}'.format(class_name),
-                'value': float(postproc_metrics['class_accuracy_by_class'].get(class_name, 0.0)),
-            })
-        for fold_row in postproc_metrics['folds']:
-            fold_id = int(fold_row['fold'])
-            report_rows.append({
-                'metric': 'cv_postproc_fold{}_class_accuracy'.format(fold_id),
-                'value': float(fold_row['class_accuracy']),
-            })
-    for class_name in LOCALIZATION_CLASSES:
-        report_rows.append({
-            'metric': 'count_class_{}'.format(class_name),
-            'value': int(model['metadata']['class_counts'].get(class_name, 0)),
-        })
-    report_rows.append({
-        'metric': 'count_perox_yes',
-        'value': int(model['metadata']['perox_counts'].get('yes', 0)),
-    })
-    report_rows.append({
-        'metric': 'count_perox_no',
-        'value': int(model['metadata']['perox_counts'].get('no', 0)),
-    })
+            saved_thresholds = model["metadata"].get("localize_class_thresholds", {})
+            report_rows.extend(
+                [
+                    {
+                        "metric": "postproc_threshold_{}".format(class_name),
+                        "value": float(saved_thresholds.get(class_name, 1.0)),
+                    }
+                    for class_name in LOCALIZATION_CLASSES
+                ]
+            )
+        report_rows.append(
+            {
+                "metric": "cv_postproc_class_accuracy_overall",
+                "value": float(postproc_metrics["class_accuracy_overall"]),
+            }
+        )
+        report_rows.append(
+            {
+                "metric": "cv_postproc_class_accuracy_macro5",
+                "value": float(postproc_metrics["class_accuracy_macro5"]),
+            }
+        )
+        report_rows.append(
+            {
+                "metric": "cv_postproc_fold_class_accuracy_mean",
+                "value": float(postproc_metrics["fold_class_accuracy_mean"]),
+            }
+        )
+        report_rows.append(
+            {
+                "metric": "cv_postproc_fold_class_accuracy_std",
+                "value": float(postproc_metrics["fold_class_accuracy_std"]),
+            }
+        )
+        report_rows.extend(
+            [
+                {
+                    "metric": "cv_postproc_class_accuracy_{}".format(class_name),
+                    "value": float(
+                        postproc_metrics["class_accuracy_by_class"].get(class_name, 0.0)
+                    ),
+                }
+                for class_name in LOCALIZATION_CLASSES
+            ]
+        )
+        for fold_row in postproc_metrics["folds"]:
+            fold_id = int(fold_row["fold"])
+            report_rows.append(
+                {
+                    "metric": "cv_postproc_fold{}_class_accuracy".format(fold_id),
+                    "value": float(fold_row["class_accuracy"]),
+                }
+            )
+    report_rows.extend(
+        [
+            {
+                "metric": "count_class_{}".format(class_name),
+                "value": int(model["metadata"]["class_counts"].get(class_name, 0)),
+            }
+            for class_name in LOCALIZATION_CLASSES
+        ]
+    )
+    report_rows.append(
+        {
+            "metric": "count_perox_yes",
+            "value": int(model["metadata"]["perox_counts"].get("yes", 0)),
+        }
+    )
+    report_rows.append(
+        {
+            "metric": "count_perox_no",
+            "value": int(model["metadata"]["perox_counts"].get("no", 0)),
+        }
+    )
 
     outputs = [args.model_out] + ([args.report] if args.report else [])
     with atomic_output_paths(outputs) as staged_outputs:
-        staged = dict(zip(outputs, staged_outputs))
+        staged = dict(zip(outputs, staged_outputs, strict=False))
         save_localize_model(model=model, path=staged[args.model_out])
-        if args.report != '':
-            if args.report.lower().endswith('.json'):
+        if args.report != "":
+            if args.report.lower().endswith(".json"):
                 write_rows_json(rows=report_rows, output_path=staged[args.report])
             else:
                 write_rows_tsv(
                     rows=report_rows,
                     output_path=staged[args.report],
-                    fieldnames=['metric', 'value'],
+                    fieldnames=["metric", "value"],
                 )

@@ -5,20 +5,20 @@ from cdskit.util import read_seqs, stop_if_not_seqtype, write_seqs
 
 
 def parse_replace_chars(replace_chars):
-    parts = replace_chars.split('--')
+    parts = replace_chars.split("--")
     if len(parts) != 2:
         txt = '--replace_chars must include exactly one "--": FROM1FROM2...--TO. Exiting.\n'
-        raise Exception(txt)
+        raise ValueError(txt)
     from_part, to_part = parts
-    if from_part == '':
-        txt = '--replace_chars FROM part should not be empty. Exiting.\n'
-        raise Exception(txt)
-    if to_part == '':
-        txt = '--replace_chars TO part should not be empty. Exiting.\n'
-        raise Exception(txt)
+    if from_part == "":
+        txt = "--replace_chars FROM part should not be empty. Exiting.\n"
+        raise ValueError(txt)
+    if to_part == "":
+        txt = "--replace_chars TO part should not be empty. Exiting.\n"
+        raise ValueError(txt)
     if len(to_part) != 1:
         txt = '--replace_chars TO part should be exactly one character, but got "{}". Exiting.\n'
-        raise Exception(txt.format(to_part))
+        raise ValueError(txt.format(to_part))
     from_chars = list(from_part)
     to_char = to_part
     return from_chars, to_char
@@ -26,13 +26,13 @@ def parse_replace_chars(replace_chars):
 
 def apply_char_replacement(records, from_chars, to_char):
     replace_count = 0
-    translation_table = str.maketrans(''.join(from_chars), to_char * len(from_chars))
+    translation_table = str.maketrans("".join(from_chars), to_char * len(from_chars))
     for record in records:
         replaced_id = record.id.translate(translation_table)
         if replaced_id != record.id:
             replace_count += 1
             record.id = replaced_id
-            record.description = ''
+            record.description = ""
     return replace_count
 
 
@@ -42,19 +42,15 @@ def clip_label_ids(records, clip_len):
         if len(record.id) > clip_len:
             clip_count += 1
             record.id = record.id[:clip_len]
-            record.description = ''
+            record.description = ""
     return clip_count
 
 
 def uniquify_label_ids(records, clip_len=0):
     nonunique_count = 0
     name_counts = Counter([record.id for record in records])
-    reserved = {
-        record.id
-        for record in records
-        if name_counts[record.id] == 1
-    }
-    suffix_counts = {}
+    reserved = {record.id for record in records if name_counts[record.id] == 1}
+    suffix_counts: dict[str, int] = {}
     for record in records:
         if name_counts[record.id] > 1:
             nonunique_count += 1
@@ -62,29 +58,29 @@ def uniquify_label_ids(records, clip_len=0):
             suffix_counts.setdefault(original, 0)
             while True:
                 suffix_counts[original] += 1
-                suffix = '_{}'.format(suffix_counts[original])
+                suffix = "_{}".format(suffix_counts[original])
                 if clip_len:
                     if len(suffix) > clip_len:
                         raise ValueError(
-                            '--clip_len={} is too small to create unique labels.'.format(
+                            "--clip_len={} is too small to create unique labels.".format(
                                 clip_len
                             )
                         )
-                    base = original[:clip_len - len(suffix)]
+                    base = original[: clip_len - len(suffix)]
                 else:
                     base = original
                 candidate = base + suffix
                 if candidate not in reserved:
                     break
             record.id = candidate
-            record.description = ''
+            record.description = ""
             reserved.add(candidate)
     nonunique_names = [name for name in name_counts if name_counts[name] > 1]
     return nonunique_count, nonunique_names
 
 
 def replace_record_id(record_id, from_chars, to_char):
-    translation_table = str.maketrans(''.join(from_chars), to_char * len(from_chars))
+    translation_table = str.maketrans("".join(from_chars), to_char * len(from_chars))
     replaced_id = record_id.translate(translation_table)
     return replaced_id, (replaced_id != record_id)
 
@@ -97,30 +93,40 @@ def clip_record_id(record_id, clip_len):
 
 def validate_clip_len(clip_len):
     if clip_len < 0:
-        txt = '--clip_len should be >= 0, but got {}. Exiting.\n'
-        raise Exception(txt.format(clip_len))
+        txt = "--clip_len should be >= 0, but got {}. Exiting.\n"
+        raise ValueError(txt.format(clip_len))
 
 
 def label_main(args):
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
     stop_if_not_seqtype(
         records=records,
-        seqtype=getattr(args, 'seqtype', 'auto'),
-        label='--seq_file',
+        seqtype=getattr(args, "seqtype", "auto"),
+        label="--seq_file",
     )
     validate_clip_len(args.clip_len)
-    if args.replace_chars != '':
+    if args.replace_chars != "":
         from_chars, to_char = parse_replace_chars(args.replace_chars)
-        replace_count = apply_char_replacement(records=records, from_chars=from_chars, to_char=to_char)
-        sys.stderr.write('Number of character-replaced sequence labels: {:,}\n'.format(replace_count))
+        replace_count = apply_char_replacement(
+            records=records, from_chars=from_chars, to_char=to_char
+        )
+        sys.stderr.write(
+            "Number of character-replaced sequence labels: {:,}\n".format(replace_count)
+        )
     if args.clip_len != 0:
         clip_count = clip_label_ids(records=records, clip_len=args.clip_len)
-        sys.stderr.write('Number of clipped sequence labels: {:,}\n'.format(clip_count))
+        sys.stderr.write("Number of clipped sequence labels: {:,}\n".format(clip_count))
     if args.unique:
         nonunique_count, nonunique_names = uniquify_label_ids(
             records,
             clip_len=args.clip_len,
         )
-        sys.stderr.write('Number of resolved non-unique sequence labels: {:,}\n'.format(nonunique_count))
-        sys.stderr.write('Non-unique sequence labels:\n{}\n'.format('\n'.join(nonunique_names)))
+        sys.stderr.write(
+            "Number of resolved non-unique sequence labels: {:,}\n".format(
+                nonunique_count
+            )
+        )
+        sys.stderr.write(
+            "Non-unique sequence labels:\n{}\n".format("\n".join(nonunique_names))
+        )
     write_seqs(records=records, outfile=args.outfile, outseqformat=args.outseqformat)

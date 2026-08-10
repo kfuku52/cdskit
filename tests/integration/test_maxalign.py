@@ -42,9 +42,9 @@ class TestMaxalignMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            mode='exact',
+            mode="exact",
             max_exact_sequences=16,
-            missing_char='-?.',
+            missing_char="-?.",
         )
 
         maxalign_main(args)
@@ -68,9 +68,9 @@ class TestMaxalignMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            mode='exact',
+            mode="exact",
             max_exact_sequences=16,
-            missing_char='-?.',
+            missing_char="-?.",
         )
 
         maxalign_main(args)
@@ -95,12 +95,12 @@ class TestMaxalignMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            mode='exact',
+            mode="exact",
             max_exact_sequences=2,
-            missing_char='-?.',
+            missing_char="-?.",
         )
 
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             maxalign_main(args)
         assert "max_exact_sequences" in str(exc_info.value)
 
@@ -126,10 +126,10 @@ class TestMaxalignMain:
             outfile=str(output_path),
             mode=mode,
             max_exact_sequences=max_exact_sequences,
-            missing_char='-?.',
+            missing_char="-?.",
         )
 
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             maxalign_main(args)
         assert "--max_exact_sequences should be >= 1" in str(exc_info.value)
 
@@ -142,9 +142,9 @@ class TestMaxalignMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            mode='auto',
+            mode="auto",
             max_exact_sequences=16,
-            missing_char='-?.',
+            missing_char="-?.",
         )
 
         maxalign_main(args)
@@ -152,7 +152,9 @@ class TestMaxalignMain:
         result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
         assert len(result) == 0
 
-    def test_maxalign_auto_mode_uses_exact_when_within_limit(self, temp_dir, mock_args, capsys):
+    def test_maxalign_auto_mode_uses_exact_when_within_limit(
+        self, temp_dir, mock_args, capsys
+    ):
         """Auto mode should choose exact when sequence count is small enough."""
         input_path = temp_dir / "input.fasta"
         output_path = temp_dir / "output.fasta"
@@ -167,16 +169,18 @@ class TestMaxalignMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            mode='auto',
+            mode="auto",
             max_exact_sequences=3,
-            missing_char='-?.',
+            missing_char="-?.",
         )
 
         maxalign_main(args)
         captured = capsys.readouterr()
         assert "maxalign mode: exact" in captured.err
 
-    def test_maxalign_auto_mode_uses_greedy_when_above_limit(self, temp_dir, mock_args, capsys):
+    def test_maxalign_auto_mode_uses_greedy_when_above_limit(
+        self, temp_dir, mock_args, capsys
+    ):
         """Auto mode should choose greedy when sequence count exceeds limit."""
         input_path = temp_dir / "input.fasta"
         output_path = temp_dir / "output.fasta"
@@ -191,9 +195,9 @@ class TestMaxalignMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            mode='auto',
+            mode="auto",
             max_exact_sequences=2,
-            missing_char='-?.',
+            missing_char="-?.",
         )
 
         maxalign_main(args)
@@ -217,9 +221,9 @@ class TestMaxalignMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            mode='greedy',
+            mode="greedy",
             max_exact_sequences=16,
-            missing_char='-?.',
+            missing_char="-?.",
         )
 
         maxalign_main(args)
@@ -228,7 +232,9 @@ class TestMaxalignMain:
         assert [r.id for r in result] == ["good1", "good2", "good3"]
         assert all(str(r.seq) == "ATGAAACCC" for r in result)
 
-    def test_maxalign_greedy_can_remove_gap_pattern_set_from_zero_area(self, temp_dir, mock_args):
+    def test_maxalign_greedy_can_remove_gap_pattern_set_from_zero_area(
+        self, temp_dir, mock_args
+    ):
         """Greedy search should remove a multi-sequence gap-pattern set when single removals do not help."""
         input_path = temp_dir / "input.fasta"
         output_path = temp_dir / "output.fasta"
@@ -244,9 +250,9 @@ class TestMaxalignMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            mode='greedy',
+            mode="greedy",
             max_exact_sequences=2,
-            missing_char='-?.',
+            missing_char="-?.",
         )
 
         maxalign_main(args)
@@ -255,7 +261,9 @@ class TestMaxalignMain:
         assert [r.id for r in result] == ["seq3", "seq4"]
         assert all(str(r.seq) == "AAA" for r in result)
 
-    def test_maxalign_exact_tie_break_prefers_more_sequences_then_earlier_indices(self, temp_dir, mock_args):
+    def test_maxalign_exact_tie_break_prefers_more_sequences_then_earlier_indices(
+        self, temp_dir, mock_args
+    ):
         """Exact mode tie-break: area, then num_kept, then lexicographic indices."""
         input_path = temp_dir / "input.fasta"
         output_path = temp_dir / "output.fasta"
@@ -270,9 +278,9 @@ class TestMaxalignMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            mode='exact',
+            mode="exact",
             max_exact_sequences=16,
-            missing_char='-?.',
+            missing_char="-?.",
         )
 
         maxalign_main(args)
@@ -281,7 +289,9 @@ class TestMaxalignMain:
         assert [r.id for r in result] == ["seq1", "seq2"]
         assert [str(r.seq) for r in result] == ["ATG", "ATG"]
 
-    def test_maxalign_missing_char_option_changes_codon_presence(self, temp_dir, mock_args):
+    def test_maxalign_missing_char_option_changes_codon_presence(
+        self, temp_dir, mock_args
+    ):
         """Adding N to missing chars should treat N-containing codons as missing."""
         input_path = temp_dir / "input.fasta"
         output_default = temp_dir / "output_default.fasta"
@@ -296,9 +306,9 @@ class TestMaxalignMain:
         args_default = mock_args(
             seqfile=str(input_path),
             outfile=str(output_default),
-            mode='exact',
+            mode="exact",
             max_exact_sequences=16,
-            missing_char='-?.',
+            missing_char="-?.",
         )
         maxalign_main(args_default)
         result_default = list(Bio.SeqIO.parse(str(output_default), "fasta"))
@@ -307,9 +317,9 @@ class TestMaxalignMain:
         args_with_n = mock_args(
             seqfile=str(input_path),
             outfile=str(output_with_n),
-            mode='exact',
+            mode="exact",
             max_exact_sequences=16,
-            missing_char='-?.N',
+            missing_char="-?.N",
         )
         maxalign_main(args_with_n)
         result_with_n = list(Bio.SeqIO.parse(str(output_with_n), "fasta"))
@@ -329,12 +339,12 @@ class TestMaxalignMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            mode='auto',
+            mode="auto",
             max_exact_sequences=16,
-            missing_char='-?.',
+            missing_char="-?.",
         )
 
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             maxalign_main(args)
         assert "not identical" in str(exc_info.value)
 
@@ -352,12 +362,12 @@ class TestMaxalignMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            mode='auto',
+            mode="auto",
             max_exact_sequences=16,
-            missing_char='-?.',
+            missing_char="-?.",
         )
 
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             maxalign_main(args)
         assert "multiple of three" in str(exc_info.value)
 
@@ -374,16 +384,18 @@ class TestMaxalignMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            mode='auto',
+            mode="auto",
             max_exact_sequences=16,
-            missing_char='-?.',
+            missing_char="-?.",
         )
 
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             maxalign_main(args)
         assert "DNA-only input is required" in str(exc_info.value)
 
-    def test_maxalign_single_sequence_still_drops_missing_codons(self, temp_dir, mock_args):
+    def test_maxalign_single_sequence_still_drops_missing_codons(
+        self, temp_dir, mock_args
+    ):
         """Single sequence should keep only codons without missing characters."""
         input_path = temp_dir / "input.fasta"
         output_path = temp_dir / "output.fasta"
@@ -396,9 +408,9 @@ class TestMaxalignMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            mode='auto',
+            mode="auto",
             max_exact_sequences=16,
-            missing_char='-?.',
+            missing_char="-?.",
         )
 
         maxalign_main(args)
@@ -407,7 +419,9 @@ class TestMaxalignMain:
         assert [r.id for r in result] == ["seq1"]
         assert str(result[0].seq) == "ATGCCC"
 
-    def test_maxalign_keep_regex_protects_sequence_from_dropping(self, temp_dir, mock_args):
+    def test_maxalign_keep_regex_protects_sequence_from_dropping(
+        self, temp_dir, mock_args
+    ):
         """--keep should protect matching sequences even if area decreases."""
         input_path = temp_dir / "input.fasta"
         output_path = temp_dir / "output.fasta"
@@ -422,10 +436,10 @@ class TestMaxalignMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            mode='exact',
+            mode="exact",
             max_exact_sequences=16,
-            keep='seq3',
-            missing_char='-?.',
+            keep="seq3",
+            missing_char="-?.",
         )
 
         maxalign_main(args)
@@ -449,10 +463,10 @@ class TestMaxalignMain:
         args = mock_args(
             seqfile=str(input_path),
             outfile=str(output_path),
-            mode='exact',
+            mode="exact",
             max_exact_sequences=16,
             max_removed=0,
-            missing_char='-?.',
+            missing_char="-?.",
         )
 
         maxalign_main(args)
@@ -478,9 +492,9 @@ class TestMaxalignMain:
             seqfile=str(input_path),
             outfile=str(output_path),
             report=str(report_path),
-            mode='greedy',
+            mode="greedy",
             max_exact_sequences=2,
-            missing_char='-?.',
+            missing_char="-?.",
         )
 
         maxalign_main(args)
@@ -507,18 +521,22 @@ class TestMaxalignMain:
             seqfile=str(input_path),
             outfile=str(output_path),
             report=str(report_path),
-            mode='exact',
+            mode="exact",
             max_exact_sequences=16,
-            missing_char='-?.',
+            missing_char="-?.",
         )
 
         maxalign_main(args)
 
         rows, fieldnames = read_tsv(str(report_path), return_fieldnames=True)
-        assert fieldnames[:2] == ['schema_version', 'section']
-        assert {row['schema_version'] for row in rows} == {'2'}
-        assert any(row['section'] == 'summary' and row['metric'] == 'mode' for row in rows)
-        assert any(row['section'] == 'step' and row['label'] == 'initial' for row in rows)
+        assert fieldnames[:2] == ["schema_version", "section"]
+        assert {row["schema_version"] for row in rows} == {"2"}
+        assert any(
+            row["section"] == "summary" and row["metric"] == "mode" for row in rows
+        )
+        assert any(
+            row["section"] == "step" and row["label"] == "initial" for row in rows
+        )
 
     def test_maxalign_threads_matches_single_thread_exact(self, temp_dir, mock_args):
         input_path = temp_dir / "input.fasta"
@@ -535,17 +553,17 @@ class TestMaxalignMain:
         args_single = mock_args(
             seqfile=str(input_path),
             outfile=str(out_single),
-            mode='exact',
+            mode="exact",
             max_exact_sequences=16,
-            missing_char='-?.',
+            missing_char="-?.",
             threads=1,
         )
         args_threaded = mock_args(
             seqfile=str(input_path),
             outfile=str(out_threaded),
-            mode='exact',
+            mode="exact",
             max_exact_sequences=16,
-            missing_char='-?.',
+            missing_char="-?.",
             threads=4,
         )
 
@@ -554,7 +572,9 @@ class TestMaxalignMain:
         result_single = list(Bio.SeqIO.parse(str(out_single), "fasta"))
         result_threaded = list(Bio.SeqIO.parse(str(out_threaded), "fasta"))
         assert [r.id for r in result_single] == [r.id for r in result_threaded]
-        assert [str(r.seq) for r in result_single] == [str(r.seq) for r in result_threaded]
+        assert [str(r.seq) for r in result_single] == [
+            str(r.seq) for r in result_threaded
+        ]
 
     def test_maxalign_threads_matches_single_thread_greedy(self, temp_dir, mock_args):
         input_path = temp_dir / "input.fasta"
@@ -572,17 +592,17 @@ class TestMaxalignMain:
         args_single = mock_args(
             seqfile=str(input_path),
             outfile=str(out_single),
-            mode='greedy',
+            mode="greedy",
             max_exact_sequences=2,
-            missing_char='-?.',
+            missing_char="-?.",
             threads=1,
         )
         args_threaded = mock_args(
             seqfile=str(input_path),
             outfile=str(out_threaded),
-            mode='greedy',
+            mode="greedy",
             max_exact_sequences=2,
-            missing_char='-?.',
+            missing_char="-?.",
             threads=4,
         )
 
@@ -591,19 +611,30 @@ class TestMaxalignMain:
         result_single = list(Bio.SeqIO.parse(str(out_single), "fasta"))
         result_threaded = list(Bio.SeqIO.parse(str(out_threaded), "fasta"))
         assert [r.id for r in result_single] == [r.id for r in result_threaded]
-        assert [str(r.seq) for r in result_single] == [str(r.seq) for r in result_threaded]
+        assert [str(r.seq) for r in result_single] == [
+            str(r.seq) for r in result_threaded
+        ]
 
 
 class TestMaxalignHelpers:
     """Tests for helper functions used by maxalign."""
 
     def test_parse_missing_chars_default(self):
-        assert parse_missing_chars('') == {'-', '?', '.'}
+        assert parse_missing_chars("") == {"-", "?", "."}
 
     def test_pick_solver_mode_auto_switch(self):
-        assert pick_solver_mode(num_records=4, mode='auto', max_exact_sequences=4) == 'exact'
-        assert pick_solver_mode(num_records=5, mode='auto', max_exact_sequences=4) == 'greedy'
-        assert pick_solver_mode(num_records=5, mode='exact', max_exact_sequences=4) == 'exact'
+        assert (
+            pick_solver_mode(num_records=4, mode="auto", max_exact_sequences=4)
+            == "exact"
+        )
+        assert (
+            pick_solver_mode(num_records=5, mode="auto", max_exact_sequences=4)
+            == "greedy"
+        )
+        assert (
+            pick_solver_mode(num_records=5, mode="exact", max_exact_sequences=4)
+            == "exact"
+        )
 
     def test_solve_exact_and_greedy_on_same_matrix(self):
         """Both solvers should agree on this simple matrix."""
@@ -616,10 +647,10 @@ class TestMaxalignHelpers:
         ]
         exact = solve_exact(matrix)
         greedy = solve_greedy(matrix)
-        assert exact['kept_indices'] == [0, 1]
-        assert exact['area'] == 4
-        assert greedy['kept_indices'] == [0, 1]
-        assert greedy['area'] == 4
+        assert exact["kept_indices"] == [0, 1]
+        assert exact["area"] == 4
+        assert greedy["kept_indices"] == [0, 1]
+        assert greedy["area"] == 4
 
     def test_solve_exact_with_required_indices(self):
         matrix = [
@@ -634,7 +665,7 @@ class TestMaxalignHelpers:
             max_removed=None,
             total_sequences=3,
         )
-        assert exact['kept_indices'] == [0, 1, 2]
+        assert exact["kept_indices"] == [0, 1, 2]
 
     def test_solve_greedy_with_protected_and_max_removed(self):
         matrix = [
@@ -649,7 +680,7 @@ class TestMaxalignHelpers:
             max_removed=0,
             total_sequences=3,
         )
-        assert greedy['kept_indices'] == [0, 1, 2]
+        assert greedy["kept_indices"] == [0, 1, 2]
 
     def test_solve_exact_threads_matches_single_thread(self):
         matrix = [
@@ -660,8 +691,8 @@ class TestMaxalignHelpers:
         ]
         single = solve_exact(matrix, threads=1)
         threaded = solve_exact(matrix, threads=4)
-        assert single['kept_indices'] == threaded['kept_indices']
-        assert single['area'] == threaded['area']
+        assert single["kept_indices"] == threaded["kept_indices"]
+        assert single["area"] == threaded["area"]
 
     def test_solve_greedy_threads_matches_single_thread(self):
         matrix = [
@@ -672,8 +703,8 @@ class TestMaxalignHelpers:
         ]
         single = solve_greedy(matrix, threads=1)
         threaded = solve_greedy(matrix, threads=4)
-        assert single['kept_indices'] == threaded['kept_indices']
-        assert single['area'] == threaded['area']
+        assert single["kept_indices"] == threaded["kept_indices"]
+        assert single["area"] == threaded["area"]
 
     def test_solve_greedy_tie_break_matches_original_scan_order(self):
         matrix = [
@@ -682,8 +713,8 @@ class TestMaxalignHelpers:
             [True, True],
         ]
         greedy = solve_greedy(matrix, threads=1)
-        assert greedy['kept_indices'] == [1, 2]
-        assert greedy['area'] == 2
+        assert greedy["kept_indices"] == [1, 2]
+        assert greedy["area"] == 2
 
     def test_solve_greedy_removes_gap_pattern_set_from_zero_area(self):
         matrix = [
@@ -693,11 +724,13 @@ class TestMaxalignHelpers:
             [False, True],
         ]
         greedy = solve_greedy(matrix, threads=1)
-        assert greedy['kept_indices'] == [2, 3]
-        assert greedy['area'] == 2
+        assert greedy["kept_indices"] == [2, 3]
+        assert greedy["area"] == 2
 
     def test_solve_exact_process_fallback_to_threads(self, monkeypatch):
-        matrix = [[True, True] * 50 for _ in range(13)]  # 13 variable seqs => 8192 subsets
+        matrix = [
+            [True, True] * 50 for _ in range(13)
+        ]  # 13 variable seqs => 8192 subsets
 
         class FailingProcessPool:
             def __init__(self, *args, **kwargs):
