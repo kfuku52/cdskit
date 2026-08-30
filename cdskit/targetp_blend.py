@@ -9,18 +9,10 @@ import numpy as np
 
 from cdskit import __version__
 from cdskit.localize_model import (
-    AA_ACIDIC,
-    AA_AROMATIC,
-    AA_BASIC,
+    _targetp_sp_scan_features as _targetp_sp_scan_features,
+    _targetp_ctp_ltp_sequence_features as _targetp_ctp_ltp_sequence_features,
     FEATURE_NAMES,
-    AA_HYDROPHOBIC,
-    AA_SER_THR,
-    AA_SMALL,
-    extract_broad_localize_features,
     fit_perox_binary_classifier,
-    fraction_in_set,
-    longest_hydrophobic_run,
-    mean_hydropathy,
     normalize_class_probabilities,
     predict_localization_and_peroxisome,
     save_localize_model,
@@ -657,133 +649,6 @@ def _top_binary_f1_thresholds(scores, true_idx, positive_idx, max_candidates=80)
             break
     if len(out) == 0:
         out.append((0.5, 0.0, {"tp": 0, "fp": 0, "fn": int(np.sum(yy))}))
-    return out
-
-
-def _targetp_sp_scan_features(seq):
-    seq = str(seq or "")
-    best_score = -99.0
-    best_cut = 0
-    best_parts = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
-    for cut in range(12, min(45, len(seq) - 1)):
-        pre = seq[:cut]
-        nreg = seq[: max(1, cut - 18)]
-        hreg = seq[max(0, cut - 18) : max(0, cut - 7)]
-        creg = seq[max(0, cut - 7) : cut + 2]
-        m3 = seq[cut - 3] if cut - 3 >= 0 else "X"
-        m2 = seq[cut - 2] if cut - 2 >= 0 else "X"
-        m1 = seq[cut - 1] if cut - 1 >= 0 else "X"
-        p1 = seq[cut] if cut < len(seq) else "X"
-        small_m3 = 1.0 if m3 in "AVSGTC" else 0.0
-        small_m1 = 1.0 if m1 in "ASGTC" else 0.0
-        ala_m1 = 1.0 if m1 == "A" else 0.0
-        pro_bad = 1.0 if "P" in (m3 + m2 + m1 + p1) else 0.0
-        hyd = fraction_in_set(hreg, AA_HYDROPHOBIC)
-        run = longest_hydrophobic_run(hreg)
-        small = fraction_in_set(creg, AA_SMALL)
-        ncharge = fraction_in_set(nreg, AA_BASIC) - fraction_in_set(nreg, AA_ACIDIC)
-        st_frac = fraction_in_set(pre, AA_SER_THR)
-        score = (
-            (2.2 * hyd)
-            + (0.15 * run)
-            + (0.8 * small_m3)
-            + (1.0 * small_m1)
-            + (0.4 * ala_m1)
-            + (0.5 * small)
-            + (0.4 * ncharge)
-            - (0.9 * pro_bad)
-            - (0.25 * st_frac)
-        )
-        if score > best_score:
-            best_score = float(score)
-            best_cut = int(cut)
-            best_parts = (
-                float(hyd),
-                float(run),
-                float(small_m3),
-                float(small_m1),
-                float(ala_m1),
-                float(pro_bad),
-                float(small),
-                float(ncharge),
-                float(st_frac),
-            )
-
-    out = [best_score, float(best_cut), float(best_cut) / float(max(1, len(seq)))]
-    out.extend(best_parts)
-    for window in [
-        seq[:15],
-        seq[:25],
-        seq[:35],
-        seq[:50],
-        seq[:80],
-        seq[5:30],
-        seq[20:60],
-        seq[40:100],
-    ]:
-        out.extend(
-            [
-                mean_hydropathy(window),
-                longest_hydrophobic_run(window),
-                fraction_in_set(window, AA_HYDROPHOBIC),
-                fraction_in_set(window, AA_BASIC),
-                fraction_in_set(window, AA_ACIDIC),
-                fraction_in_set(window, AA_SER_THR),
-                fraction_in_set(window, AA_SMALL),
-            ]
-        )
-    return out
-
-
-def _targetp_ctp_ltp_sequence_features(seq, organism_group):
-    seq = str(seq or "")
-    out = list(extract_broad_localize_features(seq, organism_group)[0])
-    windows = [
-        seq[:20],
-        seq[:40],
-        seq[:60],
-        seq[:80],
-        seq[:100],
-        seq[:120],
-        seq[20:80],
-        seq[40:120],
-    ]
-    groups = [
-        AA_BASIC,
-        AA_ACIDIC,
-        AA_HYDROPHOBIC,
-        AA_SMALL,
-        AA_SER_THR,
-        AA_AROMATIC,
-        frozenset("R"),
-        frozenset("K"),
-        frozenset("A"),
-        frozenset("S"),
-        frozenset("T"),
-        frozenset("P"),
-        frozenset("G"),
-        frozenset("LIV"),
-    ]
-    for window in windows:
-        out.extend([mean_hydropathy(window), longest_hydrophobic_run(window)])
-        out.extend([fraction_in_set(window, group) for group in groups])
-    n_term = seq[:140]
-    for motif in [
-        "RR",
-        "KR",
-        "RK",
-        "KK",
-        "RA",
-        "RS",
-        "SR",
-        "ST",
-        "TS",
-        "SS",
-        "TP",
-        "SP",
-    ]:
-        out.append(1.0 if motif in n_term else 0.0)
-        out.append(float(n_term.find(motif) if motif in n_term else 999))
     return out
 
 

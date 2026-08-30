@@ -3,7 +3,11 @@ import Bio.SeqRecord
 import sys
 from concurrent.futures import ProcessPoolExecutor
 from functools import partial
-import Bio.Data.CodonTable
+
+from cdskit.codonutil import (
+    get_codon_translator as get_codon_translator,
+    translate_single_codon as translate_single_codon,
+)
 
 from cdskit.util import (
     parallel_map_ordered,
@@ -21,7 +25,6 @@ AA_GAP_CHARS = {"-", "."}
 AA_WILDCARD_CHARS = {"X", "?"}
 CDS_GAP_CHARS = {"-", "."}
 _GAP_DROP_TABLE_CACHE: dict = {}
-_CODON_TRANSLATOR_CACHE: dict = {}
 
 
 def remove_gap_chars(seq, gap_chars):
@@ -84,39 +87,6 @@ def translate_codons(codons, codontable):
     return translated
 
 
-def get_codon_translator(codontable):
-    cached = _CODON_TRANSLATOR_CACHE.get(codontable)
-    if cached is not None:
-        return cached
-    if isinstance(codontable, int):
-        table = Bio.Data.CodonTable.ambiguous_dna_by_id[codontable]
-    else:
-        table = Bio.Data.CodonTable.ambiguous_dna_by_name[str(codontable)]
-    translator = {
-        "forward_table": table.forward_table,
-        "stop_codons": frozenset([codon.upper() for codon in table.stop_codons]),
-        "cache": dict(),
-    }
-    _CODON_TRANSLATOR_CACHE[codontable] = translator
-    return translator
-
-
-def translate_single_codon(codon, translator):
-    codon_upper = codon.upper()
-    cached = translator["cache"].get(codon_upper)
-    if cached is not None:
-        return cached
-    if codon_upper in translator["stop_codons"]:
-        aa = "*"
-    else:
-        try:
-            aa = translator["forward_table"][codon_upper]
-        except Exception:
-            aa = "X"
-    translator["cache"][codon_upper] = aa
-    return aa
-
-
 def translate_cds_seq(cdn_seq, codontable):
     return str(Bio.Seq.Seq(cdn_seq).translate(table=codontable, to_stop=False, gap="-"))
 
@@ -155,7 +125,6 @@ def backalign_sequence_strings(
     translator = get_codon_translator(codontable=codontable)
     cache = translator["cache"]
     stop_codons = translator["stop_codons"]
-    forward_table = translator["forward_table"]
     pep_seq = pep_seq_raw
     pep_seq_upper = pep_seq.upper()
     aligned_codons = [""] * len(pep_seq)
@@ -175,17 +144,19 @@ def backalign_sequence_strings(
         codon_key = cdn_seq_upper[codon_start : codon_start + 3]
         translated_char = cache.get(codon_key)
         if translated_char is None:
-            if codon_key in stop_codons:
-                translated_char = "*"
-            else:
-                try:
-                    translated_char = forward_table[codon_key]
-                except Bio.Data.CodonTable.TranslationError:
-                    translated_char = "X"
-                except KeyError:
-                    txt = "Invalid codon for {} at aligned position {}: {}"
-                    raise ValueError(txt.format(seq_id, i + 1, codon)) from None
-            cache[codon_key] = translated_char
+            try:
+                translated_char = translate_single_codon(codon_key, translator)
+            except KeyError:
+                txt = "Invalid codon for {} at aligned position {}: {}"
+                raise ValueError(txt.format(seq_id, i + 1, codon)) from None
+        if (
+            pep_char == "*"
+            and codon_index == num_codons - 1
+            and codon_key in stop_codons
+        ):
+            # A context-dependent code can explicitly mark its final codon as
+            # stop without changing how that codon translates internally.
+            translated_char = "*"
         if (pep_char not in AA_WILDCARD_CHARS) and (pep_char != translated_char):
             txt = "Amino acid mismatch for {} at aligned position {}: aa_aln={}, translated={}, codon={}"
             raise ValueError(
@@ -199,20 +170,12 @@ def backalign_sequence_strings(
     if remaining_codons == 1:
         terminal_codon_start = codon_index * 3
         terminal_codon = cdn_seq_upper[terminal_codon_start : terminal_codon_start + 3]
-        terminal_aa = cache.get(terminal_codon)
-        if terminal_aa is None:
-            if terminal_codon in stop_codons:
-                terminal_aa = "*"
-            else:
-                try:
-                    terminal_aa = forward_table[terminal_codon]
-                except Bio.Data.CodonTable.TranslationError:
-                    terminal_aa = "X"
-                except KeyError:
-                    txt = "Invalid terminal codon for {}: {}"
-                    raise ValueError(txt.format(seq_id, terminal_codon)) from None
-            cache[terminal_codon] = terminal_aa
-        is_terminal_stop = terminal_aa == "*"
+        try:
+            terminal_aa = translate_single_codon(terminal_codon, translator)
+        except KeyError:
+            txt = "Invalid terminal codon for {}: {}"
+            raise ValueError(txt.format(seq_id, terminal_codon)) from None
+        is_terminal_stop = terminal_codon in stop_codons or terminal_aa == "*"
         if is_terminal_stop:
             if emit_terminal_stop_warning:
                 txt = "Ignored terminal stop codon not present in amino acid alignment: {}\n"

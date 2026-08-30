@@ -3,7 +3,7 @@ Tests for cdskit backalign command.
 """
 
 import pytest
-
+import Bio.Data.CodonTable
 import Bio.SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
@@ -17,6 +17,43 @@ from cdskit.backalign import split_codons
 from cdskit.backalign import stop_if_not_multiple_of_three_after_gap_removal
 from cdskit.backalign import stop_if_sequence_ids_do_not_match
 from cdskit.backalign import translate_codons
+
+
+@pytest.mark.parametrize("table_id", sorted(Bio.Data.CodonTable.unambiguous_dna_by_id))
+def test_translate_backalign_roundtrip_all_genetic_codes(table_id):
+    import itertools
+    import warnings
+
+    from Bio import BiopythonWarning
+    from cdskit.backalign import backalign_sequence_strings
+    from cdskit.translate import translate_sequence_string
+
+    sequence = "".join("".join(codon) for codon in itertools.product("ACGT", repeat=3))
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", BiopythonWarning)
+        protein = translate_sequence_string(sequence, table_id, False)
+    assert (
+        backalign_sequence_strings(sequence, protein, table_id, "all-codons", False)
+        == sequence
+    )
+
+
+@pytest.mark.parametrize("table_id,terminal", [(27, "TGA"), (28, "TAA"), (31, "TAG")])
+def test_dual_coding_terminal_stop_may_be_omitted(table_id, terminal):
+    from cdskit.backalign import backalign_sequence_strings
+
+    assert (
+        backalign_sequence_strings("ATG" + terminal, "M", table_id, "seq", False)
+        == "ATG"
+    )
+    assert (
+        backalign_sequence_strings("ATG" + terminal, "M*", table_id, "seq", False)
+        == "ATG" + terminal
+    )
+    with pytest.raises(ValueError, match="Amino acid mismatch"):
+        backalign_sequence_strings(
+            "ATG" + terminal + "ATG", "M*M", table_id, "seq", False
+        )
 
 
 class TestBackalignHelpers:

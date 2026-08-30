@@ -1018,12 +1018,14 @@ def test_localize_learn_esm_head_head_only_mode(monkeypatch, temp_dir, mock_args
         use_class_weight,
         device,
         model_revision,
+        embedding_cache,
     ):
         captured["model_name"] = model_name
         captured["model_local_dir"] = model_local_dir
         captured["model_revision"] = model_revision
         captured["max_len"] = max_len
         captured["pooling"] = pooling
+        captured["embedding_cache"] = embedding_cache
         source_type = "local" if str(model_local_dir).strip() != "" else "huggingface"
         n_class = len(class_order)
         in_dim = 8
@@ -1042,17 +1044,21 @@ def test_localize_learn_esm_head_head_only_mode(monkeypatch, temp_dir, mock_args
             "device": str(device),
         }
 
-    def fake_predict_esm_head(aa_seq, localization_model, device="cpu"):
+    def fake_predict_esm_head_batch(
+        aa_sequences, localization_model, device="cpu", batch_size=128
+    ):
         class_order = list(localization_model["class_order"])
-        probs = {name: 0.0 for name in class_order}
-        probs[class_order[0]] = 1.0
-        return class_order[0], probs
+        probs = np.zeros((len(aa_sequences), len(class_order)))
+        probs[:, 0] = 1.0
+        return probs
 
     monkeypatch.setattr(esm_module, "require_transformers", fake_require_transformers)
     monkeypatch.setattr(
         esm_module, "fit_esm_head_classifier", fake_fit_esm_head_classifier
     )
-    monkeypatch.setattr(esm_module, "predict_esm_head", fake_predict_esm_head)
+    monkeypatch.setattr(
+        esm_module, "predict_esm_head_batch", fake_predict_esm_head_batch
+    )
 
     args = mock_args(
         training_tsv=str(train_tsv),
@@ -1091,6 +1097,7 @@ def test_localize_learn_esm_head_head_only_mode(monkeypatch, temp_dir, mock_args
     assert model["localization_model"]["model_source_type"] == "huggingface"
     assert captured["model_local_dir"] == ""
     assert captured["model_name"] == "facebook/esm2_t6_8M_UR50D"
+    assert captured["embedding_cache"].max_bytes > 0
 
 
 def test_localize_learn_rejects_invalid_dl_loss(mock_args):

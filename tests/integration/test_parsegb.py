@@ -12,6 +12,53 @@ from Bio.SeqFeature import SeqFeature, FeatureLocation
 from cdskit.parsegb import parsegb_main, parsegb_record
 
 
+@pytest.mark.parametrize("strand", [1, -1])
+@pytest.mark.parametrize("joined", [False, True])
+def test_cli_extracted_genbank_roundtrip_has_local_cds_coordinates(
+    tmp_path, strand, joined
+):
+    from Bio.SeqFeature import CompoundLocation
+    from cdskit.cli import main
+
+    record = SeqRecord(Seq("AAATGCCCCTTT"), id="sequence")
+    record.annotations = {"molecule_type": "DNA", "accessions": ["TEST001"]}
+    location = FeatureLocation(3, 9, strand=strand)
+    if joined:
+        parts = [
+            FeatureLocation(0, 3, strand=strand),
+            FeatureLocation(6, 9, strand=strand),
+        ]
+        location = CompoundLocation(parts if strand == 1 else parts[::-1])
+    cds = SeqFeature(location, type="CDS", qualifiers={"gene": ["test"]})
+    record.features = [cds]
+    source, destination = tmp_path / "source.gb", tmp_path / "cds.gb"
+    Bio.SeqIO.write([record], source, "genbank")
+    assert (
+        main(
+            [
+                "parsegb",
+                "--seq_file",
+                str(source),
+                "--out_file",
+                str(destination),
+                "--extract_cds",
+                "yes",
+                "--out_seq_format",
+                "genbank",
+                "--seq_name_format",
+                "accessions",
+            ]
+        )
+        == 0
+    )
+    extracted = Bio.SeqIO.read(destination, "genbank")
+    assert extracted.seq == cds.extract(record).seq
+    assert extracted.features[0].location == FeatureLocation(
+        0, len(extracted), strand=1
+    )
+    assert extracted.features[0].extract(extracted).seq == extracted.seq
+
+
 def create_genbank_record(
     seq, record_id, organism="Test organism", accession="TEST001"
 ):

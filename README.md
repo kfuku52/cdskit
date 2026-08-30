@@ -238,8 +238,7 @@ The dependency-light development loop runs unit and integration tests without
 loading optional ML frameworks:
 
 ```bash
-uv sync --locked --no-dev --group test
-uv run --no-sync python -m pytest -q tests/unit tests/integration -m "not ml and not subprocess"
+python scripts/check.py quick
 ```
 
 The committed `uv.lock` is the reproducible development and CI resolution.

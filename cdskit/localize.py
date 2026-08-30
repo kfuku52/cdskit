@@ -2,6 +2,10 @@ from functools import partial
 
 import numpy as np
 
+from cdskit.atomicio import validate_distinct_paths
+from cdskit.localize_batch import predict_localization_batch
+from cdskit.localize_runtime import PredictionRuntime, prediction_runtime
+
 from cdskit.localize_models import (
     is_pretrained_localize_model_alias,
     resolve_localize_model_path,
@@ -10,22 +14,14 @@ from cdskit.localize_model import (
     BROAD_FEATURE_NAMES,
     FEATURE_NAMES,
     LOCALIZATION_CLASSES,
-    apply_organism_group_constraints,
     extract_broad_localize_features,
-    extract_localize_features,
     load_localize_model,
-    normalize_localization_probability_matrix,
-    postprocess_localization_probabilities,
-    predict_perox_batch,
     predict_localization_and_peroxisome,
     predict_multilabel_localization,
     to_canonical_aa_sequence,
     translate_inframe_cds_to_aa,
     write_rows_json,
     write_rows_tsv,
-    apply_targetp_feature_ltp_specialist_postprocess_batch,
-    apply_targetp_specialist_postprocess_batch,
-    compose_two_stage_ctp_ltp_probabilities,
 )
 from cdskit.util import (
     parallel_map_ordered,
@@ -201,293 +197,23 @@ def _predict_single_label_records_batched(
     include_features,
     organism_group="",
 ):
-    model_type = str(model.get("model_type", ""))
-    localization_model = model["localization_model"]
-    feature_rows = [extract_localize_features(aa_seq=aa_seq) for aa_seq in aa_sequences]
-    feature_matrix = np.asarray(
-        [feature_vec for feature_vec, _ in feature_rows],
-        dtype=np.float32,
+    predictions = predict_localization_batch(
+        aa_sequences,
+        model,
+        organism_groups=[organism_group] * len(records),
     )
-    prob_matrix, class_order, batch_details = _predict_model_probability_matrix(
-        aa_sequences=aa_sequences,
-        feature_matrix=feature_matrix,
-        model_type=model_type,
-        localization_model=localization_model,
-        organism_group=organism_group,
-    )
-
-    perox_yes = predict_perox_batch(
-        feature_matrix=feature_matrix,
-        perox_model=model["perox_model"],
-        aa_sequences=aa_sequences,
-        organism_group=organism_group,
-    )
-
-    processed_probs = []
-    pred_classes = []
-    for i in range(len(records)):
-        class_probs = {
-            class_order[class_i]: float(prob_matrix[i, class_i])
-            for class_i in range(len(class_order))
-        }
-        if model_type == "targetp_blend_v1":
-            pred_class, class_probs = postprocess_localization_probabilities(
-                class_probs=class_probs,
-                localization_model=localization_model,
-            )
-        else:
-            class_probs = apply_organism_group_constraints(
-                class_probs=class_probs,
-                organism_group=organism_group,
-            )
-            pred_class, class_probs = postprocess_localization_probabilities(
-                class_probs=class_probs,
-                localization_model=localization_model,
-            )
-        processed_probs.append(class_probs)
-        pred_classes.append(pred_class)
-
-    processed_matrix = np.asarray(
-        [
-            [row[class_name] for class_name in LOCALIZATION_CLASSES]
-            for row in processed_probs
-        ],
-        dtype=np.float64,
-    )
-    if model_type == "targetp_blend_v1":
-        base_matrices = batch_details["base_probabilities"]
-        pred_classes = apply_targetp_specialist_postprocess_batch(
-            aa_sequences=aa_sequences,
-            base_prob_matrix=processed_matrix,
-            prob_a_matrix=base_matrices[0],
-            prob_b_matrix=base_matrices[1],
-            localization_model=localization_model,
-            organism_group=organism_group,
+    return [
+        _row_from_single_label_prediction(
+            record_id=record.id,
+            pred_class=pred["predicted_class"],
+            class_probs=pred["class_probabilities"],
+            perox_probs={"yes": pred["perox_probability_yes"]},
+            perox_signals={"signal_type": pred["perox_signal_type"]},
+            feature_vec=pred["feature_values"],
+            include_features=include_features,
         )
-    elif model_type == "targetp_feature_ensemble_v1":
-        pred_classes = apply_targetp_feature_ltp_specialist_postprocess_batch(
-            aa_sequences=aa_sequences,
-            base_prob_matrix=processed_matrix,
-            pred_classes=pred_classes,
-            localization_model=localization_model,
-            organism_group=organism_group,
-        )
-
-    rows = list()
-    for i, record in enumerate(records):
-        feature_vec, perox_signals = feature_rows[i]
-        p_yes = float(perox_yes[i])
-        rows.append(
-            _row_from_single_label_prediction(
-                record_id=record.id,
-                pred_class=pred_classes[i],
-                class_probs=processed_probs[i],
-                perox_probs={"yes": p_yes, "no": 1.0 - p_yes},
-                perox_signals=perox_signals,
-                feature_vec=feature_vec,
-                include_features=include_features,
-            )
-        )
-    return rows
-
-
-def _predict_model_probability_matrix(
-    aa_sequences,
-    feature_matrix,
-    model_type,
-    localization_model,
-    organism_group,
-):
-    """Batch base predictors and recursively batch TargetP blend models."""
-    num_rows = len(aa_sequences)
-    strategy = str(localization_model.get("strategy", "single_stage")).strip().lower()
-    if strategy in {"two_stage", "two_stage_ctp_ltp"}:
-        stage1, stage1_order, _ = _predict_model_probability_matrix(
-            aa_sequences=aa_sequences,
-            feature_matrix=feature_matrix,
-            model_type=model_type,
-            localization_model=localization_model.get("stage1_model", {}),
-            organism_group=organism_group,
-        )
-        stage2, stage2_order, _ = _predict_model_probability_matrix(
-            aa_sequences=aa_sequences,
-            feature_matrix=feature_matrix,
-            model_type=model_type,
-            localization_model=localization_model.get("stage2_model", {}),
-            organism_group=organism_group,
-        )
-        base_matrix = np.zeros((num_rows, len(LOCALIZATION_CLASSES)), dtype=np.float64)
-        no_tp_col = stage1_order.index("noTP")
-        tp_col = stage1_order.index("TP") if "TP" in stage1_order else None
-        base_matrix[:, 0] = stage1[:, no_tp_col]
-        tp_probs = (
-            stage1[:, tp_col]
-            if tp_col is not None
-            else np.maximum(0.0, 1.0 - base_matrix[:, 0])
-        )
-        for class_i, class_name in enumerate(LOCALIZATION_CLASSES[1:], start=1):
-            if class_name in stage2_order:
-                base_matrix[:, class_i] = (
-                    tp_probs * stage2[:, stage2_order.index(class_name)]
-                )
-        totals = np.sum(base_matrix, axis=1, keepdims=True)
-        totals[totals <= 0.0] = 1.0
-        base_matrix /= totals
-        if strategy == "two_stage":
-            return base_matrix, list(LOCALIZATION_CLASSES), {}
-        stage3_model = localization_model.get("stage3_model", None)
-        if not isinstance(stage3_model, dict) or len(stage3_model) == 0:
-            return base_matrix, list(LOCALIZATION_CLASSES), {}
-        stage3, stage3_order, _ = _predict_model_probability_matrix(
-            aa_sequences=aa_sequences,
-            feature_matrix=feature_matrix,
-            model_type=model_type,
-            localization_model=stage3_model,
-            organism_group=organism_group,
-        )
-        out_matrix = np.zeros_like(base_matrix)
-        for row_i in range(num_rows):
-            base_probs = {
-                class_name: float(base_matrix[row_i, class_i])
-                for class_i, class_name in enumerate(LOCALIZATION_CLASSES)
-            }
-            stage3_probs = {
-                class_name: float(stage3[row_i, class_i])
-                for class_i, class_name in enumerate(stage3_order)
-            }
-            out_probs, _ = compose_two_stage_ctp_ltp_probabilities(
-                base_class_probs=base_probs,
-                stage3_ctp_ltp_probs=stage3_probs,
-                stage3_gate_threshold=localization_model.get(
-                    "stage3_gate_threshold", 0.0
-                ),
-                stage3_blend_beta=localization_model.get("stage3_blend_beta", 1.0),
-                stage3_ltp_threshold=localization_model.get(
-                    "stage3_ltp_threshold", 0.5
-                ),
-            )
-            out_matrix[row_i] = [out_probs[name] for name in LOCALIZATION_CLASSES]
-        return out_matrix, list(LOCALIZATION_CLASSES), {}
-    if str(localization_model.get("mode", "")).strip().lower() == "constant":
-        class_order = list(localization_model.get("class_order", LOCALIZATION_CLASSES))
-        class_label = str(localization_model.get("class_label", "")).strip()
-        if class_label == "" and len(class_order) == 1:
-            class_label = class_order[0]
-        matrix = np.zeros((num_rows, len(class_order)), dtype=np.float64)
-        matrix[:, class_order.index(class_label)] = 1.0
-        return matrix, class_order, {}
-    if model_type == "bilstm_attention_v1":
-        from cdskit.localize_bilstm import predict_bilstm_attention_batch
-
-        prob_matrix = predict_bilstm_attention_batch(
-            aa_sequences=aa_sequences,
-            localization_model=localization_model,
-            device="cpu",
-            batch_size=DEFAULT_LOCALIZE_BATCH_SIZE,
-            feature_matrix=feature_matrix,
-        )
-        return np.asarray(prob_matrix), list(localization_model["class_order"]), {}
-    elif model_type == "esm_head_v1":
-        from cdskit.localize_esm_head import predict_esm_head_batch
-
-        prob_matrix = predict_esm_head_batch(
-            aa_sequences=aa_sequences,
-            localization_model=localization_model,
-            device="cpu",
-            batch_size=DEFAULT_ESM_BATCH_SIZE,
-        )
-        return np.asarray(prob_matrix), list(localization_model["class_order"]), {}
-    elif model_type == "targetp_torch_v1":
-        from cdskit.targetp_torch import predict_targetp2_torch_batch
-
-        prob_matrix = predict_targetp2_torch_batch(
-            aa_sequences=aa_sequences,
-            organism_groups=[organism_group] * len(aa_sequences),
-            localization_model=localization_model,
-            device="cpu",
-            batch_size=DEFAULT_LOCALIZE_BATCH_SIZE,
-        )
-        return np.asarray(prob_matrix), list(LOCALIZATION_CLASSES), {}
-    elif model_type == "targetp_feature_ensemble_v1":
-        from cdskit.localize_model import predict_targetp_feature_ensemble_batch
-
-        prob_matrix = predict_targetp_feature_ensemble_batch(
-            aa_sequences=aa_sequences,
-            localization_model=localization_model,
-            organism_group=organism_group,
-        )
-        return prob_matrix, list(LOCALIZATION_CLASSES), {}
-    elif model_type == "nearest_centroid_v1":
-        mean = np.asarray(localization_model["mean"], dtype=np.float64)
-        std = np.asarray(localization_model["std"], dtype=np.float64)
-        centroids = np.asarray(localization_model["centroids"], dtype=np.float64)
-        log_priors = np.asarray(localization_model["log_priors"], dtype=np.float64)
-        z = (np.asarray(feature_matrix, dtype=np.float64) - mean) / std
-        logits = (
-            -0.5
-            * np.sum(
-                (z[:, np.newaxis, :] - centroids[np.newaxis, :, :]) ** 2,
-                axis=2,
-            )
-            + log_priors[np.newaxis, :]
-        )
-        logits -= np.max(logits, axis=1, keepdims=True)
-        prob_matrix = np.exp(logits)
-        prob_matrix /= np.sum(prob_matrix, axis=1, keepdims=True)
-        return prob_matrix, list(localization_model["class_order"]), {}
-    elif model_type == "targetp_blend_v1":
-        base_models = localization_model.get("base_models", [])
-        if not isinstance(base_models, list) or len(base_models) != 2:
-            raise ValueError("targetp_blend_v1 requires exactly two base_models.")
-        base_matrices = []
-        for base_model in base_models:
-            base_matrix, base_order, _ = _predict_model_probability_matrix(
-                aa_sequences=aa_sequences,
-                feature_matrix=feature_matrix,
-                model_type=str(base_model.get("model_type", "")).strip(),
-                localization_model=base_model.get("localization_model", {}),
-                organism_group=organism_group,
-            )
-            reordered = np.zeros(
-                (num_rows, len(LOCALIZATION_CLASSES)),
-                dtype=np.float64,
-            )
-            for class_i, class_name in enumerate(LOCALIZATION_CLASSES):
-                if class_name in base_order:
-                    reordered[:, class_i] = base_matrix[:, base_order.index(class_name)]
-            reordered = normalize_localization_probability_matrix(
-                probability_matrix=reordered,
-                organism_group=organism_group,
-            )
-            base_matrices.append(reordered)
-        alpha_by_class = localization_model.get("alpha_by_class", 1.0)
-        alpha = np.ones((len(LOCALIZATION_CLASSES),), dtype=np.float64)
-        if isinstance(alpha_by_class, dict):
-            alpha[:] = [
-                _float_or_default(alpha_by_class.get(class_name, 1.0), 1.0)
-                for class_name in LOCALIZATION_CLASSES
-            ]
-        else:
-            try:
-                alpha[:] = float(alpha_by_class)
-            except (TypeError, ValueError):
-                alpha[:] = 1.0
-        alpha = np.clip(alpha, 0.0, 1.0)
-        prob_matrix = (
-            alpha[np.newaxis, :] * base_matrices[0]
-            + (1.0 - alpha[np.newaxis, :]) * base_matrices[1]
-        )
-        totals = np.sum(prob_matrix, axis=1, keepdims=True)
-        totals[totals <= 0.0] = 1.0
-        prob_matrix /= totals
-        return (
-            prob_matrix,
-            list(LOCALIZATION_CLASSES),
-            {
-                "base_probabilities": base_matrices,
-            },
-        )
-    raise ValueError("Unsupported batched localize model_type: {}".format(model_type))
+        for record, pred in zip(records, predictions, strict=True)
+    ]
 
 
 def _predict_multilabel_cnn_records_batched(
@@ -619,6 +345,16 @@ def _resolve_output_fields(include_features, model=None):
 
 
 def localize_main(args):
+    allow_download = (
+        _is_true_arg(args.model_download)
+        if hasattr(args, "model_download")
+        else not _is_true_arg(getattr(args, "no_model_download", False))
+    )
+    with prediction_runtime(PredictionRuntime(offline=not allow_download)):
+        return _localize_main(args)
+
+
+def _localize_main(args):
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
     seqtype = str(getattr(args, "seqtype", "dna") or "dna").strip().lower()
     if seqtype == "protein":
@@ -640,6 +376,7 @@ def localize_main(args):
         model=args.model,
         allow_download=allow_model_download,
     )
+    validate_distinct_paths(inputs=[args.seqfile, model_path], outputs=[args.report])
     allow_unsafe_model = _is_true_arg(
         getattr(args, "allow_unsafe_model", False)
     ) or is_pretrained_localize_model_alias(args.model)
@@ -647,8 +384,6 @@ def localize_main(args):
         model = load_localize_model(path=model_path, allow_unsafe=True)
     else:
         model = load_localize_model(path=model_path)
-    if isinstance(model.get("localization_model"), dict):
-        model["localization_model"]["_runtime_offline"] = not allow_model_download
     if str(model.get("model_type", "")) not in MULTILABEL_MODEL_TYPES:
         model_classes = tuple(model["localization_model"]["class_order"])
         if model_classes != LOCALIZATION_CLASSES:

@@ -1,107 +1,128 @@
 # Testing CDSKIT
 
-The test suite is organized by execution boundary:
-
-- `tests/unit`: isolated helpers and pure transformations.
-- `tests/integration`: command-level I/O and multi-component behavior.
-- `tests/ml`: tests whose module requires optional machine-learning packages.
-- `tests/fixtures`: immutable, repository-owned input and expected-output files.
-
-Tests in the first three directories receive the matching `unit`, `integration`,
-or `ml` pytest marker automatically. Individual optional tests in otherwise
-dependency-light modules are marked explicitly. Additional `slow`, `subprocess`,
-and `serial` markers document execution constraints.
-
-## Install
-
-CI and local development use the committed `uv.lock`. Install only what the
-selected check needs:
+The committed `uv.lock` is shared by local checks and GitHub Actions. Install
+[uv](https://docs.astral.sh/uv/getting-started/installation/) and use the same
+entry point as CI:
 
 ```bash
-uv sync --locked --no-dev --group test
-uv sync --locked --no-dev --group test --group coverage --extra ml
-uv sync --locked --only-group quality
-uv sync --locked --only-group build
-uv sync --locked --only-group security
+python scripts/check.py quick
+python scripts/check.py core --python 3.10
+python scripts/check.py ml
+python scripts/check.py quality
+python scripts/check.py coverage
+python scripts/check.py build
+python scripts/check.py all
 ```
 
-Use `uv sync --locked --extra ml` for the complete development environment.
-The PEP 621 extras remain available to pip users, for example
-`python -m pip install -e ".[test,coverage]"`.
+The script creates isolated environments under `.venvs/`, choosing Python 3.12
+unless `--python` is supplied. Core, full, and build checks have separate
+environments; they do not replace an existing `.venv` or remove another check's
+dependencies. Full checks install the test, coverage, quality, build, security
+and ML dependencies, and explicitly check ML imports before running pytest.
 
-Refresh the lock only as an intentional dependency update, then review and
-test the diff:
+The full environment uses the `ml-cpu` extra. On Linux this selects the official
+CPU-only PyTorch index through uv; other packages still come from PyPI.
+The normal `ml` extra and library dependency ranges remain unchanged.
+For GPU development, use `--ml-backend default` with the same script.
+The two backend profiles use separate environments.
+See [uv's PyTorch integration](https://docs.astral.sh/uv/guides/integration/pytorch/)
+for index configuration. With pip, use `cdskit[ml]` and select the appropriate
+PyTorch index separately; uv source settings are not wheel metadata.
+
+## Fast feedback
+
+`quick` runs unit and integration tests without ML or subprocess tests.
+`core` also exercises subprocess entry points. Both compile every package and
+script module under the selected Python version.
+
+Pass focused pytest options after `--`:
+
+```bash
+python scripts/check.py quick -- -k backalign -x
+python scripts/check.py quick -- --lf
+python scripts/check.py ml -- -k targetp
+```
+
+For repeated runs without synchronization, use the selected environment directly:
+
+```bash
+.venvs/core-3.12/bin/python -m pytest -q tests/unit/test_util.py
+```
+
+On Windows, its interpreter is `.venvs/core-3.12/Scripts/python.exe`.
+Use `-x` to stop on the first failure; pytest does not provide a built-in file
+watcher.
+
+## Quality and compatibility
+
+`quality` runs Ruff lint/format checks, mypy, the complexity guard (ceiling 35),
+and high-severity Bandit checks. Mypy checks against the running interpreter and
+its installed dependency stubs, including ML dependencies. Hard-coding a Python
+3.10 target while loading modern NumPy stubs under Python 3.12 is not supported.
+Minimum Python compatibility is instead compiled and exercised by the 3.10
+core check, alongside the newest supported Python.
+
+`coverage` runs all tests with two workers and combined branch/statement
+coverage. The project-wide 74% floor and the higher transactional I/O, dispatch,
+model-download and training-configuration floors are enforced.
+`all` additionally audits the installed dependencies, builds an sdist and wheel,
+and imports and exercises the installed wheel outside the checkout in a fresh
+environment (including sequence output and an SVG plot).
+
+GitHub Actions always runs the Linux Python boundaries and full CPU ML/quality/
+package validation. Changes to core I/O, CLI, dependencies, tests or workflow
+infrastructure also run macOS and Windows coverage. Pure ML implementation,
+tests restricted to `tests/ml`, or
+documentation changes do not require those platform jobs. Scheduled and manual
+runs cover all nine core OS/Python combinations. Short validation jobs share a
+single environment; superseded runs are cancelled.
+
+The weekly security workflow also audits the normal GPU-capable ML resolution,
+including dependencies absent from CPU-only CI.
+
+## Benchmarks
+
+```bash
+.venvs/core-3.12/bin/python -m cdskit.benchmark_hotpaths --full --repeats 5 > baseline.json
+.venvs/core-3.12/bin/python -m cdskit.benchmark_hotpaths --full --repeats 5 --baseline baseline.json > current.json
+```
+
+Reports use schema version 2: workload results are under `benchmarks`, with
+`environment` metadata (commit, Python, package versions and CPU) and
+`process_peak_rss_bytes`. RSS is the whole benchmark process high-water mark,
+not an allocation measurement for each workload; it is unavailable on Windows.
+Each workload warms once and hashes its complete output outside the timed
+region, checking every repetition for consistency.
+
+Comparisons require matching workloads, Python/dependencies and CPU metadata.
+Changed outputs are reported separately from slowdowns; legacy reports and
+different environments are marked incomparable. The weekly workflow compares
+against the latest retained successful result, writes a job summary, and warns
+on output changes or a median slowdown exceeding 30%. Timing warnings do not
+fail CI: confirm them with repeated runs on the same hardware. JSON artifacts
+are retained for 30 days. There are no fixed timing assertions in tests.
+
+## Dependencies and test layout
+
+Refresh the lock only as an intentional dependency update and review its diff:
 
 ```bash
 uv lock --upgrade
 uv lock --check
 ```
 
-## Common commands
+Dependency minimums describe API compatibility, not a recommendation to keep old
+releases. Test newly resolved compatible packages when updating the lock; do not
+add upper bounds merely to freeze the development environment.
 
-Use the dependency-light suite for the normal edit/test loop:
+- `tests/unit`: isolated helpers and pure transformations.
+- `tests/integration`: command-level I/O and multi-component behavior.
+- `tests/ml`: optional machine-learning packages.
+- `tests/fixtures`: immutable repository-owned inputs and expected outputs.
 
-```bash
-uv run --no-sync python -m pytest -q tests/unit tests/integration -m "not ml and not subprocess"
-```
-
-Run one boundary or the optional ML tests:
-
-```bash
-uv run --no-sync python -m pytest -q tests/unit
-uv run --no-sync python -m pytest -q tests/integration -m "not ml"
-uv run --no-sync python -m pytest -q -m ml
-```
-
-Run every installed test:
-
-```bash
-uv run --no-sync python -m pytest -q
-```
-
-Run the same parallel coverage check used by CI:
-
-```bash
-uv run --no-sync python -m pytest -q -n 2 --dist=worksteal \
-  --cov=cdskit --cov-report=term-missing --cov-report=json:coverage.json
-uv run --no-sync python scripts/check_coverage.py coverage.json
-```
-
-Coverage is branch-aware. The project-wide 74% floor is complemented by
-higher module-specific floors for transactional I/O, command dispatch,
-pretrained-model downloads, and TargetP training configuration.
-
-Run the security and complexity guards used by CI:
-
-```bash
-uv run --no-sync python -m ruff format --check cdskit scripts tests
-uv run --no-sync python -m ruff check cdskit scripts tests
-uv run --no-sync python -m mypy cdskit
-uv run --no-sync python -m pip_audit --local --skip-editable
-uv run --no-sync python -m bandit -q -r cdskit -lll
-uv run --no-sync python -m ruff check cdskit --select C901
-```
-
-The complexity ceiling is 35. A scheduled GitHub Actions workflow runs the
-full CPU hot-path benchmark weekly and retains its JSON result for 90 days.
-
-Dependency minimums express API compatibility, not a recommendation to retain
-old releases indefinitely. Use a freshly resolved environment for production
-work so patched versions satisfying the declared ranges are installed. GitHub
-Actions repeats the dependency and source-security audit every Monday.
-
-For a short feedback loop after a failure, use `--lf` to rerun failures or
-`-f` to stop on the first failure and restart when a test file changes.
-
-## Test-writing rules
-
-- Prefer pytest's `tmp_path`; `temp_dir` remains as a compatibility alias.
-- Reuse the `record_factory`, `write_fasta`, and `write_tsv` fixtures for small
-  generated inputs.
-- Keep behavior assertions in-process. Reserve subprocess tests for installed
-  entry points and executable wrappers.
-- Missing tracked fixtures are test failures, not reasons to skip.
-- Mark optional dependency tests with `ml` and expensive training/E2E tests
-  with `slow`.
-- Do not add fixed timing assertions. Review `--durations` output in CI when a
-  regression changes the slowest tests.
+Directories supply `unit`, `integration`, and `ml` markers automatically.
+Mark individual optional tests in otherwise dependency-light modules explicitly.
+Use `slow`, `subprocess`, and `serial` when their execution requires it.
+Prefer pytest's `tmp_path` and the shared record/FASTA/TSV fixtures. Missing tracked
+fixtures are failures, not reasons to skip. Keep assertions in-process except
+when checking installed entry points or executable wrappers.

@@ -485,6 +485,72 @@ class TestReplaceSeq2Cds:
         result = util.replace_seq2cds(record)
         assert result is None
 
+    @pytest.mark.parametrize(
+        "strand,exception,expected",
+        [
+            (1, "(pos:7..9,aa:Sec)", "(pos:4..6,aa:Sec)"),
+            (-1, "(pos:complement(7..9),aa:Sec)", "(pos:1..3,aa:Sec)"),
+        ],
+    )
+    def test_cds_coordinate_qualifiers_and_references_are_not_left_on_genome(
+        self, strand, exception, expected
+    ):
+        from Bio.SeqFeature import Reference
+
+        record = SeqRecord(Seq("AAATGCCCCTTT"), id="cds_record")
+        reference = Reference()
+        reference.title = "Original reference"
+        reference.location = [FeatureLocation(0, 12)]
+        record.annotations = {
+            "molecule_type": "DNA",
+            "references": [reference],
+            "contig": "join(old:1..12)",
+        }
+        record.features = [
+            SeqFeature(
+                FeatureLocation(3, 9, strand=strand),
+                type="CDS",
+                qualifiers={"transl_except": [exception]},
+            )
+        ]
+        extracted = util.replace_seq2cds(record)
+        assert extracted.features[0].qualifiers["transl_except"] == [expected]
+        assert "contig" not in extracted.annotations
+        assert extracted.annotations["references"][0].title == "Original reference"
+        assert extracted.annotations["references"][0].location == []
+        assert reference.location == [FeatureLocation(0, 12)]
+
+    @pytest.mark.parametrize("strand", [1, -1])
+    @pytest.mark.parametrize("joined", [False, True])
+    def test_extraction_rebases_features_and_letter_annotations(self, strand, joined):
+        from Bio.SeqFeature import CompoundLocation
+
+        record = SeqRecord(Seq("AAATGCCCCTTT"), id="cds_record")
+        record.annotations = {"molecule_type": "DNA", "topology": "circular"}
+        record.letter_annotations["phred_quality"] = list(range(len(record)))
+        location = FeatureLocation(3, 9, strand=strand)
+        if joined:
+            parts = [
+                FeatureLocation(0, 3, strand=strand),
+                FeatureLocation(6, 9, strand=strand),
+            ]
+            location = CompoundLocation(parts if strand == 1 else parts[::-1])
+        cds = SeqFeature(location, type="CDS", qualifiers={"gene": ["example"]})
+        record.features = [SeqFeature(FeatureLocation(0, 12), type="source"), cds]
+        expected = cds.extract(record)
+        extracted = util.replace_seq2cds(record)
+        assert extracted.seq == expected.seq
+        assert extracted.letter_annotations == expected.letter_annotations
+        assert len(extracted.features) == 1
+        assert extracted.features[0].location == FeatureLocation(
+            0, len(expected), strand=1
+        )
+        assert extracted.features[0].extract(extracted).seq == expected.seq
+        assert extracted.features[0].qualifiers == cds.qualifiers
+        assert extracted.annotations["topology"] == "linear"
+        assert str(record.seq) == "AAATGCCCCTTT"
+        assert record.features[1].location == location
+
 
 class TestReadGff:
     """Tests for read_gff function."""

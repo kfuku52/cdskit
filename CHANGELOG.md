@@ -4,6 +4,47 @@ This project follows semantic versioning. Deprecated CLI spellings remain
 available for at least the 0.24 release series and print their canonical
 replacement to standard error.
 
+## 0.28.0 — 2026-08-31
+
+### Fixed
+
+- Protect every CLI input, including auxiliary alignments, accession lists and
+  resolved model aliases; validate generated output names and file aliases.
+- Reject directory/special-file destinations and overlapping output paths before
+  staging. Restore dangling symlinks correctly after a failed multi-file commit.
+- Commit `filter` and `trimcodon` sequence outputs and reports together, preserving
+  both existing files when either write fails.
+- Rebase extracted GenBank CDS locations and translation exceptions, preserve
+  per-letter annotations, and remove stale genomic feature/reference coordinates.
+- Make backalignment agree with translation for context-dependent genetic codes
+  27, 28 and 31 while retaining terminal-stop handling.
+- Record data/configuration/fold provenance in every TargetP epoch checkpoint.
+  Interrupted nested OOF runs can resume; extending the epoch budget is supported
+  without accepting changed data or numerical training settings.
+- Aggregate TargetP classification and cleavage losses with their respective
+  denominators, independent of validation batch size and ordering.
+- Apply offline prediction settings to every nested ESM stage and blend component.
+
+### Performance and development
+
+- Compute frozen ESM embeddings once for head training; share a bounded,
+  label-independent cache across folds and classifier stages.
+- Share bounded batch prediction between the CLI, training metrics and CV; honor
+  the evaluation device and preserve organism constraints and stage-3 OOF details.
+- Reuse the optimized specialist feature implementation in training and inference.
+- Add `python scripts/check.py` with isolated, locked check environments. Mypy now
+  targets its actual interpreter and installed dependency stubs; minimum Python
+  support retains compile and core-test checks.
+- Add a separate uv `ml-cpu` profile for Linux CI, without changing normal ML
+  dependency ranges or GPU installation. Combine short validation jobs and gate
+  platform runners on relevant changes, with full scheduled/manual coverage.
+- Benchmark JSON schema 2 records environment, output hashes and process peak RSS.
+  Scheduled runs compare retained results and flag output changes or slowdowns.
+  See [TESTING.md](TESTING.md) for commands and the new report layout.
+
+See the [review follow-up](docs/review-0.28.md) for regression evidence,
+before/after measurements and compatibility limits.
+
 ## 0.27.0 — 2026-08-10
 
 ### Development

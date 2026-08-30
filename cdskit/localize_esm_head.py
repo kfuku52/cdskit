@@ -1,6 +1,7 @@
-import os
-
 import numpy as np
+
+from cdskit.esm_embeddings import encoder_cache_key
+from cdskit.localize_runtime import offline_requested
 
 
 DEFAULT_ESM_MODEL_REVISION = "c731040fcd8d73dceaa04b0a8e6329b345b0f5df"
@@ -72,6 +73,52 @@ def _resolve_model_source(model_name, model_local_dir=""):
     return model_name, False, "huggingface"
 
 
+def _encode_frozen_sequences(
+    aa_sequences,
+    tokenizer,
+    encoder,
+    device,
+    max_len,
+    pooling,
+    batch_size,
+    cache,
+    cache_key,
+    torch,
+):
+    features = np.empty(
+        (len(aa_sequences), int(encoder.config.hidden_size)), dtype=np.float32
+    )
+    missing: dict[str, list[int]] = {}
+    for index, sequence in enumerate(aa_sequences):
+        cached = cache.get(cache_key, sequence) if cache is not None else None
+        if cached is None:
+            missing.setdefault(sequence, []).append(index)
+        else:
+            features[index] = cached
+    sequences = list(missing)
+    with torch.no_grad():
+        for start in range(0, len(sequences), int(batch_size)):
+            batch = sequences[start : start + int(batch_size)]
+            tokens = tokenizer(
+                batch,
+                return_tensors="pt",
+                padding=True,
+                truncation=True,
+                max_length=int(max_len),
+            )
+            tokens = {key: value.to(device) for key, value in tokens.items()}
+            output = encoder(**tokens)
+            pooled = _pool_last_hidden(
+                output.last_hidden_state, tokens["attention_mask"], pooling, torch
+            )
+            values = pooled.detach().cpu().numpy()
+            for sequence, value in zip(batch, values, strict=True):
+                features[missing[sequence]] = value
+                if cache is not None:
+                    cache.put(cache_key, sequence, value)
+    return features
+
+
 def fit_esm_head_classifier(
     aa_sequences,
     labels,
@@ -88,6 +135,7 @@ def fit_esm_head_classifier(
     use_class_weight,
     device,
     model_revision=DEFAULT_ESM_MODEL_REVISION,
+    embedding_cache=None,
 ):
     torch, nn, AutoTokenizer, AutoModel = require_transformers()
     np.random.seed(int(seed))
@@ -117,7 +165,7 @@ def fit_esm_head_classifier(
     if source_type != "local" and revision == "":
         raise ValueError("--esm_model_revision is required for a remote ESM model.")
     common_kwargs: dict[str, object] = {
-        "local_files_only": bool(local_files_only),
+        "local_files_only": bool(local_files_only or offline_requested()),
         "trust_remote_code": False,
     }
     if revision is not None:
@@ -142,6 +190,21 @@ def fit_esm_head_classifier(
         num_class=len(class_order),
     )
     head.to(resolved_device)
+
+    pooled_features = _encode_frozen_sequences(
+        aa_sequences,
+        tokenizer,
+        encoder,
+        resolved_device,
+        max_len,
+        pooling,
+        batch_size,
+        embedding_cache,
+        encoder_cache_key(str(model_source), revision, max_len, pooling),
+        torch,
+    )
+    # The encoder is frozen; only the much smaller pooled matrix is needed below.
+    del encoder, tokenizer
 
     weight_tensor = None
     if bool(use_class_weight):
@@ -175,28 +238,12 @@ def fit_esm_head_classifier(
         rng.shuffle(indices)
         for start in range(0, indices.shape[0], int(batch_size)):
             batch_idx = indices[start : start + int(batch_size)]
-            batch_seq = [aa_sequences[i] for i in batch_idx.tolist()]
             batch_y = torch.as_tensor(
                 y[batch_idx],
                 dtype=torch.long,
                 device=resolved_device,
             )
-            tokens = tokenizer(
-                batch_seq,
-                return_tensors="pt",
-                padding=True,
-                truncation=True,
-                max_length=int(max_len),
-            )
-            tokens = {k: v.to(resolved_device) for k, v in tokens.items()}
-            with torch.no_grad():
-                out = encoder(**tokens)
-                pooled = _pool_last_hidden(
-                    last_hidden_state=out.last_hidden_state,
-                    attention_mask=tokens["attention_mask"],
-                    pooling=pooling,
-                    torch=torch,
-                )
+            pooled = torch.as_tensor(pooled_features[batch_idx], device=resolved_device)
             optimizer.zero_grad(set_to_none=True)
             logits = head(pooled)
             loss = loss_fn(logits, batch_y)
@@ -237,9 +284,8 @@ def _get_runtime_esm_encoder_and_head(localization_model, device_text="cpu"):
         model_name=model_name,
         model_local_dir=model_local_dir,
     )
-    offline = bool(localization_model.get("_runtime_offline", False)) or (
-        str(os.environ.get("CDSKIT_OFFLINE", "")).strip().lower()
-        in {"1", "true", "t", "yes", "y", "on"}
+    offline = (
+        bool(localization_model.get("_runtime_offline", False)) or offline_requested()
     )
     common_kwargs: dict[str, object] = {
         "local_files_only": bool(local_files_only or offline),

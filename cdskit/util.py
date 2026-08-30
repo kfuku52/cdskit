@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from copy import deepcopy
 import re
 import sys
 from collections.abc import Callable, Iterable, Iterator, Sequence
@@ -10,6 +11,7 @@ from typing import Any, TypeVar
 import Bio.Data.CodonTable
 import Bio.Seq
 import Bio.SeqIO
+from Bio.SeqFeature import Location, SeqFeature, SimpleLocation
 from Bio.SeqRecord import SeqRecord
 
 from cdskit.cliutil import resolve_threads as resolve_cli_threads
@@ -534,13 +536,87 @@ def get_seqname(record: SeqRecord, seqnamefmt: str) -> str:
     return seqname
 
 
+def _cds_qualifiers_in_extracted_coordinates(
+    feature: SeqFeature, record_length: int
+) -> dict[str, Any]:
+    qualifiers = deepcopy(feature.qualifiers)
+    if "transl_except" not in qualifiers:
+        return qualifiers
+    cds_location = feature.location
+    if cds_location is None:
+        raise ValueError("Cannot rebase transl_except without a CDS location.")
+    rebased = []
+    for exception in qualifiers["transl_except"]:
+        match = re.fullmatch(r"\(pos:(.+),aa:([^,()]+)\)", exception)
+        if match is None:
+            raise ValueError(f"Cannot rebase CDS transl_except: {exception}")
+        location = Location.fromstring(match[1], length=record_length)
+        if not 1 <= len(location) <= 3:
+            raise ValueError(
+                f"CDS transl_except must identify at most one codon: {exception}"
+            )
+        mapped = []
+        for position in location:
+            offset = 0
+            matches = []
+            for part in cds_location.parts:
+                if position in part:
+                    local = (
+                        int(part.end) - 1 - position
+                        if part.strand == -1
+                        else position - int(part.start)
+                    )
+                    matches.append(offset + local)
+                offset += len(part)
+            if len(matches) != 1:
+                raise ValueError(
+                    f"CDS transl_except is not uniquely contained in the CDS: {exception}"
+                )
+            mapped.append(matches[0])
+        mapped.sort()
+        if mapped != list(range(mapped[0], mapped[-1] + 1)):
+            raise ValueError(
+                f"CDS transl_except is not contiguous after extraction: {exception}"
+            )
+        start, end = mapped[0] + 1, mapped[-1] + 1
+        position_text = str(start) if start == end else f"{start}..{end}"
+        rebased.append(f"(pos:{position_text},aa:{match[2]})")
+    qualifiers["transl_except"] = rebased
+    return qualifiers
+
+
 def replace_seq2cds(record: SeqRecord) -> SeqRecord | None:
+    """Extract the first CDS in coding orientation, with local coordinates.
+
+    Only the selected CDS is retained: other genomic features may span removed
+    introns or flanking sequence and cannot safely keep their old locations.
+    SeqFeature.extract also slices/reverses per-letter annotations.
+    """
     for feature in record.features:
         if feature.type == "CDS":
             if feature.location is None:
                 continue
-            record.seq = feature.location.extract(record).seq
-            return record
+            extracted = feature.extract(record)
+            extracted.id = record.id
+            extracted.name = record.name
+            extracted.description = record.description
+            extracted.dbxrefs = list(record.dbxrefs)
+            extracted.annotations = deepcopy(record.annotations)
+            extracted.annotations["topology"] = "linear"
+            extracted.annotations.pop("contig", None)
+            for reference in extracted.annotations.get("references", []):
+                reference.location = []
+            extracted.features = [
+                SeqFeature(
+                    SimpleLocation(0, len(extracted), strand=1),
+                    type="CDS",
+                    id=feature.id,
+                    qualifiers=_cds_qualifiers_in_extracted_coordinates(
+                        feature, len(record)
+                    ),
+                )
+            ]
+            return extracted
     txt = "Removed from output. No CDS found in: {}\n"
     sys.stderr.write(txt.format(record.id))
     return None

@@ -6,6 +6,7 @@ import random
 import statistics
 import tempfile
 import time
+import sys
 from pathlib import Path
 
 from Bio.Seq import Seq
@@ -18,18 +19,31 @@ from cdskit.localize_model import extract_targetp_feature_ensemble_features
 from cdskit.maxalign import build_variable_subset_masks, evaluate_exact_subset_range
 from cdskit.translate import translate_sequence_string
 from cdskit.util import read_gff
+from cdskit.benchmarking import (
+    compare_reports,
+    environment_metadata,
+    output_fingerprint,
+    peak_rss_bytes,
+)
 
 
 def measure(worker, repeats):
+    if repeats < 1:
+        raise ValueError("Benchmark repeats must be positive.")
+    expected = output_fingerprint(worker())
     samples = []
     for _ in range(repeats):
         started = time.perf_counter()
-        worker()
+        result = worker()
         samples.append(time.perf_counter() - started)
+        if output_fingerprint(result) != expected:
+            raise ValueError("Benchmark output changed between repeated runs.")
     return {
         "median_seconds": statistics.median(samples),
         "minimum_seconds": min(samples),
         "samples_seconds": samples,
+        "output_sha256": expected,
+        "warmup_runs": 1,
     }
 
 
@@ -149,13 +163,39 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--full", action="store_true", help="Use larger workloads.")
     parser.add_argument("--repeats", default=3, type=int)
+    parser.add_argument(
+        "--baseline", type=Path, help="Compare with a saved schema-2 JSON report."
+    )
+    parser.add_argument(
+        "--max-slowdown",
+        default=0.3,
+        type=float,
+        help="Flag median time increases above this fraction (default: 0.3).",
+    )
     args = parser.parse_args(argv)
     if args.repeats <= 0:
         parser.error("--repeats should be positive")
-    report = run_benchmarks(
+    if not 0.0 <= args.max_slowdown < float("inf"):
+        parser.error("--max-slowdown should be finite and nonnegative")
+    benchmarks = run_benchmarks(
         scale=10 if args.full else 1,
         repeats=args.repeats,
     )
+    report = {
+        "schema_version": 2,
+        "environment": environment_metadata(),
+        "process_peak_rss_bytes": peak_rss_bytes(),
+        "benchmarks": benchmarks,
+    }
+    if args.baseline is not None:
+        baseline = json.loads(args.baseline.read_text(encoding="utf-8"))
+        report["comparison"] = compare_reports(report, baseline, args.max_slowdown)
+        if report["comparison"]["status"] != "ok":
+            print(
+                "Benchmark comparison: "
+                + json.dumps(report["comparison"], sort_keys=True),
+                file=sys.stderr,
+            )
     print(json.dumps(report, indent=2, sort_keys=True))
     return report
 

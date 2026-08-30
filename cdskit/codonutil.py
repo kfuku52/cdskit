@@ -14,6 +14,7 @@ CodonTableKey: TypeAlias = int | str
 CodonComponents: TypeAlias = dict[str, Any]
 
 _CODON_TABLE_CACHE: dict[CodonTableKey, CodonComponents] = {}
+_CODON_TRANSLATOR_CACHE: dict[CodonTableKey, CodonComponents] = {}
 _CODON_CLASSIFICATION_CACHE: dict[CodonTableKey, dict[str, int]] = {}
 _DEGENERACY_CACHE: dict[
     CodonTableKey,
@@ -24,6 +25,42 @@ CODON_CLEAN = 0
 CODON_MISSING = 1
 CODON_AMBIGUOUS = 2
 CODON_STOP = 3
+
+
+def get_codon_translator(codontable: CodonTableKey) -> CodonComponents:
+    """Cache an ambiguous-DNA translator with forward-table precedence.
+
+    Context-dependent stop codons (tables 27, 28 and 31) encode amino acids in
+    ordinary translation. Terminal-stop acceptance is a separate CDS decision.
+    """
+    if codontable not in _CODON_TRANSLATOR_CACHE:
+        try:
+            table = Bio.Data.CodonTable.ambiguous_dna_by_id[int(codontable)]
+        except (KeyError, TypeError, ValueError):
+            table = Bio.Data.CodonTable.ambiguous_dna_by_name[str(codontable)]
+        _CODON_TRANSLATOR_CACHE[codontable] = {
+            "forward_table": table.forward_table,
+            "stop_codons": frozenset(table.stop_codons),
+            "cache": {},
+        }
+    return _CODON_TRANSLATOR_CACHE[codontable]
+
+
+def translate_single_codon(codon: str, translator: CodonComponents) -> str:
+    """Translate a codon; raise KeyError for invalid DNA, use X for ambiguity."""
+    codon = codon.upper()
+    cache: dict[str, str] = translator["cache"]
+    if codon not in cache:
+        try:
+            aa = translator["forward_table"][codon]
+        except Bio.Data.CodonTable.TranslationError:
+            aa = "X"
+        except KeyError:
+            if codon not in translator["stop_codons"]:
+                raise
+            aa = "*"
+        cache[codon] = aa
+    return cache[codon]
 
 
 def get_codon_table_components(codontable: CodonTableKey) -> CodonComponents:

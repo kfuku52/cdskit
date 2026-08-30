@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: performance-benchmark
@@ -19,6 +20,7 @@ jobs:
   benchmark:
     name: CPU hot paths / ubuntu-latest / Python 3.12
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -35,8 +37,10 @@ jobs:
       - name: Install locked runtime dependencies
         run: uv sync --locked --no-dev
 
-      - name: Run full benchmark suite
-        run: uv run --no-sync python -m cdskit.benchmark_hotpaths --full --repeats 3 > benchmark.json
+      - name: Run benchmarks and compare with the previous retained result
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: uv run --no-sync python scripts/benchmark_ci.py
 
       - name: Validate and print results
         run: uv run --no-sync python -m json.tool benchmark.json
@@ -47,4 +51,4 @@ jobs:
           name: cpu-hotpaths-${{ github.sha }}
           path: benchmark.json
           if-no-files-found: error
-          retention-days: 90
+          retention-days: 30

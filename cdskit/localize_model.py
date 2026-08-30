@@ -11,6 +11,7 @@ from cdskit.translate import translate_sequence_string
 from cdskit.tsvio import write_tsv as write_tsv_file
 from cdskit.atomicio import atomic_output_path, atomic_write_json
 from cdskit.util import DNA_ALLOWED_CHARS
+from cdskit.localize_runtime import current_prediction_runtime
 
 LOCALIZATION_CLASSES = ("noTP", "SP", "mTP", "cTP", "lTP")
 TP_STAGE_CLASSES = ("SP", "mTP", "cTP", "lTP")
@@ -1111,7 +1112,7 @@ def predict_multilabel_localization(aa_seq, model, kingdom=""):
         pred = predict_multilabel_cnn_batch(
             aa_sequences=[aa_seq],
             localization_model=localization_model,
-            device="cpu",
+            device=current_prediction_runtime().device,
             batch_size=1,
             feature_matrix=feature_matrix,
             apply_thresholds=True,
@@ -1374,7 +1375,7 @@ def _predict_localization_from_model(
         return predict_bilstm_attention(
             aa_seq=aa_seq,
             localization_model=localization_model,
-            device="cpu",
+            device=current_prediction_runtime().device,
             feature_vec=feature_vec,
         )
     if model_type == "esm_head_v1":
@@ -1383,7 +1384,7 @@ def _predict_localization_from_model(
         return predict_esm_head(
             aa_seq=aa_seq,
             localization_model=localization_model,
-            device="cpu",
+            device=current_prediction_runtime().device,
         )
     if model_type == "targetp_feature_ensemble_v1":
         return predict_targetp_feature_ensemble_localization(
@@ -1398,6 +1399,7 @@ def _predict_localization_from_model(
             aa_seq=aa_seq,
             localization_model=localization_model,
             organism_group=organism_group,
+            device=current_prediction_runtime().device,
         )
     if model_type == "targetp_blend_v1":
         return predict_targetp_blend_localization(

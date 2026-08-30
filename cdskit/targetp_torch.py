@@ -15,6 +15,7 @@ from cdskit.localize_model import (
     softmax,
 )
 from cdskit.atomicio import atomic_write_json
+from cdskit.targetp_loss import TargetPLossTotals, targetp_loss_components
 from cdskit.targetp_training import (
     merge_targetp_training_config,
     parse_targetp_training_options,
@@ -1176,32 +1177,15 @@ def _targetp_type_class_weight_vector(y_type_train, mode, num_class):
 def _targetp2_loss(
     torch, outputs, y_type, y_cs, type_weight=None, cleavage_loss_weight=1.0
 ):
-    import torch.nn.functional as F
-
-    type_logits = outputs["type_logits"]
-    align = outputs["attention_logits"]
-    loss = F.cross_entropy(type_logits, y_type.long(), weight=type_weight)
-    cleavage_loss_weight = float(cleavage_loss_weight)
-    if cleavage_loss_weight <= 0.0:
-        return loss
-    cs_pos = torch.argmax(y_cs.long(), dim=1)
-    batch_size = max(1, int(y_type.shape[0]))
-    for class_idx, head_idx in TARGETP_SIGNAL_CLASS_TO_HEAD.items():
-        class_mask = y_type.long() == int(class_idx)
-        if torch.any(class_mask):
-            per_sample = F.cross_entropy(
-                align[:, :, int(head_idx)],
-                cs_pos,
-                reduction="none",
-            )
-            loss = loss + (
-                cleavage_loss_weight
-                * (
-                    (per_sample * class_mask.to(dtype=per_sample.dtype)).sum()
-                    / float(batch_size)
-                )
-            )
-    return loss
+    return targetp_loss_components(
+        torch,
+        outputs,
+        y_type,
+        y_cs,
+        TARGETP_SIGNAL_CLASS_TO_HEAD,
+        type_weight,
+        cleavage_loss_weight,
+    ).mean()
 
 
 def _iter_minibatches(num_rows, batch_size, rng, shuffle=True):
@@ -1286,7 +1270,7 @@ def _evaluate_encoded(
     cleavage_loss_weight=1.0,
 ):
     module.eval()
-    losses = list()
+    losses = TargetPLossTotals()
     probs = list()
     with torch.no_grad():
         for batch_idx in _iter_minibatches(
@@ -1298,15 +1282,16 @@ def _evaluate_encoded(
             lb = torch.as_tensor(lengths[batch_idx], dtype=torch.long, device=device)
             ob = torch.as_tensor(org[batch_idx], dtype=torch.long, device=device)
             outputs = module(x=xb, lengths=lb, organism=ob, rnn_keep_prob=1.0)
-            loss = _targetp2_loss(
+            loss = targetp_loss_components(
                 torch=torch,
                 outputs=outputs,
                 y_type=yb,
                 y_cs=cb,
+                signal_class_to_head=TARGETP_SIGNAL_CLASS_TO_HEAD,
                 type_weight=type_weight,
                 cleavage_loss_weight=cleavage_loss_weight,
             )
-            losses.append(float(loss.detach().cpu().item()))
+            losses.add(loss)
             probs.append(
                 torch.softmax(outputs["type_logits"], dim=1).detach().cpu().numpy()
             )
@@ -1321,9 +1306,7 @@ def _evaluate_encoded(
         else np.zeros((0,), dtype=np.int64)
     )
     return {
-        "loss": float(np.mean(np.asarray(losses, dtype=np.float64)))
-        if len(losses) > 0
-        else 0.0,
+        "loss": losses.mean(),
         "macro_f1": _macro_f1_from_indices(y_type, pred, len(LOCALIZATION_CLASSES))
         if prob.shape[0] > 0
         else 0.0,
@@ -1374,6 +1357,7 @@ def _targetp_torch_payload(
     rng=None,
     torch=None,
     latest_state=None,
+    training_fingerprint=None,
 ):
     payload = {
         "model_type": TARGETP_TORCH_MODEL_TYPE,
@@ -1401,6 +1385,8 @@ def _targetp_torch_payload(
     }
     if optimizer is not None:
         payload["optimizer_state"] = optimizer.state_dict()
+    if training_fingerprint is not None:
+        payload["training_fingerprint"] = training_fingerprint
     if rng is not None:
         payload["rng_state"] = copy.deepcopy(rng.bit_generator.state)
     if torch is not None:
@@ -1448,10 +1434,22 @@ def fit_targetp2_torch_model(
     verbose=False,
     resume_payload=None,
     epoch_checkpoint_path="",
+    training_fingerprint=None,
     **kwargs,
 ):
     torch, nn = require_torch()
     _limit_torch_threads(torch)
+    if isinstance(resume_payload, dict):
+        saved_fingerprint = resume_payload.get("training_fingerprint")
+        if (
+            training_fingerprint is not None
+            and saved_fingerprint != training_fingerprint
+        ):
+            raise ValueError(
+                "Checkpoint provenance does not match the training configuration."
+            )
+        if training_fingerprint is None:
+            training_fingerprint = saved_fingerprint
     resume_state_impl = (
         _payload_rnn_impl_from_state(resume_payload)
         if isinstance(resume_payload, dict)
@@ -1598,7 +1596,7 @@ def fit_targetp2_torch_model(
 
     for epoch in range(start_epoch, epochs):
         module.train()
-        train_losses = list()
+        train_losses = TargetPLossTotals()
         if balanced_batch:
             balanced_classes, pools, cursors = _init_balanced_pools(
                 y_train=y_type_train,
@@ -1643,14 +1641,16 @@ def fit_targetp2_torch_model(
                 organism=ob,
                 rnn_keep_prob=float(config["rnn_keep_prob"]),
             )
-            loss = _targetp2_loss(
+            loss_parts = targetp_loss_components(
                 torch=torch,
                 outputs=outputs,
                 y_type=yb,
                 y_cs=cb,
+                signal_class_to_head=TARGETP_SIGNAL_CLASS_TO_HEAD,
                 type_weight=type_weight,
                 cleavage_loss_weight=float(config.get("cleavage_loss_weight", 1.0)),
             )
+            loss = loss_parts.mean()
             loss.backward()
             grad_clip_norm = float(config.get("grad_clip_norm", 0.0))
             if grad_clip_norm > 0.0:
@@ -1658,7 +1658,7 @@ def fit_targetp2_torch_model(
                     module.parameters(), max_norm=grad_clip_norm
                 )
             optimizer.step()
-            train_losses.append(float(loss.detach().cpu().item()))
+            train_losses.add(loss_parts)
 
         val_metrics = _evaluate_encoded(
             torch=torch,
@@ -1673,11 +1673,7 @@ def fit_targetp2_torch_model(
             type_weight=type_weight,
             cleavage_loss_weight=float(config.get("cleavage_loss_weight", 1.0)),
         )
-        train_loss = (
-            float(np.mean(np.asarray(train_losses, dtype=np.float64)))
-            if len(train_losses) > 0
-            else 0.0
-        )
+        train_loss = train_losses.mean()
         row = {
             "epoch": int(epoch + 1),
             "train_loss": train_loss,
@@ -1748,6 +1744,7 @@ def fit_targetp2_torch_model(
                     final_val_metrics=None,
                     device=resolved_device,
                     training_complete=False,
+                    training_fingerprint=training_fingerprint,
                     optimizer=optimizer,
                     best_epoch=best_epoch,
                     current_lr=current_lr,
@@ -1788,6 +1785,7 @@ def fit_targetp2_torch_model(
         final_val_metrics=final_val_metrics,
         device=resolved_device,
         training_complete=True,
+        training_fingerprint=training_fingerprint,
         optimizer=optimizer,
         best_epoch=best_epoch,
         current_lr=current_lr,
@@ -1886,12 +1884,14 @@ def predict_targetp2_torch_batch(
     )
 
 
-def predict_targetp2_torch_localization(aa_seq, localization_model, organism_group=""):
+def predict_targetp2_torch_localization(
+    aa_seq, localization_model, organism_group="", device="cpu"
+):
     prob = predict_targetp2_torch_batch(
         aa_sequences=[aa_seq],
         organism_groups=[organism_group],
         localization_model=localization_model,
-        device="cpu",
+        device=device,
         batch_size=1,
     )[0]
     probs = {
@@ -2010,6 +2010,14 @@ def _parse_fold_subset(value, available):
 
 def _targetp_training_fingerprint(data, train_kwargs):
     digest = hashlib.sha256()
+    configuration = dict(TARGETP_TORCH_DEFAULTS)
+    configuration.update(
+        {key: value for key, value in train_kwargs.items() if value is not None}
+    )
+    # Extending the training budget or changing logging does not change the
+    # identity of the data/model. All numerical training options remain checked.
+    configuration.pop("epochs", None)
+    configuration.pop("verbose", None)
 
     def update_part(part):
         digest.update(len(part).to_bytes(8, byteorder="big", signed=False))
@@ -2018,7 +2026,7 @@ def _targetp_training_fingerprint(data, train_kwargs):
     update_part(__version__.encode("utf-8"))
     update_part(
         json.dumps(
-            dict(sorted(train_kwargs.items())),
+            configuration,
             sort_keys=True,
             default=str,
         ).encode("utf-8")
@@ -2120,11 +2128,14 @@ def run_targetp2_torch_nested_oof(
             )
             val_mask = folds == int(val_fold)
             fold_name = _safe_fold_name(outer_fold=outer_fold, val_fold=val_fold)
+            checkpoint_fingerprint = hashlib.sha256(
+                f"{training_fingerprint}:{outer_fold}:{val_fold}".encode()
+            ).hexdigest()
             checkpoint = os.path.join(model_dir, fold_name + ".pt")
             resumed_from_checkpoint = False
             if bool(reuse_cache) and os.path.exists(checkpoint):
                 payload = load_torch_payload(path=checkpoint)
-                if payload.get("training_fingerprint") != training_fingerprint:
+                if payload.get("training_fingerprint") != checkpoint_fingerprint:
                     raise ValueError(
                         "Checkpoint provenance does not match the current data and "
                         "training configuration: {}".format(checkpoint)
@@ -2156,6 +2167,7 @@ def run_targetp2_torch_nested_oof(
                         device=device,
                         resume_payload=payload,
                         epoch_checkpoint_path=checkpoint,
+                        training_fingerprint=checkpoint_fingerprint,
                         **train_kwargs,
                     )
                     used_cache = False
@@ -2177,12 +2189,10 @@ def run_targetp2_torch_nested_oof(
                     seed=int(seed_offset) + int(val_fold),
                     device=device,
                     epoch_checkpoint_path=checkpoint,
+                    training_fingerprint=checkpoint_fingerprint,
                     **train_kwargs,
                 )
                 used_cache = False
-            payload["training_fingerprint"] = training_fingerprint
-            if not used_cache:
-                save_torch_payload(path=checkpoint, payload=payload)
             localize_model = export_targetp2_torch_localize_model(model_payload=payload)
             prob = predict_targetp2_torch_encoded(
                 x=data["x"][test_mask],

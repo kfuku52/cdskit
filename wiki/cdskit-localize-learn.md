@@ -129,6 +129,19 @@ encoder or set `--esm_model_local_dir` for offline use. `esm_head` remains
 experimental, and a held-out evaluation is recommended before biological
 interpretation.
 
+Frozen ESM embeddings are computed once per sequence for head training, rather
+than once per epoch. A bounded in-memory cache (256 MiB including estimated
+entry overhead) shares these label-independent features across classifier
+stages and CV folds within the command. Keys include sequence, encoder source
+and revision, maximum length, pooling, and local-file size/mtime metadata.
+The cache is not serialized into model artifacts; classifier heads are trained
+independently in each fold. Training also honors `CDSKIT_OFFLINE`.
+
+Training-set and cross-validation evaluation use bounded batch inference on
+`--dl_device`, preserving per-sequence organism constraints and stage-3 OOF
+details. `--model_download no` applies to all nested ESM predictors, including
+multi-stage and blend models.
+
 ## Evaluation
 
 For fair evaluation, use cross-validation or fixed fold IDs instead of judging

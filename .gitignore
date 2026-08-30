@@ -5,7 +5,10 @@
 /.mypy_cache/
 /.ruff_cache/
 /.venv/
+/.venvs/
+/.artifacts/
 /coverage.json
+/benchmark.json
 /htmlcov/
 /build/
 /dist/

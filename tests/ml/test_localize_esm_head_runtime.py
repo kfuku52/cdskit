@@ -218,3 +218,186 @@ def test_fit_esm_head_accepts_local_model_without_revision(fake_transformers):
     assert tokenizer_factory.calls[0][1]["local_files_only"] is True
     assert "revision" not in tokenizer_factory.calls[0][1]
     assert model_factory.calls[0][1]["use_safetensors"] is True
+
+
+def _fit_fake_model(**overrides):
+    options = dict(
+        aa_sequences=["MAAA", "MCCC", "MDDD", "MEEE"],
+        labels=["noTP", "SP", "noTP", "SP"],
+        class_order=["noTP", "SP", "mTP", "cTP", "lTP"],
+        model_name="example/pinned-esm",
+        model_local_dir="",
+        max_len=12,
+        pooling="mean",
+        epochs=4,
+        batch_size=2,
+        learning_rate=0.01,
+        weight_decay=0,
+        seed=7,
+        use_class_weight=True,
+        device="cpu",
+        model_revision="0123456789abcdef",
+    )
+    return esm_head.fit_esm_head_classifier(**{**options, **overrides})
+
+
+def test_frozen_embeddings_are_reused_without_sharing_heads(
+    fake_transformers, monkeypatch
+):
+    from cdskit.esm_embeddings import ESMEmbeddingCache
+
+    calls = []
+    forward = _FakeEncoder.forward
+
+    def counted(self, input_ids, attention_mask):
+        calls.append(len(input_ids))
+        return forward(self, input_ids, attention_mask)
+
+    monkeypatch.setattr(_FakeEncoder, "forward", counted)
+    cache = ESMEmbeddingCache()
+    cold = _fit_fake_model(embedding_cache=cache)
+    assert sum(calls) == 4  # Not 4 sequences * 4 epochs.
+    warm = _fit_fake_model(embedding_cache=cache)
+    assert sum(calls) == 4
+    for key in cold["head_state_dict"]:
+        torch.testing.assert_close(
+            cold["head_state_dict"][key], warm["head_state_dict"][key], rtol=0, atol=0
+        )
+    changed_labels = _fit_fake_model(
+        embedding_cache=cache, labels=["SP", "noTP", "SP", "noTP"]
+    )
+    assert sum(calls) == 4
+    assert not torch.equal(
+        cold["head_state_dict"]["weight"], changed_labels["head_state_dict"]["weight"]
+    )
+    _fit_fake_model(embedding_cache=cache, max_len=8)
+    assert sum(calls) == 8
+    _fit_fake_model(embedding_cache=cache, pooling="cls")
+    assert sum(calls) == 12
+    _fit_fake_model(embedding_cache=cache, model_revision="different")
+    assert sum(calls) == 16
+
+
+@pytest.mark.parametrize(
+    "nested", ["single", "blend", "two_stage", "two_stage_ctp_ltp"]
+)
+def test_cli_offline_applies_to_every_nested_encoder(
+    fake_transformers, monkeypatch, tmp_path, nested
+):
+    import copy
+    from cdskit import localize
+    from cdskit.localize_runtime import offline_requested
+
+    local_model = _fit_fake_model()
+    if nested in {"two_stage", "two_stage_ctp_ltp"}:
+        local_model = {
+            "class_order": local_model["class_order"],
+            "strategy": nested,
+            "stage1_model": _fit_fake_model(
+                class_order=["noTP", "TP"], labels=["noTP", "TP"] * 2
+            ),
+            "stage2_model": _fit_fake_model(
+                class_order=["SP", "mTP", "cTP", "lTP"], labels=["SP", "mTP"] * 2
+            ),
+            "stage3_model": _fit_fake_model(
+                class_order=["cTP", "lTP"], labels=["cTP", "lTP"] * 2
+            ),
+        }
+    model = {
+        "model_type": "esm_head_v1",
+        "localization_model": local_model,
+        "perox_model": {"mode": "constant", "yes_probability": 0.0},
+    }
+    if nested == "blend":
+        model = {
+            "model_type": "targetp_blend_v1",
+            "localization_model": {
+                "class_order": local_model["class_order"],
+                "base_models": [copy.deepcopy(model), copy.deepcopy(model)],
+            },
+            "perox_model": model["perox_model"],
+        }
+    tokenizer, encoder = fake_transformers
+    tokenizer.calls.clear()
+    encoder.calls.clear()
+    source = tmp_path / "in.fa"
+    source.write_text(">test\nMAAA\n")
+    model_path = tmp_path / "model.pt"
+    model_path.touch()
+    monkeypatch.setattr(
+        localize, "resolve_localize_model_path", lambda **kwargs: str(model_path)
+    )
+    monkeypatch.setattr(localize, "load_localize_model", lambda **kwargs: model)
+    localize.localize_main(
+        SimpleNamespace(
+            seqfile=str(source),
+            inseqformat="fasta",
+            seqtype="protein",
+            codontable=1,
+            model=str(model_path),
+            model_download=False,
+            allow_unsafe_model=False,
+            include_features=False,
+            organism_group="plant",
+            threads=1,
+            report=str(tmp_path / "report.tsv"),
+        )
+    )
+    expected_calls = {"single": 1, "blend": 2, "two_stage": 2, "two_stage_ctp_ltp": 3}[
+        nested
+    ]
+    assert len(encoder.calls) == expected_calls
+    assert all(
+        kwargs["local_files_only"] for _, kwargs in tokenizer.calls + encoder.calls
+    )
+    assert not offline_requested()
+
+
+def test_cross_validation_batches_predictions_on_requested_device(
+    fake_transformers, monkeypatch
+):
+    from cdskit.localize_learn import evaluate_cross_validation
+    from cdskit.localize_model import extract_localize_features
+
+    sequences = ["MAAA", "MCCC", "MDDD", "MEEE"] * 2
+    features = np.asarray([extract_localize_features(seq)[0] for seq in sequences])
+    calls = []
+
+    def predict(aa_sequences, localization_model, device, batch_size):
+        calls.append((len(aa_sequences), device))
+        probabilities = np.zeros(
+            (len(aa_sequences), len(localization_model["class_order"]))
+        )
+        probabilities[:, 0] = 1.0
+        return probabilities
+
+    monkeypatch.setattr(esm_head, "predict_esm_head_batch", predict)
+    metrics = evaluate_cross_validation(
+        features,
+        sequences,
+        ["noTP", "SP"] * 4,
+        ["no"] * 8,
+        2,
+        7,
+        "esm_head",
+        dict(
+            esm_model_name="fake/esm",
+            esm_model_local_dir="",
+            esm_model_revision="fixed",
+            esm_max_len=12,
+            esm_pooling="mean",
+            epochs=2,
+            batch_size=4,
+            learning_rate=0.01,
+            weight_decay=0,
+            seed=1,
+            use_class_weight=True,
+            device="cpu",
+        ),
+        "mps",
+        organism_groups=["plant", "animal"] * 4,
+    )
+    assert len(metrics["oof_rows"]) == 8
+    assert sum(count for count, _ in calls) == 8
+    assert len(calls) < 8
+    assert all(device == "mps" for _, device in calls)

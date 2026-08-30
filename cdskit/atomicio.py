@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import stat
 import tempfile
 import warnings
 from collections.abc import Iterable, Iterator, Mapping
@@ -19,7 +20,23 @@ _ACTIVE_STAGED_PATHS: set[str] = set()
 def normalized_path(path: Pathish) -> str:
     """Return a normalized absolute path suitable for collision checks."""
 
-    return os.path.normcase(os.path.realpath(os.path.abspath(os.fspath(path))))
+    return os.path.normcase(
+        os.path.realpath(os.path.abspath(os.path.expanduser(os.fspath(path))))
+    )
+
+
+def _same_path(first: str, second: str) -> bool:
+    if first == second:
+        return True
+    try:
+        # Also catches hard links and case aliases on case-insensitive volumes.
+        return os.path.samefile(first, second)
+    except OSError:
+        return False
+
+
+def _contains_path(parent: str, child: str) -> bool:
+    return any(_same_path(parent, str(ancestor)) for ancestor in Path(child).parents)
 
 
 def validate_distinct_paths(
@@ -38,16 +55,48 @@ def validate_distinct_paths(
     seen_outputs: dict[str, str] = {}
     for path in output_paths:
         normalized = normalized_path(path)
-        if normalized in normalized_inputs:
+        if any(
+            _same_path(normalized, source)
+            or _contains_path(normalized, source)
+            or (Path(source).is_dir() and _contains_path(source, normalized))
+            for source in normalized_inputs
+        ):
             raise ValueError(f"Input and output paths should be different: {path}.")
-        if normalized in seen_outputs:
-            raise ValueError(
-                "Output paths should be different: {} and {}.".format(
-                    seen_outputs[normalized],
-                    path,
+        for previous, previous_path in seen_outputs.items():
+            if (
+                _same_path(normalized, previous)
+                or _contains_path(normalized, previous)
+                or _contains_path(previous, normalized)
+            ):
+                raise ValueError(
+                    "Output paths should be different and must not contain one "
+                    f"another: {previous_path} and {path}."
                 )
-            )
         seen_outputs[normalized] = str(path)
+
+
+def validate_output_paths(paths: Iterable[Pathish]) -> None:
+    """Reject directories and special files before creating any output."""
+
+    for path in paths:
+        destination = Path(path)
+        if destination.exists():
+            if not stat.S_ISREG(destination.stat().st_mode):
+                raise ValueError(f"Output path must be a regular file: {path}.")
+        elif not destination.is_symlink():
+            # A dangling symlink may be replaced, but other non-regular entries
+            # and invalid parent components must never be moved to a backup.
+            try:
+                mode = destination.lstat().st_mode
+            except FileNotFoundError:
+                mode = None
+            if mode is not None and not stat.S_ISREG(mode):
+                raise ValueError(f"Output path must be a regular file: {path}.")
+        for parent in destination.parents:
+            if parent.exists():
+                if not parent.is_dir():
+                    raise ValueError(f"Output parent must be a directory: {parent}.")
+                break
 
 
 @contextmanager
@@ -59,6 +108,7 @@ def atomic_output_path(path: Pathish) -> Iterator[str]:
     if normalized_destination in _ACTIVE_STAGED_PATHS:
         yield str(destination)
         return
+    validate_output_paths([destination])
     destination.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary_name = tempfile.mkstemp(
         prefix=f".{destination.name}.",
@@ -72,6 +122,7 @@ def atomic_output_path(path: Pathish) -> Iterator[str]:
         # Windows rejects fsync on a read-only descriptor, so reopen read/write.
         with temporary.open("rb+") as handle:
             os.fsync(handle.fileno())
+        validate_output_paths([destination])
         os.replace(temporary, destination)
     finally:
         if temporary.exists():
@@ -84,6 +135,7 @@ def atomic_output_paths(paths: Iterable[Pathish]) -> Iterator[list[str]]:
 
     destinations = [Path(path) for path in paths]
     validate_distinct_paths(outputs=destinations)
+    validate_output_paths(destinations)
     temporary_paths: list[Path] = []
     backup_paths: list[Path | None] = []
     commit_succeeded = False
@@ -109,6 +161,7 @@ def atomic_output_paths(paths: Iterable[Pathish]) -> Iterator[list[str]]:
 
         committed = 0
         try:
+            validate_output_paths(destinations)
             for destination in destinations:
                 if destination.exists() or destination.is_symlink():
                     fd, backup_name = tempfile.mkstemp(
@@ -137,7 +190,9 @@ def atomic_output_paths(paths: Iterable[Pathish]) -> Iterator[list[str]]:
             for index, destination in enumerate(destinations):
                 backup_path = backup_paths[index] if index < len(backup_paths) else None
                 try:
-                    if backup_path is not None and backup_path.exists():
+                    if backup_path is not None and (
+                        backup_path.exists() or backup_path.is_symlink()
+                    ):
                         os.replace(backup_path, destination)
                     elif index < committed and (
                         destination.exists() or destination.is_symlink()
@@ -149,7 +204,8 @@ def atomic_output_paths(paths: Iterable[Pathish]) -> Iterator[list[str]]:
                 retained = [
                     str(backup_path)
                     for backup_path in backup_paths
-                    if backup_path is not None and backup_path.exists()
+                    if backup_path is not None
+                    and (backup_path.exists() or backup_path.is_symlink())
                 ]
                 raise RuntimeError(
                     "Failed to roll back an atomic multi-output update. "
@@ -165,7 +221,9 @@ def atomic_output_paths(paths: Iterable[Pathish]) -> Iterator[list[str]]:
                 temporary_path.unlink()
         if commit_succeeded:
             for backup_path in backup_paths:
-                if backup_path is not None and backup_path.exists():
+                if backup_path is not None and (
+                    backup_path.exists() or backup_path.is_symlink()
+                ):
                     try:
                         backup_path.unlink()
                     except OSError as exc:

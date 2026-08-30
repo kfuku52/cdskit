@@ -9,7 +9,7 @@ from cdskit.codonutil import (
     CODON_STOP,
     classify_codon,
 )
-from cdskit.atomicio import atomic_write_json
+from cdskit.atomicio import atomic_output_paths, atomic_write_json
 from cdskit.util import (
     read_seqs,
     replace_record_sequence,
@@ -154,17 +154,8 @@ def trimcodon_main(args):
     args.min_clean_fraction = validate_fraction(
         name="--min_clean_fraction", value=args.min_clean_fraction
     )
-    if len(records) == 0:
-        summary = build_trimcodon_summary(
-            site_summaries=list(), kept_sites=list(), num_sequences=0, args=args
-        )
-        write_trimcodon_report(report_path=args.report, summary=summary)
-        write_seqs(
-            records=records, outfile=args.outfile, outseqformat=args.outseqformat
-        )
-        return
     seq_strings = [str(record.seq) for record in records]
-    num_sites = len(seq_strings[0]) // 3
+    num_sites = len(seq_strings[0]) // 3 if seq_strings else 0
     site_summaries = [
         summarize_codon_site(
             seq_strings=seq_strings,
@@ -184,7 +175,6 @@ def trimcodon_main(args):
         num_sequences=len(records),
         args=args,
     )
-    write_trimcodon_report(report_path=args.report, summary=summary)
     sys.stderr.write(
         "Removed codon sites: {:,}\n".format(summary["num_removed_codon_sites"])
     )
@@ -192,6 +182,14 @@ def trimcodon_main(args):
         trim_record_to_codon_sites(record=record, kept_sites=kept_sites)
         for record in records
     ]
-    write_seqs(
-        records=out_records, outfile=args.outfile, outseqformat=args.outseqformat
-    )
+    outputs = [path for path in (args.outfile, args.report) if path not in ("", "-")]
+    with atomic_output_paths(outputs) as temporary_paths:
+        staged = dict(zip(outputs, temporary_paths, strict=True))
+        write_seqs(
+            records=out_records,
+            outfile=staged.get(args.outfile, args.outfile),
+            outseqformat=args.outseqformat,
+        )
+        write_trimcodon_report(
+            report_path=staged.get(args.report, args.report), summary=summary
+        )

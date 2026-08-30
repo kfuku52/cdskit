@@ -6,7 +6,7 @@ from functools import partial
 from cdskit.codonutil import (
     summarize_codons,
 )
-from cdskit.atomicio import atomic_write_json
+from cdskit.atomicio import atomic_output_paths, atomic_write_json
 from cdskit.util import (
     parallel_map_ordered,
     read_seqs,
@@ -315,11 +315,18 @@ def filter_main(args):
     summary, kept_indices = summarize_filter(
         records=records, analyses=analyses, args=args
     )
-    write_filter_report(report_path=args.report, summary=summary)
     sys.stderr.write(
         "Dropped sequences: {:,}\n".format(summary["num_dropped_sequences"])
     )
     out_records = [records[idx] for idx in kept_indices]
-    write_seqs(
-        records=out_records, outfile=args.outfile, outseqformat=args.outseqformat
-    )
+    outputs = [path for path in (args.outfile, args.report) if path not in ("", "-")]
+    with atomic_output_paths(outputs) as temporary_paths:
+        staged = dict(zip(outputs, temporary_paths, strict=True))
+        write_seqs(
+            records=out_records,
+            outfile=staged.get(args.outfile, args.outfile),
+            outseqformat=args.outseqformat,
+        )
+        write_filter_report(
+            report_path=staged.get(args.report, args.report), summary=summary
+        )

@@ -1,7 +1,6 @@
 """Command-line interface for cdskit."""
 
 import argparse
-import os
 import sys
 
 from cdskit import __version__
@@ -23,7 +22,7 @@ psr.add_argument("--version", action="version", version="cdskit version " + __ve
 psr.add_argument(
     "--debug", action="store_true", help="Show a full traceback when a command fails."
 )
-subparsers = psr.add_subparsers()
+subparsers = psr.add_subparsers(dest="command")
 
 add_deprecated_aliases(
     psr,
@@ -1812,33 +1811,9 @@ def main(argv=None):
         return 0
 
     try:
-        from cdskit.atomicio import validate_distinct_paths
+        from cdskit.command_paths import validate_command_paths
 
-        input_paths = [
-            getattr(args, name, None)
-            for name in (
-                "seqfile",
-                "seqfile2",
-                "ingff",
-                "training_tsv",
-                "trimmed_aa_aln",
-            )
-        ]
-        model_path = getattr(args, "model", None)
-        if model_path and os.path.exists(os.path.expanduser(str(model_path))):
-            input_paths.append(model_path)
-        output_paths = [
-            getattr(args, name, None)
-            for name in (
-                "outfile",
-                "outfile2",
-                "outgff",
-                "report",
-                "model_out",
-                "uniprot_out_tsv",
-            )
-        ]
-        validate_distinct_paths(inputs=input_paths, outputs=output_paths)
+        validate_command_paths(args)
         args.handler(args)
     except Exception as e:
         if getattr(args, "debug", False):

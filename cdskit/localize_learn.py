@@ -24,7 +24,6 @@ from cdskit.localize_model import (
     infer_labels_from_uniprot_cc,
     is_dna_like,
     normalize_class_probabilities,
-    predict_localization_and_peroxisome,
     normalize_localization_label,
     normalize_yes_no,
     save_localize_model,
@@ -35,6 +34,9 @@ from cdskit.localize_model import (
 )
 from cdskit.tsvio import read_tsv, write_tsv
 from cdskit.atomicio import atomic_output_paths
+from cdskit.esm_embeddings import ESMEmbeddingCache
+from cdskit.localize_batch import predict_localization_batch
+from cdskit.localize_runtime import PredictionRuntime, prediction_runtime
 from cdskit.util import stop_if_invalid_codontable
 
 UNIPROT_SEARCH_URL = "https://rest.uniprot.org/uniprotkb/search"
@@ -432,13 +434,10 @@ def calculate_training_metrics(
     correct_perox = 0
     class_total = {class_name: 0 for class_name in LOCALIZATION_CLASSES}
     class_correct = {class_name: 0 for class_name in LOCALIZATION_CLASSES}
+    with prediction_runtime(PredictionRuntime(device=dl_device)):
+        predictions = predict_localization_batch(aa_sequences, model, feature_matrix=x)
     for i in range(x.shape[0]):
-        _ = model_arch
-        _ = dl_device
-        pred = predict_localization_and_peroxisome(
-            aa_seq=aa_sequences[i],
-            model=model,
-        )
+        pred = predictions[i]
         true_class = class_labels[i]
         true_perox = perox_labels[i]
         class_total[true_class] = class_total.get(true_class, 0) + 1
@@ -556,6 +555,7 @@ def _fit_arch_specific_localization_model(
             use_class_weight=dl_train_params["use_class_weight"],
             device=dl_train_params["device"],
             model_revision=dl_train_params["esm_model_revision"],
+            embedding_cache=dl_train_params.get("esm_embedding_cache"),
         )
     raise ValueError("Unsupported model_arch: {}".format(model_arch))
 
@@ -569,6 +569,9 @@ def fit_localization_model(
     localize_strategy="single_stage",
     soft_label_matrix=None,
 ):
+    if model_arch == "esm_head":
+        dl_train_params = dict(dl_train_params)
+        dl_train_params.setdefault("esm_embedding_cache", ESMEmbeddingCache())
     localize_strategy = str(localize_strategy or "single_stage").strip().lower()
     if localize_strategy not in ["single_stage", "two_stage", "two_stage_ctp_ltp"]:
         raise ValueError("Unsupported localize_strategy: {}".format(localize_strategy))
@@ -1230,6 +1233,9 @@ def evaluate_cross_validation(
     soft_label_matrix=None,
     verbose=False,
 ):
+    dl_train_params = dict(dl_train_params)
+    if model_arch == "esm_head":
+        dl_train_params.setdefault("esm_embedding_cache", ESMEmbeddingCache())
     if fold_ids is None:
         folds = build_stratified_folds(
             class_labels=class_labels,
@@ -1309,13 +1315,15 @@ def evaluate_cross_validation(
 
         class_correct_fold = 0
         perox_correct = 0
-        for row_i in range(x_test.shape[0]):
-            _ = dl_device
-            pred = predict_localization_and_peroxisome(
-                aa_seq=aa_test[row_i],
-                model=tmp_model,
-                organism_group="" if organism_test is None else organism_test[row_i],
+        with prediction_runtime(PredictionRuntime(device=dl_device)):
+            predictions = predict_localization_batch(
+                aa_test,
+                tmp_model,
+                organism_groups=organism_test,
+                feature_matrix=x_test,
             )
+        for row_i in range(x_test.shape[0]):
+            pred = predictions[row_i]
             true_class = class_test[row_i]
             pred_class = pred["predicted_class"]
             oof_row = {
@@ -1697,6 +1705,8 @@ def localize_learn_main(args):
         "esm_pooling": esm_pooling,
         "esm_max_len": esm_max_len,
     }
+    if model_arch == "esm_head":
+        dl_train_params["esm_embedding_cache"] = ESMEmbeddingCache()
     localization_model = fit_localization_model(
         x=x,
         aa_sequences=aa_sequences,
