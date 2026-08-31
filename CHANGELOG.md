@@ -4,6 +4,16 @@ This project follows semantic versioning. Deprecated CLI spellings remain
 available for at least the 0.24 release series and print their canonical
 replacement to standard error.
 
+## 0.28.1 — 2026-08-31
+
+### Fixed
+
+- Activate the selected check environment for subprocesses as well as pytest.
+  Direct executable wrappers now resolve their shebang interpreter inside that
+  environment, including on clean Linux/macOS CI runners.
+- Include the version source in uv's cache key so changing `__version__` refreshes
+  the installed editable package metadata on the next sync.
+
 ## 0.28.0 — 2026-08-31
 
 ### Fixed

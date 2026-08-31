@@ -1,4 +1,4 @@
-# Implementation review and follow-up: 0.28.0
+# Implementation review and follow-up: 0.28
 
 The 2026-08-31 review started from `master` at
 `85d1b0305b1261d497274a34d56914ee77578cb2` (0.27.0), after a fast-forward pull.
@@ -115,6 +115,19 @@ Final local validation for 0.28.0:
 - The benchmark CI driver downloaded the previous retained GitHub artifact and
   ran all seven workloads with five repetitions. Its legacy-schema baseline was
   correctly marked incomparable.
+
+The first GitHub run exposed one additional runner defect: direct executable
+wrappers used the caller's `PATH`, resolving a Python outside the newly selected
+environment. This failed on clean Linux/macOS runners but was hidden by local
+global dependencies; Windows explicitly supplies the test interpreter and passed.
+Version 0.28.1 activates the selected environment for all subprocesses as well.
+The executable-wrapper test is retained unchanged. The uv cache key now also
+includes the version source after verifying that a version-only change left
+installed editable metadata at 0.28.0 while the code already reported 0.28.1.
+The full check passed all 828 tests again with another Python environment placed
+first on the caller's `PATH`, and the core check passed 743 tests. The 0.28.1
+installed-wheel smoke check and dependency audit passed; a subsequent sync
+confirmed that code and installed package metadata both report 0.28.1.
 
 ## Compatibility and limits
 

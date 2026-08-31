@@ -17,8 +17,12 @@ python scripts/check.py all
 The script creates isolated environments under `.venvs/`, choosing Python 3.12
 unless `--python` is supplied. Core, full, and build checks have separate
 environments; they do not replace an existing `.venv` or remove another check's
-dependencies. Full checks install the test, coverage, quality, build, security
+dependencies. Subprocesses and executable script wrappers also inherit the
+selected environment, rather than resolving Python from the caller's `PATH`.
+Full checks install the test, coverage, quality, build, security
 and ML dependencies, and explicitly check ML imports before running pytest.
+The [uv cache key](https://docs.astral.sh/uv/concepts/cache/#dynamic-metadata)
+includes `cdskit/__init__.py` so version changes also refresh installed metadata.
 
 The full environment uses the `ml-cpu` extra. On Linux this selects the official
 CPU-only PyTorch index through uv; other packages still come from PyPI.

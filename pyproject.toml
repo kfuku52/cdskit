@@ -115,6 +115,7 @@ include = ["cdskit*"]
 
 # CPU-only development/CI is separate from the normal GPU-capable ML extra.
 [tool.uv]
+cache-keys = [{file = "pyproject.toml"}, {file = "cdskit/__init__.py"}]
 conflicts = [
   [{extra = "ml"}, {extra = "ml-cpu"}],
   [{extra = "dev"}, {extra = "ml-cpu"}],

@@ -69,9 +69,12 @@ def main(argv: list[str] | None = None) -> int:
     else:
         sync += ["--no-dev", "--group", "build"]
     run(sync, env)
-    python = str(
-        environment / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
-    )
+    bindir = environment / ("Scripts" if os.name == "nt" else "bin")
+    python = str(bindir / ("python.exe" if os.name == "nt" else "python"))
+    # Direct executable wrappers use /usr/bin/env python. Their children must
+    # use this profile too, regardless of the caller's active environment.
+    env["PATH"] = str(bindir) + os.pathsep + env.get("PATH", "")
+    env["VIRTUAL_ENV"] = str(environment)
     if profile == "full":
         # Never let importorskip silently turn the full check into core-only.
         run(
