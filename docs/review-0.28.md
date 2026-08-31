@@ -4,7 +4,7 @@ The 2026-08-31 review started from `master` at
 `85d1b0305b1261d497274a34d56914ee77578cb2` (0.27.0), after a fast-forward pull.
 The existing 740 tests passed, but additional failure-path and numerical checks
 reproduced eight implementation defects and one development-environment mismatch.
-Version 0.28.0 addresses all nine, together with the measured performance and
+Version 0.28.2 addresses all nine, together with the measured performance and
 development-workflow issues below.
 
 ## Correctness and data protection
@@ -128,6 +128,24 @@ The full check passed all 828 tests again with another Python environment placed
 first on the caller's `PATH`, and the core check passed 743 tests. The 0.28.1
 installed-wheel smoke check and dependency audit passed; a subsequent sync
 confirmed that code and installed package metadata both report 0.28.1.
+
+The successful 0.28.1 Linux run also revealed an audit-coverage gap in its log:
+PyPI has no record for `torch==2.13.0+cpu`, so pip-audit skipped that distribution
+while returning success. Version 0.28.2 snapshots the installed non-editable
+dependencies and checks official `+cpu` PyTorch wheels against their upstream
+release's advisories. Other local suffixes are left unchanged, and any unresolved
+dependency fails the audit. No packages are installed by this advisory lookup.
+The weekly audit of GPU-only dependencies remains in place. Remove the CPU
+mapping if the vulnerability service gains native support for these wheels.
+
+Four regression tests cover the snapshot and failure handling. Additional live
+advisory lookups confirmed that a known vulnerable `torch==1.13.1+cpu` is rejected
+through its upstream release and an unknown package is rejected even when
+pip-audit itself reports no known vulnerabilities and exits successfully.
+
+Final 0.28.2 local checks passed 832 tests with 75.49% combined coverage and all
+critical floors. The audit examined 85 non-editable installed dependencies with
+none skipped, and the fresh installed-wheel smoke check passed for 0.28.2.
 
 ## Compatibility and limits
 

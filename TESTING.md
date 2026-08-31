@@ -72,6 +72,11 @@ model-download and training-configuration floors are enforced.
 `all` additionally audits the installed dependencies, builds an sdist and wheel,
 and imports and exercises the installed wheel outside the checkout in a fresh
 environment (including sequence output and an SVG plot).
+Editable distributions are excluded from the dependency audit. Official PyTorch
+`+cpu` wheels are checked against their corresponding upstream release's
+advisories because PyPI has no record for the local `+cpu` version. Other local
+version suffixes are not rewritten. Any unresolved dependency fails the audit;
+the script does not install or resolve a second set of packages.
 
 GitHub Actions always runs the Linux Python boundaries and full CPU ML/quality/
 package validation. Changes to core I/O, CLI, dependencies, tests or workflow

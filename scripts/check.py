@@ -119,7 +119,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.check in {"coverage", "all"}:
             run([python, "scripts/check_coverage.py", "coverage.json"], env)
     if args.check == "all":
-        run([python, "-m", "pip_audit", "--local", "--skip-editable"], env)
+        run([python, "scripts/audit_dependencies.py"], env)
     if args.check in {"build", "all"}:
         # A fresh directory prevents an old wheel from passing the smoke check.
         with tempfile.TemporaryDirectory(prefix="cdskit-dist-") as dist:

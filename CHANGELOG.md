@@ -4,6 +4,15 @@ This project follows semantic versioning. Deprecated CLI spellings remain
 available for at least the 0.24 release series and print their canonical
 replacement to standard error.
 
+## 0.28.2 — 2026-08-31
+
+### Security
+
+- Audit the installed CPU PyTorch wheel against its corresponding upstream
+  release's advisories; PyPI does not publish records for `+cpu` versions.
+  The audit now fails on any unresolved non-editable dependency instead of
+  allowing a skipped package to leave a coverage gap.
+
 ## 0.28.1 — 2026-08-31
 
 ### Fixed
