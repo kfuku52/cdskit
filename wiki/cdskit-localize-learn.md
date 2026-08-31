@@ -50,8 +50,11 @@ cdskit localize-learn \
 ```
 
 If `--seq_type dna` is used, sequences are translated in frame before training.
-With `--seq_type auto`, CDS-like rows are translated and protein-like rows are
-used directly.
+With `--seq_type auto` (the default), CDS-like rows are translated and
+protein-like rows are used directly. Prefer an explicit type when the source
+is known: short proteins composed only of DNA alphabet letters can be
+misclassified by automatic detection. The six-row example above is a smoke
+test, not enough data for a reliable model or five-fold stratified CV.
 
 ## UniProt Download
 
@@ -64,6 +67,7 @@ cdskit localize-learn \
   --uniprot_query "keyword:Transit peptide" \
   --label_mode uniprot_cc \
   --seq_col sequence \
+  --seq_type protein \
   --localization_col cc_subcellular_location \
   --uniprot_fields accession,sequence,cc_subcellular_location \
   --uniprot_exclude_fragments yes \
@@ -122,7 +126,9 @@ cdskit localize-learn \
   --model_out localize_model.pt
 ```
 
-Install `esm_head` dependencies with `pip install "cdskit[ml]"`. Remote encoder
+Install `esm_head` dependencies with
+`python -m pip install 'cdskit[ml] @ git+https://github.com/kfuku52/cdskit.git'`.
+The extra already includes Transformers. Remote encoder
 downloads are pinned to a Hugging Face commit by `--esm_model_revision`.
 Inference honors `--model_download no` and `CDSKIT_OFFLINE`; pre-download the
 encoder or set `--esm_model_local_dir` for offline use. `esm_head` remains
@@ -135,7 +141,10 @@ entry overhead) shares these label-independent features across classifier
 stages and CV folds within the command. Keys include sequence, encoder source
 and revision, maximum length, pooling, and local-file size/mtime metadata.
 The cache is not serialized into model artifacts; classifier heads are trained
-independently in each fold. Training also honors `CDSKIT_OFFLINE`.
+independently in each fold. A separate per-fit embedding matrix can use
+additional memory, so 256 MiB is not a cap on total process memory. Training
+also honors `CDSKIT_OFFLINE` for ESM encoder downloads; it does not disable an
+explicitly requested UniProt data download.
 
 Training-set and cross-validation evaluation use bounded batch inference on
 `--dl_device`, preserving per-sequence organism constraints and stage-3 OOF
@@ -147,7 +156,8 @@ multi-stage and blend models.
 For fair evaluation, use cross-validation or fixed fold IDs instead of judging
 only the training set.
 
-Random stratified CV:
+Random stratified CV (use a larger table with multiple independent examples
+per class, not the six-row smoke input):
 
 ```bash
 cdskit localize-learn \
@@ -163,7 +173,8 @@ cdskit localize-learn \
   --report localize_learn_report.tsv
 ```
 
-Fixed folds from a column:
+Fixed folds from a column (add a non-empty `fold_id` column to the training
+table; the minimal example above does not contain one):
 
 ```bash
 cdskit localize-learn \
@@ -204,7 +215,8 @@ random rows only.
 The model file is written to `--model_out`. The report file contains training
 counts and any requested CV metrics.
 
-Example report rows are shortened here for readability:
+The following metric/value rows are illustrative, not the measured result of
+the six-row training example:
 
 ```tsv
 metric	value

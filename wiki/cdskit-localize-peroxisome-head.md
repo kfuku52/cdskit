@@ -24,7 +24,11 @@ not as a general peroxisome-associated localization detector.
 
 ## Release asset
 
-- Release: https://github.com/kfuku52/cdskit/releases/tag/localize-targeting5-perox-deeploc21-et-v1
+Use the [pretrained runtime setup](https://github.com/kfuku52/cdskit/wiki/Installation-and-dependencies#pretrained-targeting5-runtime).
+This artifact contains legacy scikit-learn 1.5.2 estimators; installing the
+latest ML extra alone does not ensure it can be loaded.
+
+- [GitHub model release](https://github.com/kfuku52/cdskit/releases/tag/localize-targeting5-perox-deeploc21-et-v1)
 - Asset: `cdskit-localize-targeting5-perox-deeploc21-et-v1.pt`
 - SHA-256: `d0998df8819d975b4392342ab78dccc0dd95cf301e4d2df8f38c73d0b5aab445`
 
@@ -50,6 +54,10 @@ keeping inference CPU-only.
 
 ## Evaluation snapshot
 
+These are historical development results, not metrics rerun for the current
+CDSKIT version. The validation threshold was selected on that validation set;
+use the independent external and cluster evaluations to assess generalization.
+
 | Model / evaluation | Rows | Positives | AUPRC | AUROC | F1 | Notes |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
 | DeepLoc21 validation, perox head | 5,462 | 53 | 0.482 | 0.895 | 0.583 | threshold tuned on DeepLoc21 `fold_id=4` |
@@ -64,6 +72,13 @@ placeholder for signal-like use cases, but they do not yet support advertising
 the head as a broad peroxisome-localization model.
 
 ## Reproduce
+
+These are research commands that need prepared inputs, optional ML dependencies,
+and an `mmseqs` executable on `PATH`. Data files below are not included in the
+package. Download/prepare the DeepLoc tables with
+`python -m cdskit.deeploc_benchmark --download yes --prepare yes --benchmark no`
+and supply the indicated UniProt snapshot separately. A new live UniProt query
+does not reproduce a frozen historical dataset exactly.
 
 Main candidate model and UniProt experimental CC external benchmark:
 

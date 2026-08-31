@@ -4,6 +4,27 @@ This project follows semantic versioning. Deprecated CLI spellings remain
 available for at least the 0.24 release series and print their canonical
 replacement to standard error.
 
+## 0.28.3 — 2026-08-31
+
+### Documentation
+
+- Reconcile the complete published wiki with version-controlled page/image
+  sources and document how to publish both repositories without losing edits.
+- Correct Python/ML installation instructions and compensate for missing runtime
+  dependencies in the external Bioconda recipe. Document a verified scikit-learn 1.5.2
+  environment for the existing pretrained targeting5 artifacts; those artifacts
+  fail to load under scikit-learn 1.9.0. Library dependency ranges are unchanged.
+- Fix the unaligned `hammer` example and its occupancy boundary, remove obsolete
+  `label --threads` guidance, and clarify ambiguous translation, CDS annotations,
+  GC denominators, and the two-table `codonstats --mode both` output.
+- Document safe model loading, offline caches, original targeting5's constant-zero
+  peroxisome score, and current TargetP checkpoint provenance requirements.
+- Keep the README concise, separate historical experiments from current guides,
+  remove unsupported TargetP-equivalence claims, and clarify CI/release behavior.
+
+See the [documentation review](docs/documentation-review-0.28.3.md) for the
+verified examples and remaining external packaging/model-artifact limitations.
+
 ## 0.28.2 — 2026-08-31
 
 ### Security

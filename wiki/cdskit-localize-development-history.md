@@ -1,0 +1,800 @@
+# Historical localize development results
+
+This archive preserves experiments documented in wiki revision `3f40b3d`
+(2026-07-21). Metrics below have **not** been rerun for the current CDSKIT
+version. Paths under `data/` and `/tmp/` name the original research artifacts;
+they are not files shipped with CDSKIT. Some cached OOF results explicitly
+lack provenance and are not reproducible model-performance evidence.
+
+Words such as “current”, “best”, and “fair” below describe the experiment at
+that time. Foldwise fitting alone does not eliminate selection bias from
+repeated experiments. Claims about equivalence to TargetP require a shared,
+independent evaluation protocol. Do not compare rows from different datasets
+as if they were a head-to-head benchmark.
+
+Commands are retained as research provenance, not as a turnkey pipeline.
+They require their prepared datasets, OOF files, model dependencies, and (where
+requested) MMseqs2. `--device mps` is specific to supported Apple hardware.
+For current setup and checkpoint rules, see
+[benchmark notes](https://github.com/kfuku52/cdskit/wiki/cdskit-localize-benchmarks-and-notes)
+and [model safety](https://github.com/kfuku52/cdskit/wiki/cdskit-localize#model-safety-and-offline-use).
+Old pickle-based exports may not load through research helpers that only
+accept restricted model loading; do not disable safety checks to replay an
+untrusted archive.
+
+## Historical TargetP 2.0 development snapshots
+
+The older high cached snapshot below is retained as provenance, but it should
+not be interpreted as regenerated BiLSTM/ESM performance or as the published
+`targeting5-v1` result. The high rows used `/tmp/targetp_oof_feat_extra300.npz` and
+`/tmp/targetp_oof_x80feat_extra300.npz`, untracked tree/feature-stack OOF
+probability caches without metadata or `true_idx`.
+
+| Model | Macro F1 | Overall acc. | Min class dF1 vs TargetP | All classes > TargetP | Notes |
+| --- | ---: | ---: | ---: | :---: | --- |
+| TargetP 2.0 paper Table 1 | 0.890 | - | - | - | published reference |
+| cdskit nearest centroid | 0.543 | 0.863 | -0.6601 | no | quick CPU baseline, rerun locally |
+| untracked feature-stack cache | 0.857 | 0.976 | -0.1866 | no | `/tmp/targetp_oof_feat_extra300.npz`; likely CPU tree stack, not regenerated BiLSTM |
+| untracked x80 feature-stack cache | 0.726 | 0.968 | -0.7500 | no | `/tmp/targetp_oof_x80feat_extra300.npz`; not regenerated ESM |
+| untracked feature-stack blend, global alpha | 0.857 | 0.976 | -0.1866 | no | cached blend, optimized on all OOF rows |
+| untracked feature-stack blend, classwise alpha | 0.864 | 0.976 | -0.1554 | no | cached classwise blend, optimized on all OOF rows |
+| untracked feature-stack blend + thresholds | 0.896 | 0.977 | -0.0071 | no | cached classwise blend with thresholds, optimized on all OOF rows |
+| untracked feature-stack foldwise blend + thresholds | 0.891 | 0.976 | -0.0192 | no | classwise alpha and thresholds optimized on training folds only |
+| cdskit TargetP specialist postprocess | 0.900 | 0.979 | +0.0001 | yes | benchmark-only SP gate and cTP/lTP reranker on OOF probabilities |
+| cdskit TargetP specialist foldwise eval | 0.897 | 0.979 | +0.0003 | yes | specialist ensembles with calibrated-profile fallback when a training-fold complement has no all-class TargetP-margin pass |
+| cdskit TargetP specialist foldwise fixed calibration | 0.900 | 0.979 | +0.0003 | yes | fixed calibrated SP gate and cTP/lTP reranker; held-out folds excluded from model fitting |
+
+Per-class F1 for the same snapshot:
+
+| Class | TargetP F1 | Untracked feature-cache F1 | Untracked x80-cache F1 | blend(global) F1 | blend(classwise) F1 | blend(threshold) F1 | blend(foldwise) F1 | specialist F1 | specialist(foldwise) F1 | specialist(foldwise fixed) F1 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| noTP | 0.980 | 0.985 | 0.981 | 0.985 | 0.985 | 0.986 | 0.985 | 0.987 | 0.987 | 0.987 |
+| SP | 0.980 | 0.975 | 0.968 | 0.975 | 0.975 | 0.976 | 0.974 | 0.980 | 0.980 | 0.980 |
+| mTP | 0.860 | 0.869 | 0.815 | 0.869 | 0.872 | 0.883 | 0.880 | 0.882 | 0.878 | 0.880 |
+| cTP | 0.880 | 0.892 | 0.867 | 0.892 | 0.894 | 0.889 | 0.884 | 0.891 | 0.889 | 0.889 |
+| lTP | 0.750 | 0.563 | 0.000 | 0.563 | 0.595 | 0.743 | 0.731 | 0.759 | 0.752 | 0.766 |
+
+This cached high-margin snapshot is not reproduced by the regenerated formal
+OOF run below. Treat those cached numbers as a development/provenance snapshot,
+not as a cdskit BiLSTM/ESM claim.
+
+| Regenerated formal run | Macro F1 | Overall acc. | Min class dF1 vs TargetP | All classes > TargetP | Notes |
+| --- | ---: | ---: | ---: | :---: | --- |
+| cdskit BiLSTM, MPS b2048 OOF | 0.557 | 0.811 | -0.5796 | no | 15 epochs, regenerated fold caches |
+| cdskit ESM2 t6 head, MPS b128 OOF | 0.656 | 0.957 | -0.7500 | no | 1 epoch, regenerated fold caches |
+| cdskit BiLSTM/ESM blend + thresholds, regenerated OOF | 0.732 | 0.957 | -0.4500 | no | classwise blend, regenerated OOF |
+| cdskit BiLSTM/ESM foldwise blend + thresholds, regenerated OOF | 0.714 | 0.955 | -0.5086 | no | alpha and thresholds selected on training folds |
+| cdskit TargetP specialist foldwise fixed, regenerated OOF | 0.705 | 0.953 | -0.5682 | no | formal runtime export `targetp2_blend_runtime_specialist_formal_mps_b2048.pt` |
+
+The reproducible CPU feature ensemble recovers part of the lost internal
+TargetP score without requiring GPU at inference. It does not reach TargetP 2.0,
+and the all-OOF threshold row is a calibration score rather than a fully
+held-out threshold-selection estimate; use the foldwise rows for model
+selection.
+
+| Regenerated CPU feature run | Macro F1 | Overall acc. | Notes |
+| --- | ---: | ---: | --- |
+| cdskit TargetP feature ensemble, argmax | 0.600 | 0.934 | ExtraTrees on sequence-derived TargetP features |
+| cdskit TargetP feature ensemble + thresholds | 0.761 | 0.947 | thresholds optimized on all OOF rows for runtime calibration |
+| cdskit TargetP feature ensemble foldwise thresholds | 0.737 | 0.946 | thresholds selected on training folds only |
+| cdskit TargetP feature ensemble + formal ESM blend + thresholds | 0.754 | 0.964 | classwise feature/ESM blend with all-OOF thresholds |
+| cdskit TargetP feature ensemble + formal ESM foldwise blend | 0.764 | 0.963 | alpha and thresholds selected on training folds only |
+| cdskit binary TargetP feature ensemble, argmax | 0.665 | 0.947 | one-vs-rest ExtraTrees on the same CPU features |
+| cdskit binary TargetP feature ensemble + thresholds | 0.766 | 0.951 | all-OOF calibration; not a held-out threshold-selection estimate |
+| cdskit binary TargetP feature ensemble foldwise thresholds | 0.761 | 0.950 | best reproducible CPU-only feature path so far |
+| cdskit binary feature ensemble + formal ESM blend + thresholds | 0.795 | 0.967 | all-OOF blend/threshold calibration; optimistic for model selection |
+| cdskit binary feature ensemble + formal ESM foldwise blend | 0.765 | 0.963 | fair foldwise blend estimate; still far below TargetP 2.0 |
+| cdskit binary feature + formal ESM foldwise specialist, macro objective | 0.780 | 0.962 | fair foldwise SP/lTP specialist threshold selection |
+| cdskit TargetP OOF stack RF100 foldwise thresholds | 0.785 | 0.964 | fair foldwise stack over binary feature, formal ESM, formal feature, and formal BiLSTM OOFs |
+| cdskit TargetP OOF stack RF100 + foldwise lTP/cTP override | 0.787 | 0.964 | same stack plus a plant cTP-vs-lTP RandomForest specialist trained and thresholded only on training folds |
+| cdskit TargetP OOF stack RF100 + foldwise noTP/cTP/lTP override | 0.787 | 0.963 | same stack plus nested noTP-to-cTP then plant cTP-to-lTP RandomForest specialists; exact macro F1 0.78738 |
+| cdskit TargetP second-level RF/HGB OOF stack + foldwise lTP/cTP override | 0.787 | 0.966 | fair foldwise second-level stack over RF100 and HGB200 stack OOFs plus sequence features; exact macro F1 0.78747 |
+| cdskit TargetP OOF stack RF100 + delayed lTP signal override | 0.796 | 0.963 | fair foldwise lTP/cTP specialist with delayed signal-peptide and RR-after-hydrophobic features; exact macro F1 0.79552 |
+| cdskit TargetP organism-specialized RF100 stack + delayed lTP/noTP specialists | 0.801 | 0.961 | fair foldwise stack trains separate plant and non-plant meta-classifiers, then applies nested noTP-to-cTP and plant cTP-to-lTP specialists; exact macro F1 0.80074 |
+| cdskit TargetP organism-specialized RF100 stack + tuned lTP specialist | 0.803 | 0.962 | same stack with the lTP/cTP specialist tuned independently as RF50, `balanced_subsample`, leaf2; exact macro F1 0.80274 |
+| cdskit TargetP2-style Torch h256 seed100 val-threshold OOF | 0.777 | 0.949 | fair paired OOF, CPU-capable at inference but trained on MPS locally; exact macro F1 0.77660 |
+| cdskit TargetP2-style Torch h256 seed100 all-outer inner4 OOF | 0.798 | 0.960 | fair OOF composed by applying the same four-inner-model validation-threshold average rule to every outer fold; exact macro F1 0.79763 |
+| cdskit TargetP stack + h256 seed100 foldwise blend | 0.819 | 0.966 | foldwise classwise alpha and thresholds selected only on training folds; exact macro F1 0.81945 |
+| cdskit TargetP stack + h256 seed100 foldwise blend + lTP specialist | 0.828 | 0.965 | same foldwise blend followed by a plant cTP-to-lTP specialist trained and thresholded only on training folds; exact macro F1 0.82779 |
+| cdskit TargetP stack + h256 seed100 all-outer inner4 foldwise blend | 0.832 | 0.967 | same stack blended with the all-outer inner4 Torch OOF; exact macro F1 0.83183 |
+| cdskit TargetP stack + h256 seed100 all-outer inner4 + strict external weak-label 3-way foldwise blend | 0.837 | 0.966 | foldwise classwise convex blend of the stack, all-outer inner4 Torch OOF, and strict non-overlapping UniProt/DeepLoc external-augmented feature OOF; exact macro F1 0.83683 |
+| cdskit TargetP stack + h256 seed100 all-outer inner4 + strict external + thylakoid-lumen external 4-way foldwise blend | 0.840 | 0.967 | adds a low-weight UniProt SL-0057/SL-0309 thylakoid-lumen weak-label source to improve lTP; exact macro F1 0.84006 |
+| cdskit TargetP 4-way foldwise blend + cTP/noTP lTP rescue | 0.842 | 0.967 | same fixed foldwise source blend, followed by a plant lTP specialist that may rescue cTP or noTP calls to lTP using only other-fold labels; exact macro F1 0.84218 |
+| cdskit TargetP RF300 meta-stack + 5-source foldwise blend | 0.859 | 0.968 | reproducible second-level RF300 stack over stack/Torch/strict-external OOF probabilities, then foldwise classwise blend with the base stack, Torch, strict external, and thylakoid-lumen external sources; exact macro F1 0.85909 |
+| cdskit TargetP RF300 meta-stack + 5-source blend + SP specialist | 0.861 | 0.971 | same fair 5-source blend followed by an SP specialist trained and thresholded only on the other folds; exact macro F1 0.86082 |
+| cdskit TargetP RF300 meta-stack + 5-source blend + SP/mTP specialists | 0.863 | 0.971 | same SP specialist plus a cross-fit mTP specialist trained and thresholded only on the other folds; exact macro F1 0.86293 |
+| cdskit TargetP RF300 meta-stack + 5-source blend + SP/mTP/lTP-after specialists | 0.867 | 0.971 | adds a cross-fit plant lTP rescue after SP/mTP, trained and thresholded only on other folds; exact macro F1 0.86680, current best fair score so far |
+
+The command used for the feature/ESM run was:
+
+```
+python -m cdskit.targetp_feature_ensemble \
+  --training_tsv data/localize_bench/targetp2_benchmark.tsv \
+  --reuse_oof_cache no \
+  --feature_oof_npz data/localize_bench/targetp2_oof_feature_ensemble_formal_et300.npz \
+  --organism_gate yes \
+  --blend_oof_npz data/localize_bench/targetp2_oof_esm_formal_mps_b128.npz \
+  --blend_label formal_esm \
+  --blend_model data/localize_bench/targetp2_blend_runtime_specialist_formal_mps_b2048.pt \
+  --blend_model_base_index 1 \
+  --blend_model_out data/localize_bench/targetp2_feature_esm_blend_formal_et300.pt \
+  --out_json data/localize_bench/targetp2_feature_ensemble_formal_et300_eval.json \
+  --out_md data/localize_bench/targetp2_feature_ensemble_formal_et300_eval.md
+```
+
+The one-vs-rest CPU feature run can be regenerated with:
+
+```
+python scripts/targetp_feature_ensemble_eval.py \
+  --training_tsv data/localize_bench/targetp2_benchmark.tsv \
+  --reuse_oof_cache no \
+  --feature_oof_npz data/localize_bench/targetp2_oof_feature_binary_et600_leaf2_formal.npz \
+  --model_kind binary_extra_trees \
+  --n_estimators 600 \
+  --min_samples_leaf 2 \
+  --class_weight balanced \
+  --max_features sqrt \
+  --random_state 1 \
+  --model_out data/localize_bench/targetp2_feature_binary_et600_leaf2.pt \
+  --out_json data/localize_bench/targetp2_feature_binary_et600_leaf2_eval.json \
+  --out_md data/localize_bench/targetp2_feature_binary_et600_leaf2_eval.md
+```
+
+The fair foldwise specialist run above uses the binary feature OOF as the first
+base model and the regenerated formal ESM OOF as the second base model. Its
+specialist thresholds are selected on each training-fold complement using
+`macro_f1`, not on the held-out fold:
+
+```
+python -m cdskit.targetp_blend \
+  --training_tsv data/localize_bench/targetp2_benchmark.tsv \
+  --reuse_oof_cache yes \
+  --organism_gate yes \
+  --bilstm_oof_npz data/localize_bench/targetp2_oof_feature_binary_et600_leaf2_formal.npz \
+  --esm_oof_npz data/localize_bench/targetp2_oof_esm_formal_mps_b128.npz \
+  --foldwise_blend_eval yes \
+  --foldwise_specialist_eval yes \
+  --specialist_threshold_objective macro_f1 \
+  --out_json data/localize_bench/targetp2_binary_feature_esm_specialist_macro_eval.json \
+  --out_md data/localize_bench/targetp2_binary_feature_esm_specialist_macro_eval.md
+```
+
+The fair RF stack can be regenerated with:
+
+```
+python -m cdskit.targetp_stack \
+  --training_tsv data/localize_bench/targetp2_benchmark.tsv \
+  --base_oof_npzs data/localize_bench/targetp2_oof_feature_binary_et600_leaf2_formal.npz,data/localize_bench/targetp2_oof_esm_formal_mps_b128.npz,data/localize_bench/targetp2_oof_feature_ensemble_formal_et300.npz,data/localize_bench/targetp2_oof_bilstm_formal_mps_b2048.npz \
+  --stack_oof_npz data/localize_bench/targetp2_oof_stack_rf100_orgsplit_ltp_signal_rs123_leaf2subsample_nogate.npz \
+  --model_kind random_forest \
+  --n_estimators 100 \
+  --random_state 11 \
+  --class_weight balanced \
+  --max_features sqrt \
+  --min_samples_leaf 1 \
+  --include_sequence_features yes \
+  --organism_gate no \
+  --organism_specialized_stack yes \
+  --ltp_ctp_override yes \
+  --ltp_ctp_model_kind random_forest \
+  --ltp_ctp_n_estimators 50 \
+  --ltp_ctp_random_state 123 \
+  --ltp_ctp_class_weight balanced_subsample \
+  --ltp_ctp_min_samples_leaf 2 \
+  --ltp_ctp_score_min 0.01 \
+  --ltp_ctp_score_max 0.90 \
+  --ltp_ctp_score_step 0.01 \
+  --notp_ctp_ltp_override yes \
+  --notp_ctp_model_kind random_forest \
+  --notp_ctp_n_estimators 200 \
+  --notp_ctp_random_state 400 \
+  --out_json data/localize_bench/targetp2_stack_rf100_orgsplit_ltp_signal_rs123_leaf2subsample_nogate_eval.json \
+  --out_md data/localize_bench/targetp2_stack_rf100_orgsplit_ltp_signal_rs123_leaf2subsample_nogate_eval.md
+```
+
+The current post-blend best uses the same stack OOF plus a fully regenerated
+h256 seed100 TargetP2-style Torch val-threshold OOF, a strict external
+weak-label feature OOF, and a low-weight thylakoid-lumen external feature OOF.
+The Torch OOF is composed with the same
+four-inner-model validation-threshold average rule for every outer fold, so no
+held-out fold gets a special hand-picked inner model. The external OOFs are
+trained foldwise from each target training-fold complement plus UniProt/DeepLoc
+rows after TargetP exact overlaps, ambiguous labels, non-plant plastid proxies,
+and conflicting duplicate sequences are removed. These signals are
+CPU-inference-capable; foldwise source weights and class thresholds are
+selected on the training-fold complement.
+
+The composed all-outer Torch OOF can be regenerated from the per-outer nested
+OOF caches with:
+
+```
+python scripts/targetp_torch_compose_oof.py \
+  --base_oof_npz data/localize_bench/targetp2_oof_targetp_torch_torchlstm_h256_e12_balbatch_typeonly_pair_seed100_valthrnorm.npz \
+  --replacement_oof_npzs data/localize_bench/targetp2_oof_targetp_torch_torchlstm_h256_e12_balbatch_typeonly_outer0_inner4_seed100_valthr.npz,data/localize_bench/targetp2_oof_targetp_torch_torchlstm_h256_e12_balbatch_typeonly_outer1_inner4_seed100_valthr.npz,data/localize_bench/targetp2_oof_targetp_torch_torchlstm_h256_e12_balbatch_typeonly_outer2_inner4_seed100_valthr.npz,data/localize_bench/targetp2_oof_targetp_torch_torchlstm_h256_e12_balbatch_typeonly_outer3_inner4_seed100_valthr.npz,data/localize_bench/targetp2_oof_targetp_torch_torchlstm_h256_e12_balbatch_typeonly_outer4_inner4_seed100_valthr.npz \
+  --source val_threshold \
+  --out_npz data/localize_bench/targetp2_oof_targetp_torch_torchlstm_h256_e12_balbatch_typeonly_allouter_inner4_seed100_valthrnorm.npz \
+  --out_json data/localize_bench/targetp2_torch_torchlstm_h256_e12_balbatch_typeonly_allouter_inner4_seed100_valthrnorm_compose.json
+```
+
+Then run the post-blend stack with:
+
+```
+python -m cdskit.targetp_stack \
+  --training_tsv data/localize_bench/targetp2_benchmark.tsv \
+  --base_oof_npzs data/localize_bench/targetp2_oof_feature_binary_et600_leaf2_formal.npz,data/localize_bench/targetp2_oof_esm_formal_mps_b128.npz,data/localize_bench/targetp2_oof_feature_ensemble_formal_et300.npz,data/localize_bench/targetp2_oof_bilstm_formal_mps_b2048.npz \
+  --stack_oof_npz data/localize_bench/targetp2_oof_stack_rf100_orgsplit_postblend_h256_seed100_allouter_inner4.npz \
+  --model_kind random_forest \
+  --n_estimators 100 \
+  --random_state 11 \
+  --class_weight balanced \
+  --max_features sqrt \
+  --min_samples_leaf 1 \
+  --include_sequence_features yes \
+  --organism_gate no \
+  --organism_specialized_stack yes \
+  --ltp_ctp_override no \
+  --ltp_ctp_model_kind random_forest \
+  --ltp_ctp_n_estimators 100 \
+  --ltp_ctp_random_state 123 \
+  --ltp_ctp_class_weight balanced_subsample \
+  --ltp_ctp_min_samples_leaf 2 \
+  --ltp_ctp_score_min 0.01 \
+  --ltp_ctp_score_max 0.90 \
+  --ltp_ctp_score_step 0.01 \
+  --notp_ctp_ltp_override no \
+  --post_blend_oof_npz data/localize_bench/targetp2_oof_targetp_torch_torchlstm_h256_e12_balbatch_typeonly_allouter_inner4_seed100_valthrnorm.npz \
+  --post_blend_label h256_seed100_allouter_inner4 \
+  --post_blend_grid_step 0.1 \
+  --post_blend_ltp_ctp_override yes \
+  --out_json data/localize_bench/targetp2_stack_rf100_orgsplit_postblend_h256_seed100_allouter_inner4_eval.json \
+  --out_md data/localize_bench/targetp2_stack_rf100_orgsplit_postblend_h256_seed100_allouter_inner4_eval.md
+```
+
+The strict external weak-label OOF used by the 3-way best can be regenerated
+with:
+
+```
+python scripts/targetp_external_feature_oof.py \
+  --training_tsv data/localize_bench/targetp2_benchmark.tsv \
+  --uniprot_tsv data/localize_bench/eukaryota_full_with_lineage.tsv \
+  --deeploc_dir data/localize_bench/deeploc21 \
+  --include_deeploc yes \
+  --max_external_per_class 5000 \
+  --external_weight 0.25 \
+  --seed 101 \
+  --model_kind extra_trees \
+  --n_estimators 200 \
+  --random_state 2100 \
+  --class_weight balanced \
+  --max_features sqrt \
+  --min_samples_leaf 1 \
+  --out_npz data/localize_bench/targetp2_oof_feature_extaug_strict_et200_w0p25.npz \
+  --out_json data/localize_bench/targetp2_oof_feature_extaug_strict_et200_w0p25_eval.json
+```
+
+Then run the 3-way foldwise source blend:
+
+```
+python -m cdskit.targetp_stack \
+  --training_tsv data/localize_bench/targetp2_benchmark.tsv \
+  --base_oof_npzs data/localize_bench/targetp2_oof_feature_binary_et600_leaf2_formal.npz,data/localize_bench/targetp2_oof_esm_formal_mps_b128.npz,data/localize_bench/targetp2_oof_feature_ensemble_formal_et300.npz,data/localize_bench/targetp2_oof_bilstm_formal_mps_b2048.npz \
+  --stack_oof_npz data/localize_bench/targetp2_oof_stack_rf100_orgsplit_3way_extaug_w0p25_h256_seed100_allouter_inner4.npz \
+  --model_kind random_forest \
+  --n_estimators 100 \
+  --random_state 11 \
+  --class_weight balanced \
+  --max_features sqrt \
+  --min_samples_leaf 1 \
+  --include_sequence_features yes \
+  --organism_gate no \
+  --organism_specialized_stack yes \
+  --ltp_ctp_override no \
+  --notp_ctp_ltp_override no \
+  --post_blend_oof_npzs data/localize_bench/targetp2_oof_targetp_torch_torchlstm_h256_e12_balbatch_typeonly_allouter_inner4_seed100_valthrnorm.npz,data/localize_bench/targetp2_oof_feature_extaug_strict_et200_w0p25.npz \
+  --post_blend_label h256_seed100_allouter_inner4_extaug_strict_w0p25 \
+  --post_blend_grid_step 0.1 \
+  --post_blend_ltp_ctp_override no \
+  --threshold_grid 0.05,0.10,0.15,0.20,0.25,0.30,0.35,0.40,0.45,0.50,0.55,0.60,0.65,0.70,0.75,0.80,0.85,0.90,0.95,1.00,1.05,1.10,1.15,1.20,1.25,1.30,1.35,1.40,1.45,1.50,1.55,1.60,1.65,1.70,1.75,1.80,1.85,1.90,1.95,2.00 \
+  --out_json data/localize_bench/targetp2_stack_rf100_orgsplit_3way_extaug_w0p25_h256_seed100_allouter_inner4_eval.json \
+  --out_md data/localize_bench/targetp2_stack_rf100_orgsplit_3way_extaug_w0p25_h256_seed100_allouter_inner4_eval.md
+```
+
+The thylakoid-lumen supplement used by the 4-way best was downloaded from
+UniProt subcellular location terms SL-0057 and SL-0309 and merged into
+`data/localize_bench/eukaryota_full_with_lineage_plus_thylakoid_lumen_20260530.tsv`.
+It can also be supplied separately through `--extra_uniprot_tsvs`; in the local
+snapshot the premerged file produced the best held-out blend.
+
+```
+python scripts/targetp_external_feature_oof.py \
+  --training_tsv data/localize_bench/targetp2_benchmark.tsv \
+  --uniprot_tsv data/localize_bench/eukaryota_full_with_lineage_plus_thylakoid_lumen_20260530.tsv \
+  --deeploc_dir data/localize_bench/deeploc21 \
+  --include_deeploc yes \
+  --max_external_per_class 5000 \
+  --external_weight 0.05 \
+  --seed 101 \
+  --model_kind extra_trees \
+  --n_estimators 200 \
+  --random_state 2100 \
+  --class_weight balanced \
+  --max_features sqrt \
+  --min_samples_leaf 1 \
+  --out_npz data/localize_bench/targetp2_oof_feature_extaug_thylum_sl0057_et200_w0p05.npz \
+  --out_json data/localize_bench/targetp2_oof_feature_extaug_thylum_sl0057_et200_w0p05_eval.json
+```
+
+Then run the 4-way foldwise source blend:
+
+```
+python -m cdskit.targetp_stack \
+  --training_tsv data/localize_bench/targetp2_benchmark.tsv \
+  --base_oof_npzs data/localize_bench/targetp2_oof_feature_binary_et600_leaf2_formal.npz,data/localize_bench/targetp2_oof_esm_formal_mps_b128.npz,data/localize_bench/targetp2_oof_feature_ensemble_formal_et300.npz,data/localize_bench/targetp2_oof_bilstm_formal_mps_b2048.npz \
+  --stack_oof_npz data/localize_bench/targetp2_oof_stack_rf100_orgsplit_4way_extaug_strict_thylum_sl0057_w0p05_h256_seed100_allouter_inner4.npz \
+  --model_kind random_forest \
+  --n_estimators 100 \
+  --random_state 11 \
+  --class_weight balanced \
+  --max_features sqrt \
+  --min_samples_leaf 1 \
+  --include_sequence_features yes \
+  --organism_gate no \
+  --organism_specialized_stack yes \
+  --ltp_ctp_override no \
+  --notp_ctp_ltp_override no \
+  --post_blend_oof_npzs data/localize_bench/targetp2_oof_targetp_torch_torchlstm_h256_e12_balbatch_typeonly_allouter_inner4_seed100_valthrnorm.npz,data/localize_bench/targetp2_oof_feature_extaug_strict_et200_w0p25.npz,data/localize_bench/targetp2_oof_feature_extaug_thylum_sl0057_et200_w0p05.npz \
+  --post_blend_label h256_seed100_allouter_inner4_extaug_strict_thylum_sl0057_w0p05 \
+  --post_blend_grid_step 0.1 \
+  --post_blend_ltp_ctp_override no \
+  --threshold_grid 0.05,0.10,0.15,0.20,0.25,0.30,0.35,0.40,0.45,0.50,0.55,0.60,0.65,0.70,0.75,0.80,0.85,0.90,0.95,1.00,1.05,1.10,1.15,1.20,1.25,1.30,1.35,1.40,1.45,1.50,1.55,1.60,1.65,1.70,1.75,1.80,1.85,1.90,1.95,2.00 \
+  --out_json data/localize_bench/targetp2_stack_rf100_orgsplit_4way_extaug_strict_thylum_sl0057_w0p05_h256_seed100_allouter_inner4_eval.json \
+  --out_md data/localize_bench/targetp2_stack_rf100_orgsplit_4way_extaug_strict_thylum_sl0057_w0p05_h256_seed100_allouter_inner4_eval.md
+```
+
+A small lTP rescue can be layered onto the fixed 4-way foldwise blend by
+turning on `--post_blend_ltp_ctp_override yes`, setting
+`--ltp_ctp_model_kind extra_trees --ltp_ctp_n_estimators 300
+--ltp_ctp_random_state 5010 --ltp_source_classes cTP,noTP`, and using
+`--ltp_ctp_score_min 0.02 --ltp_ctp_score_max 0.98
+--ltp_ctp_score_step 0.02`. The local fixed-fold verification is stored in
+`data/localize_bench/targetp2_stack_rf100_orgsplit_4way_extaug_strict_thylum_sl0057_w0p05_h256_seed100_allouter_inner4_ltp_rescue_fixed_eval.json`
+and reaches exact macro F1 0.84218 (`noTP` 0.980, `SP` 0.965, `mTP` 0.821,
+`cTP` 0.831, `lTP` 0.613).
+
+The current best reproducible fair run adds a CPU-inference-capable RF300
+meta-stack. The meta-stack is trained foldwise from the prior stack, all-outer
+h256 seed100 Torch OOF, and strict external feature OOF; the resulting meta OOF
+is then blended foldwise with those sources plus the thylakoid-lumen external
+source. Each held-out fold's source weights and class thresholds are selected
+only on the other folds:
+
+```
+python -m cdskit.targetp_stack \
+  --training_tsv data/localize_bench/targetp2_benchmark.tsv \
+  --base_oof_npzs data/localize_bench/targetp2_oof_stack_rf100_orgsplit_4way_extaug_strict_thylum_sl0057_w0p05_h256_seed100_allouter_inner4.npz,data/localize_bench/targetp2_oof_targetp_torch_torchlstm_h256_e12_balbatch_typeonly_allouter_inner4_seed100_valthrnorm.npz,data/localize_bench/targetp2_oof_feature_extaug_strict_et200_w0p25.npz \
+  --stack_oof_npz data/localize_bench/targetp2_oof_meta_rf300_leaf2_stack_torch_ext_repro_sp.npz \
+  --model_kind random_forest \
+  --n_estimators 300 \
+  --random_state 11 \
+  --class_weight balanced \
+  --max_features sqrt \
+  --min_samples_leaf 2 \
+  --include_sequence_features no \
+  --organism_gate no \
+  --organism_specialized_stack no \
+  --ltp_ctp_override no \
+  --notp_ctp_ltp_override no \
+  --post_blend_oof_npzs data/localize_bench/targetp2_oof_stack_rf100_orgsplit_4way_extaug_strict_thylum_sl0057_w0p05_h256_seed100_allouter_inner4.npz,data/localize_bench/targetp2_oof_targetp_torch_torchlstm_h256_e12_balbatch_typeonly_allouter_inner4_seed100_valthrnorm.npz,data/localize_bench/targetp2_oof_feature_extaug_strict_et200_w0p25.npz,data/localize_bench/targetp2_oof_feature_extaug_thylum_sl0057_et200_w0p05.npz \
+  --post_blend_label meta_rf300_stack_torch_ext_plus_sources_thylum_step02_sp \
+  --post_blend_grid_step 0.2 \
+  --post_blend_ltp_ctp_override no \
+  --post_blend_sp_override yes \
+  --threshold_grid 0.05,0.10,0.15,0.20,0.25,0.30,0.35,0.40,0.45,0.50,0.55,0.60,0.65,0.70,0.75,0.80,0.85,0.90,0.95,1.00,1.05,1.10,1.15,1.20,1.25,1.30,1.35,1.40,1.45,1.50,1.55,1.60,1.65,1.70,1.75,1.80,1.85,1.90,1.95,2.00 \
+  --out_json data/localize_bench/targetp2_meta_rf300_stack_torch_ext_repro_5source_thylum_step02_sp_eval.json \
+  --out_md data/localize_bench/targetp2_meta_rf300_stack_torch_ext_repro_5source_thylum_step02_sp_eval.md
+```
+
+The SP-specialist row in this output improves the fair estimate to exact macro
+F1 0.86082 (`noTP` 0.983, `SP` 0.971, `mTP` 0.838, `cTP` 0.846, `lTP` 0.667).
+Rerunning the same setup with `--post_blend_sp_override no
+--post_blend_mtp_override yes` adds a cross-fit mTP specialist and writes
+`data/localize_bench/targetp2_meta_rf300_stack_torch_ext_repro_5source_thylum_step02_sp_mtp_eval.json`.
+That fair row reaches exact macro F1 0.86293 and accuracy 0.97086
+(`noTP` 0.982, `SP` 0.970, `mTP` 0.843, `cTP` 0.853, `lTP` 0.667).
+Adding `--post_blend_ltp_after_specialists_override yes` applies a final
+cross-fit lTP rescue to plant `cTP`/`mTP` predictions using only other-fold
+`cTP`/`mTP`/`lTP` labels for fitting and other-fold predictions for threshold
+selection. The regenerated output
+`data/localize_bench/targetp2_meta_rf300_stack_torch_ext_repro_5source_thylum_step02_sp_mtp_ltp_eval.json`
+reaches exact macro F1 0.86680 and accuracy 0.97093 (`noTP` 0.982, `SP`
+0.970, `mTP` 0.843, `cTP` 0.855, `lTP` 0.684). It is a real improvement over
+0.84218, the non-SP 0.85909 meta-stack, and the SP/mTP 0.86293 row, but it
+still does not reach the TargetP 2.0 paper macro F1 0.890; the remaining gap is
+mostly lTP recall, with smaller SP, mTP, and cTP deficits.
+
+Do not apply the stack input organism gate when selecting this model: on the
+same regenerated OOF inputs, gating the cTP/lTP columns before the meta-model
+reduced the fair foldwise score from 0.785 to 0.750 macro F1. A post-prediction
+organism constraint can still be applied by runtime prediction code.
+
+Earlier fair probes did not beat the RF100 stack. Adding the untracked
+`targetp2_oof_feature_binHGB.npz` as a fifth base OOF reduced the RF100
+foldwise-threshold score to 0.760 macro F1, and replacing the RF meta-model
+with `HistGradientBoostingClassifier(max_iter=200)` scored 0.775 macro F1.
+A multi-start threshold search can raise the all-OOF calibration score on the
+RF100 stack to about 0.795 macro F1, but the fair foldwise version dropped to
+0.777 macro F1. A nested plant cTP-vs-lTP RandomForest specialist over the
+RF100 stack improved the fair score slightly from 0.785 to 0.787 macro F1 by
+raising lTP F1 from 0.395 to 0.405. Adding a prior noTP-to-cTP specialist raised
+the exact fair macro F1 only from 0.78698 to 0.78738, with lTP F1 0.409 and
+cTP F1 0.776, so the current best is real but very small.
+A second-level RandomForest stack over the RF100 and HGB200 stack OOFs, again
+with sequence features and the foldwise plant cTP-vs-lTP override, nudged the
+exact fair macro F1 to 0.78747 (`noTP` 0.981, `SP` 0.967, `mTP` 0.811,
+`cTP` 0.784, `lTP` 0.395). This is a reproducible improvement, but the
+increase is only 0.00009 macro F1 over the prior best and does not change the
+main conclusion.
+Adding delayed thylakoid-signal features to the foldwise lTP/cTP specialist is a
+more meaningful improvement. The added features scan later N-terminal windows
+for signal-peptide-like hydrophobic segments and summarize RR motif placement
+and downstream hydrophobicity. With `ltp_ctp_n_estimators=100` and
+`ltp_ctp_random_state=123`, the RF100 stack reaches exact fair macro F1 0.79552,
+with `lTP` F1 0.457 and `cTP` F1 0.769. This is still far below TargetP 2.0,
+but it is the first fair regenerated run above 0.79 macro F1.
+Splitting the RF100 stack itself by organism group gives another small fair
+gain: each held-out fold trains one meta-classifier on the other-fold plant
+rows and one on the other-fold non-plant rows. With the same delayed lTP
+specialist and the nested noTP-to-cTP specialist, exact macro F1 increases to
+0.80074 (`noTP` 0.978, `SP` 0.956, `mTP` 0.819, `cTP` 0.751, `lTP` 0.500).
+Tuning the lTP/cTP specialist separately from the main stack gives a small
+additional gain: RF50 with `class_weight=balanced_subsample` and leaf2 reaches
+exact macro F1 0.80274 (`noTP` 0.978, `SP` 0.956, `mTP` 0.819, `cTP` 0.760,
+`lTP` 0.500). This improves rare-class lTP but still trades away cTP, so it is
+not TargetP-like overall.
+Adding a fully regenerated h256 seed100 TargetP2-style Torch OOF as a direct
+fifth stack input did not help, but foldwise classwise blending between the
+RF100 stack and that Torch OOF did. The blend reaches exact macro F1 0.81945
+(`noTP` 0.979, `SP` 0.962, `mTP` 0.824, `cTP` 0.813, `lTP` 0.519); adding the
+same delayed lTP/cTP specialist raises this to 0.82779 (`cTP` 0.803, `lTP`
+0.571). Replacing the paired Torch OOF with a fully symmetric all-outer inner4
+average raises the plain post-blend score to exact macro F1 0.83183 (`noTP`
+0.980, `SP` 0.965, `mTP` 0.812, `cTP` 0.815, `lTP` 0.587); the lTP/cTP
+specialist drops this stronger signal to 0.82823. Validation-selected h256
+OOFs were fair but less useful as stack signals: seed0/seed100 selection reached
+0.793 after stack blending, and seed100 inner-fold selection by validation
+threshold or validation macro F1 reached only 0.812-0.813.
+Post-blend-only follow-up probes also failed to beat the all-outer inner4 row:
+using a finer classwise alpha grid reduced macro F1 to 0.82491 (`0.05`) or
+0.82142 (`0.025`), denser class-threshold grids reached at most 0.82862, and a
+plant cTP/lTP two-way reranker screened on the same foldwise training
+complements peaked at 0.80601 in the tested settings.
+Increasing the Torch encoder size did not improve the pilot held-out fold:
+on `outer4:val2`, h512 with learning rate 0.001 reached 0.76277
+validation-threshold macro F1 and h512 with learning rate 0.0003 reached
+0.74146, both below the h256 result of 0.83702 for the same fold pair.
+Other follow-up probes did not close the gap: averaging multiple lTP specialist
+random seeds reduced macro F1 to 0.785 or lower, two-way cTP/lTP
+reclassification peaked at 0.79498, appending the delayed lTP signal features
+to the main stack feature matrix reduced the RF100+specialist score to 0.76860,
+and N-terminal k-mer logistic models did not beat the current stack. Strict
+external UniProt/DeepLoc weak-label augmentation did help only as a post-blend
+source: adding it directly to the stack reduced the h256 all-outer inner4
+post-blend score to 0.813, while a foldwise 3-way classwise blend raised macro
+F1 slightly to 0.83683 (`noTP` 0.979, `SP` 0.962, `mTP` 0.825, `cTP` 0.843,
+`lTP` 0.575). The delayed lTP features therefore help as a specialist-only
+signal, and the external weak-label model helps as a weak post-blend source,
+not as a general stack input. A foldwise PSSM over N-terminal amino acid
+positions also did not help as an added stack input: the best RF100+PSSM stack
+score was 0.784 macro F1.
+
+lTP remains the limiting class. The best post-blend/rescue run moves held-out
+lTP F1 to 0.613, but that is still far below the TargetP 2.0 reference of
+0.750, and cTP F1 is still at most 0.843 versus the TargetP reference of 0.880.
+Reaching
+TargetP-like lTP/cTP performance likely requires a stronger sequence encoder or
+additional lTP-specific training data, not only threshold tuning.
+
+The TargetP2-style PyTorch path is available through
+`scripts/targetp_torch_eval.py`. It reproduces the official input encoding and
+architecture family (BLOSUM62 probability rows, organism-conditioned BiLSTM
+initial state, 13 attention heads, and cleavage-site auxiliary losses). Early
+short probes were poor, but the h256 seed100 paired OOF now reaches 0.77660
+macro F1 after validation-threshold scoring and provides a useful signal for
+the post-blend stack. It is still not TargetP-like on its own. The PyTorch
+trainer now defaults to `--initializer targetp_tf`, which uses
+Glorot-style conv/linear initialization and LSTM forget-gate biasing to better
+match the original TensorFlow 1 TargetP implementation. This improves
+implementation fidelity, but the Torch path still needs more work before it can
+replace the CPU tree stack. The runtime encoder now
+uses the same BLOSUM62 probability rows as the official TargetP NPZ data; a
+FASTA-to-NPZ check on the first ten TargetP rows matched to within `5.96e-08`
+maximum absolute difference. Earlier cdskit runtime exports used a `2^BLOSUM62`
+normalization instead, which was incompatible with the TargetP training input.
+Gradient clipping is also optional through `--grad_clip_norm`; the default is
+`0.0` to match the official TargetP training script. New TargetP torch training
+defaults to `--rnn_impl targetp_tf_cell`, an unrolled `LSTMCell` path that more
+closely mirrors TensorFlow's `DropoutWrapper` state/output dropout than
+PyTorch's fused `nn.LSTM`; legacy checkpoints with `encoder.*` weights are still
+loaded through `--rnn_impl torch_lstm` automatically. The TargetP cell now uses
+a TensorFlow-style single combined kernel, single bias, `i,j,f,o` gate order,
+and forward-pass `forget_bias=1.0` instead of PyTorch's two-bias `nn.LSTMCell`.
+It also leaves the LSTM memory state `c` undropped, matching TensorFlow 1.7's
+default `DropoutWrapper` state filter for `LSTMStateTuple.c`, while still
+dropping the hidden state/output. Older short-lived `targetp_tf_cell`
+checkpoints written with PyTorch's `nn.LSTMCell` are converted on load. TargetP
+torch training now
+writes resumable per-model checkpoints to `--model_dir`; rerunning the same
+command with a larger `--epochs` and `--reuse_oof_cache yes` continues an incomplete
+or shorter completed checkpoint instead of starting from scratch. At the time, a `latest_epoch` marker guarded optimizer-state restoration.
+For current runs, the 0.28 data/configuration/version/fold fingerprint is also
+required. These old checkpoints cannot be resumed as current OOF runs; use a
+fresh `--model_dir` and regenerate them. Historical successful loads below
+refer to the runtime used for those experiments, not current resume support.
+
+The h64 official-ish one-model probe was resumed to 10 epochs on
+`outer0_val1`; the covered-fold macro F1 remained 0.386 because the selected
+best checkpoint was still epoch 4. Epochs 6-10 deteriorated sharply with
+`val_macro_f1` between 0.169 and 0.303, which suggests this resumed h64/lr=0.001
+path is not the next best route unless restarted from a coherent fresh
+checkpoint or retuned. A fresh one-epoch `targetp_tf_cell` smoke run with
+h16/n_filters8 completed on `outer0_val1` and wrote
+`targetp2_torch_tflstm_h16_e1_smoke_eval.json`; it verified the corrected
+single-kernel/state-dropout path but scored only 0.169 covered-fold macro F1,
+so it is not yet a competitive model. The previous
+`targetp2_torch_tfcell_h16_e1_smoke_v3_models` checkpoint also loaded through
+the legacy conversion path on CPU and reproduced 0.169 covered-fold macro F1.
+A fresh four-epoch h64/n_filters16 run with the corrected single-kernel cell
+(`targetp2_torch_tflstm_h64_e4_lr1e3_eval.json`) selected epoch 2 and reached
+only 0.376 covered-fold macro F1. Its covered-fold per-class F1 was dominated
+by `noTP` and `SP` (`noTP` 0.945, `SP` 0.934, `mTP`/`cTP`/`lTP` all 0.000),
+so the current blocker is no longer just TensorFlow-cell fidelity; the torch
+training recipe needs a better way to make the rare TargetP classes learn
+without breaking the fair fold protocol.
+
+The torch trainer now exposes two rare-class training levers for experiments:
+`--type_class_weight sqrt_balanced|log_balanced` for milder class weighting than
+the unstable full `balanced` weights, and `--cleavage_loss_weight` to downweight
+or disable the cleavage-site auxiliary loss while testing type-class learning.
+It can also report a fair validation-threshold score with
+`--val_threshold_eval yes`; class thresholds are fitted on the model's validation
+fold and then applied to the held-out outer fold, not optimized on the outer
+fold itself. The trainer can now also select checkpoints with
+`--selection_metric val_threshold_macro_f1`, using the same validation-fold
+threshold objective rather than raw argmax macro F1, and TargetP torch runtime
+exports apply their saved `class_thresholds` when choosing the reported
+localization label.
+For the h256 seed100 type-only recipe on `outer0_val1`,
+`val_threshold_macro_f1` selected the same epoch 6 checkpoint as the previous
+raw-macro run and reproduced the same held-out validation-threshold macro F1
+0.80276. The matching `sqrt_balanced` type-weight probe was weaker, reaching
+only 0.6647 validation-threshold macro F1 by epoch 7 before being stopped.
+On `outer0_val1`, h16/n_filters8 with `sqrt_balanced` still collapsed to noTP
+only (0.169 covered-fold macro F1). h32/n_filters12 with balanced batches and
+`--cleavage_loss_weight 0.0` reached 0.343 covered-fold macro F1 and produced
+nonzero rare-class F1 (`mTP` 0.045, `cTP` 0.073, `lTP` 0.063), so balanced-batch
+type-only warmup is a plausible next probe. Extending the h64/n_filters16
+balanced-batch type-only run to 12 epochs selected epoch 8 and improved the
+covered outer-fold argmax macro F1 to 0.652. Validation-fitted thresholds raised
+the same held-out fold to 0.705 macro F1 (`noTP` 0.954, `SP` 0.928, `mTP` 0.633,
+`cTP` 0.619, `lTP` 0.389). The same recipe on `outer1_val2` needed 16 epochs
+and reached only 0.624 validation-threshold macro F1 (`noTP` 0.940, `SP` 0.907,
+`mTP` 0.562, `cTP` 0.465, `lTP` 0.244). Combining these two held-out folds gives
+0.663 validation-threshold macro F1, below both the fair RF stack score of 0.787
+and the TargetP 2.0 reference macro F1 of 0.890. The torch path is therefore
+useful as a candidate signal for future stacking, but it is not yet a
+replacement for the current fair stack.
+A larger h128/n_filters24 `torch_lstm` balanced-batch type-only probe was run as
+one model per outer fold using validation folds `0:1,1:2,2:3,3:4,4:0`. The
+combined validation-threshold OOF macro F1 was 0.715 (`noTP` 0.964, `SP` 0.939,
+`mTP` 0.688, `cTP` 0.658, `lTP` 0.324). Adding this h128 OOF as a fifth RF stack
+base did not improve the current fair best: the raw torch-probability stack
+peaked at 0.789 macro F1, the validation-threshold-normalized torch stack peaked
+at 0.799, and a second-level stack over the current best stack plus the torch
+stack peaked at 0.796. The h128 encoder is therefore a better torch signal than
+the h64 probe, but still not strong enough to close the TargetP gap.
+
+The h128 one-model-per-fold probe can be reproduced or continued with:
+
+```
+python -u scripts/targetp_torch_eval.py \
+  --targetp_npz data/targetp_raw/targetp_data.npz \
+  --model_dir data/localize_bench/targetp2_torch_torchlstm_h128_e12_balbatch_typeonly_pair_models \
+  --out_npz data/localize_bench/targetp2_oof_targetp_torch_torchlstm_h128_e12_balbatch_typeonly_pair_valthr.npz \
+  --out_json data/localize_bench/targetp2_torch_torchlstm_h128_e12_balbatch_typeonly_pair_valthr_eval.json \
+  --fold_pairs 0:1,1:2,2:3,3:4,4:0 \
+  --reuse_oof_cache yes \
+  --device mps \
+  --epochs 12 \
+  --batch_size 128 \
+  --learning_rate 0.001 \
+  --hidden_rnn 128 \
+  --n_filters 24 \
+  --hidden_fc 128 \
+  --n_attention 13 \
+  --attention_size 64 \
+  --input_keep_prob 0.9 \
+  --encoder_keep_prob 0.8 \
+  --rnn_keep_prob 0.8 \
+  --selection_metric val_macro_f1 \
+  --type_class_weight none \
+  --cleavage_loss_weight 0.0 \
+  --balanced_batch yes \
+  --initializer targetp_tf \
+  --grad_clip_norm 0.0 \
+  --rnn_impl torch_lstm \
+  --val_threshold_eval yes \
+  --verbose yes
+```
+
+The blend helper writes per-model TargetP margin summaries to JSON and Markdown,
+including an `All classes > TargetP` row. To save the foldwise fixed specialist
+scores used for threshold sensitivity checks, pass
+`--foldwise_specialist_fixed_score_npz path/to/scores.npz`.
+`cdskit localize` can also load `targetp_blend_v1` runtime models, which combine
+two embedded base predictors with classwise blend weights, class thresholds, and
+optional cdskit-trained SP/lTP specialist models on CPU.
+The benchmark helper can export that runtime format with `--model_out`; this
+trains final base predictors on the full TargetP training table, fits the
+cdskit specialist profile, records the foldwise TargetP margin summary in model
+metadata, and saves a CPU-loadable blend model. Use
+`--foldwise_blend_eval yes --foldwise_specialist_eval yes --model_out model.pt`
+when exporting a TargetP-specialized runtime model.
+
+In the foldwise specialist run, `SP` F1 improved from 0.976 to 0.980 and `lTP`
+F1 improved from 0.743 to 0.752 over the threshold blend. For DeepLoc sorting
+signals, `--rare_label_threshold_objective f2` raised `TH` recall from 0.762 to
+0.810, but lowered `TH` F1 from 0.325 to 0.288, so it is a recall-oriented option
+rather than a better default.
+
+## TargetP external overfitting checks
+
+`python -m cdskit.targetp_external_eval` evaluates a TargetP-trained
+`targetp_blend_v1` runtime model on public data that were not used as TargetP
+folds. It removes exact TargetP accession/sequence overlaps and can run MMseqs2
+against the TargetP training set before scoring a UniProt holdout.
+
+The TargetP comparison and TargetP-specialized runtime exports use
+`data/localize_bench/targetp2_benchmark.tsv`, the official TargetP 2.0
+13,005-sequence nested cross-validation dataset. The runtime model is trained
+from that table; cached OOF probabilities from the same table are used to tune
+blend weights, thresholds, and the optional cdskit specialist postprocess. The
+external checks below do not train or retune the runtime model.
+
+External evaluation datasets:
+
+- `data/localize_bench/deeploc21/deeploc21_sorting_signals.tsv`: public
+  DeepLoc 2.1 sorting-signal labels mapped from `SP`, `MT`, `CH`, `TH` to
+  cdskit `SP`, `mTP`, `cTP`, `lTP`; exact TargetP accession or sequence
+  overlaps are removed.
+- `data/localize_bench/deeploc21/deeploc21_hpa_test.tsv`: public DeepLoc 2.1
+  HPA localization test, used as a broad proxy where `extracellular`,
+  `mitochondrion`, and `chloroplast` map to `SP`, `mTP`, and `cTP`; all other
+  unambiguous locations map to `noTP`.
+- `data/localize_bench/eukaryota_full_with_lineage.tsv`: UniProt CC
+  `SUBCELLULAR LOCATION` weak labels inferred by the cdskit localization rules.
+  Ambiguous CC rows are skipped, exact TargetP overlaps are removed, and the
+  sampled holdout can be filtered against TargetP training sequences with
+  MMseqs2.
+
+```
+python -m cdskit.targetp_external_eval \
+  --model data/localize_bench/targetp2_blend_runtime_specialist_cached_e15.pt \
+  --targetp_reference_tsv data/localize_bench/targetp2_benchmark.tsv \
+  --deeploc_dir data/localize_bench/deeploc21 \
+  --uniprot_tsv data/localize_bench/eukaryota_full_with_lineage.tsv \
+  --out_dir data/localize_bench/targetp_external_eval_cached_e15 \
+  --max_uniprot_per_class 200 \
+  --mmseqs yes \
+  --mmseqs_min_seq_id 0.30 \
+  --mmseqs_min_coverage 0.80 \
+  --threads 4 \
+  --seed 1
+```
+
+Current cached 15-epoch runtime snapshot. This model trains the final base
+predictors on the full TargetP table, but still uses the older cached OOF
+probabilities for blend and threshold calibration; it is therefore an external
+generalization check, not the final formal regenerated-OOF score.
+
+| Dataset | Rows | Accuracy | Macro F1 | Observed macro F1 | Notes |
+| --- | ---: | ---: | ---: | ---: | --- |
+| DeepLoc sorting signals | 239 | 0.845 | 0.183 | 0.916 | TargetP exact overlaps removed; only `SP` remains after overlap filtering |
+| DeepLoc HPA broad | 1,708 | 0.850 | 0.267 | 0.668 | mature-localization proxy; mostly `noTP` plus `mTP` |
+| UniProt CC holdout | 776 | 0.361 | 0.363 | 0.363 | weak labels from cdskit UniProt CC rules; MMseqs2 30% identity / 80% coverage removed 224 of 1,000 sampled rows |
+
+Formal regenerated-OOF runtime snapshot (`targetp2_blend_runtime_specialist_formal_mps_b2048.pt`):
+
+| Dataset | Rows | Accuracy | Macro F1 | Observed macro F1 | Notes |
+| --- | ---: | ---: | ---: | ---: | --- |
+| DeepLoc sorting signals | 239 | 0.925 | 0.192 | 0.961 | TargetP exact overlaps removed; only `SP` remains after overlap filtering |
+| DeepLoc HPA broad | 1,708 | 0.845 | 0.280 | 0.701 | mature-localization proxy; mostly `noTP` plus `mTP` |
+| UniProt CC holdout | 776 | 0.372 | 0.373 | 0.373 | weak labels from cdskit UniProt CC rules; MMseqs2 30% identity / 80% coverage removed 224 of 1,000 sampled rows |
+
+Feature ensemble external checks:
+
+| Runtime snapshot | Dataset | Rows | Accuracy | Macro F1 | Observed macro F1 | Notes |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| feature ensemble only | DeepLoc sorting signals | 239 | 0.929 | 0.193 | 0.963 | similar to formal regenerated runtime |
+| feature ensemble only | DeepLoc HPA broad | 1,708 | 0.817 | 0.275 | 0.687 | slightly worse than formal regenerated runtime |
+| feature ensemble only | UniProt CC holdout | 776 | 0.352 | 0.312 | 0.312 | worse than formal regenerated runtime; internal gain overfits |
+| feature ensemble + formal ESM blend | DeepLoc sorting signals | 239 | 0.946 | 0.194 | 0.972 | better SP sorting sanity check |
+| feature ensemble + formal ESM blend | DeepLoc HPA broad | 1,708 | 0.843 | 0.278 | 0.695 | about tied with formal regenerated runtime |
+| feature ensemble + formal ESM blend | UniProt CC holdout | 776 | 0.388 | 0.388 | 0.388 | modestly above formal regenerated runtime macro F1 0.373 |
+
+UniProt CC holdout per-class F1 for the cached 15-epoch runtime:
+
+| Class | Support | Precision | Recall | F1 |
+| --- | ---: | ---: | ---: | ---: |
+| noTP | 115 | 0.191 | 0.861 | 0.313 |
+| SP | 142 | 0.821 | 0.676 | 0.741 |
+| mTP | 176 | 0.636 | 0.239 | 0.347 |
+| cTP | 170 | 0.657 | 0.135 | 0.224 |
+| lTP | 173 | 0.500 | 0.116 | 0.188 |
+
+UniProt CC holdout per-class F1 for the formal regenerated-OOF runtime:
+
+| Class | Support | Precision | Recall | F1 |
+| --- | ---: | ---: | ---: | ---: |
+| noTP | 115 | 0.191 | 0.843 | 0.311 |
+| SP | 142 | 0.787 | 0.704 | 0.743 |
+| mTP | 176 | 0.620 | 0.278 | 0.384 |
+| cTP | 170 | 0.714 | 0.147 | 0.244 |
+| lTP | 173 | 0.667 | 0.104 | 0.180 |
+
+The UniProt holdout is the useful five-class overfitting check. Before sampling
+it contains 146,509 non-overlapping, unambiguous TargetP-like rows
+(`noTP` 90,143, `SP` 24,151, `mTP` 16,570, `cTP` 8,477, `lTP` 7,168); 13,577
+exact TargetP overlaps, 609 ambiguous CC rows, and 32,385 rows without usable
+localization text were skipped. The low organelle recall on this holdout
+suggests either TargetP-dataset overfitting, domain shift, weak-label noise, or
+a combination of these. DeepLoc sorting and HPA are useful sanity checks but are
+not sufficient five-class overfitting tests after overlap filtering because they
+lack support for several TargetP classes.
+
+The formal regenerated-OOF runtime slightly improves the UniProt weak-label
+holdout over the cached 15-epoch runtime (macro F1 0.373 vs 0.363), but its
+TargetP internal regenerated-OOF score is much worse (best formal macro F1
+0.732 for the threshold blend and 0.705 for the foldwise fixed specialist). This
+points away from a simple overfitting-only explanation: the current reproducible
+training recipe itself is underperforming on TargetP, especially `lTP`, and
+should be fixed before treating cdskit as TargetP-competitive.
+
+An earlier short 3-epoch runtime export with the same cached OOF blend
+parameters produced similar UniProt holdout performance: accuracy 0.353,
+macro F1 0.352, `SP` F1 0.749, `mTP` F1 0.336, `cTP` F1 0.240, and `lTP`
+F1 0.136. The cached 15-epoch export therefore does not remove the external
+generalization gap.
+
+A full 15-epoch export with regenerated OOF caches has been run with MPS
+training and CPU-loadable runtime export artifacts. Use `--oof_fold_cache_dir`
+with a fresh directory for the chosen hyperparameters so interrupted OOF
+regeneration can resume from already completed folds.
+
+The completed MPS formal export command was:
+
+```
+TOKENIZERS_PARALLELISM=false \
+PYTORCH_ENABLE_MPS_FALLBACK=1 \
+OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 \
+python -m cdskit.targetp_blend \
+  --training_tsv data/localize_bench/targetp2_benchmark.tsv \
+  --reuse_oof_cache no \
+  --organism_gate yes \
+  --bilstm_oof_npz data/localize_bench/targetp2_oof_bilstm_formal_mps_b2048.npz \
+  --esm_oof_npz data/localize_bench/targetp2_oof_esm_formal_mps_b128.npz \
+  --oof_fold_cache_dir data/localize_bench/targetp2_oof_formal_mps_b2048_folds \
+  --bilstm_dl_epochs 15 \
+  --bilstm_dl_batch_size 2048 \
+  --bilstm_dl_device mps \
+  --esm_dl_epochs 1 \
+  --esm_dl_batch_size 128 \
+  --esm_dl_device mps \
+  --threshold_grid 0.05,0.075,0.1,0.15,0.2,0.3,0.4,0.5,0.65,0.8,0.9,1.0,1.25,1.35,1.5,1.6,2.0,3.0,5.0 \
+  --foldwise_blend_eval yes \
+  --foldwise_specialist_eval yes \
+  --foldwise_specialist_fixed_eval yes \
+  --foldwise_specialist_fixed_score_npz data/localize_bench/targetp2_specialist_foldwise_fixed_formal_mps_b2048_scores.npz \
+  --model_out data/localize_bench/targetp2_blend_runtime_specialist_formal_mps_b2048.pt \
+  --out_json data/localize_bench/targetp2_bilstm_esm_blend_formal_mps_b2048.json \
+  --out_md data/localize_bench/targetp2_bilstm_esm_blend_formal_mps_b2048.md
+```

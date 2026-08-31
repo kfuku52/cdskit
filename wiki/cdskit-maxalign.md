@@ -1,0 +1,65 @@
+# cdskit maxalign
+
+`cdskit maxalign` removes sequences to maximize codon-based alignment area, inspired by [MaxAlign (Gouveia-Oliveira et al. 2007)](https://link.springer.com/article/10.1186/1471-2105-8-312).
+
+CDSKIT computes alignment area in **codon units (3 nt)**:
+
+`alignment area = (number of retained sequences) x (number of complete codon sites)`
+
+A complete codon site is a codon column where every retained sequence has no missing character in that codon.
+
+## Example
+
+In this example, CDSKIT removes one gap-heavy sequence and keeps codon sites that are complete in the retained set.
+
+### Command
+
+```bash
+cdskit maxalign --seq_file input.fasta --out_file output.fasta --mode exact
+```
+
+### input.fasta
+
+```fasta
+>seq1
+ATGAAACCCGGG
+>seq2
+ATGAAACCCGGG
+>seq3
+ATGAAACCCGGG
+>seq4
+---AAA---GGG
+```
+
+### output.fasta
+
+```fasta
+>seq1
+ATGAAACCCGGG
+>seq2
+ATGAAACCCGGG
+>seq3
+ATGAAACCCGGG
+```
+
+## Key options
+
+- `--mode auto|exact|greedy`: Solver mode. `auto` uses exact search for small inputs and greedy search for larger inputs.
+- `--max_exact_sequences INT`: Maximum number of sequences allowed in exact mode (default: `16`).
+- `--missing_chars STR`: Characters treated as missing within a codon (default: `-?.`).
+- `--keep_seq_name_regex REGEX [REGEX ...]`: Never remove matching sequence IDs.
+- `--max_removed INT`: Maximum number of sequences that may be removed.
+- `--report PATH`: Optional JSON or TSV optimization report.
+
+## TSV report format
+
+TSV reports use schema version 2 and begin with `schema_version` and `section`.
+`summary` rows contain run-level metrics; `step` rows describe the initial state
+and each removal step. List-valued `removed_ids` cells are JSON arrays.
+
+## Notes
+
+- Input sequences should already be aligned (equal sequence lengths).
+- Input sequence lengths should be multiples of three.
+- Output keeps only retained sequences and codon sites that are complete in the retained set.
+- `--mode auto` switches to `greedy` when the number of input sequences exceeds `--max_exact_sequences`.

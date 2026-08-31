@@ -30,8 +30,10 @@ The normal `ml` extra and library dependency ranges remain unchanged.
 For GPU development, use `--ml-backend default` with the same script.
 The two backend profiles use separate environments.
 See [uv's PyTorch integration](https://docs.astral.sh/uv/guides/integration/pytorch/)
-for index configuration. With pip, use `cdskit[ml]` and select the appropriate
-PyTorch index separately; uv source settings are not wheel metadata.
+for index configuration. From a repository checkout, pip users can install
+`python -m pip install -e '.[ml]'` and select the appropriate PyTorch index
+separately; uv source settings are not wheel metadata. Outside a checkout, use
+the GitHub URL shown in the README because CDSKIT is not published on PyPI.
 
 ## Fast feedback
 
@@ -82,8 +84,10 @@ GitHub Actions always runs the Linux Python boundaries and full CPU ML/quality/
 package validation. Changes to core I/O, CLI, dependencies, tests or workflow
 infrastructure also run macOS and Windows coverage. Pure ML implementation,
 tests restricted to `tests/ml`, or
-documentation changes do not require those platform jobs. Scheduled and manual
-runs cover all nine core OS/Python combinations. Short validation jobs share a
+documentation paths alone do not require those platform jobs. A version bump in
+`cdskit/__init__.py` does trigger core/platform coverage, including when bundled
+with documentation changes. Relevant pull requests use four core combinations;
+relevant pushes, scheduled and manual runs cover all nine. Short validation jobs share a
 single environment; superseded runs are cancelled.
 
 The weekly security workflow also audits the normal GPU-capable ML resolution,
