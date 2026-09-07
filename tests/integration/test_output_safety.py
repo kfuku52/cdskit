@@ -10,6 +10,38 @@ def test_all_public_commands_declare_their_file_roles():
     assert set(COMMAND_PATHS) == set(subparsers.choices)
 
 
+@pytest.mark.parametrize("command", ["gapjust", "intersection"])
+def test_gff_stdout_does_not_overwrite_literal_dash(
+    tmp_path, monkeypatch, capsys, command
+):
+    monkeypatch.chdir(tmp_path)
+    source = tmp_path / "input.fa"
+    source.write_text(">seq1\nATGAAA\n")
+    gff = tmp_path / "input.gff"
+    contents = "##gff-version 3\nseq1\ttest\tgene\t1\t6\t.\t+\t.\tID=gene1\n"
+    gff.write_text(contents)
+    dash = tmp_path / "-"
+    dash.write_text("keep this file")
+    assert (
+        main(
+            [
+                command,
+                "--seq_file",
+                str(source),
+                "--in_gff",
+                str(gff),
+                "--out_file",
+                str(tmp_path / "output.fa"),
+                "--out_gff",
+                "-",
+            ]
+        )
+        == 0
+    )
+    assert capsys.readouterr().out == contents
+    assert dash.read_text() == "keep this file"
+
+
 @pytest.mark.parametrize(
     "command,input_option,contents",
     [

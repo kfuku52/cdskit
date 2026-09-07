@@ -60,3 +60,31 @@ def test_prediction_runtime_is_restored_after_failure():
         with prediction_runtime(PredictionRuntime(device="mps", offline=True)):
             predict_localization_batch(["MAAA"], {}, [])
     assert current_prediction_runtime() is previous
+
+
+@pytest.mark.parametrize("strategy", ["two_stage", "two_stage_ctp_ltp"])
+@pytest.mark.parametrize("labels", [["SP", "SP"], ["cTP", "lTP"]])
+def test_batch_two_stage_model_trained_without_notp(strategy, labels):
+    sequences = ["MKKLLLSKL", "MRRRQQAAA"]
+    features = np.asarray([extract_localize_features(seq)[0] for seq in sequences])
+    model = {
+        "model_type": "nearest_centroid_v1",
+        "localization_model": fit_localization_model(
+            features,
+            sequences,
+            labels,
+            "nearest_centroid",
+            {},
+            localize_strategy=strategy,
+        ),
+        "perox_model": {"mode": "constant", "yes_probability": 0.25},
+    }
+    assert model["localization_model"]["stage1_model"]["class_order"] == ["TP"]
+    actual = predict_localization_batch(sequences, model)
+    for seq, result in zip(sequences, actual, strict=True):
+        expected = predict_localization_and_peroxisome(seq, model)
+        assert result["predicted_class"] == expected["predicted_class"]
+        assert result["class_probabilities"] == pytest.approx(
+            expected["class_probabilities"]
+        )
+        assert result["class_probabilities"]["noTP"] == 0.0

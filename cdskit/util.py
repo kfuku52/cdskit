@@ -6,6 +6,7 @@ import re
 import sys
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import nullcontext
 from typing import Any, TypeVar
 
 import Bio.Data.CodonTable
@@ -692,7 +693,8 @@ def write_gff(gff: dict[str, Any], outfile: Any) -> None:
             len(np.unique(gff["data"]["seqid"]))
         )
     )
-    with atomic_text_writer(outfile) as f:
+    context = nullcontext(sys.stdout) if outfile == "-" else atomic_text_writer(outfile)
+    with context as f:
         if gff["header"]:
             f.write("\n".join(gff["header"]) + "\n")
         for row in gff["data"]:

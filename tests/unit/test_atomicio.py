@@ -8,6 +8,46 @@ import pytest
 from cdskit import atomicio
 
 
+@pytest.mark.parametrize("error_type", [KeyboardInterrupt, SystemExit])
+@pytest.mark.parametrize("phase", ["backup", "install"])
+@pytest.mark.parametrize("after_replace", [False, True])
+@pytest.mark.parametrize("existing_first", [False, True])
+def test_interrupted_commit_restores_original_outputs(
+    tmp_path, monkeypatch, error_type, phase, after_replace, existing_first
+):
+    first, second = tmp_path / "first.txt", tmp_path / "second.txt"
+    if existing_first:
+        first.write_text("first original")
+    second.write_text("second original")
+    replace = os.replace
+    interrupted = False
+
+    def interrupt_replace(src, dst):
+        nonlocal interrupted
+        target = Path(src) == second if phase == "backup" else Path(dst) == first
+        if target and not interrupted:
+            interrupted = True
+            if after_replace:
+                replace(src, dst)
+            raise error_type("interrupted commit")
+        replace(src, dst)
+
+    monkeypatch.setattr(atomicio.os, "replace", interrupt_replace)
+    with pytest.raises(error_type, match="interrupted commit"):
+        with atomicio.atomic_output_paths([first, second]) as staged:
+            for path in staged:
+                Path(path).write_text("replacement")
+    assert interrupted
+    assert second.read_text() == "second original"
+    if existing_first:
+        assert first.read_text() == "first original"
+    else:
+        assert not first.exists()
+    assert sorted(path.name for path in tmp_path.iterdir()) == (
+        ["first.txt", "second.txt"] if existing_first else ["second.txt"]
+    )
+
+
 @pytest.mark.parametrize("multiple", [False, True])
 def test_directory_destination_is_rejected_before_staging(tmp_path, multiple):
     directory = tmp_path / "important"

@@ -161,7 +161,7 @@ p_gffio.add_argument(
     type=str,
     required=False,
     action="store",
-    help="default=%(default)s: Output gff file.",
+    help='default=%(default)s: Output GFF file. Use "-" for standard output.',
 )
 
 p_threads = CdskitArgumentParser(add_help=False)
@@ -522,7 +522,7 @@ p_intersection.add_argument(
     default="out.gff",
     type=str,
     action="store",
-    help="default=%(default)s: Output GFF file.",
+    help='default=%(default)s: Output GFF file. Use "-" for standard output.',
 )
 p_intersection.add_argument(
     "--in_seq_format_2",

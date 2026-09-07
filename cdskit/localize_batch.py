@@ -57,9 +57,9 @@ def predict_model_probability_matrix(
             organism_group=organism_group,
         )
         base_matrix = np.zeros((num_rows, len(LOCALIZATION_CLASSES)), dtype=np.float64)
-        no_tp_col = stage1_order.index("noTP")
         tp_col = stage1_order.index("TP") if "TP" in stage1_order else None
-        base_matrix[:, 0] = stage1[:, no_tp_col]
+        if "noTP" in stage1_order:
+            base_matrix[:, 0] = stage1[:, stage1_order.index("noTP")]
         tp_probs = (
             stage1[:, tp_col]
             if tp_col is not None

@@ -171,21 +171,24 @@ def atomic_output_paths(paths: Iterable[Pathish]) -> Iterator[list[str]]:
                     )
                     os.close(fd)
                     os.unlink(backup_name)
-                    backup_path = Path(backup_name)
-                    os.replace(destination, backup_path)
+                    new_backup = Path(backup_name)
+                    # Record recovery state before a rename: interruption may
+                    # arrive after the OS moved the file but before returning.
+                    backup_paths.append(new_backup)
+                    os.replace(destination, new_backup)
                 else:
-                    backup_path = None
-                backup_paths.append(backup_path)
+                    backup_paths.append(None)
 
             for temporary_path, destination in zip(
                 temporary_paths,
                 destinations,
                 strict=True,
             ):
-                os.replace(temporary_path, destination)
                 committed += 1
+                os.replace(temporary_path, destination)
             commit_succeeded = True
-        except Exception as commit_error:
+        except BaseException as commit_error:
+            # KeyboardInterrupt/SystemExit must roll back just like I/O errors.
             rollback_errors: list[str] = []
             for index, destination in enumerate(destinations):
                 backup_path = backup_paths[index] if index < len(backup_paths) else None
