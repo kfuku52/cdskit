@@ -4,6 +4,22 @@ This project follows semantic versioning. Deprecated CLI spellings remain
 available for at least the 0.24 release series and print their canonical
 replacement to standard error.
 
+## 0.28.4 — 2026-09-08
+
+### Fixed
+
+- Preserve matching codon columns in `backtrim` when protein alignments use
+  lowercase residues or dot gaps.
+- Recognize dot gaps in `mask`, preserving complete codons made of mixed gap
+  symbols while masking partial gaps.
+- Remove GFF features on empty sequences when repairing out-of-range coordinates
+  in `intersection`.
+- Restore original multi-file outputs on `KeyboardInterrupt` and `SystemExit`,
+  including interruptions immediately after a file replacement.
+- Support batched prediction with two-stage models trained without noTP samples.
+- Send GFF output to standard output for `--out_gff -` instead of overwriting a
+  file named `-`.
+
 ## 0.28.3 — 2026-08-31
 
 ### Documentation
