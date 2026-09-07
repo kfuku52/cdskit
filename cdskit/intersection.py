@@ -37,6 +37,17 @@ def fix_out_of_range_gff_records(filtered_data, seqid_to_seq_len):
     seq_lengths = np.array(
         [seqid_to_seq_len[s] for s in filtered_data["seqid"]], dtype=int
     )
+    # No valid 1-based coordinate exists on an empty sequence. Clamping these
+    # rows to 1 would leave them out of range after supposedly fixing them.
+    has_bases = seq_lengths > 0
+    if np.any(~has_bases):
+        sys.stderr.write(
+            "Number of removed GFF records on empty sequences: {:,}\n".format(
+                np.sum(~has_bases)
+            )
+        )
+        filtered_data = filtered_data[has_bases]
+        seq_lengths = seq_lengths[has_bases]
     is_gff_entry_start_in_range = filtered_data["start"] <= seq_lengths
     if np.any(~is_gff_entry_start_in_range):
         sys.stderr.write(

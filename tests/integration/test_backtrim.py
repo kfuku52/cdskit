@@ -11,6 +11,24 @@ from Bio.SeqRecord import SeqRecord
 from cdskit.backtrim import backtrim_main, build_column_index, check_same_seq_num
 
 
+@pytest.mark.parametrize("protein", ["m-k", "M.K", "m.k"])
+def test_backtrim_accepts_case_and_gap_variants(
+    tmp_path, write_fasta, mock_args, protein
+):
+    cds = write_fasta(tmp_path / "cds.fa", [("seq1", "atg---aaa")])
+    aa = write_fasta(tmp_path / "aa.fa", [("seq1", protein)])
+    output = tmp_path / "out.fa"
+    backtrim_main(
+        mock_args(
+            seqfile=str(cds),
+            trimmed_aa_aln=str(aa),
+            outfile=str(output),
+            codontable=1,
+        )
+    )
+    assert str(Bio.SeqIO.read(output, "fasta").seq) == "atg---aaa"
+
+
 class TestCheckSameSeqNum:
     """Tests for check_same_seq_num function."""
 

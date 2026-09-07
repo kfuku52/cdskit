@@ -9,7 +9,36 @@ from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
 from cdskit.intersection import intersection_main
-from cdskit.util import DNA_ALLOWED_CHARS
+from cdskit.util import DNA_ALLOWED_CHARS, read_gff
+
+
+@pytest.mark.parametrize("only_empty", [False, True])
+def test_fix_gff_removes_features_on_empty_sequences(
+    tmp_path, write_fasta, mock_args, capsys, only_empty
+):
+    records = [("empty", "")] if only_empty else [("empty", ""), ("full", "ATG")]
+    fasta = write_fasta(tmp_path / "in.fa", records)
+    gff = tmp_path / "in.gff"
+    gff.write_text(
+        "##gff-version 3\n"
+        "empty\ttest\tgene\t1\t5\t.\t+\t.\tID=empty\n"
+        "full\ttest\tgene\t1\t5\t.\t+\t.\tID=full\n"
+    )
+    output = tmp_path / "out.gff"
+    intersection_main(
+        mock_args(
+            seqfile=str(fasta),
+            seqfile2=None,
+            ingff=str(gff),
+            outfile=str(tmp_path / "out.fa"),
+            outgff=str(output),
+            fix_outrange_gff_records=True,
+        )
+    )
+    data = read_gff(output)["data"]
+    assert list(data["seqid"]) == ([] if only_empty else ["full"])
+    assert list(data["end"]) == ([] if only_empty else [3])
+    assert "empty sequence" in capsys.readouterr().err
 
 
 class TestIntersectionMain:

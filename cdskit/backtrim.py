@@ -69,6 +69,9 @@ def build_column_index(seq_strings):
 
 
 def find_kept_aa_sites(tcdn_strings, pep_strings):
+    # Alignment case and the two accepted gap symbols do not change a site.
+    tcdn_strings = [seq.upper().replace(".", "-") for seq in tcdn_strings]
+    pep_strings = [seq.upper().replace(".", "-") for seq in pep_strings]
     kept_aa_sites = []
     multiple_matches: set[int] = set()
     last_kept_site = -1

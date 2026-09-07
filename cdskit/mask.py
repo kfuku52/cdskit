@@ -31,7 +31,8 @@ def codon_chunks(nucseq):
 def mask_partial_gap_codons(codons, mask_triplet):
     changed = False
     for i, codon in enumerate(codons):
-        if ("-" in codon) and (codon != "---"):
+        gaps = [ch in "-." for ch in codon]
+        if any(gaps) and not all(gaps):
             codons[i] = mask_triplet
             changed = True
     return changed
@@ -84,7 +85,7 @@ def mask_sequence_string(nucseq, codontable, mask_triplet, mask_ambiguous, mask_
     if len(nucseq) == 0:
         return nucseq
     sequence = np.frombuffer(nucseq.encode("ascii"), dtype="S1").reshape(-1, 3)
-    gap_positions = sequence == b"-"
+    gap_positions = (sequence == b"-") | (sequence == b".")
     should_mask = np.any(gap_positions, axis=1) & ~np.all(gap_positions, axis=1)
     if mask_ambiguous or mask_stop:
         amino_acids = translate_sequence_codes(

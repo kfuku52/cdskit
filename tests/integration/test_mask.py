@@ -19,6 +19,17 @@ from cdskit.mask import (
 class TestMaskHelpers:
     """Tests for mask helper functions."""
 
+    @pytest.mark.parametrize("ambiguous", [False, True])
+    def test_dot_and_mixed_gap_codons(self, ambiguous):
+        codons = ["atg", "A.G", ".--", "...", "-.-", "A-G", "???"]
+        expected = "atgNNN.--...-.-NNN" + ("NNN" if ambiguous else "???")
+        assert (
+            mask_sequence_string("".join(codons), 1, "NNN", ambiguous, False)
+            == expected
+        )
+        assert mask_partial_gap_codons(codons, "NNN") is True
+        assert codons == ["atg", "NNN", ".--", "...", "-.-", "NNN", "???"]
+
     def test_mask_partial_gap_codons(self):
         codons = ["ATG", "A-G", "---", "T-A"]
         changed = mask_partial_gap_codons(codons, "NNN")
