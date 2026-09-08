@@ -8,6 +8,14 @@ from urllib import request as urllib_request
 
 import numpy as np
 
+from cdskit.localize_evaluation import (
+    assert_disjoint,
+    dataset_digest,
+    grouped_folds,
+    probability_metrics,
+    stratified_metrics,
+    cluster_bootstrap,
+)
 from cdskit.cliutil import CdskitArgumentParser, parse_bool
 from cdskit.tsvio import read_tsv, write_tsv
 from cdskit.atomicio import atomic_output_path, atomic_text_writer, atomic_write_json
@@ -601,6 +609,8 @@ def _normalize_model_arch(model_arch):
     value = str(model_arch or "centroid").strip().lower()
     if value in ["centroid", "multilabel_centroid", "multilabel_centroid_v1"]:
         return "centroid"
+    if value in ["plm", "multilabel_plm_v1"]:
+        return "plm"
     if value in ["cnn", "multilabel_cnn", "multilabel_cnn_v1"]:
         return "cnn"
     raise ValueError("Unsupported --model_arch: {}".format(model_arch))
@@ -608,6 +618,8 @@ def _normalize_model_arch(model_arch):
 
 def _model_type_from_arch(model_arch):
     arch = _normalize_model_arch(model_arch=model_arch)
+    if arch == "plm":
+        return "multilabel_plm_v1"
     if arch == "cnn":
         return "multilabel_cnn_v1"
     return "multilabel_centroid_v1"
@@ -616,6 +628,8 @@ def _model_type_from_arch(model_arch):
 def _deeploc_cnn_params(dl_params=None):
     params = dict(dl_params or {})
     return {
+        "sequence_layout": str(params.get("sequence_layout", "separate_termini")),
+        "mask_padding": _to_bool_yes_no(params.get("mask_padding", "yes")),
         "seq_len": int(params.get("seq_len", 512)),
         "embed_dim": int(params.get("embed_dim", 32)),
         "num_filters": int(params.get("num_filters", 64)),
@@ -799,17 +813,45 @@ def compute_multilabel_metrics(y_true, y_pred, labels):
 
 def _fold_ids_from_rows(rows, fold_col="fold_id", n_folds=5, seed=1):
     values = [str(row.get(fold_col, "")).strip() for row in rows]
-    if all(value != "" for value in values):
-        return np.asarray(values)
-    n_rows = len(rows)
-    n_folds = max(2, int(n_folds))
-    rng = np.random.default_rng(int(seed))
-    order = np.arange(n_rows, dtype=np.int64)
-    rng.shuffle(order)
-    folds = np.empty((n_rows,), dtype=object)
-    for pos, row_idx in enumerate(order.tolist()):
-        folds[int(row_idx)] = "fold{}".format(int(pos % n_folds) + 1)
-    return folds
+    if not values or any(value == "" for value in values):
+        raise ValueError(
+            "Complete fold IDs are required. Use --split_method mmseqs for unpartitioned data."
+        )
+    if len(set(values)) < 2:
+        raise ValueError("At least two nonempty folds are required.")
+    for fold in sorted(set(values)):
+        assert_disjoint(
+            [row for row, value in zip(rows, values, strict=True) if value != fold],
+            [row for row, value in zip(rows, values, strict=True) if value == fold],
+        )
+    return np.asarray(values)
+
+
+def _prepare_partitions(rows, dl_params=None, n_folds=5, seed=1):
+    params = dict(dl_params or {})
+    method = params.get("split_method", "provided")
+    rows = [dict(row) for row in rows]
+    if method == "provided":
+        return rows, {
+            "method": "provided",
+            "homology": "as supplied; not independently rechecked",
+        }
+    if method != "mmseqs":
+        raise ValueError("Unsupported split_method: {}".format(method))
+    from cdskit.perox_benchmark import mmseqs_cluster_assignments
+
+    groups, report = mmseqs_cluster_assignments(
+        rows,
+        min_seq_id=0.3,
+        coverage=0.8,
+        threads=int(params.get("homology_threads", 4)),
+    )
+    if report["status"] != "ok":
+        raise ValueError("Homology partitioning failed: {}".format(report))
+    folds = grouped_folds(rows, groups, n_folds, seed)
+    for row, group, fold in zip(rows, groups, folds, strict=True):
+        row["cluster_id"], row["fold_id"] = str(group), str(fold)
+    return rows, {"method": "mmseqs", **report}
 
 
 def fit_deeploc_multilabel_model(
@@ -825,6 +867,18 @@ def fit_deeploc_multilabel_model(
         labels=labels,
         label_col=label_col,
     )
+    # Hold out an existing partition before fitting features, weights or parameters.
+    # With no independent partition, use fixed thresholds rather than training scores.
+    folds = sorted(set(str(row.get("fold_id", "")).strip() for row in rows))
+    validation_rows = []
+    validation_fold = None
+    if len(folds) >= 2 and "" not in folds:
+        validation_fold = folds[-1]
+        validation_rows = [
+            row for row in rows if str(row["fold_id"]).strip() == validation_fold
+        ]
+        rows = [row for row in rows if str(row["fold_id"]).strip() != validation_fold]
+        assert_disjoint(rows, validation_rows)
     x = build_deeploc_feature_matrix(rows=rows)
     y = build_label_matrix(
         rows=rows,
@@ -839,7 +893,38 @@ def fit_deeploc_multilabel_model(
         dl_params=dl_params,
     )
     cnn_params = None
-    if arch == "cnn":
+    if arch == "plm":
+        from cdskit.localize_multilabel_plm import fit_multilabel_plm
+
+        params = dict(dl_params or {})
+        config = {
+            "model_name": params.get("plm_model_name", "facebook/esm2_t6_8M_UR50D"),
+            "revision": params.get("plm_revision", ""),
+            "cache_dir": params.get("plm_cache_dir", "data/localize_bench/embeddings"),
+            "pooling": params.get("plm_pooling", "light_attention"),
+            "window": int(params.get("plm_window", 1000)),
+            "overlap": int(params.get("plm_overlap", 128)),
+            "local_files_only": _to_bool_yes_no(
+                params.get("plm_local_files_only", "no")
+            ),
+        }
+        localization_model = fit_multilabel_plm(
+            [row["sequence"] for row in rows],
+            y,
+            labels,
+            config,
+            validation_sequences=[row["sequence"] for row in validation_rows],
+            validation_y=build_label_matrix(validation_rows, labels, label_col)
+            if validation_rows
+            else None,
+            epochs=int(params.get("epochs", 6)),
+            batch_size=int(params.get("plm_batch_size", 8)),
+            learning_rate=float(params.get("learning_rate", 1e-3)),
+            seed=int(params.get("seed", 1)),
+            device=params.get("device", "auto"),
+            patience=int(params.get("patience", 3)),
+        )
+    elif arch == "cnn":
         cnn_params = _deeploc_cnn_params(dl_params=dl_params)
         feature_matrix = x if bool(cnn_params["feature_fusion"]) else None
         localization_model = fit_multilabel_cnn_classifier(
@@ -847,6 +932,17 @@ def fit_deeploc_multilabel_model(
             label_matrix=y,
             class_order=labels,
             seq_len=cnn_params["seq_len"],
+            sequence_layout=cnn_params["sequence_layout"],
+            mask_padding=cnn_params["mask_padding"],
+            tune_thresholds=False,
+            validation_sequences=[row["sequence"] for row in validation_rows],
+            validation_labels=build_label_matrix(validation_rows, labels, label_col)
+            if validation_rows
+            else None,
+            validation_features=build_deeploc_feature_matrix(validation_rows)
+            if validation_rows and cnn_params["feature_fusion"]
+            else None,
+            patience=int(dict(dl_params or {}).get("patience", 3)),
             embed_dim=cnn_params["embed_dim"],
             num_filters=cnn_params["num_filters"],
             kernel_sizes=cnn_params["kernel_sizes"],
@@ -866,6 +962,7 @@ def fit_deeploc_multilabel_model(
         )
     else:
         localization_model = fit_multilabel_centroid_classifier(
+            tune_thresholds=False,
             features=x,
             label_matrix=y,
             class_order=labels,
@@ -873,6 +970,45 @@ def fit_deeploc_multilabel_model(
             threshold_objective_by_class=threshold_objective_by_class,
             ensure_one_label=True,
         )
+    localization_model["class_thresholds"] = {name: 0.5 for name in labels}
+    if validation_rows:
+        from cdskit.localize_model import _tune_binary_threshold
+
+        validation_y = build_label_matrix(validation_rows, labels, label_col)
+        if arch == "plm":
+            from cdskit.localize_multilabel_plm import predict_multilabel_plm
+
+            validation_prob = predict_multilabel_plm(
+                [row["sequence"] for row in validation_rows],
+                localization_model,
+                apply_thresholds=False,
+            )["prob_matrix"]
+        elif arch == "cnn":
+            assert cnn_params is not None
+            validation_prob = predict_multilabel_cnn_batch(
+                [row["sequence"] for row in validation_rows],
+                localization_model,
+                feature_matrix=build_deeploc_feature_matrix(validation_rows)
+                if cnn_params["feature_fusion"]
+                else None,
+                apply_thresholds=False,
+            )["prob_matrix"]
+        else:
+            validation_prob = predict_multilabel_centroid_matrix(
+                build_deeploc_feature_matrix(validation_rows),
+                localization_model,
+                apply_thresholds=False,
+            )["prob_matrix"]
+        for i, name in enumerate(labels):
+            # A one-sided validation label cannot identify a useful threshold.
+            if len(np.unique(validation_y[:, i])) == 2:
+                localization_model["class_thresholds"][name] = _tune_binary_threshold(
+                    validation_prob[:, i],
+                    validation_y[:, i],
+                    objective=threshold_objective_by_class.get(
+                        name, threshold_params["threshold_objective"]
+                    ),
+                )
     localization_model["task"] = str(task_name)
     localization_model["feature_names"] = list(BROAD_FEATURE_NAMES)
     model_type = _model_type_from_arch(model_arch=arch)
@@ -882,8 +1018,13 @@ def fit_deeploc_multilabel_model(
         "class_counts": {
             labels[i]: int(np.sum(y[:, i] == 1)) for i in range(len(labels))
         },
-        "model_arch": "multilabel_cnn" if arch == "cnn" else "multilabel_centroid",
+        "model_arch": "multilabel_" + arch,
         "seqtype": "protein",
+        "threshold_source": "validation_partition" if validation_rows else "fixed_0.5",
+        "validation_fold": validation_fold,
+        "num_validation_rows": len(validation_rows),
+        "training_data_sha256": dataset_digest(rows),
+        "validation_data_sha256": dataset_digest(validation_rows),
         "threshold_params": dict(threshold_params),
         "rare_label_threshold_objective_by_class": dict(threshold_objective_by_class),
     }
@@ -900,6 +1041,12 @@ def fit_deeploc_multilabel_model(
 
 def _predict_model_on_rows(model, rows):
     model_type = str(model.get("model_type", ""))
+    if model_type == "multilabel_plm_v1":
+        from cdskit.localize_multilabel_plm import predict_multilabel_plm
+
+        return predict_multilabel_plm(
+            [row["sequence"] for row in rows], model["localization_model"]
+        )
     if model_type == "multilabel_cnn_v1":
         localization_model = model["localization_model"]
         feature_matrix = None
@@ -934,6 +1081,7 @@ def evaluate_deeploc21_task_cv(
     seed=1,
     model_arch="centroid",
     dl_params=None,
+    predictions_tsv="",
 ):
     rows = _filter_multilabel_rows(
         rows=_read_prepared_tsv(
@@ -943,12 +1091,16 @@ def evaluate_deeploc21_task_cv(
         labels=labels,
         label_col=label_col,
     )
+    rows, split_report = _prepare_partitions(rows, dl_params, n_folds, seed)
     fold_ids = _fold_ids_from_rows(
         rows=rows,
         fold_col=fold_col,
         n_folds=n_folds,
         seed=seed,
     )
+    rows = [
+        dict(row, fold_id=str(fold)) for row, fold in zip(rows, fold_ids, strict=True)
+    ]
     y_true = build_label_matrix(
         rows=rows,
         labels=labels,
@@ -985,7 +1137,11 @@ def evaluate_deeploc21_task_cv(
         fold_rows.append(
             {
                 "fold_id": str(fold_id),
-                "n_train": len(train_rows),
+                "n_train": model["metadata"]["num_training_rows"],
+                "n_validation": model["metadata"]["num_validation_rows"],
+                "threshold_source": model["metadata"]["threshold_source"],
+                "validation_fold": model["metadata"]["validation_fold"],
+                "selected_epoch": model["localization_model"].get("selected_epoch"),
                 "n_test": len(test_rows),
                 "macro_f1": float(fold_metrics["macro_f1"]),
                 "micro_f1": float(fold_metrics["micro_f1"]),
@@ -998,6 +1154,45 @@ def evaluate_deeploc21_task_cv(
         y_pred=y_pred,
         labels=labels,
     )
+    metrics.update(probability_metrics(y_true, prob, labels))
+    metrics["strata"] = stratified_metrics(
+        rows, y_true, y_pred, prob, labels, compute_multilabel_metrics
+    )
+    metrics["split_report"] = split_report
+    metrics["dataset_sha256"] = dataset_digest(rows)
+    metrics["cluster_bootstrap"] = (
+        cluster_bootstrap(
+            y_true,
+            y_pred,
+            [row["cluster_id"] for row in rows],
+            labels,
+            compute_multilabel_metrics,
+            seed=seed,
+        )
+        if all(row.get("cluster_id") for row in rows)
+        else {
+            "status": "not_computed",
+            "reason": "cluster_id required; folds are not bootstrap clusters",
+        }
+    )
+    if predictions_tsv:
+        output = []
+        for i, row in enumerate(rows):
+            result_row = {
+                "accession": row.get("accession", ""),
+                "fold_id": str(fold_ids[i]),
+                "cluster_id": row.get("cluster_id", ""),
+                "sequence_sha256": hashlib.sha256(
+                    row["sequence"].upper().encode()
+                ).hexdigest(),
+            }
+            for j, label in enumerate(labels):
+                result_row["true_" + label] = int(y_true[i, j])
+                result_row["pred_" + label] = int(y_pred[i, j])
+                result_row["p_" + label] = float(prob[i, j])
+            output.append(result_row)
+        _write_tsv_rows(predictions_tsv, output, list(output[0]))
+        metrics["predictions_tsv"] = predictions_tsv
     metrics["folds"] = fold_rows
     metrics["task"] = str(task_name)
     metrics["tsv_path"] = tsv_path
@@ -1018,6 +1213,8 @@ def evaluate_deeploc21_train_test(
     task_name="localization",
     model_arch="centroid",
     dl_params=None,
+    n_folds=5,
+    seed=1,
 ):
     train_rows = _filter_multilabel_rows(
         rows=_read_prepared_tsv(
@@ -1035,6 +1232,8 @@ def evaluate_deeploc21_train_test(
         labels=labels,
         label_col=label_col,
     )
+    assert_disjoint(train_rows, test_rows)
+    train_rows, split_report = _prepare_partitions(train_rows, dl_params, n_folds, seed)
     model = fit_deeploc_multilabel_model(
         rows=train_rows,
         labels=labels,
@@ -1054,6 +1253,46 @@ def evaluate_deeploc21_train_test(
         y_pred=pred["prediction_matrix"],
         labels=labels,
     )
+    metrics.update(probability_metrics(y_true, pred["prob_matrix"], labels))
+    metrics["strata"] = stratified_metrics(
+        test_rows,
+        y_true,
+        pred["prediction_matrix"],
+        pred["prob_matrix"],
+        labels,
+        compute_multilabel_metrics,
+    )
+    params = dict(dl_params or {})
+    if _to_bool_yes_no(params.get("homology_check", "no")):
+        from cdskit.perox_benchmark import mmseqs_homology_report
+
+        report = mmseqs_homology_report(
+            [dict(row, peroxisome=0) for row in train_rows],
+            [dict(row, peroxisome=0) for row in test_rows],
+            threads=int(params.get("homology_threads", 4)),
+            include_hit_indices=True,
+        )
+        if report["status"] != "ok":
+            raise ValueError("External homology check failed: {}".format(report))
+        hit_indices = set(report.pop("_hit_eval_indices"))
+        metrics["homology_report"] = {
+            key: value
+            for key, value in report.items()
+            if "positive" not in key and "negative" not in key
+        }
+        for name, hit in [("homology_hit", True), ("homology_nohit", False)]:
+            ids = [i for i in range(len(test_rows)) if (i in hit_indices) == hit]
+            if ids:
+                subset = compute_multilabel_metrics(
+                    y_true[ids], pred["prediction_matrix"][ids], labels
+                )
+                subset.update(
+                    probability_metrics(y_true[ids], pred["prob_matrix"][ids], labels)
+                )
+                metrics["strata"][name] = subset
+    metrics["dataset_sha256"] = dataset_digest(test_rows)
+    metrics["split_report"] = split_report
+    metrics["threshold_source"] = model["metadata"]["threshold_source"]
     metrics["task"] = str(task_name)
     metrics["train_tsv_path"] = train_tsv_path
     metrics["test_tsv_path"] = test_tsv_path
@@ -1171,6 +1410,7 @@ def run_deeploc21_benchmark(
     seed=1,
     model_arch="centroid",
     dl_params=None,
+    evaluate_external=True,
 ):
     cfg = _task_config(task_name=task_name, prepared_dir=prepared_dir)
     model_type = _model_type_from_arch(model_arch=model_arch)
@@ -1179,6 +1419,9 @@ def run_deeploc21_benchmark(
         "labels": list(cfg["labels"]),
         "model": model_type,
         "model_arch": _normalize_model_arch(model_arch=model_arch),
+        "training_parameters": dict(dl_params or {}),
+        "cv_seed": seed,
+        "cv_folds": n_folds,
         "feature_names": list(BROAD_FEATURE_NAMES),
         "train_tsv": cfg["train_tsv"],
         "published_reference": cfg.get("reference", {}),
@@ -1188,16 +1431,19 @@ def run_deeploc21_benchmark(
         labels=cfg["labels"],
         label_col=cfg["label_col"],
         task_name=cfg["task"],
+        predictions_tsv=str(comparison_json) + ".oof.tsv" if comparison_json else "",
         fold_col="fold_id",
         n_folds=n_folds,
         seed=seed,
         model_arch=model_arch,
         dl_params=dl_params,
     )
-    if cfg.get("test_tsv", "") != "":
+    if evaluate_external and cfg.get("test_tsv", "") != "":
         result["independent_test"] = evaluate_deeploc21_train_test(
             train_tsv_path=cfg["train_tsv"],
             test_tsv_path=cfg["test_tsv"],
+            n_folds=n_folds,
+            seed=seed,
             labels=cfg["labels"],
             label_col=cfg["label_col"],
             task_name=cfg["task"],
@@ -1209,6 +1455,7 @@ def run_deeploc21_benchmark(
             path=cfg["train_tsv"],
             required_columns=["sequence", cfg["label_col"]],
         )
+        train_rows, _ = _prepare_partitions(train_rows, dl_params, n_folds, seed)
         model = fit_deeploc_multilabel_model(
             rows=train_rows,
             labels=cfg["labels"],
@@ -1269,8 +1516,25 @@ def build_parser():
     )
     parser.add_argument("--model_out", default="", type=str)
     parser.add_argument(
-        "--model_arch", default="centroid", choices=["centroid", "cnn"], type=str
+        "--model_arch", default="centroid", choices=["centroid", "cnn", "plm"], type=str
     )
+    parser.add_argument("--plm_model_name", default="facebook/esm2_t6_8M_UR50D")
+    parser.add_argument(
+        "--plm_revision",
+        default="",
+        help="Immutable remote model commit SHA; required for remote encoders.",
+    )
+    parser.add_argument("--plm_cache_dir", default="data/localize_bench/embeddings")
+    parser.add_argument(
+        "--plm_pooling",
+        default="light_attention",
+        choices=["mean", "light_attention", "label_attention"],
+    )
+    parser.add_argument("--plm_window", default=1000, type=int)
+    parser.add_argument("--plm_overlap", default=128, type=int)
+    parser.add_argument("--plm_batch_size", default=8, type=int)
+    parser.add_argument("--plm_local_files_only", default=False, type=parse_bool)
+    parser.add_argument("--dl_patience", default=3, type=int)
     parser.add_argument("--dl_seq_len", default=512, type=int)
     parser.add_argument("--dl_embed_dim", default=32, type=int)
     parser.add_argument("--dl_num_filters", default=64, type=int)
@@ -1282,6 +1546,12 @@ def build_parser():
     parser.add_argument("--dl_weight_decay", default=1.0e-4, type=float)
     parser.add_argument("--dl_class_weight", default=True, type=parse_bool)
     parser.add_argument("--dl_feature_fusion", default=False, type=parse_bool)
+    parser.add_argument(
+        "--dl_sequence_layout",
+        default="separate_termini",
+        choices=["legacy", "separate_termini", "windows"],
+    )
+    parser.add_argument("--dl_mask_padding", default="yes", choices=["yes", "no"])
     parser.add_argument("--dl_sample_weight_power", default=0.0, type=float)
     parser.add_argument(
         "--dl_threshold_objective",
@@ -1300,6 +1570,17 @@ def build_parser():
     parser.add_argument("--dl_seed", default=1, type=int)
     parser.add_argument(
         "--dl_device", default="auto", choices=["auto", "cpu", "cuda", "mps"], type=str
+    )
+    parser.add_argument(
+        "--split_method", default="provided", choices=["provided", "mmseqs"]
+    )
+    parser.add_argument("--homology_check", default=False, type=parse_bool)
+    parser.add_argument("--homology_threads", default=4, type=int)
+    parser.add_argument(
+        "--external_test",
+        default=True,
+        type=parse_bool,
+        help="Disable while selecting models to keep the external test untouched.",
     )
     parser.add_argument("--cv_folds", default=5, type=int)
     parser.add_argument("--cv_seed", default=1, type=int)
@@ -1327,6 +1608,18 @@ def main(argv=None):
         )
     if _to_bool_yes_no(args.benchmark):
         dl_params = {
+            "split_method": args.split_method,
+            "homology_threads": args.homology_threads,
+            "homology_check": args.homology_check,
+            "plm_model_name": args.plm_model_name,
+            "plm_revision": args.plm_revision,
+            "plm_cache_dir": args.plm_cache_dir,
+            "plm_pooling": args.plm_pooling,
+            "plm_window": args.plm_window,
+            "plm_overlap": args.plm_overlap,
+            "plm_batch_size": args.plm_batch_size,
+            "plm_local_files_only": args.plm_local_files_only,
+            "patience": args.dl_patience,
             "seq_len": int(args.dl_seq_len),
             "embed_dim": int(args.dl_embed_dim),
             "num_filters": int(args.dl_num_filters),
@@ -1338,6 +1631,8 @@ def main(argv=None):
             "weight_decay": float(args.dl_weight_decay),
             "class_weight": args.dl_class_weight,
             "feature_fusion": args.dl_feature_fusion,
+            "sequence_layout": args.dl_sequence_layout,
+            "mask_padding": args.dl_mask_padding,
             "sample_weight_power": float(args.dl_sample_weight_power),
             "threshold_objective": args.dl_threshold_objective,
             "rare_label_threshold_objective": args.rare_label_threshold_objective,
@@ -1347,6 +1642,7 @@ def main(argv=None):
             "device": args.dl_device,
         }
         out["benchmark"] = run_deeploc21_benchmark(
+            evaluate_external=args.external_test,
             prepared_dir=args.out_dir,
             task_name=args.task,
             comparison_json=args.comparison_json,

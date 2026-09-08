@@ -4,6 +4,31 @@ This project follows semantic versioning. Deprecated CLI spellings remain
 available for at least the 0.24 release series and print their canonical
 replacement to standard error.
 
+## 0.29.0 — 2026-09-08
+
+### Added
+
+- Add calibrated multi-label localization specialists, portable numeric tree
+  inference, compact CNN distillation and optional frozen ESM residue heads.
+- Add reproducible full-data, homology-aware and experimental peroxisome
+  comparisons, with model provenance checks and independent prediction audits.
+
+### Fixed
+
+- Reserve validation partitions before fitting localization models and calibrate
+  thresholds independently of training rows.
+- Honor thread settings for multi-label prediction and align API peptide
+  preprocessing with the CLI.
+- Save NumPy scalar metadata in a safe-loadable form and reject malformed
+  specialist trees, blend weights and incompatible feature schemas.
+- Verify both training and validation partitions when resuming experiments.
+
+### Documentation
+
+- Record the integrated model's development gains and external-data limitations,
+  including weak peroxisome recall and the absence of taxonomy masking or
+  abstention. Model weights remain separate from source and package releases.
+
 ## 0.28.4 — 2026-09-08
 
 ### Fixed

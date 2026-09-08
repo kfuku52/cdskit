@@ -457,7 +457,15 @@ def test_run_deeploc_benchmark_writes_model_and_localize_predicts(temp_dir):
         },
     ]
     _write_prepared_localization_tsv(path=train_tsv, rows=train_rows)
-    _write_prepared_localization_tsv(path=hpa_tsv, rows=train_rows[:2])
+    _write_prepared_localization_tsv(
+        path=hpa_tsv,
+        rows=[
+            dict(
+                row, accession="HPA" + row["accession"], sequence=row["sequence"] + "VV"
+            )
+            for row in train_rows[:2]
+        ],
+    )
 
     result = run_deeploc21_benchmark(
         prepared_dir=str(prepared_dir),
@@ -540,7 +548,15 @@ def test_run_deeploc_benchmark_writes_cnn_model_and_localize_predicts(temp_dir):
         },
     ]
     _write_prepared_localization_tsv(path=train_tsv, rows=train_rows)
-    _write_prepared_localization_tsv(path=hpa_tsv, rows=train_rows[:2])
+    _write_prepared_localization_tsv(
+        path=hpa_tsv,
+        rows=[
+            dict(
+                row, accession="HPA" + row["accession"], sequence=row["sequence"] + "VV"
+            )
+            for row in train_rows[:2]
+        ],
+    )
 
     result = run_deeploc21_benchmark(
         prepared_dir=str(prepared_dir),

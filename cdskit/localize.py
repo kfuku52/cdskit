@@ -34,7 +34,11 @@ from cdskit.util import (
 )
 
 
-MULTILABEL_MODEL_TYPES = {"multilabel_centroid_v1", "multilabel_cnn_v1"}
+MULTILABEL_MODEL_TYPES = {
+    "multilabel_centroid_v1",
+    "multilabel_cnn_v1",
+    "multilabel_plm_v1",
+}
 SINGLE_LABEL_BATCH_MODEL_TYPES = {
     "bilstm_attention_v1",
     "esm_head_v1",
@@ -83,7 +87,13 @@ def _configure_ml_threads(model, threads):
             if isinstance(base_model, dict):
                 _configure_ml_threads(model=base_model, threads=threads)
         return
-    if model_type not in {"bilstm_attention_v1", "esm_head_v1", "targetp_torch_v1"}:
+    if model_type not in {
+        "bilstm_attention_v1",
+        "esm_head_v1",
+        "targetp_torch_v1",
+        "multilabel_cnn_v1",
+        "multilabel_plm_v1",
+    }:
         return
     try:
         import torch
@@ -216,7 +226,7 @@ def _predict_single_label_records_batched(
     ]
 
 
-def _predict_multilabel_cnn_records_batched(
+def _predict_multilabel_records_batched(
     records,
     aa_sequences,
     model,
@@ -239,14 +249,21 @@ def _predict_multilabel_cnn_records_batched(
             [feature_vec for feature_vec, _ in feature_rows],
             dtype=np.float32,
         )
-    pred = predict_multilabel_cnn_batch(
-        aa_sequences=aa_sequences,
-        localization_model=localization_model,
-        device="cpu",
-        batch_size=DEFAULT_LOCALIZE_BATCH_SIZE,
-        feature_matrix=feature_matrix,
-        apply_thresholds=True,
-    )
+    if model["model_type"] == "multilabel_plm_v1":
+        from cdskit.localize_multilabel_plm import predict_multilabel_plm
+
+        pred = predict_multilabel_plm(
+            aa_sequences, localization_model, device="cpu", batch_size=8
+        )
+    else:
+        pred = predict_multilabel_cnn_batch(
+            aa_sequences=aa_sequences,
+            localization_model=localization_model,
+            device="cpu",
+            batch_size=DEFAULT_LOCALIZE_BATCH_SIZE,
+            feature_matrix=feature_matrix,
+            apply_thresholds=True,
+        )
     class_order = list(localization_model["class_order"])
     prob_matrix = pred["prob_matrix"]
     pred_matrix = pred["prediction_matrix"]
@@ -282,10 +299,10 @@ def _predict_records_batched_if_supported(
     organism_group="",
 ):
     model_type = str(model.get("model_type", ""))
-    if (
-        model_type not in SINGLE_LABEL_BATCH_MODEL_TYPES
-        and model_type != "multilabel_cnn_v1"
-    ):
+    if model_type not in SINGLE_LABEL_BATCH_MODEL_TYPES and model_type not in {
+        "multilabel_cnn_v1",
+        "multilabel_plm_v1",
+    }:
         return None
     if len(records) == 0:
         return []
@@ -297,8 +314,8 @@ def _predict_records_batched_if_supported(
         )
         for record in records
     ]
-    if model_type == "multilabel_cnn_v1":
-        return _predict_multilabel_cnn_records_batched(
+    if model_type in {"multilabel_cnn_v1", "multilabel_plm_v1"}:
+        return _predict_multilabel_records_batched(
             records=records,
             aa_sequences=aa_sequences,
             model=model,

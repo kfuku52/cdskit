@@ -942,6 +942,7 @@ def fit_multilabel_centroid_classifier(
     threshold_objective="f1",
     threshold_objective_by_class=None,
     ensure_one_label=True,
+    tune_thresholds=True,
 ):
     x = np.asarray(features, dtype=np.float64)
     y = np.asarray(label_matrix, dtype=np.int64)
@@ -1005,6 +1006,8 @@ def fit_multilabel_centroid_classifier(
         "class_thresholds": {class_name: 0.5 for class_name in class_order},
         "ensure_one_label": bool(ensure_one_label),
     }
+    if not tune_thresholds:
+        return model
     train_prob = predict_multilabel_centroid_matrix(
         features=x,
         localization_model=model,
@@ -1103,6 +1106,10 @@ def predict_multilabel_localization(aa_seq, model, kingdom=""):
             localization_model=localization_model,
             apply_thresholds=True,
         )
+    elif model_type == "multilabel_plm_v1":
+        from cdskit.localize_multilabel_plm import predict_multilabel_plm
+
+        pred = predict_multilabel_plm([aa_seq], localization_model)
     elif model_type == "multilabel_cnn_v1":
         from cdskit.localize_multilabel_cnn import predict_multilabel_cnn_batch
 
@@ -3129,6 +3136,8 @@ def predict_localization_and_peroxisome(aa_seq, model, organism_group=""):
 
 
 def _strip_runtime_caches(value):
+    if isinstance(value, np.generic):
+        return value.item()
     if isinstance(value, dict):
         out = dict()
         for key, val in value.items():
@@ -3138,6 +3147,8 @@ def _strip_runtime_caches(value):
         return out
     if isinstance(value, list):
         return [_strip_runtime_caches(v) for v in value]
+    if isinstance(value, tuple):
+        return tuple(_strip_runtime_caches(v) for v in value)
     return value
 
 
@@ -3150,6 +3161,7 @@ def save_localize_model(model, path):
         "bilstm_attention_v1",
         "esm_head_v1",
         "multilabel_cnn_v1",
+        "multilabel_plm_v1",
         "targetp_blend_v1",
         "targetp_feature_ensemble_v1",
         "targetp_torch_v1",
@@ -3225,9 +3237,27 @@ def load_localize_model(path, allow_unsafe=False):
         "targetp_torch_v1",
         "multilabel_centroid_v1",
         "multilabel_cnn_v1",
+        "multilabel_plm_v1",
     ]
     if model["model_type"] not in allowed_model_types:
         raise ValueError("Unsupported model_type: {}".format(model["model_type"]))
+    localization_model = model["localization_model"]
+    if "specialist_head" in localization_model:
+        from cdskit.localize_specialists import (
+            validate_specialists,
+            blend_probabilities,
+        )
+
+        classes = localization_model["class_order"]
+        validate_specialists(localization_model["specialist_head"], classes)
+        if localization_model["specialist_head"]["feature_dim"] != len(
+            BROAD_FEATURE_NAMES
+        ) or localization_model.get("feature_names") != list(BROAD_FEATURE_NAMES):
+            raise ValueError("Specialist sequence feature schema differs from runtime.")
+        empty = np.zeros((0, len(classes)))
+        blend_probabilities(
+            empty, empty, localization_model.get("specialist_weights", [])
+        )
     expected_sklearn = str(
         model.get("metadata", {}).get("scikit_learn_version", "")
     ).strip()

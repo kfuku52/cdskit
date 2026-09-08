@@ -35,6 +35,45 @@ def encode_aa_sequences_termini(aa_sequences, seq_len, aa_to_idx=None):
     return encoded
 
 
+def _encode_layout(sequences, seq_len, aa_to_idx, layout):
+    if layout == "legacy":
+        return encode_aa_sequences_termini(sequences, seq_len, aa_to_idx)
+    if layout == "windows":
+        parts = []
+        for sequence in sequences:
+            chunks = []
+            for start in range(0, max(1, len(sequence)), max(1, seq_len // 2)):
+                chunks.append(
+                    encode_aa_sequence_termini(
+                        sequence[start : start + seq_len], seq_len, aa_to_idx
+                    )
+                )
+                if start + seq_len >= len(sequence):
+                    break
+            parts.append(chunks)
+        result = np.zeros(
+            (len(sequences), max((len(x) for x in parts), default=1), seq_len),
+            dtype=np.int64,
+        )
+        for i, chunks in enumerate(parts):
+            result[i, : len(chunks)] = chunks
+        return result
+    if layout != "separate_termini":
+        raise ValueError("Unsupported sequence_layout: {}".format(layout))
+    # Both termini are encoded independently; no convolution crosses a synthetic join.
+    width = (seq_len + 1) // 2
+    result = np.zeros((len(sequences), 2, width), dtype=np.int64)
+    for i, sequence in enumerate(sequences):
+        sequence = str(sequence).upper()
+        for j, part in enumerate((sequence[:width], sequence[-width:])):
+            result[i, j] = encode_aa_sequence_termini(part, width, aa_to_idx)
+    return result
+
+
+def _forward_layout(model, tokens, feature_vec):
+    return model(tokens=tokens, feature_vec=feature_vec)
+
+
 def _parse_kernel_sizes(kernel_sizes):
     if isinstance(kernel_sizes, str):
         out = [int(v.strip()) for v in kernel_sizes.split(",") if v.strip() != ""]
@@ -58,6 +97,8 @@ def _build_multilabel_cnn_module(
     dropout,
     num_class,
     feature_dim=0,
+    mask_padding=False,
+    terminal_concat=False,
 ):
     kernel_sizes = _parse_kernel_sizes(kernel_sizes=kernel_sizes)
 
@@ -87,27 +128,46 @@ def _build_multilabel_cnn_module(
                     nn.ReLU(),
                     nn.Dropout(float(dropout)),
                 )
-                classifier_in_dim = (int(num_filters) * len(kernel_sizes)) + int(
-                    num_filters
-                )
+                classifier_in_dim = (
+                    int(num_filters) * len(kernel_sizes) * (2 if terminal_concat else 1)
+                ) + int(num_filters)
             else:
                 self.feature_mlp = None
-                classifier_in_dim = int(num_filters) * len(kernel_sizes)
+                classifier_in_dim = (
+                    int(num_filters) * len(kernel_sizes) * (2 if terminal_concat else 1)
+                )
             self.dropout = nn.Dropout(float(dropout))
             self.classifier = nn.Linear(classifier_in_dim, int(num_class))
 
         def forward(self, tokens, feature_vec=None):
+            segmented = tokens.ndim == 3
+            if segmented:
+                batch, segments, length = tokens.shape
+                tokens = tokens.reshape(batch * segments, length)
             emb = self.embedding(tokens).transpose(1, 2)
             pooled = list()
             for conv in self.convs:
                 z = conv(emb)
                 z = z.relu()
+                if mask_padding:
+                    valid = tokens.ne(PAD_INDEX)
+                    # Even kernels produce one extra output with symmetric padding.
+                    z = z[:, :, : tokens.shape[1]]
+                    z = z.masked_fill(~valid[:, None, :], float("-inf"))
                 z = torch.amax(z, dim=2)
+                if mask_padding:
+                    z = torch.where(torch.isfinite(z), z, torch.zeros_like(z))
+                if segmented:
+                    z = (
+                        z.reshape(batch, -1)
+                        if terminal_concat
+                        else z.reshape(batch, segments, -1).amax(dim=1)
+                    )
                 pooled.append(z)
             if self.use_feature_fusion:
                 if feature_vec is None:
                     feature_vec = pooled[0].new_zeros(
-                        (tokens.shape[0], int(feature_dim))
+                        (pooled[0].shape[0], int(feature_dim))
                     )
                 pooled.append(self.feature_mlp(feature_vec))
             x = torch.cat(pooled, dim=1)
@@ -181,7 +241,22 @@ def fit_multilabel_cnn_classifier(
     threshold_objective="f1",
     threshold_objective_by_class=None,
     ensure_one_label=True,
+    sequence_layout="separate_termini",
+    mask_padding=True,
+    tune_thresholds=False,
+    validation_sequences=None,
+    validation_labels=None,
+    validation_features=None,
+    patience=3,
+    teacher_probabilities=None,
+    distillation_weight=0.5,
 ):
+    if tune_thresholds and not validation_sequences:
+        raise ValueError("Threshold tuning requires independent validation sequences.")
+    if validation_sequences and set(str(s).upper() for s in aa_sequences).intersection(
+        str(s).upper() for s in validation_sequences
+    ):
+        raise ValueError("Training and validation sequences overlap.")
     torch, nn = require_torch()
     np.random.seed(int(seed))
     torch.manual_seed(int(seed))
@@ -209,15 +284,29 @@ def fit_multilabel_cnn_classifier(
     if y.shape[0] == 0:
         raise ValueError("No training sequence for multilabel CNN.")
 
+    training_targets = y
+    if teacher_probabilities is not None:
+        teacher = np.asarray(teacher_probabilities, dtype=np.float32)
+        if (
+            teacher.shape != y.shape
+            or not np.isfinite(teacher).all()
+            or np.any((teacher < 0) | (teacher > 1))
+        ):
+            raise ValueError(
+                "Teacher probabilities must match labels and be finite values in [0, 1]."
+            )
+        if not 0 <= float(distillation_weight) <= 1:
+            raise ValueError("distillation_weight must be in [0, 1].")
+        training_targets = (1 - float(distillation_weight)) * y + float(
+            distillation_weight
+        ) * teacher
+
+    if sequence_layout not in ("legacy", "separate_termini", "windows"):
+        raise ValueError("Unsupported sequence_layout: {}".format(sequence_layout))
     aa_to_idx = dict(DEFAULT_AA_TO_IDX)
-    x = encode_aa_sequences_termini(
-        aa_sequences=aa_sequences,
-        seq_len=seq_len,
-        aa_to_idx=aa_to_idx,
-    )
     feature_x, feature_mean, feature_scale = _prepare_feature_matrix(
         feature_matrix=feature_matrix,
-        n_row=x.shape[0],
+        n_row=len(aa_sequences),
     )
     feature_dim = 0 if feature_x is None else int(feature_x.shape[1])
     resolved_device = resolve_torch_device(device_text=device)
@@ -231,6 +320,8 @@ def fit_multilabel_cnn_classifier(
         dropout=float(dropout),
         num_class=len(class_order),
         feature_dim=feature_dim,
+        mask_padding=mask_padding,
+        terminal_concat=sequence_layout == "separate_termini",
     )
     model.to(resolved_device)
     if use_class_weight:
@@ -248,12 +339,31 @@ def fit_multilabel_cnn_classifier(
         weight_decay=float(weight_decay),
     )
     rng = np.random.default_rng(int(seed))
-    indices = np.arange(x.shape[0], dtype=np.int64)
+    indices = np.arange(len(aa_sequences), dtype=np.int64)
     sample_prob = _row_sampling_probabilities(
         label_matrix=y,
         sample_weight_power=sample_weight_power,
     )
-    for _ in range(epochs):
+    validation_x, validation_target, validation_f = None, None, None
+    if validation_sequences:
+        validation_x = validation_sequences
+        validation_target = np.asarray(validation_labels, dtype=np.float32)
+        if validation_target.shape != (len(validation_sequences), len(class_order)):
+            raise ValueError("Validation labels have incompatible shape.")
+        if feature_dim:
+            validation_f = _normalize_runtime_features(
+                validation_features,
+                {
+                    "feature_dim": feature_dim,
+                    "feature_mean": feature_mean,
+                    "feature_scale": feature_scale,
+                },
+                len(validation_sequences),
+            )
+    if int(patience) < 1:
+        raise ValueError("patience must be positive.")
+    best_loss, best_state, stale, selected_epoch = float("inf"), None, 0, epochs
+    for epoch in range(epochs):
         if sample_prob is None:
             rng.shuffle(indices)
             epoch_indices = indices
@@ -267,11 +377,17 @@ def fit_multilabel_cnn_classifier(
         model.train()
         for start in range(0, epoch_indices.shape[0], batch_size):
             batch_idx = epoch_indices[start : start + batch_size]
-            xb = torch.as_tensor(
-                x[batch_idx, :], dtype=torch.long, device=resolved_device
+            encoded = _encode_layout(
+                [aa_sequences[i] for i in batch_idx],
+                seq_len,
+                aa_to_idx,
+                sequence_layout,
             )
+            xb = torch.as_tensor(encoded, dtype=torch.long, device=resolved_device)
             yb = torch.as_tensor(
-                y[batch_idx, :], dtype=torch.float32, device=resolved_device
+                training_targets[batch_idx, :],
+                dtype=torch.float32,
+                device=resolved_device,
             )
             fb = None
             if feature_x is not None:
@@ -281,54 +397,62 @@ def fit_multilabel_cnn_classifier(
                     device=resolved_device,
                 )
             optimizer.zero_grad(set_to_none=True)
-            loss = loss_fn(model(tokens=xb, feature_vec=fb), yb)
+            loss = loss_fn(_forward_layout(model, xb, fb), yb)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
 
-    train_prob = predict_multilabel_cnn_batch(
-        aa_sequences=aa_sequences,
-        localization_model={
-            "class_order": list(class_order),
-            "seq_len": int(seq_len),
-            "aa_to_idx": dict(aa_to_idx),
-            "embed_dim": int(embed_dim),
-            "num_filters": int(num_filters),
-            "kernel_sizes": list(kernel_sizes),
-            "dropout": float(dropout),
-            "feature_dim": int(feature_dim),
-            "feature_mean": None
-            if feature_mean is None
-            else feature_mean.astype(np.float32).tolist(),
-            "feature_scale": None
-            if feature_scale is None
-            else feature_scale.astype(np.float32).tolist(),
-            "state_dict": {
-                key: value.detach().cpu() for key, value in model.state_dict().items()
-            },
-            "class_thresholds": {name: 0.5 for name in class_order},
-            "ensure_one_label": bool(ensure_one_label),
-        },
-        device="cpu",
-        batch_size=512,
-        feature_matrix=feature_matrix,
-        apply_thresholds=False,
-    )["prob_matrix"]
-
-    from cdskit.localize_model import _tune_binary_threshold
-
-    thresholds = dict()
-    threshold_objective_by_class = dict(threshold_objective_by_class or {})
-    for class_i, class_name in enumerate(class_order):
-        objective = threshold_objective_by_class.get(class_name, threshold_objective)
-        thresholds[class_name] = _tune_binary_threshold(
-            prob_vec=train_prob[:, class_i],
-            true_binary=y[:, class_i],
-            threshold_grid=threshold_grid,
-            objective=objective,
-        )
-    return {
+        if validation_x is not None:
+            assert validation_target is not None
+            model.eval()
+            total = 0.0
+            with torch.no_grad():
+                for start in range(0, len(validation_x), batch_size):
+                    encoded = _encode_layout(
+                        validation_x[start : start + batch_size],
+                        seq_len,
+                        aa_to_idx,
+                        sequence_layout,
+                    )
+                    xb = torch.as_tensor(
+                        encoded, dtype=torch.long, device=resolved_device
+                    )
+                    yb = torch.as_tensor(
+                        validation_target[start : start + batch_size],
+                        device=resolved_device,
+                    )
+                    fb = (
+                        None
+                        if validation_f is None
+                        else torch.as_tensor(
+                            validation_f[start : start + batch_size],
+                            device=resolved_device,
+                        )
+                    )
+                    # Unweighted validation BCE is comparable across class-weight experiments.
+                    total += len(xb) * float(
+                        nn.functional.binary_cross_entropy_with_logits(
+                            model(xb, fb), yb
+                        ).item()
+                    )
+            score = total / len(validation_x)
+            if score < best_loss:
+                best_loss, stale, selected_epoch = score, 0, epoch + 1
+                best_state = {
+                    key: value.detach().cpu().clone()
+                    for key, value in model.state_dict().items()
+                }
+            else:
+                stale += 1
+                if stale >= patience:
+                    break
+    if best_state is not None:
+        model.load_state_dict(best_state)
+    result = {
         "mode": "multilabel_cnn",
+        "sequence_layout": sequence_layout,
+        "mask_padding": bool(mask_padding),
+        "terminal_concat": sequence_layout == "separate_termini",
         "class_order": list(class_order),
         "seq_len": int(seq_len),
         "aa_to_idx": dict(aa_to_idx),
@@ -343,7 +467,11 @@ def fit_multilabel_cnn_classifier(
         "feature_scale": None
         if feature_scale is None
         else feature_scale.astype(np.float32).tolist(),
-        "class_thresholds": thresholds,
+        "class_thresholds": {name: 0.5 for name in class_order},
+        "selected_epoch": selected_epoch,
+        "distillation_weight": float(distillation_weight)
+        if teacher_probabilities is not None
+        else 0.0,
         "sample_weight_power": float(sample_weight_power),
         "ensure_one_label": bool(ensure_one_label),
         "state_dict": {
@@ -351,6 +479,28 @@ def fit_multilabel_cnn_classifier(
         },
         "device": str(resolved_device),
     }
+
+    if tune_thresholds:
+        assert validation_target is not None
+        from cdskit.localize_model import _tune_binary_threshold
+
+        prob = predict_multilabel_cnn_batch(
+            validation_sequences,
+            result,
+            feature_matrix=validation_features,
+            apply_thresholds=False,
+        )["prob_matrix"]
+        for i, name in enumerate(class_order):
+            if len(np.unique(validation_target[:, i])) == 2:
+                result["class_thresholds"][name] = _tune_binary_threshold(
+                    prob[:, i],
+                    validation_target[:, i],
+                    threshold_grid=threshold_grid,
+                    objective=dict(threshold_objective_by_class or {}).get(
+                        name, threshold_objective
+                    ),
+                )
+    return result
 
 
 def _get_runtime_cnn_model(localization_model, device_text="cpu"):
@@ -372,6 +522,8 @@ def _get_runtime_cnn_model(localization_model, device_text="cpu"):
         dropout=float(localization_model.get("dropout", 0.0)),
         num_class=len(localization_model["class_order"]),
         feature_dim=int(localization_model.get("feature_dim", 0)),
+        mask_padding=bool(localization_model.get("mask_padding", False)),
+        terminal_concat=bool(localization_model.get("terminal_concat", False)),
     )
     model.load_state_dict(localization_model["state_dict"], strict=True)
     model.eval()
@@ -415,26 +567,37 @@ def predict_multilabel_cnn_batch(
     feature_matrix=None,
     apply_thresholds=True,
 ):
+    if int(batch_size) < 1:
+        raise ValueError("batch_size must be positive.")
+    from cdskit.localize_model import to_canonical_aa_sequence
+
+    # Match CLI preprocessing before either the CNN or specialist sees the input.
+    aa_sequences = [to_canonical_aa_sequence(seq) for seq in aa_sequences]
     torch, _ = require_torch()
     model, resolved_device = _get_runtime_cnn_model(
         localization_model=localization_model,
         device_text=device,
     )
-    x = encode_aa_sequences_termini(
-        aa_sequences=aa_sequences,
-        seq_len=int(localization_model["seq_len"]),
-        aa_to_idx=localization_model["aa_to_idx"],
-    )
+    if localization_model.get("sequence_only_features", False):
+        from cdskit.localize_specialists import sequence_features
+
+        feature_matrix = sequence_features(aa_sequences)
     feature_x = _normalize_runtime_features(
         feature_matrix=feature_matrix,
         localization_model=localization_model,
-        n_row=x.shape[0],
+        n_row=len(aa_sequences),
     )
     probs = list()
     with torch.no_grad():
-        for start in range(0, x.shape[0], int(batch_size)):
+        for start in range(0, len(aa_sequences), int(batch_size)):
+            encoded = _encode_layout(
+                aa_sequences[start : start + int(batch_size)],
+                int(localization_model["seq_len"]),
+                localization_model["aa_to_idx"],
+                localization_model.get("sequence_layout", "legacy"),
+            )
             xb = torch.as_tensor(
-                x[start : start + int(batch_size), :],
+                encoded,
                 dtype=torch.long,
                 device=resolved_device,
             )
@@ -445,12 +608,15 @@ def predict_multilabel_cnn_batch(
                     dtype=torch.float32,
                     device=resolved_device,
                 )
-            logits = model(tokens=xb, feature_vec=fb)
+            logits = _forward_layout(model, xb, fb)
             probs.append(torch.sigmoid(logits).detach().cpu().numpy())
     if len(probs) == 0:
         prob = np.zeros((0, len(localization_model["class_order"])), dtype=np.float64)
     else:
         prob = np.vstack(probs).astype(np.float64)
+    from cdskit.localize_specialists import apply_specialists
+
+    prob = apply_specialists(aa_sequences, localization_model, prob)
     if not apply_thresholds:
         return {"prob_matrix": prob}
     class_order = list(localization_model["class_order"])

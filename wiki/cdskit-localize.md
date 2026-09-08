@@ -187,3 +187,10 @@ evaluation options.
 - [training custom localize models](https://github.com/kfuku52/cdskit/wiki/cdskit-localize-learn)
 - [experimental peroxisome head](https://github.com/kfuku52/cdskit/wiki/cdskit-localize-peroxisome-head)
 - [localize benchmarks and development notes](https://github.com/kfuku52/cdskit/wiki/cdskit-localize-benchmarks-and-notes)
+
+## Experimental multi-label localization
+
+For independently calibrated thresholds, CNN terminal/window comparisons, frozen
+ESM heads and audited specialist integration, see
+[localization improvements](https://github.com/kfuku52/cdskit/wiki/cdskit-localize-improvements)
+and the [full-data experiment](https://github.com/kfuku52/cdskit/wiki/cdskit-localize-full-experiment).
