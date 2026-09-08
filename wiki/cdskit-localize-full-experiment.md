@@ -216,9 +216,12 @@ present it as an untouched evaluation set.
 
 ## Distribution status
 
-Source version 0.29.0 includes inference and experiment code. The integrated
-checkpoint is a separate local artifact; a source push and its automatic numeric
-release do not upload model weights. The prepared model-asset bundle contains
-`cdskit-localize-multilabel-integrated-v1.pt`, a model card, evaluation summary and
-SHA-256 checksums. A model-specific GitHub Release and a verified download alias
-must be published separately before users can obtain it by alias.
+The [integrated v1 model release](https://github.com/kfuku52/cdskit/releases/tag/localize-multilabel-integrated-v1)
+provides `cdskit-localize-multilabel-integrated-v1.pt`, a model card, evaluation
+summary, MIT license and SHA-256 checksums. It requires CDSKIT 0.29.0 or later and
+PyTorch. Download the checkpoint and pass its local path to `--model`; no short
+download alias is registered for this model.
+
+CDSKIT code and CDSKIT-trained model weights are MIT-licensed. Training and
+evaluation datasets retain their original licenses and attribution requirements;
+see the model card. The license update does not change the model weights.

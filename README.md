@@ -6,7 +6,7 @@
 [![Python](https://img.shields.io/badge/python-3.10--3.14-blue)](https://github.com/kfuku52/cdskit)
 [![Platforms](https://img.shields.io/conda/pn/bioconda/cdskit.svg)](https://anaconda.org/bioconda/cdskit)
 [![Downloads](https://img.shields.io/conda/dn/bioconda/cdskit.svg)](https://anaconda.org/bioconda/cdskit)
-[![License](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
 ## Overview
 **CDSKIT** is a Python toolkit for processing protein-coding DNA sequences.
@@ -153,4 +153,6 @@ Its Methods describe the use of `pad`, `mask`, `backtrim`, and `hammer`.
 
 
 ## Licensing
-This program is BSD-licensed (3 clause). See [LICENSE](LICENSE) for details.
+CDSKIT code and CDSKIT-trained model weights are MIT-licensed. See
+[LICENSE](LICENSE) for details. Third-party code and source datasets retain their
+own licenses and attribution requirements.

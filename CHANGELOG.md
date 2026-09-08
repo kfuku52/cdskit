@@ -4,6 +4,14 @@ This project follows semantic versioning. Deprecated CLI spellings remain
 available for at least the 0.24 release series and print their canonical
 replacement to standard error.
 
+## 0.29.1 — 2026-09-08
+
+### Changed
+
+- License CDSKIT code and CDSKIT-trained model weights under MIT. Update package
+  metadata and published model license notices; source datasets retain their
+  original licenses and attribution requirements. Model weights are unchanged.
+
 ## 0.29.0 — 2026-09-08
 
 ### Added

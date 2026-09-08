@@ -8,7 +8,7 @@ dynamic = ["version"]
 description = "Tools for processing codon sequences"
 readme = "README.md"
 requires-python = ">=3.10"
-license = "BSD-3-Clause"
+license = "MIT"
 authors = [
   {name = "Kenji Fukushima", email = "kfuku52@gmail.com"},
 ]
