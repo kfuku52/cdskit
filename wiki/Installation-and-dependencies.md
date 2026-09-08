@@ -37,7 +37,7 @@ conda activate cdskit
 cdskit --version
 ```
 
-As checked on 2026-08-31, the
+As checked on 2026-09-08, the
 [Bioconda 0.27.0 recipe](https://github.com/bioconda/bioconda-recipes/blob/master/recipes/cdskit/meta.yaml)
 still declares Python >=3.8 and Biopython >=1.77, and omits Matplotlib.
 The explicit requirements above are a workaround for that packaging mismatch,
@@ -45,7 +45,9 @@ not extra CDSKIT features. They can be removed once the published recipe's
 runtime dependencies match upstream metadata. GitHub source installation
 already resolves the required base dependencies. Tagged releases also need a
 downstream recipe update and successful build before appearing in Bioconda;
-publication is not immediate.
+publication is not immediate. This 0.27.0 recipe still describes the older
+BSD-3-Clause release; current source and CDSKIT-trained model weights are MIT.
+Use GitHub source for the integrated model, which requires CDSKIT >=0.29.0.
 
 Bioconda supports Linux and macOS. For native Windows, use the GitHub pip
 installation; the project tests Windows separately from Bioconda packaging.
@@ -63,7 +65,7 @@ These dependencies are installed automatically.
 ## Optional machine-learning dependencies
 
 Lightweight centroid JSON localization models need only the base installation.
-Neural training and prediction use the `ml` extra:
+The full neural training and prediction toolset uses the `ml` extra:
 
 ```bash
 python -m pip install --upgrade 'cdskit[ml] @ git+https://github.com/kfuku52/cdskit.git'
@@ -76,6 +78,22 @@ files, downloaded from a pinned revision or supplied locally.
 
 GPU support is optional. Published cdskit localization models run on CPU; CUDA
 or Apple MPS mainly helps when retraining neural models.
+
+## Integrated ten-label model runtime
+
+The [integrated v1 model](https://github.com/kfuku52/cdskit/wiki/cdskit-localize-multilabel-integrated-v1)
+requires CDSKIT >=0.29.0 and PyTorch. For inference, install:
+
+```bash
+python -m pip install --upgrade 'cdskit @ git+https://github.com/kfuku52/cdskit.git' 'torch>=2.2'
+```
+
+This checkpoint needs neither scikit-learn nor Transformers and does not download
+an ESM encoder. It uses safe loading with the default `--allow_unsafe_model no`.
+The installed 0.29.0 wheel was verified on Python 3.12 and PyTorch 2.14.0 without
+those optional packages: labels matched the evaluation on 1,717 HPA proteins
+and 115 additional peroxisome-positive proteins. This records a verified runtime,
+not validation of every PyTorch version allowed by package metadata.
 
 ## Pretrained targeting5 runtime
 

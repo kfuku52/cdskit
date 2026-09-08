@@ -4,14 +4,40 @@
 protein FASTA input. It can use a local model file or a published pretrained
 model alias.
 
+## Choose a model
+
+| Model | Prediction task | Runtime |
+| --- | --- | --- |
+| [Integrated v1](https://github.com/kfuku52/cdskit/wiki/cdskit-localize-multilabel-integrated-v1) | Ten subcellular locations, multiple labels per protein | CDSKIT >=0.29.0 and PyTorch; downloaded file path |
+| `targeting5` | Five targeting-peptide classes, one class per protein | PyTorch and scikit-learn 1.5.2; registered alias |
+| `targeting5-perox-deeploc21-et-v1` | Five targeting-peptide classes plus a peroxisome score | Same legacy runtime; experimental alias |
+
+All three CDSKIT-trained model releases are MIT-licensed. Source datasets retain
+their own licenses and attribution requirements. The ten-label model's peroxisome
+recall is not consistently better than its baseline; choose based on the prediction
+task and inspect the model-specific evaluation.
+
 ## Examples
+
+### Published ten-label localization model
+
+Follow the [download and runtime instructions](https://github.com/kfuku52/cdskit/wiki/cdskit-localize-multilabel-integrated-v1), then run:
+
+```bash
+cdskit localize --seq_file proteins.faa --seq_type protein \
+  --model cdskit-localize-multilabel-integrated-v1.pt \
+  --threads 1 --report localization.tsv
+```
+
+This model uses a local path, not a registered download alias. It loads safely
+without scikit-learn, Transformers, or `--allow_unsafe_model yes`.
 
 ### Pretrained TargetP-compatible model
 
 The pretrained `targeting5` model predicts `noTP`, `SP`, `mTP`, `cTP`, and
 `lTP`. It runs on CPU. First follow the
 [pretrained runtime setup](https://github.com/kfuku52/cdskit/wiki/Installation-and-dependencies#pretrained-targeting5-runtime):
-the existing release artifacts need scikit-learn 1.5.2 as well as torch, and
+the targeting5 release artifacts need scikit-learn 1.5.2 as well as torch, and
 do not load with every newer scikit-learn version.
 
 ```bash
@@ -95,7 +121,7 @@ seq_mtp	mTP	0.0742	0.0099	0.9122	0.0007	0.0029	0.0	none
 - `--seq_type dna|protein`: Input sequence type. The default is `dna`.
 - `--model PATH|ALIAS`: Model file path or pretrained alias such as `targeting5`.
 - `--report PATH`: Output report. Use `-` for standard output. `.json` writes JSON; other suffixes write TSV.
-- `--organism_group unknown|plant|non_plant`: Optional organism group used to constrain plant-only cTP/lTP predictions.
+- `--organism_group unknown|plant|non_plant`: Optional organism group used to constrain targeting-model cTP/lTP predictions. The integrated ten-label model does not mask chloroplast predictions by taxonomy.
 - `--include_features yes|no`: Include internal feature values in the output report.
 - `--model_download yes|no`: Allow checksum-verified downloads for pretrained aliases. The default is `yes`; use `no` for offline-only operation.
 - `--threads INT`: Requested CPU workers/ML threads. `0` detects CPUs up to
@@ -119,9 +145,11 @@ probability column per model label. `predicted_labels` is a semicolon-separated
 string in both TSV and JSON rows, not a JSON array.
 
 TSV output is UTF-8, tab-delimited, rectangular, and LF-terminated. JSON output
-contains the same row objects. `p_peroxisome` is a separate binary-head score;
+contains the same row objects. In targeting models, `p_peroxisome` is a separate binary-head score;
 it does not replace `predicted_class`. `perox_signal_type` describes the
 detected PTS-like signal category when the loaded model provides that feature.
+In the integrated model, `p_peroxisome` is one of the ten localization probabilities
+and its threshold determines whether `peroxisome` appears in `predicted_labels`.
 The original `targeting5` artifact has a constant-zero peroxisome head; a zero
 there is not evidence that a protein is absent from peroxisomes. Use a model
 with a trained peroxisome head when that score is needed. Scores and thresholded
@@ -141,7 +169,8 @@ not need to add the unsafe flag when using those aliases. An explicit local
 path to the same legacy file does not receive the alias's automatic trust.
 Checksums verify the registered bytes; they do not make arbitrary pickle files
 safe. See [runtime compatibility](https://github.com/kfuku52/cdskit/wiki/Installation-and-dependencies#pretrained-targeting5-runtime)
-for the existing release models.
+for the legacy targeting5 release models. The integrated v1 checkpoint uses
+restricted loading and does not need the legacy runtime.
 
 The cache root is `$CDSKIT_MODEL_DIR` when set, then
 `$XDG_CACHE_HOME/cdskit/models`, otherwise `~/.cache/cdskit/models`.
@@ -188,7 +217,7 @@ evaluation options.
 - [experimental peroxisome head](https://github.com/kfuku52/cdskit/wiki/cdskit-localize-peroxisome-head)
 - [localize benchmarks and development notes](https://github.com/kfuku52/cdskit/wiki/cdskit-localize-benchmarks-and-notes)
 
-## Experimental multi-label localization
+## Multi-label evaluation and research
 
 For independently calibrated thresholds, CNN terminal/window comparisons, frozen
 ESM heads and audited specialist integration, see

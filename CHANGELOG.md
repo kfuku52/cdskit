@@ -4,6 +4,14 @@ This project follows semantic versioning. Deprecated CLI spellings remain
 available for at least the 0.24 release series and print their canonical
 replacement to standard error.
 
+## 0.29.2 — 2026-09-08
+
+### Documentation
+
+- Add the published integrated model download, runtime and prediction guide.
+- Distinguish legacy targeting5 dependencies and scores from ten-label inference.
+- Update README and wiki navigation, MIT model notices and Bioconda status.
+
 ## 0.29.1 — 2026-09-08
 
 ### Changed

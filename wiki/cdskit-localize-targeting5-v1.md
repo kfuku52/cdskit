@@ -1,5 +1,9 @@
 # cdskit localize targeting5-v1
 
+The CDSKIT-trained weights are MIT-licensed; the model release includes LICENSE
+and SHA256SUMS. The license update leaves the checkpoint bytes and legacy runtime
+requirements unchanged. Source datasets retain their original terms.
+
 `targeting5-v1` is the pretrained model used by:
 
 ```bash

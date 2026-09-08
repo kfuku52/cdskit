@@ -39,7 +39,7 @@ Install the latest source from GitHub into an activated Python environment:
 python -m pip install --upgrade 'cdskit @ git+https://github.com/kfuku52/cdskit.git'
 ```
 
-For neural training and prediction, install the optional
+For the full neural training and prediction toolset, install the optional
 `ml` extra (`torch`, `scikit-learn`, and `transformers`):
 
 ```bash
@@ -49,7 +49,9 @@ python -m pip install --upgrade 'cdskit[ml] @ git+https://github.com/kfuku52/cds
 CDSKIT is not published on PyPI; include the GitHub URL in pip commands.
 Lightweight centroid JSON models need only the base installation. Pretrained
 localization models run on CPU; a GPU is not required for prediction.
-Published `targeting5` model artifacts additionally require their original
+The [integrated ten-label model](wiki/cdskit-localize-multilabel-integrated-v1.md)
+needs only PyTorch in addition to the base installation. Published `targeting5`
+model artifacts additionally require their original
 scikit-learn environment; follow the
 [pretrained runtime setup](wiki/Installation-and-dependencies.md#pretrained-targeting5-runtime).
 
@@ -123,7 +125,11 @@ one TSV table. Use `--mode summary` or `--mode usage` for machine-readable outpu
 
 ## Localization guides
 
-See the [prediction guide](wiki/cdskit-localize.md) for pretrained aliases,
+The [published integrated model](wiki/cdskit-localize-multilabel-integrated-v1.md)
+predicts ten subcellular locations with independent label thresholds. Download
+the checkpoint and pass its path to `--model`; it has no short download alias.
+
+See the [prediction guide](wiki/cdskit-localize.md) for model selection, pretrained aliases,
 report columns, offline use, and safe model loading; the
 [training guide](wiki/cdskit-localize-learn.md) covers custom models and CV.
 [Benchmark notes](wiki/cdskit-localize-benchmarks-and-notes.md) distinguish

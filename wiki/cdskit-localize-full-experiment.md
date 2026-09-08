@@ -124,18 +124,21 @@ sensitivity analysis, not a retroactive change to model-selection partitions.
 
 ## Adopted integrated model and audit (2026-09-08)
 
-The adopted accuracy model is
-`data/localize_bench/full_localization_20260908/final/integrated.pt`.
+The adopted model was saved in the experiment as
+`data/localize_bench/full_localization_20260908/final/integrated.pt` and is now
+published as `cdskit-localize-multilabel-integrated-v1.pt`.
 It contains the CNN, ten numeric specialist heads, validation-selected blend
 weights and thresholds. It loads safely without enabling legacy pickle loading.
 The file SHA-256 is
 `e9b35ead3eca4dcdf833e469f18f1d67e05a3de274b00861cbf08bf138d01621`.
-Use the audited source revision/environment; the checkpoint is a local experiment
-artifact and is not bundled in the distribution or a remote pretrained alias.
+Use the [published model and runtime instructions](https://github.com/kfuku52/cdskit/wiki/cdskit-localize-multilabel-integrated-v1).
+The checkpoint is a separate release asset, not bundled in the Python package
+or registered as a short download alias. The published file has the same bytes
+as the audited experiment checkpoint.
 
 ```bash
 cdskit localize --seq_file proteins.fasta --seq_type protein \
-  --model data/localize_bench/full_localization_20260908/final/integrated.pt \
+  --model cdskit-localize-multilabel-integrated-v1.pt \
   --threads 1 --report localization.tsv
 ```
 

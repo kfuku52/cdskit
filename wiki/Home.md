@@ -27,6 +27,17 @@ sources and images are also maintained in the repository's
 [`wiki/` directory](https://github.com/kfuku52/cdskit/tree/master/wiki);
 see [documentation maintenance](https://github.com/kfuku52/cdskit/blob/master/docs/documentation.md).
 
+## Localization models and licensing
+
+The [published integrated model](https://github.com/kfuku52/cdskit/wiki/cdskit-localize-multilabel-integrated-v1)
+predicts ten subcellular locations from protein or CDS input. The
+[prediction guide](https://github.com/kfuku52/cdskit/wiki/cdskit-localize) compares
+it with the targeting5 models and explains their different runtime requirements.
+
+CDSKIT code and CDSKIT-trained model weights are
+[MIT-licensed](https://github.com/kfuku52/cdskit/blob/master/LICENSE).
+Third-party software and source datasets retain their own license terms.
+
 ## CDSKIT commands
 
 - [`accession2fasta`](https://github.com/kfuku52/cdskit/wiki/cdskit-accession2fasta): Retrieving fasta sequences from a list of GenBank accessions

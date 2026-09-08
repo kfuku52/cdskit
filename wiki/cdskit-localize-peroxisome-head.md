@@ -1,5 +1,9 @@
 # cdskit localize peroxisome head
 
+The CDSKIT-trained weights are MIT-licensed; the model release includes LICENSE
+and SHA256SUMS. The license update leaves the checkpoint bytes and legacy runtime
+requirements unchanged. Source datasets retain their original terms.
+
 `p_peroxisome` is available in the experimental prerelease model
 `cdskit-localize-targeting5-perox-deeploc21-et-v1.pt`, registered under the
 alias `targeting5-perox-deeploc21-et-v1`. When that alias is used with
