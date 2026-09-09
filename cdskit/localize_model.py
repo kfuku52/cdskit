@@ -3209,10 +3209,13 @@ def load_localize_model(path, allow_unsafe=False):
                     RuntimeWarning,
                     stacklevel=2,
                 )
+                from cdskit import localize_pickle
+
                 payload = torch.load(
                     path,
                     map_location="cpu",
                     weights_only=False,
+                    pickle_module=localize_pickle,
                 )
             if isinstance(payload, dict) and ("model" in payload):
                 model = payload["model"]
