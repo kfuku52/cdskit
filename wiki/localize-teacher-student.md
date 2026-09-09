@@ -12,6 +12,8 @@ Replace its revision placeholder with an immutable encoder commit SHA, or set
 `model_name` to a local ESM checkpoint directory containing safetensors and tokenizer
 files. No remote model code is executed. `local_files_only: true` disables encoder
 downloads. Teacher training freezes the encoder; it does not fine-tune ESM weights.
+Encoder loading preserves the training RNG state, so an empty or populated
+embedding cache does not change teacher initialization or dropout randomness.
 
 ## Partitions and configuration
 

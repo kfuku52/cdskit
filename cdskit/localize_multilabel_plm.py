@@ -132,13 +132,17 @@ class ResidueEncoder:
         self.tokenizer = AutoTokenizer.from_pretrained(
             self.config["model_name"], **kwargs
         )
-        self.model = (
-            EsmModel.from_pretrained(
-                self.config["model_name"], use_safetensors=True, **kwargs
-            )
-            .eval()
-            .to(self.device)
-        )
+        torch, _ = require_torch()
+        # Loading a frozen encoder must not advance the teacher's RNG stream.
+        # Public MLM checkpoints omit the sequence pooler, which we never use.
+        with torch.random.fork_rng(devices=[]):
+            self.model = EsmModel.from_pretrained(
+                self.config["model_name"],
+                use_safetensors=True,
+                add_pooling_layer=False,
+                **kwargs,
+            ).eval()
+        self.model = self.model.to(self.device)
         self.model.requires_grad_(False)
         if (
             self.window + 2 + int(self.model.config.pad_token_id)

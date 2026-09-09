@@ -341,3 +341,55 @@ def test_plm_honors_scoped_offline_setting(monkeypatch):
             encoder._load()
     assert calls[0]["local_files_only"] is True
     assert calls[0]["trust_remote_code"] is False
+
+
+def test_encoder_loading_preserves_training_rng(tiny_esm):
+    import torch
+    from transformers import EsmModel
+    from cdskit.localize_multilabel_plm import ResidueEncoder
+
+    # Public masked-language-model checkpoints omit the unused sequence pooler.
+    EsmModel.from_pretrained(tiny_esm, add_pooling_layer=False).save_pretrained(
+        tiny_esm
+    )
+    encoder = ResidueEncoder(
+        {"model_name": str(tiny_esm), "window": 16, "overlap": 4}, "cpu"
+    )
+    torch.manual_seed(11)
+    before = torch.get_rng_state().clone()
+    encoder.encode("MAAA")
+    assert torch.equal(before, torch.get_rng_state())
+
+
+def test_teacher_weights_do_not_depend_on_embedding_cache(tiny_esm, tmp_path):
+    import torch
+    from transformers import EsmModel
+    from cdskit.localize_multilabel_plm import fit_multilabel_plm
+
+    EsmModel.from_pretrained(tiny_esm, add_pooling_layer=False).save_pretrained(
+        tiny_esm
+    )
+    config = {
+        "model_name": str(tiny_esm),
+        "cache_dir": str(tmp_path / "residues"),
+        "window": 16,
+        "overlap": 4,
+        "pooling": "light_attention",
+    }
+    parameters = dict(
+        sequences=["MAAA", "MCCC"],
+        y=[[1, 0], [0, 1]],
+        labels=["nucleus", "cytoplasm"],
+        config=config,
+        validation_sequences=["MDDD", "MEEE"],
+        validation_y=[[1, 0], [0, 1]],
+        epochs=2,
+        batch_size=2,
+        seed=11,
+        device="cpu",
+    )
+    cold = fit_multilabel_plm(**parameters)
+    warm = fit_multilabel_plm(**parameters)
+    assert cold["training_history"] == warm["training_history"]
+    for key in cold["state_dict"]:
+        assert torch.equal(cold["state_dict"][key], warm["state_dict"][key])
