@@ -1594,6 +1594,16 @@ def _resolve_cross_validation(
 
 
 def localize_learn_main(args):
+    if getattr(args, "stage", "train") != "train":
+        from cdskit.localize_pipeline import pipeline_main
+
+        return pipeline_main(args)
+    if any(
+        getattr(args, key, "") for key in ("config", "run_dir", "teacher_run")
+    ) or not getattr(args, "resume", True):
+        raise ValueError(
+            "--config, --run_dir, --teacher_run and --resume no require a pipeline --stage."
+        )
     stop_if_invalid_codontable(codontable=args.codontable, label="--codon_table")
     cv_folds = int(getattr(args, "cv_folds", 0))
     cv_seed = int(getattr(args, "cv_seed", 1))

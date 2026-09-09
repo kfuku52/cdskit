@@ -53,11 +53,13 @@ ml = [
   "torch>=2.2",
   "scikit-learn>=1.4",
   "transformers>=4.40",
+  "PyYAML>=6",
 ]
 ml-cpu = [
   "torch>=2.2",
   "scikit-learn>=1.4",
   "transformers>=4.40",
+  "PyYAML>=6",
 ]
 dev = [
   "pytest>=7",
@@ -71,6 +73,7 @@ dev = [
   "torch>=2.2",
   "scikit-learn>=1.4",
   "transformers>=4.40",
+  "PyYAML>=6",
 ]
 
 [project.urls]

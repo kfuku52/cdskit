@@ -60,6 +60,8 @@ COMMAND_PATHS.update(
 def command_paths(args: Namespace) -> tuple[list[str], list[str]]:
     """Resolve only the paths a command actually reads or writes."""
 
+    if args.command == "localize-learn" and getattr(args, "stage", "train") != "train":
+        return ([args.config] if args.config else []), []
     spec = COMMAND_PATHS[args.command]
     inputs = [getattr(args, name, None) for name in spec.inputs]
     if args.command == "localize" and args.model:

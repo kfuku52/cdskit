@@ -259,3 +259,7 @@ cdskit localize \
 - [targeting5-v1 model details](https://github.com/kfuku52/cdskit/wiki/cdskit-localize-targeting5-v1)
 - [experimental peroxisome head](https://github.com/kfuku52/cdskit/wiki/cdskit-localize-peroxisome-head)
 - [localize benchmarks and development notes](https://github.com/kfuku52/cdskit/wiki/cdskit-localize-benchmarks-and-notes)
+
+## Staged teacher/student learning
+
+Use `--stage teacher|predict|distill|evaluate|all` with `--config` and `--run_dir` for restartable multilabel experiments. See [the teacher/student guide](localize-teacher-student.md) for partition rules, GPU-to-CPU execution, provenance and model export.

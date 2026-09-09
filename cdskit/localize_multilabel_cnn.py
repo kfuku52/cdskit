@@ -196,7 +196,11 @@ def _class_pos_weight(label_matrix):
     y = np.asarray(label_matrix, dtype=np.float32)
     pos = np.sum(y > 0.5, axis=0)
     neg = float(y.shape[0]) - pos
-    return (neg / np.clip(pos, 1.0, None)).astype(np.float32)
+    # A balancing ratio is undefined when either outcome is absent. Keep that
+    # class's BCE active with neutral weight, including teacher soft targets.
+    weight = np.ones(pos.shape, dtype=np.float32)
+    np.divide(neg, pos, out=weight, where=(pos > 0) & (neg > 0))
+    return weight
 
 
 def _row_sampling_probabilities(label_matrix, sample_weight_power):
@@ -363,6 +367,7 @@ def fit_multilabel_cnn_classifier(
     if int(patience) < 1:
         raise ValueError("patience must be positive.")
     best_loss, best_state, stale, selected_epoch = float("inf"), None, 0, epochs
+    training_history: list[dict[str, int | float | None]] = []
     for epoch in range(epochs):
         if sample_prob is None:
             rng.shuffle(indices)
@@ -402,6 +407,7 @@ def fit_multilabel_cnn_classifier(
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
 
+        training_history.append({"epoch": epoch + 1, "validation_bce": None})
         if validation_x is not None:
             assert validation_target is not None
             model.eval()
@@ -436,6 +442,7 @@ def fit_multilabel_cnn_classifier(
                         ).item()
                     )
             score = total / len(validation_x)
+            training_history[-1]["validation_bce"] = score
             if score < best_loss:
                 best_loss, stale, selected_epoch = score, 0, epoch + 1
                 best_state = {
@@ -469,6 +476,7 @@ def fit_multilabel_cnn_classifier(
         else feature_scale.astype(np.float32).tolist(),
         "class_thresholds": {name: 0.5 for name in class_order},
         "selected_epoch": selected_epoch,
+        "training_history": training_history,
         "distillation_weight": float(distillation_weight)
         if teacher_probabilities is not None
         else 0.0,

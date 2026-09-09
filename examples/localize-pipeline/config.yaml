@@ -1,0 +1,28 @@
+schema_version: 1
+# Paths are relative to this configuration file. Input contains protein sequences.
+data:
+  path: partitions.tsv
+threads: 4
+# Allow no positive label when every probability is below its threshold.
+ensure_one_label: false
+teacher:
+  model_name: facebook/esm2_t33_650M_UR50D
+  # Replace with the encoder repository's immutable 40-character commit SHA.
+  revision: REPLACE_WITH_ENCODER_COMMIT_SHA
+  cache_dir: residue-cache
+  pooling: light_attention
+  device: cuda
+  epochs: 12
+  batch_size: 8
+  window: 1000
+  overlap: 128
+student:
+  device: cpu
+  epochs: 12
+  batch_size: 256
+  seq_len: 512
+  embed_dim: 32
+  num_filters: 32
+  kernel_sizes: [3, 5, 9, 15]
+  distillation_weight: 0.5
+  train_control: true

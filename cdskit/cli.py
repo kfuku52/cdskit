@@ -1231,6 +1231,29 @@ p_localize_learn.add_argument(
     action="store",
     help="default=%(default)s: Skip entries with ambiguous multi-target annotations in uniprot_cc mode.",
 )
+p_localize_learn.add_argument(
+    "--stage",
+    choices=("train", "teacher", "predict", "distill", "evaluate", "all"),
+    default="train",
+    help="Legacy training or a restartable teacher/student stage.",
+)
+p_localize_learn.add_argument(
+    "--config", default="", help="JSON/YAML staged-learning configuration."
+)
+p_localize_learn.add_argument(
+    "--run_dir", default="", help="Owned directory for staged artifacts and provenance."
+)
+p_localize_learn.add_argument(
+    "--teacher_run",
+    default="",
+    help="Completed source run containing teacher and predictions.",
+)
+p_localize_learn.add_argument(
+    "--resume",
+    type=strtobool,
+    default=True,
+    help="Reuse verified completed stages (yes/no).",
+)
 p_localize_learn.set_defaults(handler=command_localize_learn)
 
 

@@ -248,6 +248,7 @@ def fit_multilabel_plm(
     loss_fn = nn.BCEWithLogitsLoss()
     rng = np.random.default_rng(seed)
     best, best_state, best_epoch, stale = float("inf"), None, 0, 0
+    training_history = []
     for epoch in range(epochs):
         head.train()
         indices = rng.permutation(len(sequences))
@@ -280,6 +281,12 @@ def fit_multilabel_plm(
             score = total / len(validation_sequences)
         else:
             score = -epoch  # Fixed training budget without a validation partition.
+        training_history.append(
+            {
+                "epoch": epoch + 1,
+                "validation_bce": score if validation_sequences else None,
+            }
+        )
         if score < best:
             best, best_epoch, stale = score, epoch + 1, 0
             best_state = {
@@ -299,6 +306,7 @@ def fit_multilabel_plm(
         "pooling": config.get("pooling", "light_attention"),
         "state_dict": best_state,
         "selected_epoch": best_epoch,
+        "training_history": training_history,
         "class_thresholds": {label: 0.5 for label in labels},
         "ensure_one_label": True,
     }
