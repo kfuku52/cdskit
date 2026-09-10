@@ -1676,6 +1676,17 @@ def _resolve_cross_validation(
     return effective_cv_folds, predefined_folds_active
 
 
+def validate_final_targeting_classes(localization_model, class_labels):
+    if tuple(localization_model["class_order"]) != LOCALIZATION_CLASSES:
+        missing = sorted(set(LOCALIZATION_CLASSES) - set(class_labels))
+        raise ValueError(
+            "Final targeting model requires all five localization classes; "
+            "missing training classes: {}. No model was written.".format(
+                ", ".join(missing)
+            )
+        )
+
+
 def localize_learn_main(args):
     if getattr(args, "stage", "train") != "train":
         from cdskit.localize_pipeline import pipeline_main
@@ -1853,6 +1864,7 @@ def localize_learn_main(args):
         dl_train_params=dl_train_params,
         localize_strategy=localize_strategy,
     )
+    validate_final_targeting_classes(localization_model, class_labels)
     if model_arch == "nearest_centroid":
         model_type = "nearest_centroid_v1"
     elif model_arch == "bilstm_attention":

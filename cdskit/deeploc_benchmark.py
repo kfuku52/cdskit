@@ -12,6 +12,7 @@ import numpy as np
 
 from cdskit.localize_schema import with_model_feature_schema
 from cdskit.localize_labels import masked_multilabel_metrics, observed_targets
+from cdskit.localize_decision import guard_multilabel_inputs
 
 from cdskit.localize_evaluation import (
     assert_disjoint,
@@ -1076,6 +1077,18 @@ def fit_deeploc_multilabel_model(
     }
 
 
+@guard_multilabel_inputs("sequences", "localization_model")
+def _predict_centroid_sequences(
+    sequences, localization_model, feature_matrix, batch_size=512, apply_thresholds=True
+):
+    # Sequence-aware wrapper provides the same abstention contract as CNN/PLM.
+    return predict_multilabel_centroid_matrix(
+        features=feature_matrix,
+        localization_model=localization_model,
+        apply_thresholds=apply_thresholds,
+    )
+
+
 @with_model_feature_schema("model")
 def _predict_model_on_rows(model, rows):
     model_type = str(model.get("model_type", ""))
@@ -1102,8 +1115,9 @@ def _predict_model_on_rows(model, rows):
             apply_thresholds=True,
         )
     x = build_deeploc_feature_matrix(rows=rows)
-    return predict_multilabel_centroid_matrix(
-        features=x,
+    return _predict_centroid_sequences(
+        sequences=[row["sequence"] for row in rows],
+        feature_matrix=x,
         localization_model=model["localization_model"],
         apply_thresholds=True,
     )

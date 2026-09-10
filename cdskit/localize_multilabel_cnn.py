@@ -165,11 +165,16 @@ def _build_multilabel_cnn_module(
                 if mask_padding:
                     z = torch.where(torch.isfinite(z), z, torch.zeros_like(z))
                 if segmented:
-                    z = (
-                        z.reshape(batch, -1)
-                        if terminal_concat
-                        else z.reshape(batch, segments, -1).amax(dim=1)
-                    )
+                    if terminal_concat:
+                        z = z.reshape(batch, -1)
+                    else:
+                        # Empty windows only exist to align a batch. Their bias
+                        # must never compete with real windows, even in an
+                        # experiment that leaves residue padding unmasked.
+                        valid_windows = tokens.ne(PAD_INDEX).any(dim=1)
+                        z = z.masked_fill(~valid_windows[:, None], float("-inf"))
+                        z = z.reshape(batch, segments, -1).amax(dim=1)
+                        z = torch.where(torch.isfinite(z), z, torch.zeros_like(z))
                 pooled.append(z)
             if self.use_feature_fusion:
                 if feature_vec is None:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 from functools import lru_cache
 from itertools import product
@@ -50,6 +51,34 @@ def codon_matches_stop_set(
     """Compatibility for explicit unconditional-stop sets (not raw dual tables)."""
     expansions = expand_dna_codon(codon)
     return bool(expansions) and all(item in unconditional_stops for item in expansions)
+
+
+@lru_cache(maxsize=128)
+def definite_stop_patterns(stops: frozenset[str]) -> tuple[str, ...]:
+    """Literal IUPAC triplets whose every expansion is an unconditional stop.
+
+    Build the small pattern set once per genetic code, rather than expanding
+    every codon of every sequence merely because it contains a padding N.
+    """
+    if not stops:
+        return ()
+    symbols = []
+    for position in range(3):
+        bases = {codon[position] for codon in stops}
+        symbols.append(
+            [
+                symbol
+                for symbol, expansion in ambiguous_dna_values.items()
+                if set(expansion) <= bases
+            ]
+        )
+    return tuple(
+        sorted(
+            codon
+            for parts in product(*symbols)
+            if codon_matches_stop_set(codon := "".join(parts), stops)
+        )
+    )
 
 
 @dataclass(frozen=True)
@@ -266,36 +295,34 @@ def summarize_codons(
     """
     if terminal_policy not in ("last_evaluable", "physical"):
         raise ValueError(f"Unknown terminal policy: {terminal_policy}")
-    counts = [0, 0, 0, 0]
-    last_evaluable_index = None
-    stop_indices = []
-    possible_indices = []
-    context_indices = []
-    ambiguous = 0
-    total_codons = len(seq) // 3
-    for codon_index in range(total_codons):
-        start = codon_index * 3
-        codon = seq[start : start + 3]
-        meaning = analyze_codon(codon, codontable)
-        state = classify_codon(codon, codontable=codontable)
-        ambiguous += int(meaning.ambiguous or meaning.invalid)
-        counts[state] += 1
-        if state != CODON_MISSING:
-            last_evaluable_index = codon_index
-        if state == CODON_STOP:
-            stop_indices.append(codon_index)
-        if meaning.possible_stop:
-            possible_indices.append(codon_index)
-        if meaning.context_dependent:
-            context_indices.append(codon_index)
-    terminal_index = (
-        last_evaluable_index
-        if terminal_policy == "last_evaluable"
-        else total_codons - 1
+    # Resolve attributes once per distinct triplet, not repeatedly for each site.
+    # The count table is bounded by the triplets present, rather than retaining
+    # one index per stop/uncertain site in long alignments.
+    # Preserve the original buffer for long alignments. The per-triplet
+    # analyzers normalize case after aggregation.
+    sequence = seq
+    total_codons = len(sequence) // 3
+    frequencies = Counter(
+        sequence[start : start + 3] for start in range(0, total_codons * 3, 3)
     )
-    if len(seq) % 3:
-        terminal_index = None
-    internal_count = sum(index != terminal_index for index in stop_indices)
+    counts = [0, 0, 0, 0]
+    ambiguous = possible = context = 0
+    for codon, count in frequencies.items():
+        meaning = analyze_codon(codon, codontable)
+        counts[classify_codon(codon, codontable)] += count
+        ambiguous += count * int(meaning.ambiguous or meaning.invalid)
+        possible += count * int(meaning.possible_stop)
+        context += count * int(meaning.context_dependent)
+    terminal = None
+    if total_codons and len(sequence) % 3 == 0:
+        for start in range(len(sequence) - 3, -1, -3):
+            meaning = analyze_codon(sequence[start : start + 3], codontable)
+            if terminal_policy == "physical" or not meaning.missing:
+                terminal = meaning
+                break
+    internal_count = counts[CODON_STOP] - int(
+        terminal is not None and terminal.definite_stop
+    )
     return {
         "total": total_codons,
         "clean": counts[CODON_CLEAN],
@@ -305,14 +332,12 @@ def summarize_codons(
         "evaluable": total_codons - counts[CODON_MISSING],
         "internal_stop": internal_count > 0,
         "internal_stop_count": internal_count,
-        "possible_stop": len(possible_indices),
-        "context_dependent": len(context_indices),
-        "internal_possible_stop_count": sum(
-            index != terminal_index for index in possible_indices
-        ),
-        "internal_context_dependent_count": sum(
-            index != terminal_index for index in context_indices
-        ),
+        "possible_stop": possible,
+        "context_dependent": context,
+        "internal_possible_stop_count": possible
+        - int(terminal is not None and terminal.possible_stop),
+        "internal_context_dependent_count": context
+        - int(terminal is not None and terminal.context_dependent),
     }
 
 

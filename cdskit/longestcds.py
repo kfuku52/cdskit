@@ -11,7 +11,7 @@ from Bio.SeqRecord import SeqRecord
 
 from cdskit.atomicio import atomic_output_paths
 from cdskit.codonreport import validate_codon_output_paths, write_codon_report
-from cdskit.codonutil import analyze_codon, codon_matches_stop_set
+from cdskit.codonutil import analyze_codon, definite_stop_patterns
 
 from cdskit.util import (
     parallel_map_ordered,
@@ -167,15 +167,6 @@ def build_candidate_from_fields(candidate_fields, sort_key):
 def collect_start_stop_positions_by_frame(strand_seq, start_codons, stop_codons):
     start_positions: list[list[int]] = [[], [], []]
     stop_positions: list[list[int]] = [[], [], []]
-    if any(ch not in "ACGT" for ch in strand_seq):
-        stops = frozenset(stop_codons)
-        for pos in range(len(strand_seq) - 2):
-            codon = strand_seq[pos : pos + 3]
-            if codon in start_codons:
-                start_positions[pos % 3].append(pos)
-            if codon_matches_stop_set(codon, stops):
-                stop_positions[pos % 3].append(pos)
-        return start_positions, stop_positions
     seq_find = strand_seq.find
 
     for codon in start_codons:
@@ -184,7 +175,7 @@ def collect_start_stop_positions_by_frame(strand_seq, start_codons, stop_codons)
             start_positions[pos % 3].append(pos)
             pos = seq_find(codon, pos + 1)
 
-    for codon in stop_codons:
+    for codon in definite_stop_patterns(frozenset(stop_codons)):
         pos = seq_find(codon)
         while pos != -1:
             stop_positions[pos % 3].append(pos)

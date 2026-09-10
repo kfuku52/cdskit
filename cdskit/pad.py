@@ -10,8 +10,7 @@ import sys
 from cdskit.atomicio import atomic_output_paths
 from cdskit.codonreport import validate_codon_output_paths, write_codon_report
 from cdskit.codonutil import (
-    UNAMBIGUOUS_NT,
-    codon_matches_stop_set,
+    definite_stop_patterns,
     get_codon_table_components,
     summarize_codons,
 )
@@ -34,20 +33,15 @@ def get_stop_codons(codon_table):
 
 
 def get_stop_codon_scan_list(codon_table):
-    return tuple(sorted(get_stop_codons(codon_table)))
+    return definite_stop_patterns(frozenset(get_stop_codons(codon_table)))
 
 
 def count_internal_stop_codons(seq, codon_table):
     sequence = str(seq).upper()
-    stops = get_stop_codons(codon_table)
+    stops = get_stop_codon_scan_list(codon_table)
     limit = len(sequence) - 3
     if not stops or limit <= 0:
         return 0
-    if not set(sequence).issubset(UNAMBIGUOUS_NT):
-        return sum(
-            codon_matches_stop_set(sequence[start : start + 3], stops)
-            for start in range(0, limit, 3)
-        )
     count = 0
     for codon in stops:
         pos = sequence.find(codon)
@@ -159,7 +153,9 @@ def process_record_padding(
             summarize_codons(sequence, codon_table, "physical")
             if include_report
             else {
-                "internal_stop_count": count_internal_stop_codons(sequence, codon_table)
+                "internal_stop_count": num_stop_input
+                if headn == 0 and tailn == num_missing
+                else count_internal_stop_codons(sequence, codon_table)
             }
         )
         candidates.append(

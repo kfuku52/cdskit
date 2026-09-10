@@ -28,6 +28,7 @@ from cdskit.localize_pipeline_config import (
 from cdskit.localize_splits import audit_homology_partitions
 from cdskit.tsvio import read_tsv
 from cdskit.util import atomic_write_json
+from cdskit.atomicio import atomic_output_paths
 
 
 def freeze_evaluation(config_path, models, protocol_path, output):
@@ -179,8 +180,8 @@ def evaluate_frozen(manifest_path):
         rows = load_partitions(config)["test"]
         if dataset_digest(rows) != identity["test_sha256"]:
             raise ValueError("Frozen test rows changed.")
-        outputs = [root / "metrics.json"] + [
-            root / (name + ".npz") for name in identity["models"]
+        outputs = [root / (name + ".npz") for name in identity["models"]] + [
+            root / "metrics.json"
         ]
         if any(str(p.resolve()) in identity["files"] or p.exists() for p in outputs):
             raise ValueError("Evaluation output would overwrite an existing artifact.")
@@ -199,15 +200,37 @@ def evaluate_frozen(manifest_path):
                 prediction["prediction_matrix"],
             )
             scores = compute_multilabel_metrics(target, decisions, labels)
-            scores.update(probability_metrics(target, probability, labels))
+            available = np.asarray(prediction["score_available"], dtype=bool)
+            scores.update(
+                probability_metrics(target[available], probability[available], labels)
+            )
+            scores["scored_rows"] = int(available.sum())
+            scores["unscored_rows"] = int((~available).sum())
+            scores["score_coverage"] = float(available.mean())
+            scores["accepted_only"] = (
+                compute_multilabel_metrics(
+                    target[available], decisions[available], labels
+                )
+                if available.any()
+                else None
+            )
             scores["strata"] = stratified_metrics(
-                rows, target, decisions, probability, labels, compute_multilabel_metrics
+                rows,
+                target,
+                decisions,
+                probability,
+                labels,
+                compute_multilabel_metrics,
+                score_available=available,
             )
             results[name] = scores
             arrays[name] = dict(
                 target=target,
                 observation_mask=np.isfinite(target),
                 probability=probability,
+                score_available=available,
+                decision_status=np.asarray(prediction["decision_status"]),
+                quality_reason=np.asarray(prediction["quality_reason"]),
                 prediction=decisions,
                 labels=np.asarray(labels),
                 accessions=np.asarray([row["accession"] for row in rows]),
@@ -229,7 +252,8 @@ def evaluate_frozen(manifest_path):
             paired_difference=difference,
             selection_history_is_user_declared=True,
         )
-        for name, values in arrays.items():
-            np.savez_compressed(root / (name + ".npz"), **values)
-        atomic_write_json(str(root / "metrics.json"), report)
+        with atomic_output_paths(outputs) as temporary:
+            for path, values in zip(temporary[:-1], arrays.values(), strict=True):
+                np.savez_compressed(path, **values)
+            atomic_write_json(temporary[-1], report)
     return root / "metrics.json"

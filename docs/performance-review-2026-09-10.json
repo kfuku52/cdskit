@@ -1,0 +1,3732 @@
+{
+  "comparisons": {
+    "backtrim": {
+      "before_over_baseline_time": 1.527662757050852,
+      "fixed_over_baseline_peak_rss": 1.0593795443528842,
+      "fixed_over_baseline_time": 1.1710893835642686,
+      "fixed_over_before_time": 0.7665889465192257,
+      "outputs_equal_baseline_to_fixed": true,
+      "outputs_equal_before_to_fixed": true
+    },
+    "cnn_predict": {
+      "before_over_baseline_time": 0.9981345154867438,
+      "fixed_over_baseline_peak_rss": 0.9861075379470028,
+      "fixed_over_baseline_time": 1.00447437912172,
+      "fixed_over_before_time": 1.0063517126565698,
+      "outputs_equal_baseline_to_fixed": true,
+      "outputs_equal_before_to_fixed": true
+    },
+    "cnn_train": {
+      "before_over_baseline_time": 0.8030983551611947,
+      "fixed_over_baseline_peak_rss": 0.8323287239490997,
+      "fixed_over_baseline_time": 0.6796680275022571,
+      "fixed_over_before_time": 0.8463073335094018,
+      "outputs_equal_baseline_to_fixed": false,
+      "outputs_equal_before_to_fixed": true
+    },
+    "filter": {
+      "before_over_baseline_time": 1.8347014472377299,
+      "fixed_over_baseline_peak_rss": 0.9987142397942783,
+      "fixed_over_baseline_time": 0.8859785305277345,
+      "fixed_over_before_time": 0.4829006549603133,
+      "outputs_equal_baseline_to_fixed": true,
+      "outputs_equal_before_to_fixed": true
+    },
+    "filter_long": {
+      "before_over_baseline_time": 1.8375863830644785,
+      "fixed_over_baseline_peak_rss": 0.9990877299680706,
+      "fixed_over_baseline_time": 0.43115125594760373,
+      "fixed_over_before_time": 0.23462910909722123,
+      "outputs_equal_baseline_to_fixed": true,
+      "outputs_equal_before_to_fixed": true
+    },
+    "gapjust_gff": {
+      "before_over_baseline_time": 1.6995173954390506,
+      "fixed_over_baseline_peak_rss": 1.066969771442615,
+      "fixed_over_baseline_time": 1.8941120537017555,
+      "fixed_over_before_time": 1.1144999508595401,
+      "outputs_equal_baseline_to_fixed": true,
+      "outputs_equal_before_to_fixed": true
+    },
+    "longestorf": {
+      "before_over_baseline_time": 1.497758252766475,
+      "fixed_over_baseline_peak_rss": 1.026702269692924,
+      "fixed_over_baseline_time": 0.8869067620306312,
+      "fixed_over_before_time": 0.5921561509625777,
+      "outputs_equal_baseline_to_fixed": true,
+      "outputs_equal_before_to_fixed": true
+    },
+    "longestorf_ambiguous": {
+      "before_over_baseline_time": 16.194887764088712,
+      "fixed_over_baseline_peak_rss": 1.000667556742323,
+      "fixed_over_baseline_time": 0.8340959469597926,
+      "fixed_over_before_time": 0.05150365714848332,
+      "outputs_equal_baseline_to_fixed": true,
+      "outputs_equal_before_to_fixed": true
+    },
+    "pad": {
+      "before_over_baseline_time": 18.180368606432566,
+      "fixed_over_baseline_peak_rss": 1.0210526315789474,
+      "fixed_over_baseline_time": 1.2370101004217733,
+      "fixed_over_before_time": 0.06804098020235383,
+      "outputs_equal_baseline_to_fixed": true,
+      "outputs_equal_before_to_fixed": true
+    },
+    "targetp_features": {
+      "before_over_baseline_time": 1.04631878859163,
+      "fixed_over_baseline_peak_rss": 1.0058193668528863,
+      "fixed_over_baseline_time": 0.8802172502768348,
+      "fixed_over_before_time": 0.8412514999005496,
+      "outputs_equal_baseline_to_fixed": false,
+      "outputs_equal_before_to_fixed": true
+    },
+    "targetp_features_legacy": {
+      "before_over_baseline_time": 1.0906521396926288,
+      "fixed_over_baseline_peak_rss": 1.0160427807486632,
+      "fixed_over_baseline_time": 0.9095842204855188,
+      "fixed_over_before_time": 0.833981970403378,
+      "outputs_equal_baseline_to_fixed": true,
+      "outputs_equal_before_to_fixed": true
+    },
+    "translate": {
+      "before_over_baseline_time": 2.2770763005348864,
+      "fixed_over_baseline_peak_rss": 1.0222005842259008,
+      "fixed_over_baseline_time": 1.7509429378935812,
+      "fixed_over_before_time": 0.7689434638102746,
+      "outputs_equal_baseline_to_fixed": true,
+      "outputs_equal_before_to_fixed": true
+    }
+  },
+  "final_results": {
+    "baseline": {
+      "backtrim": {
+        "environment": {
+          "cdskit_version": "0.28.3",
+          "cpu_count": 12,
+          "created_utc": "2026-09-10T04:34:26.062241+00:00",
+          "dependencies": {
+            "biopython": "1.88",
+            "matplotlib": "3.11.1",
+            "numpy": "2.5.2"
+          },
+          "git_commit": null,
+          "git_dirty": null,
+          "implementation": "CPython",
+          "machine": "arm64",
+          "processor": "Apple M2 Max",
+          "python": "3.12.14",
+          "runner_image": null,
+          "system": "Darwin"
+        },
+        "median_seconds": 0.07710054097697139,
+        "output_sha256": "c56b4db628f8370d5f7f0af2c40e6e2d06d9b0ea64626db13a01a75712889686",
+        "peak_rss_bytes": 67600384,
+        "samples_seconds": [
+          0.08127324999077246,
+          0.0703104580170475,
+          0.07768083401606418,
+          0.07748929099761881,
+          0.058787999994819984,
+          0.07710054097697139,
+          0.06883858301443979
+        ],
+        "warmup_runs": 1,
+        "workload": {
+          "kept_codons": 1500,
+          "records": 200,
+          "source_codons": 3000
+        }
+      },
+      "cnn_predict": {
+        "environment": {
+          "cdskit_version": "0.28.3",
+          "cpu_count": 12,
+          "created_utc": "2026-09-10T04:29:44.457176+00:00",
+          "dependencies": {
+            "biopython": "1.88",
+            "matplotlib": "3.11.1",
+            "numpy": "2.5.2"
+          },
+          "git_commit": null,
+          "git_dirty": null,
+          "implementation": "CPython",
+          "machine": "arm64",
+          "processor": "Apple M2 Max",
+          "python": "3.12.14",
+          "runner_image": null,
+          "system": "Darwin"
+        },
+        "median_seconds": 19.021689417015295,
+        "output_sha256": "d10e4d0b7fb03fc067636696fcbd2e8db0689fe7715298f218127a377ab714cb",
+        "peak_rss_bytes": 254738432,
+        "samples_seconds": [
+          16.621207749994937,
+          19.054339499998605,
+          19.021689417015295
+        ],
+        "warmup_runs": 1,
+        "workload": {
+          "aa_lengths": [
+            100,
+            300,
+            500,
+            1000,
+            2000
+          ],
+          "batch_size": 64,
+          "model_sha256": "5f1a302adf0149cd424e6b8e3f16b2b1661d21b47762ca0680e813e11c69c440",
+          "records": 512
+        }
+      },
+      "cnn_train": {
+        "environment": {
+          "cdskit_version": "0.28.3",
+          "cpu_count": 12,
+          "created_utc": "2026-09-10T04:33:07.689267+00:00",
+          "dependencies": {
+            "biopython": "1.88",
+            "matplotlib": "3.11.1",
+            "numpy": "2.5.2"
+          },
+          "git_commit": null,
+          "git_dirty": null,
+          "implementation": "CPython",
+          "machine": "arm64",
+          "processor": "Apple M2 Max",
+          "python": "3.12.14",
+          "runner_image": null,
+          "system": "Darwin"
+        },
+        "median_seconds": 4.0363648339989595,
+        "output_sha256": "77c540bf5a15462b58ae2bdf2c748c88ed248176cbb47a5385cbd9d2f55b8b34",
+        "peak_rss_bytes": 415875072,
+        "samples_seconds": [
+          4.0363648339989595,
+          4.5172834580007475,
+          3.890283167012967
+        ],
+        "warmup_runs": 1,
+        "workload": {
+          "batch_size": 64,
+          "epochs": 2,
+          "layout": "legacy",
+          "mask_padding": false,
+          "records": 512,
+          "thresholds_compared": false
+        }
+      },
+      "filter": {
+        "environment": {
+          "cdskit_version": "0.28.3",
+          "cpu_count": 12,
+          "created_utc": "2026-09-10T04:39:26.294996+00:00",
+          "dependencies": {
+            "biopython": "1.88",
+            "matplotlib": "3.11.1",
+            "numpy": "2.5.2"
+          },
+          "git_commit": null,
+          "git_dirty": null,
+          "implementation": "CPython",
+          "machine": "arm64",
+          "processor": "Apple M2 Max",
+          "python": "3.12.14",
+          "runner_image": null,
+          "system": "Darwin"
+        },
+        "median_seconds": 0.14406533300643787,
+        "output_sha256": "5a9d5f4144cb42f13764b88d21bdfb41bfc6779171ee27bbb7d5cc807d09d056",
+        "peak_rss_bytes": 50970624,
+        "samples_seconds": [
+          0.09419945802073926,
+          0.17143899999791756,
+          0.14406533300643787
+        ],
+        "warmup_runs": 1,
+        "workload": {
+          "nt_per_record": 1500,
+          "records": 1000
+        }
+      },
+      "filter_long": {
+        "environment": {
+          "cdskit_version": "0.28.3",
+          "cpu_count": 12,
+          "created_utc": "2026-09-10T04:40:25.333065+00:00",
+          "dependencies": {
+            "biopython": "1.88",
+            "matplotlib": "3.11.1",
+            "numpy": "2.5.2"
+          },
+          "git_commit": null,
+          "git_dirty": null,
+          "implementation": "CPython",
+          "machine": "arm64",
+          "processor": "Apple M2 Max",
+          "python": "3.12.14",
+          "runner_image": null,
+          "system": "Darwin"
+        },
+        "median_seconds": 4.396715708950069,
+        "output_sha256": "bcd509ac44ebe1dfb0cfbaae56e2085bafb0b8545e9dbf1e8994edc318b2f2ec",
+        "peak_rss_bytes": 107757568,
+        "samples_seconds": [
+          4.498241249995772,
+          4.396715708950069,
+          4.141396416991483
+        ],
+        "warmup_runs": 1,
+        "workload": {
+          "nt_per_record": 30000000,
+          "records": 1
+        }
+      },
+      "gapjust_gff": {
+        "environment": {
+          "cdskit_version": "0.28.3",
+          "cpu_count": 12,
+          "created_utc": "2026-09-10T04:34:29.442219+00:00",
+          "dependencies": {
+            "biopython": "1.88",
+            "matplotlib": "3.11.1",
+            "numpy": "2.5.2"
+          },
+          "git_commit": null,
+          "git_dirty": null,
+          "implementation": "CPython",
+          "machine": "arm64",
+          "processor": "Apple M2 Max",
+          "python": "3.12.14",
+          "runner_image": null,
+          "system": "Darwin"
+        },
+        "median_seconds": 0.3578590420074761,
+        "output_sha256": "d36e8ef600ff5a9db499aa91eda0f430401f425c216ce7e60203a2cf8998fae8",
+        "peak_rss_bytes": 133332992,
+        "samples_seconds": [
+          0.3234138750121929,
+          0.3578590420074761,
+          0.3398065420042258,
+          0.3654432079929393,
+          0.3110574999882374,
+          0.3900040829903446,
+          0.3805811659840401
+        ],
+        "warmup_runs": 1,
+        "workload": {
+          "gaps": 10000,
+          "gff_features": 10000,
+          "nt": 10000000,
+          "records": 10
+        }
+      },
+      "longestorf": {
+        "environment": {
+          "cdskit_version": "0.28.3",
+          "cpu_count": 12,
+          "created_utc": "2026-09-10T04:34:06.412849+00:00",
+          "dependencies": {
+            "biopython": "1.88",
+            "matplotlib": "3.11.1",
+            "numpy": "2.5.2"
+          },
+          "git_commit": null,
+          "git_dirty": null,
+          "implementation": "CPython",
+          "machine": "arm64",
+          "processor": "Apple M2 Max",
+          "python": "3.12.14",
+          "runner_image": null,
+          "system": "Darwin"
+        },
+        "median_seconds": 0.14715954099665396,
+        "output_sha256": "6a9041f0b20d2ea29e69da0ea0fae3820379fe4e7b73b165a80fe42a091322df",
+        "peak_rss_bytes": 49086464,
+        "samples_seconds": [
+          0.19611337498645298,
+          0.14160458301194012,
+          0.14141212499816902,
+          0.14715954099665396,
+          0.15421837498433888,
+          0.17039333301363513,
+          0.11829137499444187
+        ],
+        "warmup_runs": 1,
+        "workload": {
+          "alphabet": "ACGT",
+          "nt_per_record": 3000,
+          "records": 300
+        }
+      },
+      "longestorf_ambiguous": {
+        "environment": {
+          "cdskit_version": "0.28.3",
+          "cpu_count": 12,
+          "created_utc": "2026-09-10T04:34:08.106024+00:00",
+          "dependencies": {
+            "biopython": "1.88",
+            "matplotlib": "3.11.1",
+            "numpy": "2.5.2"
+          },
+          "git_commit": null,
+          "git_dirty": null,
+          "implementation": "CPython",
+          "machine": "arm64",
+          "processor": "Apple M2 Max",
+          "python": "3.12.14",
+          "runner_image": null,
+          "system": "Darwin"
+        },
+        "median_seconds": 0.08803758400608785,
+        "output_sha256": "ffc4c9a7cffde59599288cda1a66e5871c404dedcb8f6003ba0f435654d22d98",
+        "peak_rss_bytes": 49086464,
+        "samples_seconds": [
+          0.1423318329907488,
+          0.08803758400608785,
+          0.08458408300066367,
+          0.06992537499172613,
+          0.07739474999834783,
+          0.11956454199389555,
+          0.10304966699914075
+        ],
+        "warmup_runs": 1,
+        "workload": {
+          "alphabet": "ACGTN",
+          "nt_per_record": 3000,
+          "records": 300
+        }
+      },
+      "pad": {
+        "environment": {
+          "cdskit_version": "0.28.3",
+          "cpu_count": 12,
+          "created_utc": "2026-09-10T04:33:42.783562+00:00",
+          "dependencies": {
+            "biopython": "1.88",
+            "matplotlib": "3.11.1",
+            "numpy": "2.5.2"
+          },
+          "git_commit": null,
+          "git_dirty": null,
+          "implementation": "CPython",
+          "machine": "arm64",
+          "processor": "Apple M2 Max",
+          "python": "3.12.14",
+          "runner_image": null,
+          "system": "Darwin"
+        },
+        "median_seconds": 0.10186362499371171,
+        "output_sha256": "7a03c377e717c1438eefd696823eb1eadb13d5a262f9458d9a20e1fb6e06e81a",
+        "peak_rss_bytes": 49807360,
+        "samples_seconds": [
+          0.10190145802334882,
+          0.1380764170025941,
+          0.06366304197581485,
+          0.10186362499371171,
+          0.12902749999193475,
+          0.09550766699248925,
+          0.09020649999729358
+        ],
+        "warmup_runs": 1,
+        "workload": {
+          "nt_per_record": 1499,
+          "records": 1000,
+          "report": false
+        }
+      },
+      "targetp_features": {
+        "environment": {
+          "cdskit_version": "0.28.3",
+          "cpu_count": 12,
+          "created_utc": "2026-09-10T04:35:05.013559+00:00",
+          "dependencies": {
+            "biopython": "1.88",
+            "matplotlib": "3.11.1",
+            "numpy": "2.5.2"
+          },
+          "git_commit": null,
+          "git_dirty": null,
+          "implementation": "CPython",
+          "machine": "arm64",
+          "processor": "Apple M2 Max",
+          "python": "3.12.14",
+          "runner_image": null,
+          "system": "Darwin"
+        },
+        "median_seconds": 0.9633725830062758,
+        "output_sha256": "0e5fe096c25c91134d36a1e4fa47a525ef4e198af9c3cb3a6d3763e886093777",
+        "peak_rss_bytes": 70385664,
+        "samples_seconds": [
+          0.93470608300413,
+          0.7882821249950211,
+          0.9671076250087935,
+          0.9633725830062758,
+          0.8945283750072122,
+          0.9882446249830537,
+          1.3585404170153197
+        ],
+        "warmup_runs": 1,
+        "workload": {
+          "aa_per_record": 500,
+          "feature_schema": "default",
+          "records": 1000
+        }
+      },
+      "targetp_features_legacy": {
+        "environment": {
+          "cdskit_version": "0.28.3",
+          "cpu_count": 12,
+          "created_utc": "2026-09-10T04:35:14.067756+00:00",
+          "dependencies": {
+            "biopython": "1.88",
+            "matplotlib": "3.11.1",
+            "numpy": "2.5.2"
+          },
+          "git_commit": null,
+          "git_dirty": null,
+          "implementation": "CPython",
+          "machine": "arm64",
+          "processor": "Apple M2 Max",
+          "python": "3.12.14",
+          "runner_image": null,
+          "system": "Darwin"
+        },
+        "median_seconds": 1.064227499999106,
+        "output_sha256": "0e5fe096c25c91134d36a1e4fa47a525ef4e198af9c3cb3a6d3763e886093777",
+        "peak_rss_bytes": 70467584,
+        "samples_seconds": [
+          1.0101430419890676,
+          1.2516867080121301,
+          1.0752296250138897,
+          1.1164579999749549,
+          0.951494333014125,
+          1.064227499999106,
+          1.0250017090002075
+        ],
+        "warmup_runs": 1,
+        "workload": {
+          "aa_per_record": 500,
+          "feature_schema": "legacy",
+          "records": 1000
+        }
+      },
+      "translate": {
+        "environment": {
+          "cdskit_version": "0.28.3",
+          "cpu_count": 12,
+          "created_utc": "2026-09-10T04:33:31.377920+00:00",
+          "dependencies": {
+            "biopython": "1.88",
+            "matplotlib": "3.11.1",
+            "numpy": "2.5.2"
+          },
+          "git_commit": null,
+          "git_dirty": null,
+          "implementation": "CPython",
+          "machine": "arm64",
+          "processor": "Apple M2 Max",
+          "python": "3.12.14",
+          "runner_image": null,
+          "system": "Darwin"
+        },
+        "median_seconds": 0.0061742920079268515,
+        "output_sha256": "4912eeabf57d5cbb73e1da1f8bbccccde8331393b48a3d3a6cc77b60849743bc",
+        "peak_rss_bytes": 84131840,
+        "samples_seconds": [
+          0.008910583012038842,
+          0.0061742920079268515,
+          0.005717083025956526,
+          0.005983999988529831,
+          0.00586179198580794,
+          0.011507582996273413,
+          0.006319709005765617
+        ],
+        "warmup_runs": 1,
+        "workload": {
+          "nt": 3000000
+        }
+      }
+    },
+    "before": {
+      "backtrim": {
+        "environment": {
+          "cdskit_version": "0.29.2",
+          "cpu_count": 12,
+          "created_utc": "2026-09-10T04:34:24.868844+00:00",
+          "dependencies": {
+            "biopython": "1.88",
+            "matplotlib": "3.11.1",
+            "numpy": "2.5.2"
+          },
+          "git_commit": null,
+          "git_dirty": null,
+          "implementation": "CPython",
+          "machine": "arm64",
+          "processor": "Apple M2 Max",
+          "python": "3.12.14",
+          "runner_image": null,
+          "system": "Darwin"
+        },
+        "median_seconds": 0.11778362499899231,
+        "output_sha256": "c56b4db628f8370d5f7f0af2c40e6e2d06d9b0ea64626db13a01a75712889686",
+        "peak_rss_bytes": 71122944,
+        "samples_seconds": [
+          0.11778362499899231,
+          0.11026387501624413,
+          0.12404187500942498,
+          0.10484479201841168,
+          0.12724066598457284,
+          0.13759729199227877,
+          0.10762366699054837
+        ],
+        "warmup_runs": 1,
+        "workload": {
+          "kept_codons": 1500,
+          "records": 200,
+          "source_codons": 3000
+        }
+      },
+      "cnn_predict": {
+        "environment": {
+          "cdskit_version": "0.29.2",
+          "cpu_count": 12,
+          "created_utc": "2026-09-10T04:31:01.744348+00:00",
+          "dependencies": {
+            "biopython": "1.88",
+            "matplotlib": "3.11.1",
+            "numpy": "2.5.2"
+          },
+          "git_commit": null,
+          "git_dirty": null,
+          "implementation": "CPython",
+          "machine": "arm64",
+          "processor": "Apple M2 Max",
+          "python": "3.12.14",
+          "runner_image": null,
+          "system": "Darwin"
+        },
+        "median_seconds": 18.986204749991884,
+        "output_sha256": "d10e4d0b7fb03fc067636696fcbd2e8db0689fe7715298f218127a377ab714cb",
+        "peak_rss_bytes": 250855424,
+        "samples_seconds": [
+          20.73054150000098,
+          18.986204749991884,
+          17.591659833007725
+        ],
+        "warmup_runs": 1,
+        "workload": {
+          "aa_lengths": [
+            100,
+            300,
+            500,
+            1000,
+            2000
+          ],
+          "batch_size": 64,
+          "model_sha256": "5f1a302adf0149cd424e6b8e3f16b2b1661d21b47762ca0680e813e11c69c440",
+          "records": 512
+        }
+      },
+      "cnn_train": {
+        "environment": {
+          "cdskit_version": "0.29.2",
+          "cpu_count": 12,
+          "created_utc": "2026-09-10T04:32:47.777570+00:00",
+          "dependencies": {
+            "biopython": "1.88",
+            "matplotlib": "3.11.1",
+            "numpy": "2.5.2"
+          },
+          "git_commit": null,
+          "git_dirty": null,
+          "implementation": "CPython",
+          "machine": "arm64",
+          "processor": "Apple M2 Max",
+          "python": "3.12.14",
+          "runner_image": null,
+          "system": "Darwin"
+        },
+        "median_seconds": 3.2415979590150528,
+        "output_sha256": "e197e175f8c548667d5fb6bd82ab40e39c24183006f704fe918592ec00b0b735",
+        "peak_rss_bytes": 344080384,
+        "samples_seconds": [
+          3.3630917909904383,
+          2.9629374999785796,
+          3.2415979590150528
+        ],
+        "warmup_runs": 1,
+        "workload": {
+          "batch_size": 64,
+          "epochs": 2,
+          "layout": "legacy",
+          "mask_padding": false,
+          "records": 512,
+          "thresholds_compared": false
+        }
+      },
+      "filter": {
+        "environment": {
+          "cdskit_version": "0.29.2",
+          "cpu_count": 12,
+          "created_utc": "2026-09-10T04:39:27.997514+00:00",
+          "dependencies": {
+            "biopython": "1.88",
+            "matplotlib": "3.11.1",
+            "numpy": "2.5.2"
+          },
+          "git_commit": null,
+          "git_dirty": null,
+          "implementation": "CPython",
+          "machine": "arm64",
+          "processor": "Apple M2 Max",
+          "python": "3.12.14",
+          "runner_image": null,
+          "system": "Darwin"
+        },
+        "median_seconds": 0.26431687496369705,
+        "output_sha256": "5a9d5f4144cb42f13764b88d21bdfb41bfc6779171ee27bbb7d5cc807d09d056",
+        "peak_rss_bytes": 50905088,
+        "samples_seconds": [
+          0.26431687496369705,
+          0.2318726250086911,
+          0.32844141602981836
+        ],
+        "warmup_runs": 1,
+        "workload": {
+          "nt_per_record": 1500,
+          "records": 1000
+        }
+      },
+      "filter_long": {
+        "environment": {
+          "cdskit_version": "0.29.2",
+          "cpu_count": 12,
+          "created_utc": "2026-09-10T04:40:07.053342+00:00",
+          "dependencies": {
+            "biopython": "1.88",
+            "matplotlib": "3.11.1",
+            "numpy": "2.5.2"
+          },
+          "git_commit": null,
+          "git_dirty": null,
+          "implementation": "CPython",
+          "machine": "arm64",
+          "processor": "Apple M2 Max",
+          "python": "3.12.14",
+          "runner_image": null,
+          "system": "Darwin"
+        },
+        "median_seconds": 8.079344916972332,
+        "output_sha256": "bcd509ac44ebe1dfb0cfbaae56e2085bafb0b8545e9dbf1e8994edc318b2f2ec",
+        "peak_rss_bytes": 107986944,
+        "samples_seconds": [
+          7.034692334011197,
+          8.079344916972332,
+          8.428085874998942
+        ],
+        "warmup_runs": 1,
+        "workload": {
+          "nt_per_record": 30000000,
+          "records": 1
+        }
+      },
+      "gapjust_gff": {
+        "environment": {
+          "cdskit_version": "0.29.2",
+          "cpu_count": 12,
+          "created_utc": "2026-09-10T04:34:34.959396+00:00",
+          "dependencies": {
+            "biopython": "1.88",
+            "matplotlib": "3.11.1",
+            "numpy": "2.5.2"
+          },
+          "git_commit": null,
+          "git_dirty": null,
+          "implementation": "CPython",
+          "machine": "arm64",
+          "processor": "Apple M2 Max",
+          "python": "3.12.14",
+          "runner_image": null,
+          "system": "Darwin"
+        },
+        "median_seconds": 0.6081876670068596,
+        "output_sha256": "d36e8ef600ff5a9db499aa91eda0f430401f425c216ce7e60203a2cf8998fae8",
+        "peak_rss_bytes": 145817600,
+        "samples_seconds": [
+          0.6174091249995399,
+          0.5620529580046423,
+          0.6081876670068596,
+          0.6859598750015721,
+          0.5435937090078369,
+          0.629116415977478,
+          0.5883865419891663
+        ],
+        "warmup_runs": 1,
+        "workload": {
+          "gaps": 10000,
+          "gff_features": 10000,
+          "nt": 10000000,
+          "records": 10
+        }
+      },
+      "longestorf": {
+        "environment": {
+          "cdskit_version": "0.29.2",
+          "cpu_count": 12,
+          "created_utc": "2026-09-10T04:34:04.356072+00:00",
+          "dependencies": {
+            "biopython": "1.88",
+            "matplotlib": "3.11.1",
+            "numpy": "2.5.2"
+          },
+          "git_commit": null,
+          "git_dirty": null,
+          "implementation": "CPython",
+          "machine": "arm64",
+          "processor": "Apple M2 Max",
+          "python": "3.12.14",
+          "runner_image": null,
+          "system": "Darwin"
+        },
+        "median_seconds": 0.22040941700106487,
+        "output_sha256": "6a9041f0b20d2ea29e69da0ea0fae3820379fe4e7b73b165a80fe42a091322df",
+        "peak_rss_bytes": 49037312,
+        "samples_seconds": [
+          0.22746787499636412,
+          0.20217008399777114,
+          0.21424016598029993,
+          0.2109009160194546,
+          0.22040941700106487,
+          0.22824525000760332,
+          0.22493195801507682
+        ],
+        "warmup_runs": 1,
+        "workload": {
+          "alphabet": "ACGT",
+          "nt_per_record": 3000,
+          "records": 300
+        }
+      },
+      "longestorf_ambiguous": {
+        "environment": {
+          "cdskit_version": "0.29.2",
+          "cpu_count": 12,
+          "created_utc": "2026-09-10T04:34:20.990313+00:00",
+          "dependencies": {
+            "biopython": "1.88",
+            "matplotlib": "3.11.1",
+            "numpy": "2.5.2"
+          },
+          "git_commit": null,
+          "git_dirty": null,
+          "implementation": "CPython",
+          "machine": "arm64",
+          "processor": "Apple M2 Max",
+          "python": "3.12.14",
+          "runner_image": null,
+          "system": "Darwin"
+        },
+        "median_seconds": 1.4257587920001242,
+        "output_sha256": "ffc4c9a7cffde59599288cda1a66e5871c404dedcb8f6003ba0f435654d22d98",
+        "peak_rss_bytes": 49168384,
+        "samples_seconds": [
+          1.3861544580140617,
+          1.5470000419882126,
+          1.2489380829792935,
+          1.3083489580021705,
+          1.4257587920001242,
+          1.9707620420085732,
+          1.4458497919840738
+        ],
+        "warmup_runs": 1,
+        "workload": {
+          "alphabet": "ACGTN",
+          "nt_per_record": 3000,
+          "records": 300
+        }
+      },
+      "pad": {
+        "environment": {
+          "cdskit_version": "0.29.2",
+          "cpu_count": 12,
+          "created_utc": "2026-09-10T04:33:58.014631+00:00",
+          "dependencies": {
+            "biopython": "1.88",
+            "matplotlib": "3.11.1",
+            "numpy": "2.5.2"
+          },
+          "git_commit": null,
+          "git_dirty": null,
+          "implementation": "CPython",
+          "machine": "arm64",
+          "processor": "Apple M2 Max",
+          "python": "3.12.14",
+          "runner_image": null,
+          "system": "Darwin"
+        },
+        "median_seconds": 1.851918249973096,
+        "output_sha256": "7a03c377e717c1438eefd696823eb1eadb13d5a262f9458d9a20e1fb6e06e81a",
+        "peak_rss_bytes": 50135040,
+        "samples_seconds": [
+          1.851918249973096,
+          1.6663713750021998,
+          1.5842163340130355,
+          1.5057671669928823,
+          2.1880033340130467,
+          1.8763226669980213,
+          2.073829500004649
+        ],
+        "warmup_runs": 1,
+        "workload": {
+          "nt_per_record": 1499,
+          "records": 1000,
+          "report": false
+        }
+      },
+      "targetp_features": {
+        "environment": {
+          "cdskit_version": "0.29.2",
+          "cpu_count": 12,
+          "created_utc": "2026-09-10T04:34:56.631350+00:00",
+          "dependencies": {
+            "biopython": "1.88",
+            "matplotlib": "3.11.1",
+            "numpy": "2.5.2"
+          },
+          "git_commit": null,
+          "git_dirty": null,
+          "implementation": "CPython",
+          "machine": "arm64",
+          "processor": "Apple M2 Max",
+          "python": "3.12.14",
+          "runner_image": null,
+          "system": "Darwin"
+        },
+        "median_seconds": 1.007994834013516,
+        "output_sha256": "eab018c59b39c337242e04feb11db20c268cd1c729e847199012877bdee2f283",
+        "peak_rss_bytes": 70746112,
+        "samples_seconds": [
+          1.007994834013516,
+          1.0232136670092586,
+          0.7648010409902781,
+          0.9379314589896239,
+          1.1113133750041015,
+          1.1323627500096336,
+          0.9436403329891618
+        ],
+        "warmup_runs": 1,
+        "workload": {
+          "aa_per_record": 500,
+          "feature_schema": "default",
+          "records": 1000
+        }
+      },
+      "targetp_features_legacy": {
+        "environment": {
+          "cdskit_version": "0.29.2",
+          "cpu_count": 12,
+          "created_utc": "2026-09-10T04:35:24.365403+00:00",
+          "dependencies": {
+            "biopython": "1.88",
+            "matplotlib": "3.11.1",
+            "numpy": "2.5.2"
+          },
+          "git_commit": null,
+          "git_dirty": null,
+          "implementation": "CPython",
+          "machine": "arm64",
+          "processor": "Apple M2 Max",
+          "python": "3.12.14",
+          "runner_image": null,
+          "system": "Darwin"
+        },
+        "median_seconds": 1.160701999993762,
+        "output_sha256": "0e5fe096c25c91134d36a1e4fa47a525ef4e198af9c3cb3a6d3763e886093777",
+        "peak_rss_bytes": 70500352,
+        "samples_seconds": [
+          1.0430201250128448,
+          1.35779295800603,
+          1.3794158329837956,
+          1.181020707997959,
+          1.160701999993762,
+          0.8951579580025282,
+          0.980050084006507
+        ],
+        "warmup_runs": 1,
+        "workload": {
+          "aa_per_record": 500,
+          "feature_schema": "legacy",
+          "records": 1000
+        }
+      },
+      "translate": {
+        "environment": {
+          "cdskit_version": "0.29.2",
+          "cpu_count": 12,
+          "created_utc": "2026-09-10T04:33:32.110888+00:00",
+          "dependencies": {
+            "biopython": "1.88",
+            "matplotlib": "3.11.1",
+            "numpy": "2.5.2"
+          },
+          "git_commit": null,
+          "git_dirty": null,
+          "implementation": "CPython",
+          "machine": "arm64",
+          "processor": "Apple M2 Max",
+          "python": "3.12.14",
+          "runner_image": null,
+          "system": "Darwin"
+        },
+        "median_seconds": 0.014059334003832191,
+        "output_sha256": "4912eeabf57d5cbb73e1da1f8bbccccde8331393b48a3d3a6cc77b60849743bc",
+        "peak_rss_bytes": 86999040,
+        "samples_seconds": [
+          0.015481500013265759,
+          0.014059334003832191,
+          0.005801417020848021,
+          0.014083667017985135,
+          0.008107999979984015,
+          0.005731000012019649,
+          0.016949957993347198
+        ],
+        "warmup_runs": 1,
+        "workload": {
+          "nt": 3000000
+        }
+      }
+    },
+    "fixed": {
+      "backtrim": {
+        "environment": {
+          "cdskit_version": "0.29.2",
+          "cpu_count": 12,
+          "created_utc": "2026-09-10T04:34:23.506384+00:00",
+          "dependencies": {
+            "biopython": "1.88",
+            "matplotlib": "3.11.1",
+            "numpy": "2.5.2"
+          },
+          "git_commit": "dc1aab67f8b2273d5fa36f730aea55394a3e0b28",
+          "git_dirty": true,
+          "implementation": "CPython",
+          "machine": "arm64",
+          "processor": "Apple M2 Max",
+          "python": "3.12.14",
+          "runner_image": null,
+          "system": "Darwin"
+        },
+        "median_seconds": 0.09029162500519305,
+        "output_sha256": "c56b4db628f8370d5f7f0af2c40e6e2d06d9b0ea64626db13a01a75712889686",
+        "peak_rss_bytes": 71614464,
+        "samples_seconds": [
+          0.11644279101165012,
+          0.10025962500367314,
+          0.09076845800154842,
+          0.08519183300086297,
+          0.07725404101074673,
+          0.09029162500519305,
+          0.08345133299008012
+        ],
+        "warmup_runs": 1,
+        "workload": {
+          "kept_codons": 1500,
+          "records": 200,
+          "source_codons": 3000
+        }
+      },
+      "cnn_predict": {
+        "environment": {
+          "cdskit_version": "0.29.2",
+          "cpu_count": 12,
+          "created_utc": "2026-09-10T04:32:17.379726+00:00",
+          "dependencies": {
+            "biopython": "1.88",
+            "matplotlib": "3.11.1",
+            "numpy": "2.5.2"
+          },
+          "git_commit": "dc1aab67f8b2273d5fa36f730aea55394a3e0b28",
+          "git_dirty": true,
+          "implementation": "CPython",
+          "machine": "arm64",
+          "processor": "Apple M2 Max",
+          "python": "3.12.14",
+          "runner_image": null,
+          "system": "Darwin"
+        },
+        "median_seconds": 19.106799667002633,
+        "output_sha256": "d10e4d0b7fb03fc067636696fcbd2e8db0689fe7715298f218127a377ab714cb",
+        "peak_rss_bytes": 251199488,
+        "samples_seconds": [
+          17.639786249987083,
+          19.106799667002633,
+          19.402044457994634
+        ],
+        "warmup_runs": 1,
+        "workload": {
+          "aa_lengths": [
+            100,
+            300,
+            500,
+            1000,
+            2000
+          ],
+          "batch_size": 64,
+          "model_sha256": "5f1a302adf0149cd424e6b8e3f16b2b1661d21b47762ca0680e813e11c69c440",
+          "records": 512
+        }
+      },
+      "cnn_train": {
+        "environment": {
+          "cdskit_version": "0.29.2",
+          "cpu_count": 12,
+          "created_utc": "2026-09-10T04:32:32.228712+00:00",
+          "dependencies": {
+            "biopython": "1.88",
+            "matplotlib": "3.11.1",
+            "numpy": "2.5.2"
+          },
+          "git_commit": "dc1aab67f8b2273d5fa36f730aea55394a3e0b28",
+          "git_dirty": true,
+          "implementation": "CPython",
+          "machine": "arm64",
+          "processor": "Apple M2 Max",
+          "python": "3.12.14",
+          "runner_image": null,
+          "system": "Darwin"
+        },
+        "median_seconds": 2.7433881250035483,
+        "output_sha256": "e197e175f8c548667d5fb6bd82ab40e39c24183006f704fe918592ec00b0b735",
+        "peak_rss_bytes": 346144768,
+        "samples_seconds": [
+          2.7433881250035483,
+          3.0277532920008525,
+          2.547475208004471
+        ],
+        "warmup_runs": 1,
+        "workload": {
+          "batch_size": 64,
+          "epochs": 2,
+          "layout": "legacy",
+          "mask_padding": false,
+          "records": 512,
+          "thresholds_compared": false
+        }
+      },
+      "filter": {
+        "environment": {
+          "cdskit_version": "0.29.2",
+          "cpu_count": 12,
+          "created_utc": "2026-09-10T04:39:29.162584+00:00",
+          "dependencies": {
+            "biopython": "1.88",
+            "matplotlib": "3.11.1",
+            "numpy": "2.5.2"
+          },
+          "git_commit": "dc1aab67f8b2273d5fa36f730aea55394a3e0b28",
+          "git_dirty": true,
+          "implementation": "CPython",
+          "machine": "arm64",
+          "processor": "Apple M2 Max",
+          "python": "3.12.14",
+          "runner_image": null,
+          "system": "Darwin"
+        },
+        "median_seconds": 0.12763879203703254,
+        "output_sha256": "5a9d5f4144cb42f13764b88d21bdfb41bfc6779171ee27bbb7d5cc807d09d056",
+        "peak_rss_bytes": 50905088,
+        "samples_seconds": [
+          0.12398616701830178,
+          0.1371215419494547,
+          0.12763879203703254
+        ],
+        "warmup_runs": 1,
+        "workload": {
+          "nt_per_record": 1500,
+          "records": 1000
+        }
+      },
+      "filter_long": {
+        "environment": {
+          "cdskit_version": "0.29.2",
+          "cpu_count": 12,
+          "created_utc": "2026-09-10T04:39:37.049273+00:00",
+          "dependencies": {
+            "biopython": "1.88",
+            "matplotlib": "3.11.1",
+            "numpy": "2.5.2"
+          },
+          "git_commit": "dc1aab67f8b2273d5fa36f730aea55394a3e0b28",
+          "git_dirty": true,
+          "implementation": "CPython",
+          "machine": "arm64",
+          "processor": "Apple M2 Max",
+          "python": "3.12.14",
+          "runner_image": null,
+          "system": "Darwin"
+        },
+        "median_seconds": 1.895649499958381,
+        "output_sha256": "bcd509ac44ebe1dfb0cfbaae56e2085bafb0b8545e9dbf1e8994edc318b2f2ec",
+        "peak_rss_bytes": 107659264,
+        "samples_seconds": [
+          1.8829241250059567,
+          1.9603384579531848,
+          1.895649499958381
+        ],
+        "warmup_runs": 1,
+        "workload": {
+          "nt_per_record": 30000000,
+          "records": 1
+        }
+      },
+      "gapjust_gff": {
+        "environment": {
+          "cdskit_version": "0.29.2",
+          "cpu_count": 12,
+          "created_utc": "2026-09-10T04:34:40.741434+00:00",
+          "dependencies": {
+            "biopython": "1.88",
+            "matplotlib": "3.11.1",
+            "numpy": "2.5.2"
+          },
+          "git_commit": "dc1aab67f8b2273d5fa36f730aea55394a3e0b28",
+          "git_dirty": true,
+          "implementation": "CPython",
+          "machine": "arm64",
+          "processor": "Apple M2 Max",
+          "python": "3.12.14",
+          "runner_image": null,
+          "system": "Darwin"
+        },
+        "median_seconds": 0.6778251249925233,
+        "output_sha256": "d36e8ef600ff5a9db499aa91eda0f430401f425c216ce7e60203a2cf8998fae8",
+        "peak_rss_bytes": 142262272,
+        "samples_seconds": [
+          0.5181823750026524,
+          0.5684180419775657,
+          0.6823794999800157,
+          0.7523866249830462,
+          0.7751291670138016,
+          0.6778251249925233,
+          0.6330155839968938
+        ],
+        "warmup_runs": 1,
+        "workload": {
+          "gaps": 10000,
+          "gff_features": 10000,
+          "nt": 10000000,
+          "records": 10
+        }
+      },
+      "longestorf": {
+        "environment": {
+          "cdskit_version": "0.29.2",
+          "cpu_count": 12,
+          "created_utc": "2026-09-10T04:34:01.937259+00:00",
+          "dependencies": {
+            "biopython": "1.88",
+            "matplotlib": "3.11.1",
+            "numpy": "2.5.2"
+          },
+          "git_commit": "dc1aab67f8b2273d5fa36f730aea55394a3e0b28",
+          "git_dirty": true,
+          "implementation": "CPython",
+          "machine": "arm64",
+          "processor": "Apple M2 Max",
+          "python": "3.12.14",
+          "runner_image": null,
+          "system": "Darwin"
+        },
+        "median_seconds": 0.1305167920072563,
+        "output_sha256": "6a9041f0b20d2ea29e69da0ea0fae3820379fe4e7b73b165a80fe42a091322df",
+        "peak_rss_bytes": 50397184,
+        "samples_seconds": [
+          0.18891849997453392,
+          0.1305167920072563,
+          0.12145679100649431,
+          0.09911300000385381,
+          0.14279729101690464,
+          0.14319479200639762,
+          0.094902374985395
+        ],
+        "warmup_runs": 1,
+        "workload": {
+          "alphabet": "ACGT",
+          "nt_per_record": 3000,
+          "records": 300
+        }
+      },
+      "longestorf_ambiguous": {
+        "environment": {
+          "cdskit_version": "0.29.2",
+          "cpu_count": 12,
+          "created_utc": "2026-09-10T04:34:22.206837+00:00",
+          "dependencies": {
+            "biopython": "1.88",
+            "matplotlib": "3.11.1",
+            "numpy": "2.5.2"
+          },
+          "git_commit": "dc1aab67f8b2273d5fa36f730aea55394a3e0b28",
+          "git_dirty": true,
+          "implementation": "CPython",
+          "machine": "arm64",
+          "processor": "Apple M2 Max",
+          "python": "3.12.14",
+          "runner_image": null,
+          "system": "Darwin"
+        },
+        "median_seconds": 0.07343179199961014,
+        "output_sha256": "ffc4c9a7cffde59599288cda1a66e5871c404dedcb8f6003ba0f435654d22d98",
+        "peak_rss_bytes": 49119232,
+        "samples_seconds": [
+          0.07343179199961014,
+          0.07233608400565572,
+          0.08424850000301376,
+          0.07116933399811387,
+          0.08387158400728367,
+          0.0684325420006644,
+          0.08691620800527744
+        ],
+        "warmup_runs": 1,
+        "workload": {
+          "alphabet": "ACGTN",
+          "nt_per_record": 3000,
+          "records": 300
+        }
+      },
+      "pad": {
+        "environment": {
+          "cdskit_version": "0.29.2",
+          "cpu_count": 12,
+          "created_utc": "2026-09-10T04:33:59.919778+00:00",
+          "dependencies": {
+            "biopython": "1.88",
+            "matplotlib": "3.11.1",
+            "numpy": "2.5.2"
+          },
+          "git_commit": "dc1aab67f8b2273d5fa36f730aea55394a3e0b28",
+          "git_dirty": true,
+          "implementation": "CPython",
+          "machine": "arm64",
+          "processor": "Apple M2 Max",
+          "python": "3.12.14",
+          "runner_image": null,
+          "system": "Darwin"
+        },
+        "median_seconds": 0.12600633298279718,
+        "output_sha256": "7a03c377e717c1438eefd696823eb1eadb13d5a262f9458d9a20e1fb6e06e81a",
+        "peak_rss_bytes": 50855936,
+        "samples_seconds": [
+          0.18499812498339452,
+          0.17966587498085573,
+          0.112020583008416,
+          0.12600633298279718,
+          0.11698920800699852,
+          0.14339225000003353,
+          0.11586304201046005
+        ],
+        "warmup_runs": 1,
+        "workload": {
+          "nt_per_record": 1499,
+          "records": 1000,
+          "report": false
+        }
+      },
+      "targetp_features": {
+        "environment": {
+          "cdskit_version": "0.29.2",
+          "cpu_count": 12,
+          "created_utc": "2026-09-10T04:34:48.166803+00:00",
+          "dependencies": {
+            "biopython": "1.88",
+            "matplotlib": "3.11.1",
+            "numpy": "2.5.2"
+          },
+          "git_commit": "dc1aab67f8b2273d5fa36f730aea55394a3e0b28",
+          "git_dirty": true,
+          "implementation": "CPython",
+          "machine": "arm64",
+          "processor": "Apple M2 Max",
+          "python": "3.12.14",
+          "runner_image": null,
+          "system": "Darwin"
+        },
+        "median_seconds": 0.8479771660058759,
+        "output_sha256": "eab018c59b39c337242e04feb11db20c268cd1c729e847199012877bdee2f283",
+        "peak_rss_bytes": 70795264,
+        "samples_seconds": [
+          0.7873304169916082,
+          0.8046555840119254,
+          0.8479771660058759,
+          0.9329683329851832,
+          0.9575991659949068,
+          0.8922547920083161,
+          0.8177743749984074
+        ],
+        "warmup_runs": 1,
+        "workload": {
+          "aa_per_record": 500,
+          "feature_schema": "default",
+          "records": 1000
+        }
+      },
+      "targetp_features_legacy": {
+        "environment": {
+          "cdskit_version": "0.29.2",
+          "cpu_count": 12,
+          "created_utc": "2026-09-10T04:35:32.721995+00:00",
+          "dependencies": {
+            "biopython": "1.88",
+            "matplotlib": "3.11.1",
+            "numpy": "2.5.2"
+          },
+          "git_commit": "dc1aab67f8b2273d5fa36f730aea55394a3e0b28",
+          "git_dirty": true,
+          "implementation": "CPython",
+          "machine": "arm64",
+          "processor": "Apple M2 Max",
+          "python": "3.12.14",
+          "runner_image": null,
+          "system": "Darwin"
+        },
+        "median_seconds": 0.9680045410059392,
+        "output_sha256": "0e5fe096c25c91134d36a1e4fa47a525ef4e198af9c3cb3a6d3763e886093777",
+        "peak_rss_bytes": 71598080,
+        "samples_seconds": [
+          1.0894375419884454,
+          0.9680045410059392,
+          0.9319606670178473,
+          0.9916107079770882,
+          0.807852833007928,
+          0.9361066659912467,
+          0.9797979169816244
+        ],
+        "warmup_runs": 1,
+        "workload": {
+          "aa_per_record": 500,
+          "feature_schema": "legacy",
+          "records": 1000
+        }
+      },
+      "translate": {
+        "environment": {
+          "cdskit_version": "0.29.2",
+          "cpu_count": 12,
+          "created_utc": "2026-09-10T04:33:32.959883+00:00",
+          "dependencies": {
+            "biopython": "1.88",
+            "matplotlib": "3.11.1",
+            "numpy": "2.5.2"
+          },
+          "git_commit": "dc1aab67f8b2273d5fa36f730aea55394a3e0b28",
+          "git_dirty": true,
+          "implementation": "CPython",
+          "machine": "arm64",
+          "processor": "Apple M2 Max",
+          "python": "3.12.14",
+          "runner_image": null,
+          "system": "Darwin"
+        },
+        "median_seconds": 0.0108108329877723,
+        "output_sha256": "4912eeabf57d5cbb73e1da1f8bbccccde8331393b48a3d3a6cc77b60849743bc",
+        "peak_rss_bytes": 85999616,
+        "samples_seconds": [
+          0.0108108329877723,
+          0.018429874995490536,
+          0.0056353340041823685,
+          0.005665166972903535,
+          0.015881375002209097,
+          0.014156624994939193,
+          0.010084792011184618
+        ],
+        "warmup_runs": 1,
+        "workload": {
+          "nt": 3000000
+        }
+      }
+    }
+  },
+  "measurement_runs": {
+    "core": {
+      "repeats": 7,
+      "results": {
+        "baseline": {
+          "backtrim": {
+            "environment": {
+              "cdskit_version": "0.28.3",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:34:26.062241+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": null,
+              "git_dirty": null,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 0.07710054097697139,
+            "output_sha256": "c56b4db628f8370d5f7f0af2c40e6e2d06d9b0ea64626db13a01a75712889686",
+            "peak_rss_bytes": 67600384,
+            "samples_seconds": [
+              0.08127324999077246,
+              0.0703104580170475,
+              0.07768083401606418,
+              0.07748929099761881,
+              0.058787999994819984,
+              0.07710054097697139,
+              0.06883858301443979
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "kept_codons": 1500,
+              "records": 200,
+              "source_codons": 3000
+            }
+          },
+          "filter": {
+            "environment": {
+              "cdskit_version": "0.28.3",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:33:41.333161+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": null,
+              "git_dirty": null,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 0.15737200001603924,
+            "output_sha256": "5a9d5f4144cb42f13764b88d21bdfb41bfc6779171ee27bbb7d5cc807d09d056",
+            "peak_rss_bytes": 50839552,
+            "samples_seconds": [
+              0.1887959579762537,
+              0.13639975001569837,
+              0.15737200001603924,
+              0.17219254199881107,
+              0.1299439999856986,
+              0.15639037499204278,
+              0.16206466700532474
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "nt_per_record": 1500,
+              "records": 1000
+            }
+          },
+          "gapjust_gff": {
+            "environment": {
+              "cdskit_version": "0.28.3",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:34:29.442219+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": null,
+              "git_dirty": null,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 0.3578590420074761,
+            "output_sha256": "d36e8ef600ff5a9db499aa91eda0f430401f425c216ce7e60203a2cf8998fae8",
+            "peak_rss_bytes": 133332992,
+            "samples_seconds": [
+              0.3234138750121929,
+              0.3578590420074761,
+              0.3398065420042258,
+              0.3654432079929393,
+              0.3110574999882374,
+              0.3900040829903446,
+              0.3805811659840401
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "gaps": 10000,
+              "gff_features": 10000,
+              "nt": 10000000,
+              "records": 10
+            }
+          },
+          "longestorf": {
+            "environment": {
+              "cdskit_version": "0.28.3",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:34:06.412849+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": null,
+              "git_dirty": null,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 0.14715954099665396,
+            "output_sha256": "6a9041f0b20d2ea29e69da0ea0fae3820379fe4e7b73b165a80fe42a091322df",
+            "peak_rss_bytes": 49086464,
+            "samples_seconds": [
+              0.19611337498645298,
+              0.14160458301194012,
+              0.14141212499816902,
+              0.14715954099665396,
+              0.15421837498433888,
+              0.17039333301363513,
+              0.11829137499444187
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "alphabet": "ACGT",
+              "nt_per_record": 3000,
+              "records": 300
+            }
+          },
+          "longestorf_ambiguous": {
+            "environment": {
+              "cdskit_version": "0.28.3",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:34:08.106024+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": null,
+              "git_dirty": null,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 0.08803758400608785,
+            "output_sha256": "ffc4c9a7cffde59599288cda1a66e5871c404dedcb8f6003ba0f435654d22d98",
+            "peak_rss_bytes": 49086464,
+            "samples_seconds": [
+              0.1423318329907488,
+              0.08803758400608785,
+              0.08458408300066367,
+              0.06992537499172613,
+              0.07739474999834783,
+              0.11956454199389555,
+              0.10304966699914075
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "alphabet": "ACGTN",
+              "nt_per_record": 3000,
+              "records": 300
+            }
+          },
+          "pad": {
+            "environment": {
+              "cdskit_version": "0.28.3",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:33:42.783562+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": null,
+              "git_dirty": null,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 0.10186362499371171,
+            "output_sha256": "7a03c377e717c1438eefd696823eb1eadb13d5a262f9458d9a20e1fb6e06e81a",
+            "peak_rss_bytes": 49807360,
+            "samples_seconds": [
+              0.10190145802334882,
+              0.1380764170025941,
+              0.06366304197581485,
+              0.10186362499371171,
+              0.12902749999193475,
+              0.09550766699248925,
+              0.09020649999729358
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "nt_per_record": 1499,
+              "records": 1000,
+              "report": false
+            }
+          },
+          "targetp_features": {
+            "environment": {
+              "cdskit_version": "0.28.3",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:35:05.013559+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": null,
+              "git_dirty": null,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 0.9633725830062758,
+            "output_sha256": "0e5fe096c25c91134d36a1e4fa47a525ef4e198af9c3cb3a6d3763e886093777",
+            "peak_rss_bytes": 70385664,
+            "samples_seconds": [
+              0.93470608300413,
+              0.7882821249950211,
+              0.9671076250087935,
+              0.9633725830062758,
+              0.8945283750072122,
+              0.9882446249830537,
+              1.3585404170153197
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "aa_per_record": 500,
+              "feature_schema": "default",
+              "records": 1000
+            }
+          },
+          "targetp_features_legacy": {
+            "environment": {
+              "cdskit_version": "0.28.3",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:35:14.067756+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": null,
+              "git_dirty": null,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 1.064227499999106,
+            "output_sha256": "0e5fe096c25c91134d36a1e4fa47a525ef4e198af9c3cb3a6d3763e886093777",
+            "peak_rss_bytes": 70467584,
+            "samples_seconds": [
+              1.0101430419890676,
+              1.2516867080121301,
+              1.0752296250138897,
+              1.1164579999749549,
+              0.951494333014125,
+              1.064227499999106,
+              1.0250017090002075
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "aa_per_record": 500,
+              "feature_schema": "legacy",
+              "records": 1000
+            }
+          },
+          "translate": {
+            "environment": {
+              "cdskit_version": "0.28.3",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:33:31.377920+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": null,
+              "git_dirty": null,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 0.0061742920079268515,
+            "output_sha256": "4912eeabf57d5cbb73e1da1f8bbccccde8331393b48a3d3a6cc77b60849743bc",
+            "peak_rss_bytes": 84131840,
+            "samples_seconds": [
+              0.008910583012038842,
+              0.0061742920079268515,
+              0.005717083025956526,
+              0.005983999988529831,
+              0.00586179198580794,
+              0.011507582996273413,
+              0.006319709005765617
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "nt": 3000000
+            }
+          }
+        },
+        "before": {
+          "backtrim": {
+            "environment": {
+              "cdskit_version": "0.29.2",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:34:24.868844+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": null,
+              "git_dirty": null,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 0.11778362499899231,
+            "output_sha256": "c56b4db628f8370d5f7f0af2c40e6e2d06d9b0ea64626db13a01a75712889686",
+            "peak_rss_bytes": 71122944,
+            "samples_seconds": [
+              0.11778362499899231,
+              0.11026387501624413,
+              0.12404187500942498,
+              0.10484479201841168,
+              0.12724066598457284,
+              0.13759729199227877,
+              0.10762366699054837
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "kept_codons": 1500,
+              "records": 200,
+              "source_codons": 3000
+            }
+          },
+          "filter": {
+            "environment": {
+              "cdskit_version": "0.29.2",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:33:39.233031+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": null,
+              "git_dirty": null,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 0.38187354200636037,
+            "output_sha256": "5a9d5f4144cb42f13764b88d21bdfb41bfc6779171ee27bbb7d5cc807d09d056",
+            "peak_rss_bytes": 51101696,
+            "samples_seconds": [
+              0.44877212500432506,
+              0.32582291698781773,
+              0.4290552499878686,
+              0.38187354200636037,
+              0.401289875007933,
+              0.3353057089843787,
+              0.29910583299351856
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "nt_per_record": 1500,
+              "records": 1000
+            }
+          },
+          "gapjust_gff": {
+            "environment": {
+              "cdskit_version": "0.29.2",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:34:34.959396+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": null,
+              "git_dirty": null,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 0.6081876670068596,
+            "output_sha256": "d36e8ef600ff5a9db499aa91eda0f430401f425c216ce7e60203a2cf8998fae8",
+            "peak_rss_bytes": 145817600,
+            "samples_seconds": [
+              0.6174091249995399,
+              0.5620529580046423,
+              0.6081876670068596,
+              0.6859598750015721,
+              0.5435937090078369,
+              0.629116415977478,
+              0.5883865419891663
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "gaps": 10000,
+              "gff_features": 10000,
+              "nt": 10000000,
+              "records": 10
+            }
+          },
+          "longestorf": {
+            "environment": {
+              "cdskit_version": "0.29.2",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:34:04.356072+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": null,
+              "git_dirty": null,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 0.22040941700106487,
+            "output_sha256": "6a9041f0b20d2ea29e69da0ea0fae3820379fe4e7b73b165a80fe42a091322df",
+            "peak_rss_bytes": 49037312,
+            "samples_seconds": [
+              0.22746787499636412,
+              0.20217008399777114,
+              0.21424016598029993,
+              0.2109009160194546,
+              0.22040941700106487,
+              0.22824525000760332,
+              0.22493195801507682
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "alphabet": "ACGT",
+              "nt_per_record": 3000,
+              "records": 300
+            }
+          },
+          "longestorf_ambiguous": {
+            "environment": {
+              "cdskit_version": "0.29.2",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:34:20.990313+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": null,
+              "git_dirty": null,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 1.4257587920001242,
+            "output_sha256": "ffc4c9a7cffde59599288cda1a66e5871c404dedcb8f6003ba0f435654d22d98",
+            "peak_rss_bytes": 49168384,
+            "samples_seconds": [
+              1.3861544580140617,
+              1.5470000419882126,
+              1.2489380829792935,
+              1.3083489580021705,
+              1.4257587920001242,
+              1.9707620420085732,
+              1.4458497919840738
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "alphabet": "ACGTN",
+              "nt_per_record": 3000,
+              "records": 300
+            }
+          },
+          "pad": {
+            "environment": {
+              "cdskit_version": "0.29.2",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:33:58.014631+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": null,
+              "git_dirty": null,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 1.851918249973096,
+            "output_sha256": "7a03c377e717c1438eefd696823eb1eadb13d5a262f9458d9a20e1fb6e06e81a",
+            "peak_rss_bytes": 50135040,
+            "samples_seconds": [
+              1.851918249973096,
+              1.6663713750021998,
+              1.5842163340130355,
+              1.5057671669928823,
+              2.1880033340130467,
+              1.8763226669980213,
+              2.073829500004649
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "nt_per_record": 1499,
+              "records": 1000,
+              "report": false
+            }
+          },
+          "targetp_features": {
+            "environment": {
+              "cdskit_version": "0.29.2",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:34:56.631350+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": null,
+              "git_dirty": null,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 1.007994834013516,
+            "output_sha256": "eab018c59b39c337242e04feb11db20c268cd1c729e847199012877bdee2f283",
+            "peak_rss_bytes": 70746112,
+            "samples_seconds": [
+              1.007994834013516,
+              1.0232136670092586,
+              0.7648010409902781,
+              0.9379314589896239,
+              1.1113133750041015,
+              1.1323627500096336,
+              0.9436403329891618
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "aa_per_record": 500,
+              "feature_schema": "default",
+              "records": 1000
+            }
+          },
+          "targetp_features_legacy": {
+            "environment": {
+              "cdskit_version": "0.29.2",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:35:24.365403+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": null,
+              "git_dirty": null,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 1.160701999993762,
+            "output_sha256": "0e5fe096c25c91134d36a1e4fa47a525ef4e198af9c3cb3a6d3763e886093777",
+            "peak_rss_bytes": 70500352,
+            "samples_seconds": [
+              1.0430201250128448,
+              1.35779295800603,
+              1.3794158329837956,
+              1.181020707997959,
+              1.160701999993762,
+              0.8951579580025282,
+              0.980050084006507
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "aa_per_record": 500,
+              "feature_schema": "legacy",
+              "records": 1000
+            }
+          },
+          "translate": {
+            "environment": {
+              "cdskit_version": "0.29.2",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:33:32.110888+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": null,
+              "git_dirty": null,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 0.014059334003832191,
+            "output_sha256": "4912eeabf57d5cbb73e1da1f8bbccccde8331393b48a3d3a6cc77b60849743bc",
+            "peak_rss_bytes": 86999040,
+            "samples_seconds": [
+              0.015481500013265759,
+              0.014059334003832191,
+              0.005801417020848021,
+              0.014083667017985135,
+              0.008107999979984015,
+              0.005731000012019649,
+              0.016949957993347198
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "nt": 3000000
+            }
+          }
+        },
+        "fixed": {
+          "backtrim": {
+            "environment": {
+              "cdskit_version": "0.29.2",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:34:23.506384+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": "dc1aab67f8b2273d5fa36f730aea55394a3e0b28",
+              "git_dirty": true,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 0.09029162500519305,
+            "output_sha256": "c56b4db628f8370d5f7f0af2c40e6e2d06d9b0ea64626db13a01a75712889686",
+            "peak_rss_bytes": 71614464,
+            "samples_seconds": [
+              0.11644279101165012,
+              0.10025962500367314,
+              0.09076845800154842,
+              0.08519183300086297,
+              0.07725404101074673,
+              0.09029162500519305,
+              0.08345133299008012
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "kept_codons": 1500,
+              "records": 200,
+              "source_codons": 3000
+            }
+          },
+          "filter": {
+            "environment": {
+              "cdskit_version": "0.29.2",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:33:35.428675+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": "dc1aab67f8b2273d5fa36f730aea55394a3e0b28",
+              "git_dirty": true,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 0.15037266700528562,
+            "output_sha256": "5a9d5f4144cb42f13764b88d21bdfb41bfc6779171ee27bbb7d5cc807d09d056",
+            "peak_rss_bytes": 50905088,
+            "samples_seconds": [
+              0.3809584580012597,
+              0.18054841700359248,
+              0.13009483300265856,
+              0.1288469580176752,
+              0.13130141599685885,
+              0.15548641700297594,
+              0.15037266700528562
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "nt_per_record": 1500,
+              "records": 1000
+            }
+          },
+          "gapjust_gff": {
+            "environment": {
+              "cdskit_version": "0.29.2",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:34:40.741434+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": "dc1aab67f8b2273d5fa36f730aea55394a3e0b28",
+              "git_dirty": true,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 0.6778251249925233,
+            "output_sha256": "d36e8ef600ff5a9db499aa91eda0f430401f425c216ce7e60203a2cf8998fae8",
+            "peak_rss_bytes": 142262272,
+            "samples_seconds": [
+              0.5181823750026524,
+              0.5684180419775657,
+              0.6823794999800157,
+              0.7523866249830462,
+              0.7751291670138016,
+              0.6778251249925233,
+              0.6330155839968938
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "gaps": 10000,
+              "gff_features": 10000,
+              "nt": 10000000,
+              "records": 10
+            }
+          },
+          "longestorf": {
+            "environment": {
+              "cdskit_version": "0.29.2",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:34:01.937259+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": "dc1aab67f8b2273d5fa36f730aea55394a3e0b28",
+              "git_dirty": true,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 0.1305167920072563,
+            "output_sha256": "6a9041f0b20d2ea29e69da0ea0fae3820379fe4e7b73b165a80fe42a091322df",
+            "peak_rss_bytes": 50397184,
+            "samples_seconds": [
+              0.18891849997453392,
+              0.1305167920072563,
+              0.12145679100649431,
+              0.09911300000385381,
+              0.14279729101690464,
+              0.14319479200639762,
+              0.094902374985395
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "alphabet": "ACGT",
+              "nt_per_record": 3000,
+              "records": 300
+            }
+          },
+          "longestorf_ambiguous": {
+            "environment": {
+              "cdskit_version": "0.29.2",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:34:22.206837+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": "dc1aab67f8b2273d5fa36f730aea55394a3e0b28",
+              "git_dirty": true,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 0.07343179199961014,
+            "output_sha256": "ffc4c9a7cffde59599288cda1a66e5871c404dedcb8f6003ba0f435654d22d98",
+            "peak_rss_bytes": 49119232,
+            "samples_seconds": [
+              0.07343179199961014,
+              0.07233608400565572,
+              0.08424850000301376,
+              0.07116933399811387,
+              0.08387158400728367,
+              0.0684325420006644,
+              0.08691620800527744
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "alphabet": "ACGTN",
+              "nt_per_record": 3000,
+              "records": 300
+            }
+          },
+          "pad": {
+            "environment": {
+              "cdskit_version": "0.29.2",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:33:59.919778+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": "dc1aab67f8b2273d5fa36f730aea55394a3e0b28",
+              "git_dirty": true,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 0.12600633298279718,
+            "output_sha256": "7a03c377e717c1438eefd696823eb1eadb13d5a262f9458d9a20e1fb6e06e81a",
+            "peak_rss_bytes": 50855936,
+            "samples_seconds": [
+              0.18499812498339452,
+              0.17966587498085573,
+              0.112020583008416,
+              0.12600633298279718,
+              0.11698920800699852,
+              0.14339225000003353,
+              0.11586304201046005
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "nt_per_record": 1499,
+              "records": 1000,
+              "report": false
+            }
+          },
+          "targetp_features": {
+            "environment": {
+              "cdskit_version": "0.29.2",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:34:48.166803+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": "dc1aab67f8b2273d5fa36f730aea55394a3e0b28",
+              "git_dirty": true,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 0.8479771660058759,
+            "output_sha256": "eab018c59b39c337242e04feb11db20c268cd1c729e847199012877bdee2f283",
+            "peak_rss_bytes": 70795264,
+            "samples_seconds": [
+              0.7873304169916082,
+              0.8046555840119254,
+              0.8479771660058759,
+              0.9329683329851832,
+              0.9575991659949068,
+              0.8922547920083161,
+              0.8177743749984074
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "aa_per_record": 500,
+              "feature_schema": "default",
+              "records": 1000
+            }
+          },
+          "targetp_features_legacy": {
+            "environment": {
+              "cdskit_version": "0.29.2",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:35:32.721995+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": "dc1aab67f8b2273d5fa36f730aea55394a3e0b28",
+              "git_dirty": true,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 0.9680045410059392,
+            "output_sha256": "0e5fe096c25c91134d36a1e4fa47a525ef4e198af9c3cb3a6d3763e886093777",
+            "peak_rss_bytes": 71598080,
+            "samples_seconds": [
+              1.0894375419884454,
+              0.9680045410059392,
+              0.9319606670178473,
+              0.9916107079770882,
+              0.807852833007928,
+              0.9361066659912467,
+              0.9797979169816244
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "aa_per_record": 500,
+              "feature_schema": "legacy",
+              "records": 1000
+            }
+          },
+          "translate": {
+            "environment": {
+              "cdskit_version": "0.29.2",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:33:32.959883+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": "dc1aab67f8b2273d5fa36f730aea55394a3e0b28",
+              "git_dirty": true,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 0.0108108329877723,
+            "output_sha256": "4912eeabf57d5cbb73e1da1f8bbccccde8331393b48a3d3a6cc77b60849743bc",
+            "peak_rss_bytes": 85999616,
+            "samples_seconds": [
+              0.0108108329877723,
+              0.018429874995490536,
+              0.0056353340041823685,
+              0.005665166972903535,
+              0.015881375002209097,
+              0.014156624994939193,
+              0.010084792011184618
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "nt": 3000000
+            }
+          }
+        }
+      },
+      "schema_version": 1,
+      "sources": {
+        "baseline": "/private/tmp/cdskit-perf-review/baseline",
+        "before": "/private/tmp/cdskit-perf-review/before",
+        "fixed": "/Users/kf/repos/cdskit"
+      }
+    },
+    "initial": {
+      "repeats": 5,
+      "results": {
+        "baseline": {
+          "backtrim": {
+            "environment": {
+              "cdskit_version": "0.28.3",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:21:43.556904+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": null,
+              "git_dirty": null,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 0.04369600000791252,
+            "output_sha256": "c56b4db628f8370d5f7f0af2c40e6e2d06d9b0ea64626db13a01a75712889686",
+            "peak_rss_bytes": 65912832,
+            "samples_seconds": [
+              0.04283745802240446,
+              0.04386612499365583,
+              0.04369600000791252,
+              0.043271000002278015,
+              0.04377779201604426
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "kept_codons": 1500,
+              "records": 200,
+              "source_codons": 3000
+            }
+          },
+          "cnn_predict": {
+            "environment": {
+              "cdskit_version": "0.28.3",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:23:10.244105+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": null,
+              "git_dirty": null,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 11.619564499997068,
+            "output_sha256": "d10e4d0b7fb03fc067636696fcbd2e8db0689fe7715298f218127a377ab714cb",
+            "peak_rss_bytes": 254279680,
+            "samples_seconds": [
+              11.619564499997068,
+              14.409007958020084,
+              15.251770208007656,
+              11.569989999989048,
+              11.146785707998788
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "aa_lengths": [
+                100,
+                300,
+                500,
+                1000,
+                2000
+              ],
+              "batch_size": 64,
+              "model_sha256": "5f1a302adf0149cd424e6b8e3f16b2b1661d21b47762ca0680e813e11c69c440",
+              "records": 512
+            }
+          },
+          "cnn_train": {
+            "environment": {
+              "cdskit_version": "0.28.3",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:25:17.067987+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": null,
+              "git_dirty": null,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 3.165823832998285,
+            "output_sha256": "77c540bf5a15462b58ae2bdf2c748c88ed248176cbb47a5385cbd9d2f55b8b34",
+            "peak_rss_bytes": 412778496,
+            "samples_seconds": [
+              2.4324527499848045,
+              3.151628833002178,
+              3.359239166980842,
+              3.217466959002195,
+              3.165823832998285
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "batch_size": 64,
+              "epochs": 2,
+              "layout": "legacy",
+              "mask_padding": false,
+              "records": 512,
+              "thresholds_compared": false
+            }
+          },
+          "filter": {
+            "environment": {
+              "cdskit_version": "0.28.3",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:21:29.216686+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": null,
+              "git_dirty": null,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 0.09666295899660327,
+            "output_sha256": "5a9d5f4144cb42f13764b88d21bdfb41bfc6779171ee27bbb7d5cc807d09d056",
+            "peak_rss_bytes": 51625984,
+            "samples_seconds": [
+              0.09918158399523236,
+              0.09582024998962879,
+              0.09666295899660327,
+              0.0961720829945989,
+              0.09801625000545755
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "nt_per_record": 1500,
+              "records": 1000
+            }
+          },
+          "gapjust_gff": {
+            "environment": {
+              "cdskit_version": "0.28.3",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:21:45.185672+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": null,
+              "git_dirty": null,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 0.21577737500774674,
+            "output_sha256": "d36e8ef600ff5a9db499aa91eda0f430401f425c216ce7e60203a2cf8998fae8",
+            "peak_rss_bytes": 126894080,
+            "samples_seconds": [
+              0.21521237498382106,
+              0.21577737500774674,
+              0.22390762498253025,
+              0.22052245799568482,
+              0.21416862498153932
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "gaps": 10000,
+              "gff_features": 10000,
+              "nt": 10000000,
+              "records": 10
+            }
+          },
+          "longestorf": {
+            "environment": {
+              "cdskit_version": "0.28.3",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:21:36.911482+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": null,
+              "git_dirty": null,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 0.06251220899866894,
+            "output_sha256": "6a9041f0b20d2ea29e69da0ea0fae3820379fe4e7b73b165a80fe42a091322df",
+            "peak_rss_bytes": 49561600,
+            "samples_seconds": [
+              0.06260179099626839,
+              0.06273858400527388,
+              0.06251220899866894,
+              0.06206774999736808,
+              0.062262749997898936
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "alphabet": "ACGT",
+              "nt_per_record": 3000,
+              "records": 300
+            }
+          },
+          "longestorf_ambiguous": {
+            "environment": {
+              "cdskit_version": "0.28.3",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:21:37.435063+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": null,
+              "git_dirty": null,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 0.04274658299982548,
+            "output_sha256": "ffc4c9a7cffde59599288cda1a66e5871c404dedcb8f6003ba0f435654d22d98",
+            "peak_rss_bytes": 48660480,
+            "samples_seconds": [
+              0.042585749994032085,
+              0.04252274997998029,
+              0.04274658299982548,
+              0.042838666995521635,
+              0.04301983301411383
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "alphabet": "ACGTN",
+              "nt_per_record": 3000,
+              "records": 300
+            }
+          },
+          "pad": {
+            "environment": {
+              "cdskit_version": "0.28.3",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:21:29.741679+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": null,
+              "git_dirty": null,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 0.04909941699588671,
+            "output_sha256": "7a03c377e717c1438eefd696823eb1eadb13d5a262f9458d9a20e1fb6e06e81a",
+            "peak_rss_bytes": 50364416,
+            "samples_seconds": [
+              0.04909941699588671,
+              0.048979374987538904,
+              0.04852037501404993,
+              0.04915366700151935,
+              0.049784000002546236
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "nt_per_record": 1499,
+              "records": 1000,
+              "report": false
+            }
+          },
+          "targetp_features": {
+            "environment": {
+              "cdskit_version": "0.28.3",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:21:54.403579+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": null,
+              "git_dirty": null,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 0.5108239999972284,
+            "output_sha256": "0e5fe096c25c91134d36a1e4fa47a525ef4e198af9c3cb3a6d3763e886093777",
+            "peak_rss_bytes": 78774272,
+            "samples_seconds": [
+              0.5074494579748716,
+              0.5099934159952682,
+              0.5252608339942526,
+              0.5239579580083955,
+              0.5108239999972284
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "aa_per_record": 500,
+              "records": 1000
+            }
+          },
+          "translate": {
+            "environment": {
+              "cdskit_version": "0.28.3",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:21:26.548967+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": null,
+              "git_dirty": null,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 0.006152500020107254,
+            "output_sha256": "4912eeabf57d5cbb73e1da1f8bbccccde8331393b48a3d3a6cc77b60849743bc",
+            "peak_rss_bytes": 83689472,
+            "samples_seconds": [
+              0.007447499985573813,
+              0.005911666026804596,
+              0.00656500001787208,
+              0.006150458997581154,
+              0.006152500020107254
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "nt": 3000000
+            }
+          }
+        },
+        "before": {
+          "backtrim": {
+            "environment": {
+              "cdskit_version": "0.29.2",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:21:43.047148+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": null,
+              "git_dirty": null,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 0.04863920799107291,
+            "output_sha256": "c56b4db628f8370d5f7f0af2c40e6e2d06d9b0ea64626db13a01a75712889686",
+            "peak_rss_bytes": 67207168,
+            "samples_seconds": [
+              0.048629375000018626,
+              0.048527375009143725,
+              0.04900141598773189,
+              0.048807957995450124,
+              0.04863920799107291
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "kept_codons": 1500,
+              "records": 200,
+              "source_codons": 3000
+            }
+          },
+          "cnn_predict": {
+            "environment": {
+              "cdskit_version": "0.29.2",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:24:36.048880+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": null,
+              "git_dirty": null,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 13.627185040997574,
+            "output_sha256": "d10e4d0b7fb03fc067636696fcbd2e8db0689fe7715298f218127a377ab714cb",
+            "peak_rss_bytes": 252395520,
+            "samples_seconds": [
+              13.722202583012404,
+              12.926139749994036,
+              13.02588558397838,
+              15.225693667016458,
+              13.627185040997574
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "aa_lengths": [
+                100,
+                300,
+                500,
+                1000,
+                2000
+              ],
+              "batch_size": 64,
+              "model_sha256": "5f1a302adf0149cd424e6b8e3f16b2b1661d21b47762ca0680e813e11c69c440",
+              "records": 512
+            }
+          },
+          "cnn_train": {
+            "environment": {
+              "cdskit_version": "0.29.2",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:24:52.631277+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": null,
+              "git_dirty": null,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 2.261412249994464,
+            "output_sha256": "e197e175f8c548667d5fb6bd82ab40e39c24183006f704fe918592ec00b0b735",
+            "peak_rss_bytes": 343474176,
+            "samples_seconds": [
+              2.056391582998913,
+              2.0850975410139654,
+              2.261412249994464,
+              2.429357082990464,
+              2.81470770802116
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "batch_size": 64,
+              "epochs": 2,
+              "layout": "legacy",
+              "mask_padding": false,
+              "records": 512,
+              "thresholds_compared": false
+            }
+          },
+          "filter": {
+            "environment": {
+              "cdskit_version": "0.29.2",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:21:28.285809+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": null,
+              "git_dirty": null,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 0.18422224998357706,
+            "output_sha256": "5a9d5f4144cb42f13764b88d21bdfb41bfc6779171ee27bbb7d5cc807d09d056",
+            "peak_rss_bytes": 51396608,
+            "samples_seconds": [
+              0.1829298750089947,
+              0.18360770799336024,
+              0.1845579170039855,
+              0.18422224998357706,
+              0.18587312501040287
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "nt_per_record": 1500,
+              "records": 1000
+            }
+          },
+          "gapjust_gff": {
+            "environment": {
+              "cdskit_version": "0.29.2",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:21:47.718243+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": null,
+              "git_dirty": null,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 0.3653460830100812,
+            "output_sha256": "d36e8ef600ff5a9db499aa91eda0f430401f425c216ce7e60203a2cf8998fae8",
+            "peak_rss_bytes": 134594560,
+            "samples_seconds": [
+              0.37509783398127183,
+              0.3653460830100812,
+              0.38037099997745827,
+              0.36108933298964985,
+              0.3624383749847766
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "gaps": 10000,
+              "gff_features": 10000,
+              "nt": 10000000,
+              "records": 10
+            }
+          },
+          "longestorf": {
+            "environment": {
+              "cdskit_version": "0.29.2",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:21:36.268693+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": null,
+              "git_dirty": null,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 0.12364770800922997,
+            "output_sha256": "6a9041f0b20d2ea29e69da0ea0fae3820379fe4e7b73b165a80fe42a091322df",
+            "peak_rss_bytes": 50397184,
+            "samples_seconds": [
+              0.12415945800603367,
+              0.12508833297761157,
+              0.12364770800922997,
+              0.11886924999998882,
+              0.11838333401829004
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "alphabet": "ACGT",
+              "nt_per_record": 3000,
+              "records": 300
+            }
+          },
+          "longestorf_ambiguous": {
+            "environment": {
+              "cdskit_version": "0.29.2",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:21:42.524729+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": null,
+              "git_dirty": null,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 0.7995787090039812,
+            "output_sha256": "ffc4c9a7cffde59599288cda1a66e5871c404dedcb8f6003ba0f435654d22d98",
+            "peak_rss_bytes": 48971776,
+            "samples_seconds": [
+              0.7995787090039812,
+              0.8039511250099167,
+              0.8079906670027412,
+              0.7920257500081789,
+              0.7907901250000577
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "alphabet": "ACGTN",
+              "nt_per_record": 3000,
+              "records": 300
+            }
+          },
+          "pad": {
+            "environment": {
+              "cdskit_version": "0.29.2",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:21:35.266042+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": null,
+              "git_dirty": null,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 0.879590124997776,
+            "output_sha256": "7a03c377e717c1438eefd696823eb1eadb13d5a262f9458d9a20e1fb6e06e81a",
+            "peak_rss_bytes": 50495488,
+            "samples_seconds": [
+              0.8749806249979883,
+              0.879590124997776,
+              0.8874442079977598,
+              0.873250000004191,
+              0.8826633749995381
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "nt_per_record": 1499,
+              "records": 1000,
+              "report": false
+            }
+          },
+          "targetp_features": {
+            "environment": {
+              "cdskit_version": "0.29.2",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:21:51.067134+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": null,
+              "git_dirty": null,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 0.5140337499906309,
+            "output_sha256": "eab018c59b39c337242e04feb11db20c268cd1c729e847199012877bdee2f283",
+            "peak_rss_bytes": 78888960,
+            "samples_seconds": [
+              0.5148736249830108,
+              0.507534125004895,
+              0.49945750000188127,
+              0.5140337499906309,
+              0.5233911249961238
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "aa_per_record": 500,
+              "records": 1000
+            }
+          },
+          "translate": {
+            "environment": {
+              "cdskit_version": "0.29.2",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:21:26.832696+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": null,
+              "git_dirty": null,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 0.0059879160253331065,
+            "output_sha256": "4912eeabf57d5cbb73e1da1f8bbccccde8331393b48a3d3a6cc77b60849743bc",
+            "peak_rss_bytes": 83181568,
+            "samples_seconds": [
+              0.0059879160253331065,
+              0.006379500002367422,
+              0.005959499976597726,
+              0.005773499986389652,
+              0.006011041987221688
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "nt": 3000000
+            }
+          }
+        }
+      },
+      "schema_version": 1,
+      "sources": {
+        "baseline": "/private/tmp/cdskit-perf-review/baseline",
+        "before": "/private/tmp/cdskit-perf-review/before"
+      }
+    },
+    "large_ram": {
+      "repeats": 3,
+      "results": {
+        "baseline": {
+          "filter": {
+            "environment": {
+              "cdskit_version": "0.28.3",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:39:26.294996+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": null,
+              "git_dirty": null,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 0.14406533300643787,
+            "output_sha256": "5a9d5f4144cb42f13764b88d21bdfb41bfc6779171ee27bbb7d5cc807d09d056",
+            "peak_rss_bytes": 50970624,
+            "samples_seconds": [
+              0.09419945802073926,
+              0.17143899999791756,
+              0.14406533300643787
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "nt_per_record": 1500,
+              "records": 1000
+            }
+          },
+          "filter_long": {
+            "environment": {
+              "cdskit_version": "0.28.3",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:40:25.333065+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": null,
+              "git_dirty": null,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 4.396715708950069,
+            "output_sha256": "bcd509ac44ebe1dfb0cfbaae56e2085bafb0b8545e9dbf1e8994edc318b2f2ec",
+            "peak_rss_bytes": 107757568,
+            "samples_seconds": [
+              4.498241249995772,
+              4.396715708950069,
+              4.141396416991483
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "nt_per_record": 30000000,
+              "records": 1
+            }
+          }
+        },
+        "before": {
+          "filter": {
+            "environment": {
+              "cdskit_version": "0.29.2",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:39:27.997514+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": null,
+              "git_dirty": null,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 0.26431687496369705,
+            "output_sha256": "5a9d5f4144cb42f13764b88d21bdfb41bfc6779171ee27bbb7d5cc807d09d056",
+            "peak_rss_bytes": 50905088,
+            "samples_seconds": [
+              0.26431687496369705,
+              0.2318726250086911,
+              0.32844141602981836
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "nt_per_record": 1500,
+              "records": 1000
+            }
+          },
+          "filter_long": {
+            "environment": {
+              "cdskit_version": "0.29.2",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:40:07.053342+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": null,
+              "git_dirty": null,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 8.079344916972332,
+            "output_sha256": "bcd509ac44ebe1dfb0cfbaae56e2085bafb0b8545e9dbf1e8994edc318b2f2ec",
+            "peak_rss_bytes": 107986944,
+            "samples_seconds": [
+              7.034692334011197,
+              8.079344916972332,
+              8.428085874998942
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "nt_per_record": 30000000,
+              "records": 1
+            }
+          }
+        },
+        "fixed": {
+          "filter": {
+            "environment": {
+              "cdskit_version": "0.29.2",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:39:29.162584+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": "dc1aab67f8b2273d5fa36f730aea55394a3e0b28",
+              "git_dirty": true,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 0.12763879203703254,
+            "output_sha256": "5a9d5f4144cb42f13764b88d21bdfb41bfc6779171ee27bbb7d5cc807d09d056",
+            "peak_rss_bytes": 50905088,
+            "samples_seconds": [
+              0.12398616701830178,
+              0.1371215419494547,
+              0.12763879203703254
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "nt_per_record": 1500,
+              "records": 1000
+            }
+          },
+          "filter_long": {
+            "environment": {
+              "cdskit_version": "0.29.2",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:39:37.049273+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": "dc1aab67f8b2273d5fa36f730aea55394a3e0b28",
+              "git_dirty": true,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 1.895649499958381,
+            "output_sha256": "bcd509ac44ebe1dfb0cfbaae56e2085bafb0b8545e9dbf1e8994edc318b2f2ec",
+            "peak_rss_bytes": 107659264,
+            "samples_seconds": [
+              1.8829241250059567,
+              1.9603384579531848,
+              1.895649499958381
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "nt_per_record": 30000000,
+              "records": 1
+            }
+          }
+        }
+      },
+      "schema_version": 1,
+      "sources": {
+        "baseline": "/private/tmp/cdskit-perf-review/baseline",
+        "before": "/private/tmp/cdskit-perf-review/before",
+        "fixed": "/Users/kf/repos/cdskit"
+      }
+    },
+    "ml": {
+      "repeats": 3,
+      "results": {
+        "baseline": {
+          "cnn_predict": {
+            "environment": {
+              "cdskit_version": "0.28.3",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:29:44.457176+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": null,
+              "git_dirty": null,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 19.021689417015295,
+            "output_sha256": "d10e4d0b7fb03fc067636696fcbd2e8db0689fe7715298f218127a377ab714cb",
+            "peak_rss_bytes": 254738432,
+            "samples_seconds": [
+              16.621207749994937,
+              19.054339499998605,
+              19.021689417015295
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "aa_lengths": [
+                100,
+                300,
+                500,
+                1000,
+                2000
+              ],
+              "batch_size": 64,
+              "model_sha256": "5f1a302adf0149cd424e6b8e3f16b2b1661d21b47762ca0680e813e11c69c440",
+              "records": 512
+            }
+          },
+          "cnn_train": {
+            "environment": {
+              "cdskit_version": "0.28.3",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:33:07.689267+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": null,
+              "git_dirty": null,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 4.0363648339989595,
+            "output_sha256": "77c540bf5a15462b58ae2bdf2c748c88ed248176cbb47a5385cbd9d2f55b8b34",
+            "peak_rss_bytes": 415875072,
+            "samples_seconds": [
+              4.0363648339989595,
+              4.5172834580007475,
+              3.890283167012967
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "batch_size": 64,
+              "epochs": 2,
+              "layout": "legacy",
+              "mask_padding": false,
+              "records": 512,
+              "thresholds_compared": false
+            }
+          }
+        },
+        "before": {
+          "cnn_predict": {
+            "environment": {
+              "cdskit_version": "0.29.2",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:31:01.744348+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": null,
+              "git_dirty": null,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 18.986204749991884,
+            "output_sha256": "d10e4d0b7fb03fc067636696fcbd2e8db0689fe7715298f218127a377ab714cb",
+            "peak_rss_bytes": 250855424,
+            "samples_seconds": [
+              20.73054150000098,
+              18.986204749991884,
+              17.591659833007725
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "aa_lengths": [
+                100,
+                300,
+                500,
+                1000,
+                2000
+              ],
+              "batch_size": 64,
+              "model_sha256": "5f1a302adf0149cd424e6b8e3f16b2b1661d21b47762ca0680e813e11c69c440",
+              "records": 512
+            }
+          },
+          "cnn_train": {
+            "environment": {
+              "cdskit_version": "0.29.2",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:32:47.777570+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": null,
+              "git_dirty": null,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 3.2415979590150528,
+            "output_sha256": "e197e175f8c548667d5fb6bd82ab40e39c24183006f704fe918592ec00b0b735",
+            "peak_rss_bytes": 344080384,
+            "samples_seconds": [
+              3.3630917909904383,
+              2.9629374999785796,
+              3.2415979590150528
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "batch_size": 64,
+              "epochs": 2,
+              "layout": "legacy",
+              "mask_padding": false,
+              "records": 512,
+              "thresholds_compared": false
+            }
+          }
+        },
+        "fixed": {
+          "cnn_predict": {
+            "environment": {
+              "cdskit_version": "0.29.2",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:32:17.379726+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": "dc1aab67f8b2273d5fa36f730aea55394a3e0b28",
+              "git_dirty": true,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 19.106799667002633,
+            "output_sha256": "d10e4d0b7fb03fc067636696fcbd2e8db0689fe7715298f218127a377ab714cb",
+            "peak_rss_bytes": 251199488,
+            "samples_seconds": [
+              17.639786249987083,
+              19.106799667002633,
+              19.402044457994634
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "aa_lengths": [
+                100,
+                300,
+                500,
+                1000,
+                2000
+              ],
+              "batch_size": 64,
+              "model_sha256": "5f1a302adf0149cd424e6b8e3f16b2b1661d21b47762ca0680e813e11c69c440",
+              "records": 512
+            }
+          },
+          "cnn_train": {
+            "environment": {
+              "cdskit_version": "0.29.2",
+              "cpu_count": 12,
+              "created_utc": "2026-09-10T04:32:32.228712+00:00",
+              "dependencies": {
+                "biopython": "1.88",
+                "matplotlib": "3.11.1",
+                "numpy": "2.5.2"
+              },
+              "git_commit": "dc1aab67f8b2273d5fa36f730aea55394a3e0b28",
+              "git_dirty": true,
+              "implementation": "CPython",
+              "machine": "arm64",
+              "processor": "Apple M2 Max",
+              "python": "3.12.14",
+              "runner_image": null,
+              "system": "Darwin"
+            },
+            "median_seconds": 2.7433881250035483,
+            "output_sha256": "e197e175f8c548667d5fb6bd82ab40e39c24183006f704fe918592ec00b0b735",
+            "peak_rss_bytes": 346144768,
+            "samples_seconds": [
+              2.7433881250035483,
+              3.0277532920008525,
+              2.547475208004471
+            ],
+            "warmup_runs": 1,
+            "workload": {
+              "batch_size": 64,
+              "epochs": 2,
+              "layout": "legacy",
+              "mask_padding": false,
+              "records": 512,
+              "thresholds_compared": false
+            }
+          }
+        }
+      },
+      "schema_version": 1,
+      "sources": {
+        "baseline": "/private/tmp/cdskit-perf-review/baseline",
+        "before": "/private/tmp/cdskit-perf-review/before",
+        "fixed": "/Users/kf/repos/cdskit"
+      }
+    }
+  },
+  "notes": [
+    "Fresh process per case/source; one warmup; wall time excludes setup and verification, while RSS includes them.",
+    "Common-output projection is documented in the companion report. Default PTS2 features and historical CNN training differ: do not claim a speedup for those comparisons.",
+    "Final filter measurements avoid a whole-sequence uppercase copy. Other measured core/ML paths are unchanged. Source hashes identify the final snapshots; preceding iterations are retained as measurement history.",
+    "Machine load varies; millisecond translation ratios are noisy. Inspect raw samples and repeated-pass evidence."
+  ],
+  "runtime_dependencies": {
+    "biopython": "1.88",
+    "numpy": "2.5.2",
+    "scikit-learn": "1.9.0",
+    "torch": "2.13.0",
+    "transformers": "5.14.1"
+  },
+  "schema_version": 1,
+  "scope": "CPU, one thread; synthetic workloads and one existing legacy CNN checkpoint; non-exclusive desktop host",
+  "source_identities": {
+    "baseline": {
+      "git_commit": "212a120614d7644e674193940f06138dc9ed0cb1",
+      "python_source_sha256": "82b4cebcedaea1e2ffd09b8a98e51fd30acbb6af283f4b7f420516f196e1ba2a"
+    },
+    "before": {
+      "git_head": "dc1aab67f8b2273d5fa36f730aea55394a3e0b28",
+      "includes_existing_uncommitted_changes": true,
+      "python_source_sha256": "6d39365fc4f98b30f878ce459670271ec0c557ee96408ae35ece43c0bbdbf7bd"
+    },
+    "fixed": {
+      "includes_existing_uncommitted_changes": true,
+      "python_source_sha256": "bb05c08b26dfe5f1eddf697fa2ba2f74d6d303766d589c73ae7af00c2f9205ac"
+    }
+  }
+}

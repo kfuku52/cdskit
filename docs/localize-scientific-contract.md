@@ -174,6 +174,23 @@ probability metrics use only available scores. Exported NPZ files include
 `score_available` and `decision_status`. Calibration and distillation reject
 unscored rows instead of learning from numeric placeholders.
 
+Frozen external evaluation follows the same rule for CNN, PLM and centroid
+models. Its NPZ files also preserve `quality_reason`; probability metrics and
+reliability bins exclude unscored placeholders even when every row is rejected.
+All model predictions and the final metrics are staged together, with rollback
+on write/publication errors and Python interruptions. A completed evaluation
+still cannot be overwritten. An uncatchable process kill can leave a run lock;
+verify its recorded owner before removing that stale lock.
+
+Window-based CNNs exclude completely empty batch-alignment windows from pooling
+even with `mask_padding=False`. That option controls residue padding within real
+windows, not the addition of artificial competing windows from other sequences.
+
+Final single-stage targeting models must expose the five classes expected by
+the inference CLI. If nearest-centroid fitting or a constant head lacks classes,
+`localize-learn` rejects the final model before replacing the model/report files.
+CV's internal estimators may still fit the classes observed in their own fold.
+
 The safe pipeline rejects these low-information sequences in training and
 validation, but retains them in the test partition to measure abstention coverage.
 Decision metrics include every test row; probability and reliability metrics,

@@ -86,6 +86,9 @@ def inputs(tmp_path, monkeypatch):
         lambda model, rows: {
             "prob_matrix": np.array([[0.8], [0.2]]),
             "prediction_matrix": np.array([[1], [0]]),
+            "score_available": np.array([True, True]),
+            "decision_status": ["predicted", "below_threshold"],
+            "quality_reason": ["", ""],
         },
     )
     return config, models, protocol
@@ -188,3 +191,84 @@ def test_positive_only_panel_cannot_establish_f1(inputs, tmp_path, monkeypatch):
     monkeypatch.setattr(frozen, "load_partitions", positive_only)
     with pytest.raises(ValueError, match="positive-only"):
         frozen.freeze_evaluation(*inputs, tmp_path / "result")
+
+
+@pytest.mark.parametrize("available", [[False, False], [True, False]])
+def test_abstention_scores_are_excluded_and_saved(
+    inputs, tmp_path, monkeypatch, available
+):
+    available = np.asarray(available)
+    probability = np.array([[0.8], [0.2]]) * available[:, None]
+    status = ["predicted" if ok else "abstained" for ok in available]
+    reasons = ["" if ok else "single_residue" for ok in available]
+    monkeypatch.setattr(
+        frozen,
+        "_predict_model_on_rows",
+        lambda *args: dict(
+            prob_matrix=probability,
+            prediction_matrix=np.array([[1], [0]]) * available[:, None],
+            score_available=available,
+            decision_status=status,
+            quality_reason=reasons,
+        ),
+    )
+    path = frozen.freeze_evaluation(*inputs, tmp_path / "result")
+    report = json.loads(frozen.evaluate_frozen(path).read_text())
+    scores = report["models"]["student"]
+    assert scores["scored_rows"] == available.sum()
+    assert scores["unscored_rows"] == (~available).sum()
+    assert scores["score_coverage"] == available.mean()
+    if available.any():
+        assert scores["brier_score"] == pytest.approx(0.04)
+        assert scores["accepted_only"]["macro_f1"] == 1
+    else:
+        assert scores["brier_score"] is None
+        assert scores["micro_average_precision"] is None
+        assert scores["accepted_only"] is None
+    for stratum in scores["strata"].values():
+        assert stratum["scored_rows"] == available.sum()
+        assert stratum["brier_score"] == scores["brier_score"]
+    with np.load(path.parent / "student.npz", allow_pickle=False) as saved:
+        np.testing.assert_array_equal(saved["score_available"], available)
+        assert saved["decision_status"].tolist() == status
+        assert saved["quality_reason"].tolist() == reasons
+
+
+@pytest.mark.parametrize("error_type", [OSError, KeyboardInterrupt])
+def test_output_write_failure_can_be_retried(inputs, tmp_path, monkeypatch, error_type):
+    path = frozen.freeze_evaluation(*inputs, tmp_path / "result")
+    original = frozen.np.savez_compressed
+    calls = 0
+
+    def fail_second(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise error_type("interrupted NPZ write")
+        return original(*args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(frozen.np, "savez_compressed", fail_second)
+        with pytest.raises(error_type):
+            frozen.evaluate_frozen(path)
+    assert sorted(p.name for p in path.parent.iterdir()) == ["protocol.json"]
+    assert frozen.evaluate_frozen(path).exists()
+
+
+def test_output_commit_failure_rolls_back_and_retries(inputs, tmp_path, monkeypatch):
+    from cdskit import atomicio
+
+    path = frozen.freeze_evaluation(*inputs, tmp_path / "result")
+    original = atomicio.os.replace
+
+    def fail_student(source, destination):
+        if str(destination) == str(path.parent / "student.npz"):
+            raise OSError("interrupted publication")
+        return original(source, destination)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(atomicio.os, "replace", fail_student)
+        with pytest.raises(OSError, match="publication"):
+            frozen.evaluate_frozen(path)
+    assert sorted(p.name for p in path.parent.iterdir()) == ["protocol.json"]
+    assert frozen.evaluate_frozen(path).exists()
