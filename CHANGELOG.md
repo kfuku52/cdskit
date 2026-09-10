@@ -4,6 +4,44 @@ This project follows semantic versioning. Deprecated CLI spellings remain
 available for at least the 0.24 release series and print their canonical
 replacement to standard error.
 
+## 0.30.0 — 2026-09-10
+
+### Added
+
+- Add a restartable localization teacher/student pipeline with frozen ESM
+  encoders, terminal attention, optional weighted BCE/ASL losses, and validation
+  macro-average-precision model selection.
+- Add explicit backtrim column mappings and strict ambiguity handling, codon
+  interpretation reports, and padding/ORF candidate uncertainty reports.
+- Separate observed, unknown, weak localization and targeting-peptide labels;
+  add independent evaluation audits, versioned feature definitions, and optional
+  safe localization decisions with explicit score semantics and taxonomy rules.
+
+### Changed
+
+- Reserve `esm2-localization-v1` as the default localization model alias. Its
+  checkpoint is not published: supply `--model PATH` or a published alias until
+  release. Omitting the model reports an actionable unpublished-model error.
+- Respect process CPU affinity when auto-detecting worker counts and serialize
+  concurrent pretrained-model downloads with checksum-verified cache reuse.
+
+### Fixed
+
+- Preserve CDS/GFF coordinate integrity during gap normalization and reject
+  unsafe CDS-overlapping edits by default.
+- Unify ambiguous and context-dependent codon stop semantics and restore fast
+  codon scanning for padding and ORF searches.
+- Prevent localization inference from mutating caller arrays, bind frozen
+  evaluation to label contracts, and remove batch-size-dependent CNN window
+  selection and short-input convolution failures.
+- Preserve teacher RNG state during frozen-encoder loading and handle trusted
+  legacy models referencing relocated Cython loss modules.
+
+### Documentation
+
+- Record scientific and code reviews, regression validation, and reproducible
+  runtime/RAM comparisons, including remaining limitations.
+
 ## 0.29.2 — 2026-09-08
 
 ### Documentation

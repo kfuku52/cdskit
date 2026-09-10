@@ -124,7 +124,7 @@ for updated sequence-region metadata and added diagnostics.
 
 No model format, feature definition, or trained weight changes are involved.
 
-See the [validation record](../docs/gapjust-safety-validation.md) for the regression
+See the [validation record](https://github.com/kfuku52/cdskit/blob/master/docs/gapjust-safety-validation.md) for the regression
 checks, independent CDS extraction, and validation limitations. Coordinate-valued
 custom attributes are preserved verbatim, not lifted; check those separately when
 using annotation dialects that embed additional genomic coordinates in attributes.

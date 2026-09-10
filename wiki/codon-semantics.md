@@ -96,4 +96,4 @@ and ranking to a simple reference algorithm, and exercise CLI reports and proces
 workers. These establish software behavior, not gene functionality.
 
 A fixed small RefSeq panel and synthetic perturbations are documented in the
-[2026-09-10 evaluation](../docs/codon-semantics-evaluation-2026-09-10.md).
+[2026-09-10 evaluation](https://github.com/kfuku52/cdskit/blob/master/docs/codon-semantics-evaluation-2026-09-10.md).

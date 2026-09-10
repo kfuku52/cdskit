@@ -1,6 +1,6 @@
 # Staged localization learning
 
-For observed labels, independent postprocessing CV and frozen external evaluation, see the [scientific validation contract](../docs/localize-scientific-validation.md). Historical CV postprocessing tuning metrics are not independent pipeline accuracy.
+For observed labels, independent postprocessing CV and frozen external evaluation, see the [scientific validation contract](https://github.com/kfuku52/cdskit/blob/master/docs/localize-scientific-validation.md). Historical CV postprocessing tuning metrics are not independent pipeline accuracy.
 
 `cdskit localize-learn` supports a frozen ESM2 encoder with a trained multilabel
 teacher head, saved teacher probabilities, and a compact CNN student. The exported
@@ -8,8 +8,8 @@ student runs on CPU through `cdskit localize`. This workflow does not establish 
 accuracy improvement; compare the distilled student and matched non-distilled
 control on held-out data before selecting a model.
 
-Install the ML extra as described in [Testing](../TESTING.md). JSON and YAML
-configurations share the same schema; see [the YAML example](../examples/localize-pipeline/config.yaml).
+Install the ML extra as described in [Testing](https://github.com/kfuku52/cdskit/blob/master/TESTING.md). JSON and YAML
+configurations share the same schema; see [the YAML example](https://github.com/kfuku52/cdskit/blob/master/examples/localize-pipeline/config.yaml).
 Replace its revision placeholder with an immutable encoder commit SHA, or set
 `model_name` to a local ESM checkpoint directory containing safetensors and tokenizer
 files. No remote model code is executed. `local_files_only: true` disables encoder
@@ -116,7 +116,7 @@ SSH, Slurm resource requests, environment provisioning and job submission remain
 outside CDSKIT; run the same commands inside an approved GPU allocation. No scheduler
 partition, GPU resource syntax or remote machine policy is assumed by this workflow.
 
-[The Slurm job wrapper](../scripts/localize_pipeline_job.sh) also works as a local
+[The Slurm job wrapper](https://github.com/kfuku52/cdskit/blob/master/scripts/localize_pipeline_job.sh) also works as a local
 shell wrapper. Set `CDSKIT_PYTHON` to the absolute Python path in the environment
 where this checkout is installed, then pass normal staged CLI arguments. For
 example, inside an existing GPU allocation:
@@ -155,7 +155,7 @@ options; their presence does not establish an accuracy improvement.
 
 ## Feature and decision versions
 
-See the [localization feature and decision contract](../docs/localize-scientific-contract.md)
+See the [localization feature and decision contract](https://github.com/kfuku52/cdskit/blob/master/docs/localize-scientific-contract.md)
 for the corrected nine-residue PTS2 definition, legacy model compatibility,
 `--decision_policy safe-v1`, v2 output and explicit taxonomy constraints.
 Published artifacts retain their historical defaults; new staged pipeline models

@@ -99,7 +99,7 @@ constant zero, not a trained peroxisome detector.
 
 ## Feature and decision versions
 
-See the [localization feature and decision contract](../docs/localize-scientific-contract.md)
+See the [localization feature and decision contract](https://github.com/kfuku52/cdskit/blob/master/docs/localize-scientific-contract.md)
 for the corrected nine-residue PTS2 definition, legacy model compatibility,
 `--decision_policy safe-v1`, v2 output and explicit taxonomy constraints.
 Published artifacts retain their historical defaults; new staged pipeline models
