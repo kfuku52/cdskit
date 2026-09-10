@@ -4,6 +4,21 @@ This project follows semantic versioning. Deprecated CLI spellings remain
 available for at least the 0.24 release series and print their canonical
 replacement to standard error.
 
+## 0.30.3 — 2026-09-11
+
+### Fixed
+
+- Export frozen-PLM models without training-machine residue-cache paths or a
+  forced local-only backbone setting, while preserving learned weights,
+  thresholds, and immutable encoder identity.
+
+### Model distribution
+
+- Distribute `esm2-localization-v1` as the default ten-label localization model:
+  frozen ESM2 650M, Light Attention, ordinary BCE, validation-BCE epoch selection.
+  Register its release URL and SHA-256; update first-use and offline guidance.
+  Experimental accuracy-improvement recipes remain opt-in.
+
 ## 0.30.2 — 2026-09-10
 
 ### Fixed

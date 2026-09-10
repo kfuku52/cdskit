@@ -126,9 +126,10 @@ one TSV table. Use `--mode summary` or `--mode usage` for machine-readable outpu
 ## Localization guides
 
 `localize` defaults to the ESM2 650M encoder plus a trained ten-label localization
-head (`esm2-localization-v1`). This model is not published yet: supply a trained
-checkpoint with `--model PATH` until release. Omitting it reports an unpublished
-model error.
+head (`esm2-localization-v1`). The baseline checkpoint downloads on first use;
+ESM2 backbone weights are fetched separately. Install the `ml` extra (or
+`ml-cpu` for CPU-only use). See the [model card](wiki/cdskit-localize-esm2-localization-v1.md)
+for evaluation, hardware requirements, and offline setup.
 
 The [published integrated model](wiki/cdskit-localize-multilabel-integrated-v1.md)
 predicts ten subcellular locations with independent label thresholds. Download

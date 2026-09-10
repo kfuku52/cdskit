@@ -94,7 +94,13 @@ def test_unpublished_default_never_downloads_or_trusts_cache(
     monkeypatch.setattr(
         "cdskit.localize_models._download_to_cache", unexpected_download
     )
-    spec = PRETRAINED_LOCALIZE_MODELS["esm2-localization-v1"]
+    spec = dict(
+        PRETRAINED_LOCALIZE_MODELS["esm2-localization-v1"],
+        published=False,
+        sha256="",
+        url="",
+    )
+    monkeypatch.setitem(PRETRAINED_LOCALIZE_MODELS, "esm2-localization-v1", spec)
     if cached:
         cache_path = temp_dir / "localize" / spec["name"] / "v1" / spec["filename"]
         cache_path.parent.mkdir(parents=True)

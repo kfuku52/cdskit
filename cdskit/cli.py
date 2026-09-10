@@ -723,7 +723,7 @@ p_localize.add_argument(
     type=str,
     default=DEFAULT_LOCALIZE_MODEL,
     action="store",
-    help='default=%(default)s: Model path or pretrained alias. The default ESM2 localization model is not published yet; use an explicit trained model path or a published alias such as "targeting5" until release.',
+    help="default=%(default)s: Model path or pretrained alias. The default uses frozen ESM2 650M with a Light Attention head trained using ordinary BCE. Model weights are downloaded on first use.",
 )
 p_localize.add_argument(
     "--model_download",

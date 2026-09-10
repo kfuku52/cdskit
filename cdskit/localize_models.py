@@ -34,10 +34,12 @@ PRETRAINED_LOCALIZE_MODELS: dict[str, ModelSpec] = {
             "Default ten-label localization model: frozen ESM2 650M and a trained "
             "localization head. Requires PyTorch, Transformers and ESM2 weights."
         ),
-        # Reserve the interface without claiming that a release artifact exists.
-        "url": "",
-        "sha256": "",
-        "published": False,
+        "url": (
+            "https://github.com/kfuku52/cdskit/releases/download/"
+            "localize-esm2-localization-v1/cdskit-localize-esm2-localization-v1.pt"
+        ),
+        "sha256": "534e0e096c95bede49be56e3bbde5a070c41684c86db6f993bdecbfc1c93131d",
+        "published": True,
     },
     "targeting5-v1": {
         "name": "targeting5-v1",

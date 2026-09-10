@@ -28,7 +28,11 @@ def test_localize_model_default_and_override(model):
     assert psr.parse_args(argv).model == (model or "esm2-localization-v1")
 
 
-def test_localize_unpublished_default_reports_actionable_error(tmp_path, capsys):
+def test_localize_default_offline_reports_actionable_error(
+    tmp_path, capsys, monkeypatch
+):
+    monkeypatch.setenv("CDSKIT_MODEL_DIR", str(tmp_path / "models"))
+    monkeypatch.setenv("CDSKIT_OFFLINE", "1")
     seq_file = tmp_path / "protein.faa"
     seq_file.write_text(">protein\nMAAAA\n")
     assert (
@@ -37,8 +41,7 @@ def test_localize_unpublished_default_reports_actionable_error(tmp_path, capsys)
     )
     error = capsys.readouterr().err
     assert "esm2-localization-v1" in error
-    assert "not published yet" in error
-    assert "--model PATH" in error
+    assert "model download is disabled" in error
 
 
 class TestCLIHelpStrings:

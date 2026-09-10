@@ -5,17 +5,22 @@ protein FASTA input. It can use a local model file or a published pretrained
 model alias.
 
 The default is `esm2-localization-v1`: a frozen ESM2 650M encoder plus a trained
-ten-label localization head. Its checkpoint is **not published yet**. Until
-release, pass a trained ESM2 localization checkpoint with `--model PATH`; omitting
-`--model` reports that the default model is unpublished. No weights are downloaded
-for this reserved alias. An explicit path or published alias overrides the default.
-ESM2 inference requires PyTorch, Transformers, and the ESM2 backbone weights.
+ten-label localization head. The checksum-verified checkpoint downloads on first
+use; ESM2 backbone weights are fetched separately at an immutable revision.
+An explicit model path or published alias overrides the default. Install the
+`ml` or `ml-cpu` extra for PyTorch and Transformers.
+
+The default checkpoint uses the baseline recipe: Light Attention, ordinary BCE
+loss, and epoch selection by validation BCE. Experimental improvement candidates
+are not adopted as the default; alternative losses, attention heads, and macro-AP
+epoch selection remain opt-in training options. See the
+[model card](cdskit-localize-esm2-localization-v1.md) for evaluation and offline use.
 
 ## Choose a model
 
 | Model | Prediction task | Runtime |
 | --- | --- | --- |
-| `esm2-localization-v1` (default) | Ten subcellular locations, multiple labels per protein | ESM2 650M + trained head; PyTorch and Transformers; checkpoint not yet published |
+| `esm2-localization-v1` (default) | Ten subcellular locations, multiple labels per protein | ESM2 650M + baseline Light Attention head; PyTorch and Transformers; automatic download |
 | [Integrated v1](https://github.com/kfuku52/cdskit/wiki/cdskit-localize-multilabel-integrated-v1) | Ten subcellular locations, multiple labels per protein | CDSKIT >=0.29.0 and PyTorch; downloaded file path |
 | `targeting5` | Five targeting-peptide classes, one class per protein | PyTorch and scikit-learn 1.5.2; registered alias |
 | `targeting5-perox-deeploc21-et-v1` | Five targeting-peptide classes plus a peroxisome score | Same legacy runtime; experimental alias |
@@ -127,7 +132,7 @@ seq_mtp	mTP	0.0742	0.0099	0.9122	0.0007	0.0029	0.0	none
 
 - `--seq_file PATH`: Input FASTA. Use `-` for standard input.
 - `--seq_type dna|protein`: Input sequence type. The default is `dna`.
-- `--model PATH|ALIAS`: Model file path or pretrained alias. Defaults to `esm2-localization-v1` (not yet published); use an explicit checkpoint path or published alias until release.
+- `--model PATH|ALIAS`: Model file path or pretrained alias. Defaults to `esm2-localization-v1`; downloads the baseline checkpoint on first use.
 - `--report PATH`: Output report. Use `-` for standard output. `.json` writes JSON; other suffixes write TSV.
 - `--organism_group unknown|plant|non_plant`: Optional organism group used to constrain targeting-model cTP/lTP predictions. The integrated ten-label model does not mask chloroplast predictions by taxonomy.
 - `--include_features yes|no`: Include internal feature values in the output report.
@@ -214,7 +219,7 @@ Offline flags do not bypass checksum validation or make missing assets optional.
 | Alias | Labels | Notes |
 | --- | --- | --- |
 | `targeting5` | `noTP`, `SP`, `mTP`, `cTP`, `lTP` | TargetP-compatible pretrained model; downloaded and checksum-verified on first use |
-| `esm2-localization-v1`, `esm2-localization` | Ten subcellular localization labels | Default ESM2 650M + trained head; reserved, unpublished alias; requires an explicit checkpoint path until release |
+| `esm2-localization-v1`, `esm2-localization` | Ten subcellular localization labels | Default ESM2 650M + baseline Light Attention head; checksum-verified download |
 | `targeting5-perox-deeploc21-et-v1` | `noTP`, `SP`, `mTP`, `cTP`, `lTP`, `p_peroxisome` | Experimental prerelease with a DeepLoc21-trained ExtraTrees peroxisome sequence-label head; downloaded and checksum-verified on first use |
 
 ## Training custom models
