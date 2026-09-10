@@ -3,6 +3,7 @@
 import json
 import csv
 import hashlib
+import os
 
 import numpy as np
 import pytest
@@ -430,14 +431,35 @@ def test_invalid_scores_are_not_forced_to_a_label(value):
         )
 
 
+@pytest.mark.parametrize("snapshot", [False, True])
 def test_load_digest_describes_open_artifact_after_atomic_replacement(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, snapshot
 ):
     import cdskit.localize_model as lm
 
+    if not snapshot and os.name == "nt":
+        pytest.skip(
+            "Windows blocks replacement of an open file; use the snapshot case."
+        )
     path = tmp_path / "model.json"
     original = json.dumps(constant_model()).encode()
     path.write_bytes(original)
+    if snapshot:
+        # Simulate an already-open descriptor to the original inode. Only the
+        # first open uses the snapshot: reopening the path must see its new data.
+        descriptor_path = tmp_path / "open-snapshot.json"
+        descriptor_path.write_bytes(original)
+        original_open = open
+        opened = False
+
+        def open_snapshot(filename, *args, **kwargs):
+            nonlocal opened
+            if filename == path and not opened:
+                opened = True
+                return original_open(descriptor_path, *args, **kwargs)
+            return original_open(filename, *args, **kwargs)
+
+        monkeypatch.setattr(lm, "open", open_snapshot, raising=False)
     replacement = tmp_path / "replacement.json"
     changed = constant_model()
     changed["localization_model"]["class_label"] = "SP"

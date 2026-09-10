@@ -4,6 +4,28 @@ This project follows semantic versioning. Deprecated CLI spellings remain
 available for at least the 0.24 release series and print their canonical
 replacement to standard error.
 
+## 0.30.2 — 2026-09-10
+
+### Fixed
+
+- Make the model-artifact digest regression portable to Windows by testing an
+  open snapshot while retaining the real atomic-replacement case on POSIX.
+  Windows normally prevents replacement of an open file.
+
+## 0.30.1 — 2026-09-10
+
+### Fixed
+
+- Assemble CUDA PLM batches directly on the GPU to avoid padded NumPy host
+  allocations that can stall during huge-page reclamation and compaction.
+  Preserve CPU/MPS behavior and verify identical batch values and paired
+  training results.
+
+### Documentation
+
+- Add a reproducible batch-assembly benchmark and record allocation-stall
+  diagnostics, measured latency and memory use, and validation limits.
+
 ## 0.30.0 — 2026-09-10
 
 ### Added
