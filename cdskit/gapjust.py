@@ -5,7 +5,18 @@ import re
 from collections import Counter
 from functools import partial
 
-from cdskit.atomicio import atomic_output_paths
+from cdskit.atomicio import (
+    atomic_output_paths,
+    atomic_write_json,
+    validate_distinct_paths,
+)
+from cdskit.gapjust_gff import (
+    select_gap_edits,
+    validate_edits,
+    validate_gff_bounds,
+    update_sequence_regions,
+    gff_diagnostics,
+)
 from cdskit.util import (
     parallel_map_ordered,
     read_gff,
@@ -34,17 +45,11 @@ def update_gap_ranges(gap_ranges, gap_start, edit_len):
 def vectorized_coordinate_update(
     seq_gff_start_coordinates, seq_gff_end_coordinates, justifications
 ):
-    """
-    Updates GFF feature coordinates in place for a list of gap
-    justifications. Does NOT touch phase.
+    """Map feature endpoints; phase and annotation relationships are not changed.
 
-    We assume that `original_edit_start` in each justification
-    is a 0-based index (as used in Python strings), whereas
-    GFF is 1-based. Hence we add +1 when applying the shift.
-
-    We also apply a 'cumulative_offset' so that each gap edit
-    is replayed in ascending order, just like the iterative
-    edits to the FASTA.
+    Range-aware dictionaries use 0-based original gap starts and reject deleted
+    endpoints. Legacy point shifts are arithmetic only and cannot verify CDS
+    safety; paired FASTA/GFF callers must use the validated interval API.
     """
     if len(justifications) == 0:
         return seq_gff_start_coordinates, seq_gff_end_coordinates
@@ -83,17 +88,15 @@ def vectorized_coordinate_update(
             valid = containing >= 0
             clipped = np.maximum(containing, 0)
             inside = valid & (original <= old_ends[clipped])
-            for edit_index in np.unique(containing[inside]):
-                mask = inside & (containing == edit_index)
-                target_length = int(targets[edit_index])
-                mapped_start = int(starts[edit_index] + prefix_delta[edit_index])
-                if target_length == 0:
-                    updated[mask] = max(1, mapped_start - 1)
-                elif deltas[edit_index] < 0:
-                    updated[mask] = np.minimum(
-                        updated[mask],
-                        mapped_start + target_length - 1,
-                    )
+            deleted = (
+                inside
+                & (original >= starts[clipped] + targets[clipped])
+                & (deltas[clipped] < 0)
+            )
+            if np.any(deleted):
+                raise ValueError(
+                    "Deleted feature endpoint has no corresponding output coordinate."
+                )
             return updated
 
         return (
@@ -180,73 +183,95 @@ def validate_gapjust_args(gap_len, gap_just_min, gap_just_max):
         )
 
 
-def normalize_record_gap_lengths(
+def plan_record_gap_lengths(
     record, target_gap_length, gap_just_min=None, gap_just_max=None
 ):
-    seq_str = str(record.seq).replace("n", "N")
-    seq_justifications = []
-    rebuilt = []
-    cursor = 0
-    num_justifications = 0
-    min_original_gap_length = None
-    max_original_gap_length = 0
-
-    for match in re.finditer("N+", seq_str):
-        start = match.start()
-        end = match.end()
-        gap_length = end - start
-        rebuilt.append(seq_str[cursor:start])
-
-        justify_gap = should_justify_gap(
-            gap_length=gap_length,
-            target_gap_length=target_gap_length,
-            gap_just_min=gap_just_min,
-            gap_just_max=gap_just_max,
-        )
-
-        if justify_gap:
-            rebuilt.append("N" * target_gap_length)
-            edit_len = target_gap_length - gap_length
-            seq_justifications.append(
+    """Enumerate edits in original coordinates without changing the sequence."""
+    validate_gapjust_args(target_gap_length, gap_just_min, gap_just_max)
+    edits = []
+    for match in re.finditer("N+", str(record.seq).upper()):
+        start, end = match.span()
+        old = end - start
+        if should_justify_gap(old, target_gap_length, gap_just_min, gap_just_max):
+            edits.append(
                 {
                     "original_gap_start": start,
-                    "original_gap_length": gap_length,
+                    "original_gap_length": old,
                     "target_gap_length": target_gap_length,
                     "original_edit_start": start,
-                    "edit_length": edit_len,
+                    "edit_length": target_gap_length - old,
                 }
             )
-            num_justifications += 1
-            if (min_original_gap_length is None) or (
-                gap_length < min_original_gap_length
-            ):
-                min_original_gap_length = gap_length
-            if gap_length > max_original_gap_length:
-                max_original_gap_length = gap_length
-        else:
-            rebuilt.append(seq_str[start:end])
+    return edits
 
+
+def apply_record_gap_edits(record, edits):
+    """Apply a previously accepted plan; preserved gap bases retain their positions."""
+    sequence = str(record.seq).replace("n", "N")
+    edits = validate_edits(edits)
+    for edit in edits:
+        start = edit["original_gap_start"]
+        end = start + edit["original_gap_length"]
+        validate_gapjust_args(edit["target_gap_length"], None, None)
+        if end > len(sequence) or sequence[start:end] != "N" * (end - start):
+            raise ValueError(
+                "Gap edit does not match an N interval in the original sequence."
+            )
+    rebuilt: list[str] = []
+    cursor = 0
+    for edit in edits:
+        start = edit["original_gap_start"]
+        end = start + edit["original_gap_length"]
+        rebuilt.extend((sequence[cursor:start], "N" * edit["target_gap_length"]))
         cursor = end
-
-    rebuilt.append(seq_str[cursor:])
+    rebuilt.append(sequence[cursor:])
+    if any(edit["target_gap_length"] != edit["original_gap_length"] for edit in edits):
+        # Local coordinate changes invalidate metadata even when deltas sum to zero.
+        record.letter_annotations = {}
+        record.features = []
     replace_record_sequence(record, "".join(rebuilt))
 
-    return (
-        seq_justifications,
-        num_justifications,
-        min_original_gap_length,
-        max_original_gap_length,
+
+def normalize_record_gap_lengths(
+    record,
+    target_gap_length,
+    gap_just_min=None,
+    gap_just_max=None,
+    *,
+    gff=None,
+    cds_overlap="error",
+):
+    """Normalize one record, optionally protecting CDS using original-coordinate GFF.
+
+    This changes only the sequence. For paired FASTA/GFF output use gapjust_main,
+    or plan/select once and apply the accepted edits to both data structures.
+    """
+    edits = plan_record_gap_lengths(
+        record, target_gap_length, gap_just_min, gap_just_max
     )
+    accepted, _ = select_gap_edits(gff, {record.id: edits}, cds_overlap=cds_overlap)
+    edits = accepted[record.id]
+    apply_record_gap_edits(record, edits)
+    lengths = [edit["original_gap_length"] for edit in edits]
+    return edits, len(edits), min(lengths, default=None), max(lengths, default=0)
 
 
 def normalize_record_gap_lengths_entry(
-    record, target_gap_length, gap_just_min=None, gap_just_max=None
+    record,
+    target_gap_length,
+    gap_just_min=None,
+    gap_just_max=None,
+    *,
+    gff=None,
+    cds_overlap="error",
 ):
     return normalize_record_gap_lengths(
-        record=record,
-        target_gap_length=target_gap_length,
-        gap_just_min=gap_just_min,
-        gap_just_max=gap_just_max,
+        record,
+        target_gap_length,
+        gap_just_min,
+        gap_just_max,
+        gff=gff,
+        cds_overlap=cds_overlap,
     )
 
 
@@ -272,7 +297,16 @@ def build_seqid_to_gff_indices(gff_data):
 
 
 def apply_gap_justifications_to_gff(gff, justifications_by_seq):
+    """Apply safe interval edits, rejecting CDS overlap before mutating any row.
+
+    To skip CDS edits, call select_gap_edits first and use its accepted plan for
+    BOTH FASTA and GFF. Legacy coordinate-only edits cannot establish safety.
+    """
+    justifications_by_seq, _ = select_gap_edits(gff, justifications_by_seq)
+    headers = update_sequence_regions(gff.get("header", []), justifications_by_seq)
     seqid_to_gff_indices = build_seqid_to_gff_indices(gff["data"])
+    updated_starts = gff["data"]["start"].copy()
+    updated_ends = gff["data"]["end"].copy()
     num_justified_start_coordinate = 0
     num_justified_end_coordinate = 0
     num_justified_gff_gene = 0
@@ -293,8 +327,8 @@ def apply_gap_justifications_to_gff(gff, justifications_by_seq):
             seqid_justs,
         )
 
-        gff["data"]["start"][index_gff_seq] = seq_gff_start_updated
-        gff["data"]["end"][index_gff_seq] = seq_gff_end_updated
+        updated_starts[index_gff_seq] = seq_gff_start_updated
+        updated_ends[index_gff_seq] = seq_gff_end_updated
 
         is_gene = gff["data"]["type"][index_gff_seq] == "gene"
         changed_start = seq_gff_start_original != seq_gff_start_updated
@@ -306,6 +340,11 @@ def apply_gap_justifications_to_gff(gff, justifications_by_seq):
             is_gene, np.logical_or(changed_start, changed_end)
         )
         num_justified_gff_gene += justified_changes.sum()
+
+    gff["data"]["start"] = updated_starts
+    gff["data"]["end"] = updated_ends
+    if "header" in gff:
+        gff["header"] = headers
 
     return (
         num_justified_start_coordinate,
@@ -346,103 +385,118 @@ def stop_if_duplicate_sequence_ids(records):
 
 
 def gapjust_main(args):
-    """
-    Main routine for:
-      1) Reading FASTA and replacing all gap lengths with a uniform length (args.gap_len).
-      2) Tracking each insertion/deletion in 'justifications'.
-      3) Writing the updated FASTA.
-      4) Updating GFF coordinates accordingly (without modifying phase),
-         then writing the updated GFF.
-    """
-
+    """Plan and validate all edits before writing paired sequence/annotation output."""
     gap_just_min = getattr(args, "gap_just_min", None)
     gap_just_max = getattr(args, "gap_just_max", None)
+    cds_overlap = getattr(args, "cds_overlap", "error")
+    report_path = getattr(args, "edit_report", None)
+    if args.ingff is not None:
+        if args.outgff in (None, ""):
+            raise ValueError("--out_gff is required with --in_gff.")
+        if args.outfile == "-" and args.outgff == "-":
+            raise ValueError(
+                "FASTA and GFF cannot share standard output; choose a file for one output."
+            )
+    if report_path == "-":
+        raise ValueError("--edit_report requires a file path, not standard output.")
     validate_gapjust_args(args.gap_len, gap_just_min, gap_just_max)
-
+    validate_distinct_paths(
+        inputs=[args.seqfile, args.ingff],
+        outputs=[
+            args.outfile,
+            args.outgff if args.ingff is not None else None,
+            report_path,
+        ],
+    )
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
     stop_if_not_dna(records=records, label="--seq_file")
     threads = resolve_threads(getattr(args, "threads", 1))
-    num_justifications = 0
-    min_original_gap_length = None
-    max_original_gap_length = 0
-    justifications_by_seq = dict()
+    gff = None
+    diagnostics = []
+    if args.ingff is not None:
+        stop_if_duplicate_sequence_ids(records)
+        gff = read_gff(args.ingff)
+        validate_gff_bounds(gff, {record.id: len(record) for record in records})
+        diagnostics = gff_diagnostics(gff)
+    else:
+        diagnostics = [
+            "No GFF supplied: CDS overlap is not checked; gapjust is not CDS repair."
+        ]
+    for diagnostic in diagnostics:
+        sys.stderr.write(diagnostic + "\n")
 
     worker = partial(
-        normalize_record_gap_lengths_entry,
+        plan_record_gap_lengths,
         target_gap_length=args.gap_len,
         gap_just_min=gap_just_min,
         gap_just_max=gap_just_max,
     )
-    normalized_results = parallel_map_ordered(
-        items=records, worker=worker, threads=threads
-    )
-
-    for record, normalized_result in zip(records, normalized_results, strict=False):
-        (
-            seq_justifications,
-            record_num_justifications,
-            record_min_original_gap_length,
-            record_max_original_gap_length,
-        ) = normalized_result
-
-        num_justifications += record_num_justifications
-        if record_min_original_gap_length is not None:
-            if (min_original_gap_length is None) or (
-                record_min_original_gap_length < min_original_gap_length
-            ):
-                min_original_gap_length = record_min_original_gap_length
-            max_original_gap_length = max(
-                max_original_gap_length, record_max_original_gap_length
-            )
-        if seq_justifications:
-            justifications_by_seq[record.id] = seq_justifications
-
-    if args.ingff is not None:
-        stop_if_duplicate_sequence_ids(records=records)
-
-    gff = None
-    if args.ingff is not None:
-        gff = read_gff(args.ingff)
-        (
-            num_justified_start_coordinate,
-            num_justified_end_coordinate,
-            num_justified_gff_gene,
-        ) = apply_gap_justifications_to_gff(gff, justifications_by_seq)
-        summarize_gff_justifications(
-            num_justified_start_coordinate,
-            num_justified_end_coordinate,
-            num_justified_gff_gene,
+    plans = parallel_map_ordered(items=records, worker=worker, threads=threads)
+    if gff is not None:
+        accepted, audit = select_gap_edits(
+            gff,
+            {record.id: plan for record, plan in zip(records, plans, strict=True)},
+            cds_overlap=cds_overlap,
         )
-        sequence_lengths = {record.id: len(record) for record in records}
-        for row in gff["data"]:
-            seq_len = sequence_lengths.get(str(row["seqid"]))
-            if seq_len is None:
-                continue
-            start = int(row["start"])
-            end = int(row["end"])
-            if not (1 <= start <= end <= seq_len):
-                raise ValueError(
-                    "Gap-adjusted GFF coordinates are invalid for {}: {}-{} "
-                    "(sequence length {}).".format(
-                        row["seqid"],
-                        start,
-                        end,
-                        seq_len,
-                    )
-                )
-
+        accepted_plans = [accepted[record.id] for record in records]
+        record_indices = {
+            record.id: index for index, record in enumerate(records, start=1)
+        }
+        for entry in audit:
+            entry["record_index"] = record_indices[entry["seqid"]]
+    else:
+        accepted_plans, audit = [], []
+        # Duplicate FASTA IDs remain supported without GFF.
+        for record_index, (record, plan) in enumerate(
+            zip(records, plans, strict=True), start=1
+        ):
+            accepted, entries = select_gap_edits(
+                None, {record.id: plan}, cds_overlap=cds_overlap
+            )
+            accepted_plans.append(accepted[record.id])
+            for entry in entries:
+                entry["record_index"] = record_index
+            audit.extend(entries)
+    justifications_by_seq = {
+        record.id: plan for record, plan in zip(records, accepted_plans, strict=True)
+    }
+    if gff is not None:
+        counts = apply_gap_justifications_to_gff(gff, justifications_by_seq)
+        summarize_gff_justifications(*counts)
+    for record, plan in zip(records, accepted_plans, strict=True):
+        apply_record_gap_edits(record, plan)
+    if gff is not None:
+        validate_gff_bounds(gff, {record.id: len(record) for record in records})
+    lengths = [edit["original_gap_length"] for plan in accepted_plans for edit in plan]
     summarize_gap_justifications(
-        num_justifications,
-        min_original_gap_length,
-        max_original_gap_length,
+        len(lengths), min(lengths, default=None), max(lengths, default=0)
     )
+    skipped = sum(entry["action"] == "skip" for entry in audit)
+    sys.stderr.write(f"Number of skipped CDS-overlapping gaps: {skipped}\n")
     output_paths = [
         path
-        for path in (args.outfile, args.outgff if gff is not None else None)
+        for path in (
+            args.outfile,
+            args.outgff if gff is not None else None,
+            report_path,
+        )
         if path not in (None, "", "-")
     ]
     with atomic_output_paths(output_paths) as staged_paths:
-        staged = dict(zip(output_paths, staged_paths, strict=False))
+        staged = dict(zip(output_paths, staged_paths, strict=True))
+        if report_path:
+            atomic_write_json(
+                staged[report_path],
+                {
+                    "schema_version": 1,
+                    "coordinate_system": "1-based-inclusive",
+                    "cds_overlap": cds_overlap,
+                    "cds_checked": gff is not None,
+                    "input_diagnostics": diagnostics,
+                    "edits": audit,
+                },
+                indent=2,
+            )
         write_seqs(
             records=records,
             outfile=staged.get(args.outfile, args.outfile),

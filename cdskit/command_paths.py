@@ -39,7 +39,9 @@ COMMAND_PATHS.update(
             inputs=("seqfile", "trimmed_aa_aln", "kept_sites"),
             outputs=("outfile", "mapping_report"),
         ),
-        "gapjust": CommandPaths(inputs=("seqfile", "ingff")),
+        "gapjust": CommandPaths(
+            inputs=("seqfile", "ingff"), outputs=("outfile", "edit_report")
+        ),
         "intersection": CommandPaths(inputs=("seqfile", "seqfile2", "ingff")),
         "filter": CommandPaths(outputs=("outfile", "report")),
         "trimcodon": CommandPaths(outputs=("outfile", "report")),

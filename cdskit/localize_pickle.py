@@ -5,13 +5,17 @@ Some sklearn builds serialized loss classes with the short Cython module name
 installing a process-wide module alias. This is not a safe unpickler; callers
 must opt into trusted pickle loading exactly as for the standard pickle module.
 """
+
 import pickle
 
-_LOSS_GLOBALS = frozenset({
-    "CyHalfBinomialLoss", "CyHalfMultinomialLoss",
-    "__pyx_unpickle_CyHalfBinomialLoss",
-    "__pyx_unpickle_CyHalfMultinomialLoss",
-})
+_LOSS_GLOBALS = frozenset(
+    {
+        "CyHalfBinomialLoss",
+        "CyHalfMultinomialLoss",
+        "__pyx_unpickle_CyHalfBinomialLoss",
+        "__pyx_unpickle_CyHalfMultinomialLoss",
+    }
+)
 
 
 class Unpickler(pickle.Unpickler):

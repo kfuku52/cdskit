@@ -414,6 +414,18 @@ p_gapjust.add_argument(
     action="store",
     help="default=%(default)s: Maximum gap length to be adjusted. Ns will be shortened if the gap length is equal to or smaller than this value.",
 )
+p_gapjust.add_argument(
+    "--cds_overlap",
+    choices=["error", "skip"],
+    default="error",
+    help="default=%(default)s: Reject CDS-overlapping N length changes, or skip each entire overlapping N run. Requires GFF to check CDS.",
+)
+p_gapjust.add_argument(
+    "--edit_report",
+    metavar="PATH",
+    default=None,
+    help="Write JSON edit/skip history in original 1-based coordinates to a separate file.",
+)
 p_gapjust.set_defaults(handler=command_gapjust)
 
 
