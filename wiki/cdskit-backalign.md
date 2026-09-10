@@ -45,3 +45,5 @@ ATGAAAGGG---
 - `--aa_aln` should be aligned (all sequences should have the same length).
 - CDS lengths in `--seq_file` should be multiples of three after removing gap characters.
 - A terminal stop codon in CDS can be omitted in `--aa_aln`.
+
+For trimmed protein alignments, use [backtrim](cdskit-backtrim.md) with the trimmer's retained column positions. Backalign requires the complete corresponding protein sequence (apart from the documented terminal stop exception); it cannot infer deleted codon positions from repeated amino acids.

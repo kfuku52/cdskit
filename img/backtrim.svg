@@ -10,8 +10,8 @@
    xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
    inkscape:version="1.1-dev (60faa23c, 2020-06-06)"
    sodipodi:docname="backtrim.svg"
-   viewBox="0 0 686.12817 338.75253"
-   height="89.628273mm"
+   viewBox="0 0 686.12817 385"
+   height="101.86458mm"
    width="181.53807mm"
    xml:space="preserve"
    version="1.1"
@@ -51,7 +51,7 @@
          id="path1090"
          style="fill:#000000;fill-opacity:1;fill-rule:evenodd;stroke:#000000;stroke-width:0.625;stroke-linejoin:round;stroke-opacity:1"
          d="M 8.7185878,4.0337352 -2.2072895,0.01601326 8.7185884,-4.0017078 c -1.7454984,2.3720609 -1.7354408,5.6174519 -6e-7,8.035443 z"
-         transform="scale(-0.6)" /></marker></defs><g
+         transform="scale(-0.6)" /></marker></defs><rect width="686.12817" height="385" fill="white"/><g
      transform="matrix(1.25,0,0,-1.25,-3.7061223,929.79285)"
      id="g10" /><image
      y="198.32228"
@@ -171,4 +171,7 @@
        y="8.1041927"
        x="-0.45833477"
        id="tspan940-5"
-       style="font-style:normal;font-variant:normal;font-weight:bold;font-stretch:normal;font-family:sans-serif;-inkscape-font-specification:'sans-serif Bold'">cdskit backtrim</tspan></text></svg>
+       style="font-style:normal;font-variant:normal;font-weight:bold;font-stretch:normal;font-family:sans-serif;-inkscape-font-specification:'sans-serif Bold'">cdskit backtrim</tspan></text><rect x="20" y="345" width="660" height="37" rx="4" fill="#eef4ff"/>
+<text x="30" y="360" style="font-size:11px;font-family:sans-serif;fill:#153e6b">Trimmer kept-column log (--kept_sites) → exact codon selection</text>
+<text x="30" y="375" style="font-size:10px;font-family:sans-serif;fill:#153e6b">Without positions: --mapping_policy strict rejects ambiguous or incomplete mappings.</text>
+</svg>

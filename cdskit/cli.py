@@ -325,6 +325,30 @@ p_backtrim.add_argument(
     help="PATH to the trimmed amino acid alignment. "
     "In addition to this, please specify the untrimmed CDS alignment by --seq_file.",
 )
+p_backtrim.add_argument(
+    "--kept_sites",
+    metavar="PATH",
+    default=None,
+    help="Retained source AA alignment columns, including gaps; requires --kept_sites_format.",
+)
+p_backtrim.add_argument(
+    "--kept_sites_format",
+    default=None,
+    choices=["indices0", "indices1", "clipkit-log", "trimal-colnumbering"],
+    help="Explicit coordinate format: one integer per line (0/1-based), ClipKIT log, or trimAl ColumnsMap.",
+)
+p_backtrim.add_argument(
+    "--mapping_policy",
+    choices=["legacy", "strict"],
+    default="legacy",
+    help="default=%(default)s: Without kept sites, strict requires a unique complete mapping; legacy preserves warning-and-selection behavior.",
+)
+p_backtrim.add_argument(
+    "--mapping_report",
+    metavar="PATH",
+    default=None,
+    help="Optional JSON column-mapping report (a file, not stdout).",
+)
 p_backtrim.set_defaults(handler=command_backtrim)
 
 

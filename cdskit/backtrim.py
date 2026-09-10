@@ -1,11 +1,28 @@
 from collections import defaultdict
 from collections import deque
 import sys
+import hashlib
+import json
+from pathlib import Path
+from typing import Any
+
+from cdskit import __version__
 from functools import partial
 
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 from cdskit.translate import translate_sequence_string
+from cdskit.atomicio import (
+    atomic_output_paths,
+    atomic_write_json,
+    validate_distinct_paths,
+)
+from cdskit.column_mapping import (
+    alignment_columns,
+    analyze_mapping,
+    read_kept_sites,
+    validate_mapping,
+)
 
 from cdskit.util import (
     parallel_map_ordered,
@@ -204,17 +221,96 @@ def trim_codon_record_with_ranges(record, nucleotide_ranges):
     )
 
 
+def _record_digest(records):
+    # Canonical record content also works for stdin and preserves row order/case.
+    payload = [[record.id, str(record.seq)] for record in records]
+    return hashlib.sha256(json.dumps(payload, ensure_ascii=True).encode()).hexdigest()
+
+
+def select_kept_sites(args, source, target, report):
+    analysis = analyze_mapping(source, target)
+    report.update(
+        inference_status=analysis.status,
+        complete_mapping_exists=analysis.status != "unmatched",
+        inferred_unique=analysis.status == "unique",
+        mapping_examples=[analysis.leftmost, analysis.rightmost]
+        if analysis.status == "ambiguous"
+        else ([analysis.leftmost] if analysis.status == "unique" else []),
+    )
+    if getattr(args, "kept_sites", None):
+        sites = read_kept_sites(args.kept_sites, args.kept_sites_format, len(source))
+        validate_mapping(source, target, sites)
+        report["source"] = "provided"
+        return sites
+    if getattr(args, "mapping_policy", "legacy") == "strict":
+        if analysis.status != "unique":
+            raise ValueError(
+                "AA column mapping is {}. Supply --kept_sites with the trimmer's "
+                "retained column positions; no codon alignment was written.".format(
+                    analysis.status
+                )
+            )
+        return analysis.leftmost
+    return None
+
+
+def _write_backtrim_outputs(args, records, report):
+    report_path = getattr(args, "mapping_report", None)
+    if report_path and args.outfile != "-":
+        with atomic_output_paths([args.outfile, report_path]) as paths:
+            write_seqs(records, paths[0], args.outseqformat)
+            atomic_write_json(paths[1], report, indent=2)
+    else:
+        # stdout cannot be rolled back; all mapping validation is finished first.
+        if report_path:
+            atomic_write_json(report_path, report, indent=2)
+        write_seqs(records, args.outfile, args.outseqformat)
+
+
 def backtrim_main(args):
+    kept_path = getattr(args, "kept_sites", None)
+    kept_format = getattr(args, "kept_sites_format", None)
+    report_path = getattr(args, "mapping_report", None)
+    policy = getattr(args, "mapping_policy", "legacy")
+    if policy not in {"legacy", "strict"}:
+        raise ValueError("Unknown mapping policy.")
+    if bool(kept_path) != bool(kept_format):
+        raise ValueError(
+            "--kept_sites and --kept_sites_format must be supplied together."
+        )
+    if report_path == "-" or kept_path == "-":
+        raise ValueError(
+            "Mapping report and kept sites require file paths, not stdout/stdin."
+        )
+    validate_distinct_paths(
+        inputs=[args.seqfile, args.trimmed_aa_aln, kept_path],
+        outputs=[args.outfile, report_path],
+    )
+    report: dict[str, Any] = dict(
+        schema_version=1,
+        cdskit_version=__version__,
+        coordinate_system="source_aligned_amino_acid",
+        index_base=0,
+        policy=policy,
+        source="provided" if kept_path else policy,
+        kept_sites_format=kept_format,
+        status="invalid",
+        selected_sites=[],
+    )
+    try:
+        _backtrim_main(args, report)
+    except ValueError as error:
+        report.update(status="failed", error=str(error))
+        if report_path:
+            atomic_write_json(report_path, report, indent=2)
+        raise
+
+
+def _backtrim_main(args, report):
     cdn_records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
     stop_if_not_dna(records=cdn_records, label="--seq_file")
     stop_if_invalid_codontable(args.codontable)
     pep_records = read_seqs(seqfile=args.trimmed_aa_aln, seqformat=args.inseqformat)
-    if len(cdn_records) == 0:
-        if len(pep_records) != 0:
-            txt = "The numbers of seqs did not match: seqfile={} and trimmed_aa_aln={}"
-            raise ValueError(txt.format(len(cdn_records), len(pep_records)))
-        write_seqs(records=list(), outfile=args.outfile, outseqformat=args.outseqformat)
-        return
     threads = resolve_threads(getattr(args, "threads", 1))
     stop_if_not_multiple_of_three(cdn_records)
     check_same_seq_num(cdn_records, pep_records)
@@ -223,6 +319,16 @@ def backtrim_main(args):
     pep_records = reorder_aa_records_by_cds_ids(
         cdn_records=cdn_records, pep_records=pep_records
     )
+    report.update(
+        codontable=args.codontable,
+        source_records_sha256=_record_digest(cdn_records),
+        trimmed_records_sha256=_record_digest(pep_records),
+    )
+    kept_path = getattr(args, "kept_sites", None)
+    if kept_path:
+        report["kept_sites_sha256"] = hashlib.sha256(
+            Path(kept_path).read_bytes()
+        ).hexdigest()
     translate_worker = partial(
         translate_record_to_aa_string, codontable=args.codontable
     )
@@ -230,15 +336,35 @@ def backtrim_main(args):
         items=cdn_records, worker=translate_worker, threads=threads
     )
     pep_strings = [str(record.seq) for record in pep_records]
-    kept_aa_sites, num_trimmed_multiple_hit_sites = find_kept_aa_sites(
-        tcdn_strings, pep_strings
+    source = alignment_columns(tcdn_strings)
+    target = alignment_columns(pep_strings)
+    report.update(source_column_count=len(source), target_column_count=len(target))
+    kept_aa_sites = select_kept_sites(args, source, target, report)
+    if kept_aa_sites is None:
+        kept_aa_sites, multiple_count = (
+            find_kept_aa_sites(tcdn_strings, pep_strings) if cdn_records else ([], 0)
+        )
+        txt = "{} codon sites matched to {} protein sites. "
+        txt += "Trimmed {} codon sites that matched to multiple protein sites.\n"
+        sys.stderr.write(txt.format(len(kept_aa_sites), len(target), multiple_count))
+        report["legacy_trimmed_multiple_hit_sites"] = multiple_count
+    # Reconstruct the legacy output's target positions for an explicit omission report.
+    matched_target_sites = []
+    cursor = 0
+    for site in kept_aa_sites:
+        while cursor < len(target) and target[cursor] != source[site]:
+            cursor += 1
+        matched_target_sites.append(cursor)
+        cursor += 1
+    report.update(
+        status="success",
+        selected_sites=kept_aa_sites,
+        matched_target_sites=matched_target_sites,
+        unmatched_target_sites=sorted(
+            set(range(len(target))) - set(matched_target_sites)
+        ),
+        output_complete=len(kept_aa_sites) == len(target),
     )
-    txt = "{} codon sites matched to {} protein sites. "
-    txt += "Trimmed {} codon sites that matched to multiple protein sites.\n"
-    txt = txt.format(
-        len(kept_aa_sites), len(pep_strings[0]), num_trimmed_multiple_hit_sites
-    )
-    sys.stderr.write(txt)
     nucleotide_ranges = codon_sites_to_nucleotide_ranges(codon_sites=kept_aa_sites)
     trim_worker = partial(
         trim_codon_record_with_ranges, nucleotide_ranges=nucleotide_ranges
@@ -246,12 +372,14 @@ def backtrim_main(args):
     trimmed_cdn_records = parallel_map_ordered(
         items=cdn_records, worker=trim_worker, threads=threads
     )
-    txt = "Number of aligned nucleotide sites in untrimmed codon sequences: {}\n"
-    sys.stderr.write(txt.format(len(cdn_records[0])))
-    txt = "Number of aligned nucleotide sites in trimmed codon sequences: {}\n"
-    sys.stderr.write(txt.format(len(trimmed_cdn_records[0])))
-    write_seqs(
-        records=trimmed_cdn_records,
-        outfile=args.outfile,
-        outseqformat=args.outseqformat,
+    sys.stderr.write(
+        "Number of aligned nucleotide sites in untrimmed codon sequences: {}\n".format(
+            len(source) * 3
+        )
     )
+    sys.stderr.write(
+        "Number of aligned nucleotide sites in trimmed codon sequences: {}\n".format(
+            len(kept_aa_sites) * 3
+        )
+    )
+    _write_backtrim_outputs(args, trimmed_cdn_records, report)

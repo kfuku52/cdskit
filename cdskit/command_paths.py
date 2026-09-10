@@ -35,7 +35,10 @@ COMMAND_PATHS.update(
     {
         "accession2fasta": CommandPaths(inputs=("accession_file",)),
         "backalign": CommandPaths(inputs=("seqfile", "aa_aln")),
-        "backtrim": CommandPaths(inputs=("seqfile", "trimmed_aa_aln")),
+        "backtrim": CommandPaths(
+            inputs=("seqfile", "trimmed_aa_aln", "kept_sites"),
+            outputs=("outfile", "mapping_report"),
+        ),
         "gapjust": CommandPaths(inputs=("seqfile", "ingff")),
         "intersection": CommandPaths(inputs=("seqfile", "seqfile2", "ingff")),
         "filter": CommandPaths(outputs=("outfile", "report")),
