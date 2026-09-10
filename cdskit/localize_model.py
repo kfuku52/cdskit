@@ -734,8 +734,22 @@ def normalize_yes_no(value, default="no"):
     raise ValueError("Unsupported yes/no value: {}".format(value))
 
 
-def infer_labels_from_uniprot_cc(location_text):
-    txt = str(location_text or "").lower()
+def infer_labels_from_uniprot_cc(location_text, legacy=False):
+    """Weak targeting proxy only; missing or negated annotations are unknown."""
+    from cdskit.targetp_labeling import location_assertions
+
+    txt = (
+        str(location_text or "").lower()
+        if legacy
+        else location_assertions(location_text)
+    )
+    if not legacy and not txt.strip():
+        return None, "unknown", False
+    if not legacy and any(
+        term in str(location_text or "").lower()
+        for term in ("unconventional", "nonclassical")
+    ):
+        return None, "unknown", False
     has_sp = ("secreted" in txt) or ("signal peptide" in txt)
     has_mtp = "mitochond" in txt
     has_ctp = ("chloroplast" in txt) or ("plastid" in txt)
@@ -744,6 +758,7 @@ def infer_labels_from_uniprot_cc(location_text):
     )
     has_perox = "peroxisom" in txt
 
+    class_label: str | None
     if has_ltp:
         class_label = "lTP"
         active = [has_sp, has_mtp]
@@ -757,7 +772,7 @@ def infer_labels_from_uniprot_cc(location_text):
         class_label = "SP"
         active = []
     else:
-        class_label = "noTP"
+        class_label = "noTP" if legacy else None
         active = []
 
     ambiguous = sum(1 for v in [has_sp, has_mtp, has_ctp, has_ltp] if v) > 1
@@ -765,7 +780,7 @@ def infer_labels_from_uniprot_cc(location_text):
         # "thylakoid/chloroplast" co-annotations are common and biologically compatible.
         ambiguous = sum(1 for v in active if v) > 0
 
-    perox_label = "yes" if has_perox else "no"
+    perox_label = "yes" if has_perox else ("no" if legacy else "unknown")
     return class_label, perox_label, ambiguous
 
 
@@ -808,7 +823,19 @@ def fit_nearest_centroid_classifier(features, labels, class_order):
 
 
 def fit_perox_binary_classifier(features, labels):
-    labels = [normalize_yes_no(v, default="no") for v in labels]
+    labels = [
+        normalize_yes_no(v, default="unknown")
+        if str(v).lower() != "unknown"
+        else "unknown"
+        for v in labels
+    ]
+    observed = np.asarray([v != "unknown" for v in labels])
+    if not observed.any():
+        raise ValueError(
+            "No observed peroxisome targets. Supply explicit evidence or use the localization pipeline; missing annotation is not negative."
+        )
+    features = np.asarray(features)[observed]
+    labels = [v for v in labels if v != "unknown"]
     unique = sorted(set(labels))
     if len(unique) == 1:
         yes_fraction = 1.0 if unique[0] == "yes" else 0.0
@@ -945,7 +972,10 @@ def fit_multilabel_centroid_classifier(
     tune_thresholds=True,
 ):
     x = np.asarray(features, dtype=np.float64)
-    y = np.asarray(label_matrix, dtype=np.int64)
+    from cdskit.localize_labels import observed_targets
+
+    y = np.asarray(label_matrix, dtype=np.float64)
+    observed_targets(y)
     if x.ndim != 2:
         raise ValueError("Feature matrix should be 2D.")
     if y.ndim != 2:
@@ -962,15 +992,16 @@ def fit_multilabel_centroid_classifier(
     std = x.std(axis=0)
     std[std == 0] = 1.0
     z = (x - mean) / std
-    total = float(x.shape[0])
-
     label_models = list()
     for class_i, class_name in enumerate(class_order):
         y_col = y[:, class_i]
         pos_mask = y_col == 1
-        neg_mask = ~pos_mask
+        neg_mask = y_col == 0
         n_pos = int(np.sum(pos_mask))
         n_neg = int(np.sum(neg_mask))
+        total = float(n_pos + n_neg)
+        if total == 0:
+            raise ValueError("No observed training targets for {}.".format(class_name))
         if n_pos == 0 or n_neg == 0:
             label_models.append(
                 {
@@ -1018,8 +1049,8 @@ def fit_multilabel_centroid_classifier(
     for class_i, class_name in enumerate(class_order):
         objective = threshold_objective_by_class.get(class_name, threshold_objective)
         thresholds[class_name] = _tune_binary_threshold(
-            prob_vec=train_prob[:, class_i],
-            true_binary=y[:, class_i],
+            prob_vec=train_prob[np.isfinite(y[:, class_i]), class_i],
+            true_binary=y[np.isfinite(y[:, class_i]), class_i],
             threshold_grid=threshold_grid,
             objective=objective,
         )

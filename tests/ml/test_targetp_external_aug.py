@@ -39,7 +39,7 @@ def _targetp_rows():
             rows.append(
                 {
                     "accession": "{}_{}".format(fold_id, class_name),
-                    "sequence": seq + fold_id[-1],
+                    "sequence": seq + ("A" if fold_id == "fold1" else "C"),
                     "localization": class_name,
                     "peroxisome": "no",
                     "organism_group": "plant"
@@ -355,7 +355,13 @@ def test_build_external_augmented_rows_filters_holdout_similarity(
 
 def test_split_external_train_calibration_rows_is_stratified():
     rows = [
-        {"accession": "{}{}".format(class_name, row_i), "localization": class_name}
+        {
+            "accession": "{}{}".format(class_name, row_i),
+            "localization": class_name,
+            "sequence": "M"
+            + "A"
+            * (4 * ["noTP", "SP", "mTP", "cTP", "lTP"].index(class_name) + row_i + 1),
+        }
         for class_name in ["noTP", "SP", "mTP", "cTP", "lTP"]
         for row_i in range(4)
     ]
@@ -562,8 +568,9 @@ def test_fit_external_augmented_feature_runtime_model_records_external_training(
     assert model["model_type"] == "targetp_feature_ensemble_v1"
     assert model["metadata"]["num_target_rows"] == 10
     assert model["metadata"]["num_external_rows"] == 10
-    assert model["metadata"]["num_external_train_rows"] == 5
-    assert model["metadata"]["num_external_calibration_rows"] == 5
+    # B canonicalizes to X: identical pairs must stay together, even at 50%.
+    assert model["metadata"]["num_external_train_rows"] == 4
+    assert model["metadata"]["num_external_calibration_rows"] == 6
     assert (
         model["metadata"]["external_calibration"]["threshold_tuning"]["enabled"] is True
     )

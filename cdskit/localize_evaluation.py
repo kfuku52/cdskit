@@ -5,16 +5,20 @@ import json
 
 import numpy as np
 
+from cdskit.localize_labels import observed_targets
+
 
 def assert_disjoint(train_rows, test_rows):
+    from cdskit.localize_model import to_canonical_aa_sequence
+
     accessions = {row["accession"] for row in train_rows if row.get("accession")}
-    sequences = {str(row["sequence"]).upper() for row in train_rows}
+    sequences = {to_canonical_aa_sequence(row["sequence"]) for row in train_rows}
     clusters = {str(row["cluster_id"]) for row in train_rows if row.get("cluster_id")}
     overlap = [
         row
         for row in test_rows
         if row.get("accession", "") in accessions
-        or str(row["sequence"]).upper() in sequences
+        or to_canonical_aa_sequence(row["sequence"]) in sequences
         or (row.get("cluster_id") and str(row["cluster_id"]) in clusters)
     ]
     if overlap:
@@ -90,21 +94,29 @@ def probability_metrics(target, probability, labels):
         (probability < 0) | (probability > 1)
     ):
         raise ValueError("Probabilities must be finite values in [0, 1].")
+    target, mask = observed_targets(target)
     per_label = {
-        name: average_precision(target[:, i], probability[:, i])
+        name: average_precision(target[mask[:, i], i], probability[mask[:, i], i])
         for i, name in enumerate(labels)
     }
     supported = [value for value in per_label.values() if value is not None]
     return {
         "average_precision_by_label": per_label,
+        "reliability_by_label": {
+            name: reliability_bins(target[mask[:, i], i], probability[mask[:, i], i])
+            for i, name in enumerate(labels)
+        },
         "macro_average_precision_observed": float(np.mean(supported))
         if supported
         else None,
-        "micro_average_precision": average_precision(
-            target.ravel(), probability.ravel()
-        ),
-        "brier_score": float(np.mean((target - probability) ** 2))
-        if target.size
+        "micro_average_precision": average_precision(target[mask], probability[mask]),
+        "observed_count": int(mask.sum()),
+        "observed_count_by_label": {
+            name: int(mask[:, i].sum()) for i, name in enumerate(labels)
+        },
+        "unknown_count": int((~mask).sum()),
+        "brier_score": float(np.mean((target[mask] - probability[mask]) ** 2))
+        if mask.any()
         else None,
     }
 
@@ -117,7 +129,12 @@ def stratified_metrics(rows, target, prediction, probability, labels, metric_fn)
         length_bin = (
             "<=512" if length <= 512 else "513-1022" if length <= 1022 else ">1022"
         )
-        for group in ["organism:" + organism, "length:" + length_bin]:
+        strata = ["organism:" + organism, "length:" + length_bin]
+        strata.extend(
+            key + ":" + str(row.get(key) or "unknown")
+            for key in ("compartment", "fragment", "isoform")
+        )
+        for group in strata:
             groups.setdefault(group, []).append(i)
     result = {}
     for name, ids in sorted(groups.items()):
@@ -144,14 +161,87 @@ def cluster_bootstrap(
         )
         metrics = metric_fn(target[ids], prediction[ids], labels)
         for key in samples:
-            samples[key].append(metrics[key])
+            if metrics[key] is not None:
+                samples[key].append(metrics[key])
     return {
         "status": "ok",
         "iterations": iterations,
         "seed": seed,
         "cluster_count": len(clusters),
         "percentile_95": {
-            key: np.quantile(values, [0.025, 0.975]).tolist()
+            key: np.quantile(values, [0.025, 0.975]).tolist() if values else None
             for key, values in samples.items()
+        },
+    }
+
+
+def reliability_bins(target, probability, bins=10):
+    """Descriptive calibration bins over observed labels (not proof of calibration)."""
+    target, probability = np.asarray(target), np.asarray(probability)
+    result = []
+    for i in range(bins):
+        selected = (probability >= i / bins) & (
+            (probability < (i + 1) / bins) if i + 1 < bins else (probability <= 1)
+        )
+        result.append(
+            {
+                "lower": i / bins,
+                "upper": (i + 1) / bins,
+                "count": int(selected.sum()),
+                "mean_probability": float(probability[selected].mean())
+                if selected.any()
+                else None,
+                "positive_fraction": float(target[selected].mean())
+                if selected.any()
+                else None,
+            }
+        )
+    return result
+
+
+def paired_cluster_bootstrap(
+    target,
+    prediction_a,
+    prediction_b,
+    groups,
+    labels,
+    metric_fn,
+    iterations=1000,
+    seed=1,
+):
+    """Paired B-minus-A intervals; related proteins are resampled together."""
+    if len(groups) != len(target) or any(not str(group).strip() for group in groups):
+        raise ValueError("Complete bootstrap groups must match target rows.")
+    if iterations < 1:
+        raise ValueError("Bootstrap iterations must be positive.")
+    members: dict[str, list[int]] = {}
+    for i, group in enumerate(groups):
+        members.setdefault(str(group), []).append(i)
+    if len(members) < 2:
+        return {"status": "insufficient_clusters", "cluster_count": len(members)}
+    clusters = list(members.values())
+    rng = np.random.default_rng(seed)
+    samples: dict[str, list[float]] = {"macro_f1": [], "micro_f1": []}
+    for _ in range(iterations):
+        ids = np.concatenate(
+            [clusters[i] for i in rng.integers(len(clusters), size=len(clusters))]
+        )
+        a, b = [
+            metric_fn(np.asarray(target)[ids], np.asarray(prediction)[ids], labels)
+            for prediction in (prediction_a, prediction_b)
+        ]
+        for key in samples:
+            if a[key] is not None and b[key] is not None:
+                samples[key].append(float(b[key] - a[key]))
+    return {
+        "status": "ok" if all(samples.values()) else "insufficient_observations",
+        "direction": "B minus A",
+        "cluster_count": len(clusters),
+        "iterations": iterations,
+        "seed": seed,
+        "valid_iterations": {key: len(value) for key, value in samples.items()},
+        "percentile_95": {
+            key: np.quantile(value, [0.025, 0.975]).tolist() if value else None
+            for key, value in samples.items()
         },
     }

@@ -919,13 +919,24 @@ p_localize_learn.add_argument(
     help="default=%(default)s: Optional path to save downloaded UniProt rows as TSV before training.",
 )
 p_localize_learn.add_argument(
+    "--cv_split_method",
+    choices=["exact", "mmseqs", "random"],
+    default="exact",
+    help="CV grouping: exact sequence groups by default; mmseqs for similarity groups; random for diagnostic legacy comparisons only.",
+)
+p_localize_learn.add_argument(
+    "--cv_group_col",
+    default="",
+    help="Optional complete homology-group column; audited also with provided folds.",
+)
+p_localize_learn.add_argument(
     "--cv_folds",
     metavar="INT",
     default=0,
     type=int,
     required=False,
     action="store",
-    help="default=%(default)s: Number of stratified cross-validation folds for model evaluation. 0 disables CV.",
+    help="default=%(default)s: Number of group cross-validation folds for model evaluation. 0 disables CV.",
 )
 p_localize_learn.add_argument(
     "--cv_seed",
@@ -1232,13 +1243,13 @@ p_localize_learn.add_argument(
 )
 p_localize_learn.add_argument(
     "--label_mode",
-    metavar="explicit|uniprot_cc",
+    metavar="MODE",
     default="explicit",
     type=str,
     required=False,
     action="store",
-    choices=["explicit", "uniprot_cc"],
-    help='default=%(default)s: Label extraction mode. "explicit" uses --localization_col/--perox_col (with UniProt source, these columns must exist in --uniprot_fields). "uniprot_cc" infers labels from UniProt location text.',
+    choices=["explicit", "uniprot_cc", "legacy_uniprot_cc", "evidence"],
+    help='default=%(default)s: Label extraction mode. "explicit" uses --localization_col/--perox_col (with UniProt source, these columns must exist in --uniprot_fields). "uniprot_cc" produces weak proxies from location text; "legacy_uniprot_cc" reproduces historical missing-as-negative labels. "evidence" reads curated experimental targeting_evidence JSON. Missing perox labels are unknown.',
 )
 p_localize_learn.add_argument(
     "--localization_col",

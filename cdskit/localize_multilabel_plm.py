@@ -12,6 +12,8 @@ from typing import Any
 
 import numpy as np
 
+from cdskit.localize_labels import masked_bce, require_observed
+
 from cdskit.localize_bilstm import require_torch, resolve_torch_device
 from cdskit.localize_runtime import offline_requested
 from cdskit.util import atomic_output_path
@@ -237,8 +239,12 @@ def fit_multilabel_plm(
     y = np.asarray(y, dtype=np.float32)
     if y.shape != (len(sequences), len(labels)) or not len(sequences):
         raise ValueError("Invalid PLM training label dimensions.")
-    if not np.isin(y, [0, 1]).all():
-        raise ValueError("PLM labels must be binary.")
+    require_observed(y, "PLM training data", each_label=True)
+    if validation_sequences:
+        target = np.asarray(validation_y, dtype=np.float32)
+        if target.shape != (len(validation_sequences), len(labels)):
+            raise ValueError("Invalid PLM validation label dimensions.")
+        require_observed(target, "PLM validation data")
     torch.manual_seed(seed)
     resolved = resolve_torch_device(device)
     encoder = ResidueEncoder(config, resolved)
@@ -249,7 +255,6 @@ def fit_multilabel_plm(
     optimizer = torch.optim.AdamW(
         head.parameters(), lr=learning_rate, weight_decay=1e-4
     )
-    loss_fn = nn.BCEWithLogitsLoss()
     rng = np.random.default_rng(seed)
     best, best_state, best_epoch, stale = float("inf"), None, 0, 0
     training_history = []
@@ -258,9 +263,11 @@ def fit_multilabel_plm(
         indices = rng.permutation(len(sequences))
         for start in range(0, len(indices), batch_size):
             ids = indices[start : start + batch_size]
+            if not np.isfinite(y[ids]).any():
+                continue
             xb, mask = _batch(encoder, [sequences[i] for i in ids], torch, resolved)
             optimizer.zero_grad(set_to_none=True)
-            loss = loss_fn(head(xb, mask), torch.as_tensor(y[ids], device=resolved))
+            loss = masked_bce(head(xb, mask), torch.as_tensor(y[ids], device=resolved))
             loss.backward()
             torch.nn.utils.clip_grad_norm_(head.parameters(), 1.0)
             optimizer.step()
@@ -274,15 +281,16 @@ def fit_multilabel_plm(
                 for start in range(0, len(validation_sequences), batch_size):
                     seqs = validation_sequences[start : start + batch_size]
                     xb, mask = _batch(encoder, seqs, torch, resolved)
-                    total += len(seqs) * float(
-                        loss_fn(
+                    total += float(
+                        masked_bce(
                             head(xb, mask),
                             torch.as_tensor(
                                 target[start : start + batch_size], device=resolved
                             ),
+                            reduction="sum",
                         ).item()
                     )
-            score = total / len(validation_sequences)
+            score = total / int(np.isfinite(target).sum())
         else:
             score = -epoch  # Fixed training budget without a validation partition.
         training_history.append(
@@ -303,6 +311,8 @@ def fit_multilabel_plm(
                 break
     return {
         "mode": "multilabel_plm",
+        "label_contract": "observed_binary_v1",
+        "observed_counts": np.isfinite(y).sum(axis=0).tolist(),
         "class_order": list(labels),
         "encoder": dict(config),
         "encoder_identity": encoder.identity,

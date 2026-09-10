@@ -323,3 +323,56 @@ def test_test_labels_do_not_affect_training(pipeline_config, tmp_path):
         assert a["training_history"] == b["training_history"]
         for key in a["state_dict"]:
             np.testing.assert_array_equal(a["state_dict"][key], b["state_dict"][key])
+
+
+def test_observed_schema_pipeline_preserves_unknown(pipeline_config, tmp_path):
+    import csv
+
+    config = json.loads(pipeline_config.read_text())
+    config["schema_version"] = 2
+    pipeline_config.write_text(json.dumps(config))
+    data = tmp_path / "data.tsv"
+    with data.open() as stream:
+        reader = csv.DictReader(stream, delimiter="\t")
+        rows, columns = list(reader), reader.fieldnames
+    for i, row in enumerate(rows):
+        positives = row["localization_labels"].split(";")
+        negative = (
+            [label for label in config["labels"] if label not in positives]
+            if i % 2
+            else []
+        )
+        row["negative_labels"] = ";".join(negative)
+        row["label_evidence"] = json.dumps(
+            [
+                dict(
+                    label=label,
+                    state=state,
+                    evidence_type="experimental",
+                    source="test",
+                    source_version="1",
+                    reference="fixture",
+                )
+                for state, names in [("positive", positives), ("negative", negative)]
+                for label in names
+            ]
+        )
+    with data.open("w") as stream:
+        writer = csv.DictWriter(
+            stream,
+            fieldnames=[*columns, "negative_labels", "label_evidence"],
+            delimiter="\t",
+        )
+        writer.writeheader()
+        writer.writerows(rows)
+    partitions = load_partitions(load_config(pipeline_config))
+    assert "negative_labels" in partitions["test"][0]
+    output = run_pipeline(pipeline_config, tmp_path / "observed")
+    with np.load(output / "evaluate" / "student.npz") as saved:
+        assert np.isnan(saved["target"]).any()
+        np.testing.assert_array_equal(
+            saved["observation_mask"], np.isfinite(saved["target"])
+        )
+    report = json.loads((output / "evaluate" / "metrics.json").read_text())
+    assert report["models"]["student"]["unknown_count"] == 1
+    assert report["student_minus_control"]["cluster_count"] == 2

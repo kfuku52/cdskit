@@ -36,6 +36,7 @@ from cdskit.localize_evaluation import (
     dataset_digest,
     probability_metrics,
 )
+from cdskit.localize_pipeline import code_identity
 from cdskit.util import atomic_write_json
 
 
@@ -60,7 +61,9 @@ def main():
     y = build_label_matrix(rows, LABELS, "localization_labels")
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
-    config = dict(vars(args), dataset_sha256=dataset_digest(rows))
+    config = dict(
+        vars(args), dataset_sha256=dataset_digest(rows), code_sha256=code_identity()
+    )
     config_path = output / "config.json"
     if config_path.exists() and json.loads(config_path.read_text()) != config:
         raise ValueError("Existing experiment configuration differs.")
@@ -165,9 +168,10 @@ def main():
                 )
                 probability = _predict_model_on_rows(student, val)["prob_matrix"]
                 for i, label in enumerate(LABELS):
-                    if len(np.unique(y[val_ids, i])) == 2:
+                    observed = np.isfinite(y[val_ids, i])
+                    if len(np.unique(y[val_ids[observed], i])) == 2:
                         head["class_thresholds"][label] = _tune_binary_threshold(
-                            probability[:, i], y[val_ids, i]
+                            probability[observed, i], y[val_ids[observed], i]
                         )
                 save_localize_model(student, str(path))
             assert_model_partitions(student, train, val)

@@ -7,6 +7,8 @@ from typing import Any
 
 import numpy as np
 
+from cdskit.localize_labels import observed_targets, require_observed
+
 
 def validate_specialists(model, class_order=None):
     """Reject inconsistent or cyclic numeric trees before model inference."""
@@ -84,10 +86,11 @@ def fit_specialists(features, labels, seed=1, max_iter=100):
     x, y = np.asarray(features, dtype=np.float32), np.asarray(labels)
     if x.ndim != 2 or y.ndim != 2 or x.shape[0] != y.shape[0] or not len(x):
         raise ValueError("Invalid specialist input dimensions.")
-    if not y.shape[1] or not np.isin(y, [0, 1]).all():
-        raise ValueError("Specialist labels must be binary.")
+    require_observed(y, "Specialist training data", each_label=True)
     models: list[dict[str, Any]] = []
     for column in y.T:
+        observed = np.isfinite(column)
+        column = column[observed]
         if len(np.unique(column)) == 1:
             models.append({"constant": float(column[0])})
             continue
@@ -99,7 +102,7 @@ def fit_specialists(features, labels, seed=1, max_iter=100):
             early_stopping=False,
             random_state=seed,
         )
-        estimator.fit(x, column)
+        estimator.fit(x[observed], column)
         trees = []
         for predictors in estimator._predictors:
             nodes = predictors[0].nodes
@@ -183,32 +186,28 @@ def calibrate_blend(base_prob, specialist_prob, target, labels):
     )
     if base_prob.shape != specialist_prob.shape or base_prob.shape != target.shape:
         raise ValueError("Blend arrays must have identical shapes.")
-    if (
-        target.ndim != 2
-        or not len(target)
-        or target.shape[1] != len(labels)
-        or not np.isin(target, [0, 1]).all()
-    ):
+    if target.ndim != 2 or not len(target) or target.shape[1] != len(labels):
         raise ValueError("Invalid blend calibration labels.")
+    observed_targets(target)
     blend_probabilities(base_prob, specialist_prob, np.zeros(len(labels)))
     weights, thresholds = [], {}
     for i, name in enumerate(labels):
-        if len(np.unique(target[:, i])) < 2:
+        observed = np.isfinite(target[:, i])
+        column = target[observed, i]
+        if len(np.unique(column)) < 2:
             weights.append(0.0)
             thresholds[name] = 0.5
             continue
         best = (-1.0, -1.0, 0.0)
         for weight in (0.0, 0.25, 0.5, 0.75, 1.0):
-            probability = (1 - weight) * base_prob[:, i] + weight * specialist_prob[
-                :, i
-            ]
-            threshold = _tune_binary_threshold(
-                probability, target[:, i], objective="f1"
-            )
+            probability = (1 - weight) * base_prob[
+                observed, i
+            ] + weight * specialist_prob[observed, i]
+            threshold = _tune_binary_threshold(probability, column, objective="f1")
             prediction = probability >= threshold
-            tp = np.sum(prediction & (target[:, i] == 1))
-            f1 = 2 * tp / max(1, prediction.sum() + target[:, i].sum())
-            key = (f1, average_precision(target[:, i], probability), -weight)
+            tp = np.sum(prediction & (column == 1))
+            f1 = 2 * tp / max(1, prediction.sum() + column.sum())
+            key = (f1, average_precision(column, probability), -weight)
             if key > best:
                 best = key
                 chosen_weight, chosen_threshold = weight, threshold

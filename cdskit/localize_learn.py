@@ -3,6 +3,7 @@ import io
 import math
 import re
 import time
+import warnings
 from collections import Counter
 from importlib.metadata import PackageNotFoundError, version as package_version
 from urllib import error as urllib_error
@@ -18,6 +19,7 @@ from cdskit.localize_model import (
     LOCALIZATION_CLASSES,
     TP_STAGE_CLASSES,
     compose_two_stage_ctp_ltp_probabilities,
+    apply_organism_group_constraints,
     extract_localize_features,
     fit_nearest_centroid_classifier,
     fit_perox_binary_classifier,
@@ -37,6 +39,7 @@ from cdskit.atomicio import atomic_output_paths
 from cdskit.esm_embeddings import ESMEmbeddingCache
 from cdskit.localize_batch import predict_localization_batch
 from cdskit.localize_runtime import PredictionRuntime, prediction_runtime
+from cdskit.localize_splits import sequence_folds
 from cdskit.util import stop_if_invalid_codontable
 
 UNIPROT_SEARCH_URL = "https://rest.uniprot.org/uniprotkb/search"
@@ -337,8 +340,21 @@ def parse_training_row(
 
     if label_mode == "explicit":
         class_label = normalize_localization_label(row.get(localization_col, ""))
-        perox_label = normalize_yes_no(row.get(perox_col, "no"), default="no")
-    elif label_mode == "uniprot_cc":
+        perox_label = (
+            normalize_yes_no(row.get(perox_col), default="unknown")
+            if str(row.get(perox_col, "")).strip().lower() != "unknown"
+            else "unknown"
+        )
+    elif label_mode == "evidence":
+        from cdskit.targetp_labeling import targeting_label_from_evidence
+
+        class_label = targeting_label_from_evidence(row.get("targeting_evidence", ""))
+        perox_label = (
+            normalize_yes_no(row.get(perox_col), default="unknown")
+            if str(row.get(perox_col, "")).strip().lower() != "unknown"
+            else "unknown"
+        )
+    elif label_mode in ("uniprot_cc", "legacy_uniprot_cc"):
         location_text = row.get(localization_col, "")
         if (location_text is None) or (str(location_text).strip() == ""):
             for alt_key in (
@@ -352,10 +368,14 @@ def parse_training_row(
                     break
         class_label, perox_label, ambiguous = infer_labels_from_uniprot_cc(
             location_text=location_text,
+            legacy=label_mode == "legacy_uniprot_cc",
         )
+        if class_label is None:
+            return None
         if ambiguous and skip_ambiguous:
             return None
-        perox_label = normalize_yes_no(perox_label, default="no")
+        if perox_label != "unknown":
+            perox_label = normalize_yes_no(perox_label, default="unknown")
     else:
         raise ValueError("Unsupported --label_mode: {}".format(label_mode))
 
@@ -432,6 +452,7 @@ def calculate_training_metrics(
     rows = list()
     correct_class = 0
     correct_perox = 0
+    observed_perox = sum(value != "unknown" for value in perox_labels)
     class_total = {class_name: 0 for class_name in LOCALIZATION_CLASSES}
     class_correct = {class_name: 0 for class_name in LOCALIZATION_CLASSES}
     with prediction_runtime(PredictionRuntime(device=dl_device)):
@@ -468,7 +489,10 @@ def calculate_training_metrics(
             )
     return {
         "class_train_accuracy": float(correct_class) / n,
-        "perox_train_accuracy": float(correct_perox) / n,
+        "perox_train_accuracy": float(correct_perox) / observed_perox
+        if observed_perox
+        else None,
+        "perox_observed_count": observed_perox,
         "class_accuracy_by_class": class_accuracy_by_class,
         "rows": rows,
     }
@@ -503,7 +527,7 @@ def _fit_arch_specific_localization_model(
         return fit_nearest_centroid_classifier(
             features=x,
             labels=labels,
-            class_order=class_order,
+            class_order=[name for name in class_order if name in set(labels)],
         )
     if model_arch == "bilstm_attention":
         from cdskit.localize_bilstm import fit_bilstm_attention_classifier
@@ -980,6 +1004,7 @@ def _safe_two_stage_ctp_ltp_arrays_from_oof(oof_rows):
                 "base_class_probabilities", row.get("class_probabilities", {})
             ),
         )
+        base = apply_organism_group_constraints(base, row.get("organism_group", ""))
         s3 = details.get("stage3_ctp_ltp_probabilities", {})
         try:
             p_ctp = float(s3.get("cTP", 0.0))
@@ -1210,8 +1235,8 @@ def apply_two_stage_ctp_ltp_params_to_oof_rows(
             tuned_details["ltp_threshold"] = float(tuned_detail["ltp_threshold"])
             tuned_details["gate_active"] = bool(tuned_detail["gate_active"])
             out_row["two_stage_ctp_ltp_details"] = tuned_details
-            out_row["class_probabilities"] = normalize_class_probabilities(
-                class_probs=tuned_probs
+            out_row["class_probabilities"] = apply_organism_group_constraints(
+                tuned_probs, row.get("organism_group", "")
             )
         out_rows.append(out_row)
     return out_rows
@@ -1232,26 +1257,31 @@ def evaluate_cross_validation(
     organism_groups=None,
     soft_label_matrix=None,
     verbose=False,
+    group_ids=None,
+    split_method="exact",
+    postprocess=None,
 ):
+    if postprocess and soft_label_matrix is not None:
+        raise ValueError(
+            "Nested distillation evaluation requires fold-specific teachers; global soft targets cannot establish independence."
+        )
     dl_train_params = dict(dl_train_params)
     if model_arch == "esm_head":
         dl_train_params.setdefault("esm_embedding_cache", ESMEmbeddingCache())
-    if fold_ids is None:
-        folds = build_stratified_folds(
-            class_labels=class_labels,
-            n_folds=n_folds,
-            seed=seed,
-        )
-    else:
-        folds = build_predefined_folds(
-            class_labels=class_labels,
-            fold_ids=fold_ids,
+    folds, groups, split_report = sequence_folds(
+        aa_sequences, class_labels, n_folds, seed, fold_ids, group_ids, split_method
+    )
+    if postprocess and split_report["violations"]:
+        raise ValueError(
+            "Nested evaluation requires disjoint outer groups, not overlapping random folds."
         )
     n_sample = int(x.shape[0])
     fold_rows = list()
     class_accs = list()
     perox_accs = list()
     oof_rows = list()
+    nested_rows = []
+    nested_parameters = []
     class_total = {class_name: 0 for class_name in LOCALIZATION_CLASSES}
     class_correct_by_class = {class_name: 0 for class_name in LOCALIZATION_CLASSES}
     for fold_i, test_idx in enumerate(folds):
@@ -1286,6 +1316,26 @@ def evaluate_cross_validation(
         if organism_groups is not None:
             organism_test = [organism_groups[i] for i in test_idx.tolist()]
 
+        inner_rows = None
+        if postprocess:
+            inner = evaluate_cross_validation(
+                x_train,
+                aa_train,
+                class_train,
+                perox_train,
+                min(3, len(set(groups[i] for i in train_idx))),
+                seed,
+                model_arch,
+                dl_train_params,
+                dl_device,
+                localize_strategy=localize_strategy,
+                group_ids=[groups[i] for i in train_idx],
+                soft_label_matrix=soft_label_train,
+                organism_groups=[organism_groups[i] for i in train_idx]
+                if organism_groups is not None
+                else None,
+            )
+            inner_rows = inner["oof_rows"]
         local_model = fit_localization_model(
             x=x_train,
             aa_sequences=aa_train,
@@ -1329,6 +1379,9 @@ def evaluate_cross_validation(
             oof_row = {
                 "index": int(test_idx[row_i]),
                 "fold": int(fold_i + 1),
+                "organism_group": organism_test[row_i]
+                if organism_test is not None
+                else "",
                 "true_class": true_class,
                 "class_probabilities": normalize_class_probabilities(
                     class_probs=pred.get("class_probabilities", {}),
@@ -1348,11 +1401,21 @@ def evaluate_cross_validation(
             if pred_perox == perox_test[row_i]:
                 perox_correct += 1
 
+        if inner_rows is not None:
+            from cdskit.localize_postprocess import fit_postprocess, apply_postprocess
+
+            params = fit_postprocess(inner_rows, postprocess)
+            held_rows = oof_rows[-len(test_idx) :]
+            nested_rows.extend(apply_postprocess(held_rows, params))
+            nested_parameters.append({"fold": fold_i + 1, "parameters": params})
+
         test_n = float(x_test.shape[0])
         class_acc = float(class_correct_fold) / test_n
-        perox_acc = float(perox_correct) / test_n
+        perox_observed = sum(value != "unknown" for value in perox_test)
+        perox_acc = float(perox_correct) / perox_observed if perox_observed else None
         class_accs.append(class_acc)
-        perox_accs.append(perox_acc)
+        if perox_acc is not None:
+            perox_accs.append(perox_acc)
         fold_rows.append(
             {
                 "fold": int(fold_i + 1),
@@ -1360,6 +1423,7 @@ def evaluate_cross_validation(
                 "n_test": int(x_test.shape[0]),
                 "class_accuracy": class_acc,
                 "perox_accuracy": perox_acc,
+                "perox_observed_count": perox_observed,
             }
         )
         if verbose:
@@ -1368,7 +1432,7 @@ def evaluate_cross_validation(
                     int(fold_i + 1),
                     len(folds),
                     float(class_acc),
-                    float(perox_acc),
+                    float(perox_acc) if perox_acc is not None else float("nan"),
                 ),
                 flush=True,
             )
@@ -1384,13 +1448,23 @@ def evaluate_cross_validation(
             class_accuracy_by_class[class_name] = (
                 float(class_correct_by_class.get(class_name, 0)) / denom
             )
+    from cdskit.localize_postprocess import evaluate_postprocessed_rows
+
     return {
         "n_folds": len(folds),
+        "split_audit": split_report,
+        "nested_postprocess": {
+            "oof_rows": nested_rows,
+            "folds": nested_parameters,
+            "metrics": evaluate_postprocessed_rows(nested_rows),
+        }
+        if postprocess
+        else None,
         "class_accuracy_mean": float(class_arr.mean()),
         "class_accuracy_std": float(class_arr.std()),
         "class_accuracy_by_class": class_accuracy_by_class,
-        "perox_accuracy_mean": float(perox_arr.mean()),
-        "perox_accuracy_std": float(perox_arr.std()),
+        "perox_accuracy_mean": float(perox_arr.mean()) if perox_arr.size else None,
+        "perox_accuracy_std": float(perox_arr.std()) if perox_arr.size else None,
         "folds": fold_rows,
         "oof_rows": oof_rows,
     }
@@ -1498,6 +1572,8 @@ def _load_training_rows(args, cv_fold_col):
         required_columns = [args.seq_col]
         if args.label_mode == "explicit":
             required_columns.extend([args.localization_col, args.perox_col])
+        if args.label_mode == "evidence":
+            required_columns.append("targeting_evidence")
         if cv_fold_col != "":
             required_columns.append(cv_fold_col)
         rows, input_fieldnames = read_training_tsv(
@@ -1505,7 +1581,7 @@ def _load_training_rows(args, cv_fold_col):
             required_columns=required_columns,
             return_fieldnames=True,
         )
-        if args.label_mode == "uniprot_cc":
+        if args.label_mode in ("uniprot_cc", "legacy_uniprot_cc"):
             location_candidates = [
                 args.localization_col,
                 "cc_subcellular_location",
@@ -1521,6 +1597,10 @@ def _load_training_rows(args, cv_fold_col):
                 )
         return rows, source
 
+    if args.label_mode == "evidence":
+        raise ValueError(
+            "Evidence mode requires a curated training TSV, not a live UniProt location query."
+        )
     fields = parse_uniprot_fields(
         field_text=getattr(args, "uniprot_fields", ",".join(UNIPROT_DEFAULT_FIELDS))
     )
@@ -1603,6 +1683,12 @@ def localize_learn_main(args):
     ) or not getattr(args, "resume", True):
         raise ValueError(
             "--config, --run_dir, --teacher_run and --resume no require a pipeline --stage."
+        )
+    if args.label_mode in ("uniprot_cc", "legacy_uniprot_cc"):
+        warnings.warn(
+            "UniProt location-derived targeting labels are weak proxies, not experimental peptide evidence.",
+            UserWarning,
+            stacklevel=2,
         )
     stop_if_invalid_codontable(codontable=args.codontable, label="--codon_table")
     cv_folds = int(getattr(args, "cv_folds", 0))
@@ -1717,6 +1803,45 @@ def localize_learn_main(args):
     }
     if model_arch == "esm_head":
         dl_train_params["esm_embedding_cache"] = ESMEmbeddingCache()
+    cv_groups = None
+    group_col = getattr(args, "cv_group_col", "")
+    if group_col:
+        cv_groups = []
+        for i, row in enumerate(rows):
+            parsed = parse_training_row(
+                row,
+                i,
+                args.seq_col,
+                args.seqtype,
+                args.codontable,
+                args.label_mode,
+                args.localization_col,
+                args.perox_col,
+                args.skip_ambiguous,
+            )
+            if parsed is not None:
+                cv_groups.append(str(row.get(group_col, "")).strip())
+        if any(not group for group in cv_groups):
+            raise ValueError("Complete --cv_group_col values are required.")
+    effective_cv_folds, predefined_folds_active = _resolve_cross_validation(
+        cv_folds=cv_folds,
+        cv_fold_col=cv_fold_col,
+        fold_ids=fold_ids,
+        localize_temperature_scale=localize_temperature_scale,
+        localize_threshold_tune=localize_threshold_tune,
+    )
+
+    cv_audit = None
+    if effective_cv_folds >= 2:
+        _, _, cv_audit = sequence_folds(
+            aa_sequences,
+            class_labels,
+            effective_cv_folds,
+            cv_seed,
+            fold_ids if predefined_folds_active else None,
+            cv_groups,
+            getattr(args, "cv_split_method", "exact"),
+        )
     localization_model = fit_localization_model(
         x=x,
         aa_sequences=aa_sequences,
@@ -1738,14 +1863,6 @@ def localize_learn_main(args):
         labels=perox_labels,
     )
 
-    effective_cv_folds, predefined_folds_active = _resolve_cross_validation(
-        cv_folds=cv_folds,
-        cv_fold_col=cv_fold_col,
-        fold_ids=fold_ids,
-        localize_temperature_scale=localize_temperature_scale,
-        localize_threshold_tune=localize_threshold_tune,
-    )
-
     model = {
         "model_type": model_type,
         "feature_names": list(FEATURE_NAMES),
@@ -1761,6 +1878,12 @@ def localize_learn_main(args):
             "seq_col": args.seq_col,
             "seqtype": args.seqtype,
             "label_mode": args.label_mode,
+            "label_contract": "experimental_targeting_v1"
+            if args.label_mode == "evidence"
+            else "weak_localization_proxy"
+            if "uniprot_cc" in args.label_mode
+            else "user_declared_targeting",
+            "perox_missing_policy": "unknown",
             "localization_col": args.localization_col,
             "perox_col": args.perox_col,
             "codontable": int(args.codontable),
@@ -1785,6 +1908,7 @@ def localize_learn_main(args):
             "uniprot_sampling": str(source["uniprot_sampling"]),
             "uniprot_sampling_seed": int(source["uniprot_sampling_seed"]),
             "cv_fold_col": cv_fold_col,
+            "split_audit": cv_audit,
             "cv_predefined_folds": bool(predefined_folds_active),
             "class_counts": dict(Counter(class_labels)),
             "perox_counts": dict(Counter(perox_labels)),
@@ -1818,8 +1942,25 @@ def localize_learn_main(args):
             dl_device=dl_device,
             localize_strategy=localize_strategy,
             fold_ids=fold_ids if predefined_folds_active else None,
+            split_method=getattr(args, "cv_split_method", "exact"),
+            group_ids=cv_groups,
+            postprocess={
+                "temperature": localize_temperature_scale,
+                "thresholds": localize_threshold_tune,
+                "objective": localize_threshold_objective,
+                "two_stage": localize_strategy == "two_stage_ctp_ltp",
+            }
+            if (
+                localize_temperature_scale
+                or localize_threshold_tune
+                or localize_strategy == "two_stage_ctp_ltp"
+            )
+            else None,
         )
         model["metadata"]["cv_folds"] = int(cv_metrics["n_folds"])
+        model["metadata"]["split_audit"] = cv_metrics["split_audit"]
+        if cv_metrics["nested_postprocess"] is not None:
+            model["metadata"]["nested_postprocess"] = cv_metrics["nested_postprocess"]
         model["metadata"]["cv_seed"] = int(cv_seed)
         model["metadata"]["cv_class_accuracy_mean"] = float(
             cv_metrics["class_accuracy_mean"]
@@ -1830,12 +1971,8 @@ def localize_learn_main(args):
         model["metadata"]["cv_class_accuracy_by_class"] = dict(
             cv_metrics["class_accuracy_by_class"]
         )
-        model["metadata"]["cv_perox_accuracy_mean"] = float(
-            cv_metrics["perox_accuracy_mean"]
-        )
-        model["metadata"]["cv_perox_accuracy_std"] = float(
-            cv_metrics["perox_accuracy_std"]
-        )
+        model["metadata"]["cv_perox_accuracy_mean"] = cv_metrics["perox_accuracy_mean"]
+        model["metadata"]["cv_perox_accuracy_std"] = cv_metrics["perox_accuracy_std"]
 
         if localize_strategy == "two_stage_ctp_ltp":
             two_stage_ctp_ltp_tune = optimize_two_stage_ctp_ltp_from_oof(
@@ -1933,6 +2070,13 @@ def localize_learn_main(args):
         model["metadata"]["class_train_accuracy_by_class"] = dict(
             metrics["class_accuracy_by_class"]
         )
+    model["metadata"]["postprocess_evaluation_contract"] = {
+        "cv_postproc_*": "deprecated calibration/resubstitution alias",
+        "two_stage_ctp_ltp_oof_*": "calibration/resubstitution",
+        "nested_postprocess": "outer held-out evaluation",
+    }
+    if postproc_metrics is not None:
+        model["metadata"]["calibration_postprocess"] = postproc_metrics
     if model_arch == "bilstm_attention":
         model["metadata"]["dl_seq_len"] = int(dl_seq_len)
         model["metadata"]["dl_embed_dim"] = int(dl_embed_dim)
@@ -1966,6 +2110,12 @@ def localize_learn_main(args):
         model["metadata"]["dl_device"] = str(dl_device)
 
     report_rows = list()
+    if cv_metrics and cv_metrics["nested_postprocess"]:
+        report_rows.extend(
+            {"metric": "nested_postproc_" + key, "value": value}
+            for key, value in cv_metrics["nested_postprocess"]["metrics"].items()
+            if isinstance(value, (int, float))
+        )
     report_rows.append(
         {
             "metric": "num_training_rows",
@@ -1993,7 +2143,7 @@ def localize_learn_main(args):
     report_rows.append(
         {
             "metric": "perox_train_accuracy",
-            "value": float(metrics["perox_train_accuracy"]),
+            "value": metrics["perox_train_accuracy"],
         }
     )
     report_rows.extend(
@@ -2027,13 +2177,13 @@ def localize_learn_main(args):
         report_rows.append(
             {
                 "metric": "cv_perox_accuracy_mean",
-                "value": float(cv_metrics["perox_accuracy_mean"]),
+                "value": cv_metrics["perox_accuracy_mean"],
             }
         )
         report_rows.append(
             {
                 "metric": "cv_perox_accuracy_std",
-                "value": float(cv_metrics["perox_accuracy_std"]),
+                "value": cv_metrics["perox_accuracy_std"],
             }
         )
         report_rows.extend(
@@ -2058,7 +2208,7 @@ def localize_learn_main(args):
             report_rows.append(
                 {
                     "metric": "cv_fold{}_perox_accuracy".format(fold_id),
-                    "value": float(fold_row["perox_accuracy"]),
+                    "value": fold_row["perox_accuracy"],
                 }
             )
     if postproc_metrics is not None:

@@ -1,5 +1,7 @@
 # Staged localization learning
 
+For observed labels, independent postprocessing CV and frozen external evaluation, see the [scientific validation contract](../docs/localize-scientific-validation.md). Historical CV postprocessing tuning metrics are not independent pipeline accuracy.
+
 `cdskit localize-learn` supports a frozen ESM2 encoder with a trained multilabel
 teacher head, saved teacher probabilities, and a compact CNN student. The exported
 student runs on CPU through `cdskit localize`. This workflow does not establish an

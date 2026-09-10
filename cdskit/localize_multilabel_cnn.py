@@ -1,5 +1,7 @@
 import numpy as np
 
+from cdskit.localize_labels import masked_bce, require_observed
+
 from cdskit.localize_bilstm import (
     DEFAULT_AA_TO_IDX,
     PAD_INDEX,
@@ -195,7 +197,7 @@ def _prepare_feature_matrix(feature_matrix, n_row):
 def _class_pos_weight(label_matrix):
     y = np.asarray(label_matrix, dtype=np.float32)
     pos = np.sum(y > 0.5, axis=0)
-    neg = float(y.shape[0]) - pos
+    neg = np.sum(y == 0, axis=0)
     # A balancing ratio is undefined when either outcome is absent. Keep that
     # class's BCE active with neutral weight, including teacher soft targets.
     weight = np.ones(pos.shape, dtype=np.float32)
@@ -210,7 +212,7 @@ def _row_sampling_probabilities(label_matrix, sample_weight_power):
     y = np.asarray(label_matrix, dtype=np.float32)
     pos = np.sum(y > 0.5, axis=0)
     pos[pos < 1.0] = 1.0
-    class_weight = float(y.shape[0]) / pos
+    class_weight = np.sum(~np.isnan(y), axis=0) / pos
     row_weight = np.ones((y.shape[0],), dtype=np.float64)
     positive = y > 0.5
     for row_i in range(y.shape[0]):
@@ -288,6 +290,7 @@ def fit_multilabel_cnn_classifier(
     if y.shape[0] == 0:
         raise ValueError("No training sequence for multilabel CNN.")
 
+    require_observed(y, "CNN training data", each_label=True)
     training_targets = y
     if teacher_probabilities is not None:
         teacher = np.asarray(teacher_probabilities, dtype=np.float32)
@@ -336,7 +339,6 @@ def fit_multilabel_cnn_classifier(
         )
     else:
         pos_weight = None
-    loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
     optimizer = torch.optim.AdamW(
         model.parameters(),
         lr=float(learning_rate),
@@ -354,6 +356,7 @@ def fit_multilabel_cnn_classifier(
         validation_target = np.asarray(validation_labels, dtype=np.float32)
         if validation_target.shape != (len(validation_sequences), len(class_order)):
             raise ValueError("Validation labels have incompatible shape.")
+        require_observed(validation_target, "CNN validation data")
         if feature_dim:
             validation_f = _normalize_runtime_features(
                 validation_features,
@@ -382,6 +385,8 @@ def fit_multilabel_cnn_classifier(
         model.train()
         for start in range(0, epoch_indices.shape[0], batch_size):
             batch_idx = epoch_indices[start : start + batch_size]
+            if not np.isfinite(training_targets[batch_idx]).any():
+                continue  # Do not apply AdamW decay on an unobserved batch.
             encoded = _encode_layout(
                 [aa_sequences[i] for i in batch_idx],
                 seq_len,
@@ -402,7 +407,7 @@ def fit_multilabel_cnn_classifier(
                     device=resolved_device,
                 )
             optimizer.zero_grad(set_to_none=True)
-            loss = loss_fn(_forward_layout(model, xb, fb), yb)
+            loss = masked_bce(_forward_layout(model, xb, fb), yb, pos_weight)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
@@ -436,12 +441,10 @@ def fit_multilabel_cnn_classifier(
                         )
                     )
                     # Unweighted validation BCE is comparable across class-weight experiments.
-                    total += len(xb) * float(
-                        nn.functional.binary_cross_entropy_with_logits(
-                            model(xb, fb), yb
-                        ).item()
+                    total += float(
+                        masked_bce(model(xb, fb), yb, reduction="sum").item()
                     )
-            score = total / len(validation_x)
+            score = total / int(np.isfinite(validation_target).sum())
             training_history[-1]["validation_bce"] = score
             if score < best_loss:
                 best_loss, stale, selected_epoch = score, 0, epoch + 1
@@ -457,6 +460,9 @@ def fit_multilabel_cnn_classifier(
         model.load_state_dict(best_state)
     result = {
         "mode": "multilabel_cnn",
+        "label_contract": "observed_binary_v1",
+        "observed_counts": np.isfinite(y).sum(axis=0).tolist(),
+        "distillation_scope": "observed_cells",
         "sequence_layout": sequence_layout,
         "mask_padding": bool(mask_padding),
         "terminal_concat": sequence_layout == "separate_termini",
@@ -499,10 +505,11 @@ def fit_multilabel_cnn_classifier(
             apply_thresholds=False,
         )["prob_matrix"]
         for i, name in enumerate(class_order):
-            if len(np.unique(validation_target[:, i])) == 2:
+            observed = np.isfinite(validation_target[:, i])
+            if len(np.unique(validation_target[observed, i])) == 2:
                 result["class_thresholds"][name] = _tune_binary_threshold(
-                    prob[:, i],
-                    validation_target[:, i],
+                    prob[observed, i],
+                    validation_target[observed, i],
                     threshold_grid=threshold_grid,
                     objective=dict(threshold_objective_by_class or {}).get(
                         name, threshold_objective

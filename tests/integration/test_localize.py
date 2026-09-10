@@ -1981,8 +1981,8 @@ def test_uniprot_cc_lumen_without_thylakoid_is_not_ltp():
     cls, perox, ambiguous = infer_labels_from_uniprot_cc(
         "SUBCELLULAR LOCATION: Endoplasmic reticulum lumen."
     )
-    assert cls == "noTP"
-    assert perox == "no"
+    assert cls is None
+    assert perox == "unknown"
     assert ambiguous is False
 
     cls, _, ambiguous = infer_labels_from_uniprot_cc(
@@ -2144,7 +2144,7 @@ def test_localize_learn_uniprot_download_mocked(monkeypatch, temp_dir, mock_args
         report="",
         seq_col="sequence",
         seqtype="protein",
-        label_mode="uniprot_cc",
+        label_mode="legacy_uniprot_cc",
         localization_col="cc_subcellular_location",
         perox_col="peroxisome",
         skip_ambiguous=True,
@@ -2243,7 +2243,7 @@ def test_localize_learn_uniprot_preset_combines_query(monkeypatch, temp_dir, moc
         report="",
         seq_col="sequence",
         seqtype="protein",
-        label_mode="uniprot_cc",
+        label_mode="legacy_uniprot_cc",
         localization_col="cc_subcellular_location",
         perox_col="peroxisome",
         skip_ambiguous=True,
@@ -2438,7 +2438,7 @@ def test_localize_learn_uniprot_cc_adds_cc_field_not_localization(
         report="",
         seq_col="sequence",
         seqtype="protein",
-        label_mode="uniprot_cc",
+        label_mode="legacy_uniprot_cc",
         localization_col="localization",
         perox_col="peroxisome",
         skip_ambiguous=True,

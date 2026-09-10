@@ -26,6 +26,7 @@ from cdskit.localize_evaluation import (
     probability_metrics,
 )
 from cdskit.localize_model import save_localize_model, load_localize_model
+from cdskit.localize_pipeline import code_identity
 from cdskit.util import atomic_write_json
 
 
@@ -52,6 +53,7 @@ def run_baselines(rows, output, recipes, seeds, device, epochs):
                 mask_padding=recipe != "cnn_legacy",
             )
             config = dict(
+                code_sha256=code_identity(),
                 dataset_sha256=dataset_digest(rows),
                 parameters=parameters,
                 recipe=recipe,

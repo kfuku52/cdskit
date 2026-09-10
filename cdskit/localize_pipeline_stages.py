@@ -5,7 +5,12 @@ import json
 import numpy as np
 
 from cdskit.deeploc_benchmark import build_label_matrix, compute_multilabel_metrics
-from cdskit.localize_evaluation import dataset_digest, probability_metrics
+from cdskit.localize_evaluation import (
+    dataset_digest,
+    probability_metrics,
+    stratified_metrics,
+    paired_cluster_bootstrap,
+)
 from cdskit.localize_model import (
     _tune_binary_threshold,
     load_localize_model,
@@ -56,6 +61,12 @@ def wrap_model(head, config, partitions, kind):
         "perox_model": {"mode": "embedded_multilabel"},
         "metadata": {
             "task": "localization",
+            "label_contract": "observed_binary_v1"
+            if config["schema_version"] == 2
+            else "legacy_closed_world",
+            "evidence_policy": config["data"]["evidence_policy"]
+            if config["schema_version"] == 2
+            else "dataset",
             "seqtype": "protein",
             "partition_identity": partition_identity(partitions),
             "labels": config["labels"],
@@ -78,9 +89,10 @@ def calibrate(model, config, rows, settings):
     probability_metrics(y, probability, labels)
     thresholds = {label: 0.5 for label in labels}
     for i, label in enumerate(labels):
-        if len(np.unique(y[:, i])) == 2:
+        observed = np.isfinite(y[:, i])
+        if len(np.unique(y[observed, i])) == 2:
             thresholds[label] = _tune_binary_threshold(
-                probability[:, i], y[:, i], objective="f1"
+                probability[observed, i], y[observed, i], objective="f1"
             )
     model["localization_model"]["class_thresholds"] = thresholds
 
@@ -226,7 +238,12 @@ def evaluate_students(config, partitions, student_dir, output):
     if not rows:
         raise ValueError("The evaluate stage requires a nonempty test partition.")
     labels = config["labels"]
-    report = {"test_data_sha256": dataset_digest(rows), "models": {}}
+    report = {
+        "test_data_sha256": dataset_digest(rows),
+        "models": {},
+        "evaluation_scope": "provided_test_partition; independence from earlier model selection is a protocol responsibility",
+    }
+    predictions = {}
     for name in (
         ["student", "control"] if config["student"]["train_control"] else ["student"]
     ):
@@ -239,13 +256,39 @@ def evaluate_students(config, partitions, student_dir, output):
         metrics = compute_multilabel_metrics(y, result["prediction_matrix"], labels)
         metrics.update(probability_metrics(y, result["prob_matrix"], labels))
         metrics["model_sha256"] = file_digest(model_path)
+        metrics["strata"] = stratified_metrics(
+            rows,
+            y,
+            result["prediction_matrix"],
+            result["prob_matrix"],
+            labels,
+            compute_multilabel_metrics,
+        )
+        predictions[name] = result["prediction_matrix"]
         report["models"][name] = metrics
         np.savez_compressed(
             output / (name + ".npz"),
             target=y,
+            observation_mask=np.isfinite(y),
             probability=result["prob_matrix"],
             prediction=result["prediction_matrix"],
             labels=np.asarray(labels),
             accessions=np.asarray([row["accession"] for row in rows]),
+        )
+    if "control" in predictions:
+        report["student_minus_control"] = (
+            paired_cluster_bootstrap(
+                y,
+                predictions["control"],
+                predictions["student"],
+                [row["cluster_id"] for row in rows],
+                labels,
+                compute_multilabel_metrics,
+            )
+            if all(row.get("cluster_id") for row in rows)
+            else {
+                "status": "unavailable",
+                "reason": "Homology cluster IDs required for paired intervals.",
+            }
         )
     atomic_write_json(str(output / "metrics.json"), report)

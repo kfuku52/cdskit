@@ -8,6 +8,8 @@ from urllib import request as urllib_request
 
 import numpy as np
 
+from cdskit.localize_labels import masked_multilabel_metrics, observed_targets
+
 from cdskit.localize_evaluation import (
     assert_disjoint,
     dataset_digest,
@@ -571,7 +573,7 @@ def _filter_multilabel_rows(rows, labels, label_col):
             labels=labels,
             label_col=label_col,
         )
-        if len(active) == 0:
+        if len(active) == 0 and "negative_labels" not in row:
             continue
         out.append(row)
     return out
@@ -593,13 +595,26 @@ def build_deeploc_feature_matrix(rows):
 def build_label_matrix(rows, labels, label_col):
     labels = list(labels)
     label_to_idx = {label: i for i, label in enumerate(labels)}
-    mat = np.zeros((len(rows), len(labels)), dtype=np.int64)
+    partial = any("negative_labels" in row for row in rows)
+    if partial and not all("negative_labels" in row for row in rows):
+        raise ValueError("Cannot mix observed and legacy label contracts in one table.")
+    mat = (
+        np.full((len(rows), len(labels)), np.nan)
+        if partial
+        else np.zeros((len(rows), len(labels)), dtype=np.int64)
+    )
     for row_i, row in enumerate(rows):
         active = _active_labels_from_row(
             row=row,
             labels=labels,
             label_col=label_col,
         )
+        if partial:
+            negative = set(str(row["negative_labels"]).split(";")) - {""}
+            if negative - set(labels) or negative.intersection(active):
+                raise ValueError("Invalid or conflicting negative localization labels.")
+            for label in negative:
+                mat[row_i, label_to_idx[label]] = 0
         for label in active:
             mat[row_i, label_to_idx[label]] = 1
     return mat
@@ -678,13 +693,14 @@ def _rare_threshold_objective_by_class(label_matrix, labels, dl_params=None):
     max_frac = float(params["rare_label_max_frac"])
     if max_count <= 0 and max_frac <= 0.0:
         return {}
-    y = np.asarray(label_matrix, dtype=np.int64)
+    y = np.asarray(label_matrix, dtype=np.float64)
     out = dict()
     for class_i, class_name in enumerate(labels):
         count = int(np.sum(y[:, class_i] == 1))
         if count <= 0:
             continue
-        frac = 0.0 if y.shape[0] == 0 else float(count) / float(y.shape[0])
+        observed = int(np.isfinite(y[:, class_i]).sum())
+        frac = float(count) / observed if observed else 0.0
         if (max_count > 0 and count <= max_count) or (
             max_frac > 0.0 and frac <= max_frac
         ):
@@ -700,6 +716,13 @@ def _safe_div(num, denom):
 
 def compute_multilabel_metrics(y_true, y_pred, labels):
     labels = list(labels)
+    values, mask = observed_targets(y_true)
+    if not mask.all():
+        return masked_multilabel_metrics(
+            y_true, y_pred, labels, compute_multilabel_metrics
+        )
+    if values.shape[1] != len(labels) or not np.isin(y_pred, [0, 1]).all():
+        raise ValueError("Invalid prediction values or label dimensions.")
     y_true = np.asarray(y_true, dtype=np.int64)
     y_pred = np.asarray(y_pred, dtype=np.int64)
     if y_true.shape != y_pred.shape:
@@ -851,7 +874,16 @@ def _prepare_partitions(rows, dl_params=None, n_folds=5, seed=1):
     folds = grouped_folds(rows, groups, n_folds, seed)
     for row, group, fold in zip(rows, groups, folds, strict=True):
         row["cluster_id"], row["fold_id"] = str(group), str(fold)
-    return rows, {"method": "mmseqs", **report}
+    from cdskit.localize_splits import audit_homology_partitions
+
+    audit = audit_homology_partitions(
+        {
+            fold: [row for row in rows if row["fold_id"] == fold]
+            for fold in sorted(set(folds))
+        },
+        int(params.get("homology_threads", 4)),
+    )
+    return rows, {"method": "mmseqs", **report, "cross_partition_homology": audit}
 
 
 def fit_deeploc_multilabel_model(
@@ -1001,10 +1033,11 @@ def fit_deeploc_multilabel_model(
             )["prob_matrix"]
         for i, name in enumerate(labels):
             # A one-sided validation label cannot identify a useful threshold.
-            if len(np.unique(validation_y[:, i])) == 2:
+            observed = np.isfinite(validation_y[:, i])
+            if len(np.unique(validation_y[observed, i])) == 2:
                 localization_model["class_thresholds"][name] = _tune_binary_threshold(
-                    validation_prob[:, i],
-                    validation_y[:, i],
+                    validation_prob[observed, i],
+                    validation_y[observed, i],
                     objective=threshold_objective_by_class.get(
                         name, threshold_params["threshold_objective"]
                     ),
@@ -1143,10 +1176,10 @@ def evaluate_deeploc21_task_cv(
                 "validation_fold": model["metadata"]["validation_fold"],
                 "selected_epoch": model["localization_model"].get("selected_epoch"),
                 "n_test": len(test_rows),
-                "macro_f1": float(fold_metrics["macro_f1"]),
-                "micro_f1": float(fold_metrics["micro_f1"]),
-                "jaccard": float(fold_metrics["jaccard"]),
-                "subset_accuracy": float(fold_metrics["subset_accuracy"]),
+                "macro_f1": fold_metrics["macro_f1"],
+                "micro_f1": fold_metrics["micro_f1"],
+                "jaccard": fold_metrics["jaccard"],
+                "subset_accuracy": fold_metrics["subset_accuracy"],
             }
         )
     metrics = compute_multilabel_metrics(
@@ -1187,7 +1220,9 @@ def evaluate_deeploc21_task_cv(
                 ).hexdigest(),
             }
             for j, label in enumerate(labels):
-                result_row["true_" + label] = int(y_true[i, j])
+                result_row["true_" + label] = (
+                    int(y_true[i, j]) if np.isfinite(y_true[i, j]) else "unknown"
+                )
                 result_row["pred_" + label] = int(y_pred[i, j])
                 result_row["p_" + label] = float(prob[i, j])
             output.append(result_row)
@@ -1339,6 +1374,9 @@ def _task_config(task_name, prepared_dir):
 
 
 def render_deeploc_benchmark_markdown(result):
+    def number(value):
+        return "NA" if value is None else "{:.4f}".format(float(value))
+
     lines = list()
     task = result.get("task", "")
     lines.append("# DeepLoc benchmark: {}".format(task))
@@ -1355,21 +1393,20 @@ def render_deeploc_benchmark_markdown(result):
         if not isinstance(metrics, dict):
             continue
         lines.append(
-            "| {name} | {rows} | {subset:.4f} | {jacc:.4f} | {micro:.4f} | {macro:.4f} | {obs:.4f} | {ptr:.4f} |".format(
+            "| {name} | {rows} | {subset} | {jacc} | {micro} | {macro} | {obs} | {ptr} |".format(
                 name=name,
                 rows=int(metrics.get("n_rows", metrics.get("n_test_rows", 0)) or 0),
-                subset=float(metrics.get("subset_accuracy", 0.0)),
-                jacc=float(metrics.get("jaccard", 0.0)),
-                micro=float(metrics.get("micro_f1", 0.0)),
-                macro=float(metrics.get("macro_f1", 0.0)),
-                obs=float(
+                subset=number(metrics.get("subset_accuracy", 0.0)),
+                jacc=number(metrics.get("jaccard", 0.0)),
+                micro=number(metrics.get("micro_f1", 0.0)),
+                macro=number(metrics.get("macro_f1", 0.0)),
+                obs=number(
                     metrics.get(
                         "macro_f1_observed_labels",
                         metrics.get("macro_f1", 0.0),
                     )
-                    or 0.0
                 ),
-                ptr=float(metrics.get("predicted_per_true", 0.0)),
+                ptr=number(metrics.get("predicted_per_true", 0.0)),
             )
         )
     reference = result.get("published_reference", {})
@@ -1388,12 +1425,12 @@ def render_deeploc_benchmark_markdown(result):
                 if not isinstance(vals, dict):
                     continue
                 lines.append(
-                    "| {model} | {count} | {jacc:.4f} | {micro:.4f} | {macro:.4f} |".format(
+                    "| {model} | {count} | {jacc} | {micro} | {macro} |".format(
                         model=model_name,
                         count=int(split.get("count", 0)),
-                        jacc=float(vals.get("jaccard", 0.0)),
-                        micro=float(vals.get("micro_f1", 0.0)),
-                        macro=float(vals.get("macro_f1", 0.0)),
+                        jacc=number(vals.get("jaccard", 0.0)),
+                        micro=number(vals.get("micro_f1", 0.0)),
+                        macro=number(vals.get("macro_f1", 0.0)),
                     )
                 )
     lines.append("")

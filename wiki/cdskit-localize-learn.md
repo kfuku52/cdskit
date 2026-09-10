@@ -1,5 +1,7 @@
 # cdskit localize-learn
 
+For observed labels, independent postprocessing CV and frozen external evaluation, see the [scientific validation contract](../docs/localize-scientific-validation.md). Historical CV postprocessing tuning metrics are not independent pipeline accuracy.
+
 `cdskit localize-learn` trains a custom model for `cdskit localize` from a TSV
 table or from UniProt entries downloaded by query. It is useful when you have
 your own targeting/localization labels, or when you want to evaluate a training

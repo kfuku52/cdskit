@@ -1,5 +1,7 @@
 # cdskit localize benchmarks and notes
 
+For observed labels, independent postprocessing CV and frozen external evaluation, see the [scientific validation contract](../docs/localize-scientific-validation.md). Historical CV postprocessing tuning metrics are not independent pipeline accuracy.
+
 This page keeps detailed benchmark commands, model-provenance notes, TargetP
 comparison tables, and historical development snapshots for `cdskit localize`.
 For everyday command usage, see [cdskit localize](https://github.com/kfuku52/cdskit/wiki/cdskit-localize).

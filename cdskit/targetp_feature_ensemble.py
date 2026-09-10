@@ -570,7 +570,8 @@ def evaluate_foldwise_thresholds(
             }
         )
     return {
-        "description": "Each held-out fold is predicted using class thresholds optimized on the other folds.",
+        "description": "Thresholds fitted on other OOF rows; base models may have trained on the held-out fold. Diagnostic only, not nested evaluation.",
+        "evaluation_scope": "oof_meta_split_not_nested",
         "metrics": _metrics_from_prediction_indices(
             pred_idx=pred_idx,
             true_idx=np.asarray(true_idx, dtype=np.int64),

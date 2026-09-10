@@ -9,6 +9,7 @@ from typing import Any
 
 from cdskit.deeploc_benchmark import DEEPLOC_LOCALIZATION_LABELS
 from cdskit.localize_evaluation import assert_disjoint
+from cdskit.localize_labels import validate_label_evidence
 from cdskit.localize_model import to_canonical_aa_sequence
 from cdskit.tsvio import read_tsv
 
@@ -54,6 +55,10 @@ DATA_DEFAULTS = {
     "label_col": "localization_labels",
     "split_col": "split",
     "cluster_col": "cluster_id",
+    "negative_col": "negative_labels",
+    "evidence_col": "label_evidence",
+    "evidence_policy": "experimental",
+    "homology_audit": "provided",
 }
 
 
@@ -166,9 +171,15 @@ def load_config(path):
     }
     if not isinstance(raw, dict) or set(raw) - allowed:
         raise ValueError("Unknown keys or invalid pipeline configuration.")
-    if type(raw.get("schema_version")) is not int or raw["schema_version"] != 1:
-        raise ValueError("Pipeline configuration requires schema_version: 1.")
-    config: dict[str, Any] = {"schema_version": 1, "threads": raw.get("threads", 1)}
+    if type(raw.get("schema_version")) is not int or raw["schema_version"] not in (
+        1,
+        2,
+    ):
+        raise ValueError("Pipeline configuration requires schema_version: 1 or 2.")
+    config: dict[str, Any] = {
+        "schema_version": raw["schema_version"],
+        "threads": raw.get("threads", 1),
+    }
     if type(config["threads"]) is not int or config["threads"] < 1:
         raise ValueError("threads must be a positive integer.")
     for name, defaults in (
@@ -200,6 +211,10 @@ def load_config(path):
     source = Path(config["teacher"]["model_name"]).expanduser()
     if (path.parent / source).is_dir():
         config["teacher"]["model_name"] = str((path.parent / source).resolve())
+    if config["data"]["evidence_policy"] not in ("experimental", "declared"):
+        raise ValueError("Invalid data.evidence_policy.")
+    if config["data"]["homology_audit"] not in ("provided", "mmseqs"):
+        raise ValueError("Invalid data.homology_audit.")
     _validate_training(config)
     return config
 
@@ -215,6 +230,16 @@ def load_partitions(config):
         or settings["cluster_col"] in columns
     ):
         raise ValueError("Input column names must be nonempty and distinct.")
+    observed = config["schema_version"] == 2
+    if observed:
+        extra = [
+            settings[key] for key in ("negative_col", "evidence_col", "cluster_col")
+        ]
+        if not all(extra) or len(set(columns + extra)) != len(columns + extra):
+            raise ValueError(
+                "Observed schema requires distinct negative, evidence and cluster columns."
+            )
+        columns += extra
     rows = read_tsv(settings["path"], required_columns=columns)
     partitions: dict[str, list[dict[str, str]]] = {
         name: [] for name in ("train", "validation", "test")
@@ -233,6 +258,40 @@ def load_partitions(config):
             raise ValueError(
                 "Invalid split or localization labels: {}".format(accession)
             )
+        extra_fields = {}
+        if observed:
+            negative = [
+                x.strip() for x in row[settings["negative_col"]].split(";") if x.strip()
+            ]
+            if set(negative) - set(config["labels"]) or set(negative).intersection(
+                labels
+            ):
+                raise ValueError(
+                    "Invalid or conflicting negative labels: {}".format(accession)
+                )
+            if not row[settings["cluster_col"]].strip():
+                raise ValueError("Observed schema requires a cluster ID for every row.")
+            evidence = validate_label_evidence(
+                row[settings["evidence_col"]],
+                labels,
+                negative,
+                settings["evidence_policy"],
+            )
+            extra_fields = {
+                "negative_labels": ";".join(
+                    x for x in config["labels"] if x in negative
+                ),
+                "label_evidence": json.dumps(evidence, sort_keys=True),
+            }
+        for key in (
+            "organism_group",
+            "taxonomy_id",
+            "fragment",
+            "compartment",
+            "isoform",
+        ):
+            if key in row:
+                extra_fields[key] = row[key]
         seen.add(accession)
         partitions[split].append(
             {
@@ -242,6 +301,7 @@ def load_partitions(config):
                     x for x in config["labels"] if x in labels
                 ),
                 "cluster_id": row.get(settings["cluster_col"], "").strip(),
+                **extra_fields,
             }
         )
     if not partitions["train"] or not partitions["validation"]:

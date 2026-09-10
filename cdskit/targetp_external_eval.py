@@ -254,12 +254,16 @@ def build_uniprot_holdout_rows(
             true_class, _, ambiguous = infer_labels_from_uniprot_cc(
                 location_text=cc_text
             )
+            if true_class is None:
+                skipped["unknown_uniprot_cc"] += 1
+                continue
             if ambiguous and skip_ambiguous:
                 skipped["ambiguous_uniprot_cc"] += 1
                 continue
         out.append(
             {
                 "source": "uniprot_cc_holdout",
+                "label_contract": "weak_localization_proxy",
                 "accession": row.get("accession", ""),
                 "sequence": row.get("sequence", ""),
                 "organism_group": organism_group,
@@ -306,6 +310,7 @@ def load_fixed_uniprot_holdout_rows(path, strict_targetp_organism_labels=False):
         out.append(
             {
                 "source": row.get("source", "fixed_uniprot_holdout"),
+                "label_contract": row.get("label_contract", "user_declared_targeting"),
                 "accession": row.get("accession", ""),
                 "sequence": sequence,
                 "organism_group": organism_group,
@@ -365,8 +370,7 @@ def filter_rows_by_mmseqs_similarity(
         return list(rows), report
     mmseqs = shutil.which("mmseqs")
     if mmseqs is None:
-        report["status"] = "mmseqs_not_found"
-        return list(rows), report
+        raise ValueError("Requested homology filtering requires MMseqs on PATH.")
 
     query_rows = [dict(row, _mmseqs_id="q{}".format(i)) for i, row in enumerate(rows)]
     target_rows = [
@@ -410,7 +414,9 @@ def filter_rows_by_mmseqs_similarity(
         if proc.returncode != 0:
             report["status"] = "mmseqs_failed"
             report["stderr"] = proc.stderr[-2000:]
-            return list(rows), report
+            raise ValueError("MMseqs filtering failed: {}".format(report["stderr"]))
+        if not os.path.exists(out_m8):
+            raise ValueError("MMseqs filtering produced no hit table.")
         hit_queries = set()
         if os.path.exists(out_m8):
             with open(out_m8, "r", encoding="utf-8") as inp:
@@ -692,6 +698,9 @@ def predict_rows(rows, model_path):
 def _dataset_report(rows, skipped):
     return {
         "n_rows": len(rows),
+        "label_contract_counts": dict(
+            Counter(row.get("label_contract", "dataset") for row in rows)
+        ),
         "true_counts": dict(Counter(row.get("true_class", "") for row in rows)),
         "skipped": dict(skipped),
     }
@@ -827,10 +836,12 @@ def run_external_evaluation(
         rows=sorting_pred,
         fieldnames=[
             "source",
+            "label_contract",
             "accession",
             "organism_group",
             "true_class",
             "predicted_class",
+            "sequence",
             "external_labels",
             "p_noTP",
             "p_SP",
@@ -861,10 +872,12 @@ def run_external_evaluation(
         rows=hpa_pred,
         fieldnames=[
             "source",
+            "label_contract",
             "accession",
             "organism_group",
             "true_class",
             "predicted_class",
+            "sequence",
             "external_labels",
             "p_noTP",
             "p_SP",
@@ -924,6 +937,7 @@ def run_external_evaluation(
         rows=filtered,
         fieldnames=[
             "source",
+            "label_contract",
             "accession",
             "organism_group",
             "true_class",
@@ -938,10 +952,12 @@ def run_external_evaluation(
         rows=uniprot_pred,
         fieldnames=[
             "source",
+            "label_contract",
             "accession",
             "organism_group",
             "true_class",
             "predicted_class",
+            "sequence",
             "external_labels",
             "p_noTP",
             "p_SP",

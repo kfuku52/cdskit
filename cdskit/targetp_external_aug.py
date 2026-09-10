@@ -129,7 +129,10 @@ def _external_training_row(source, accession, sequence, organism_group, localiza
         "sequence": sequence,
         "organism_group": organism_group,
         "localization": localization,
-        "peroxisome": "no",
+        "peroxisome": "unknown",
+        "label_contract": "dataset_targeting"
+        if source == "deeploc21_sorting_signals"
+        else "weak_localization_proxy",
     }
 
 
@@ -300,7 +303,9 @@ def _prefilter_rows_for_similarity(rows, max_per_class, seed):
 
 def split_external_train_calibration_rows(rows, calibration_fraction=0.0, seed=101):
     fraction = float(calibration_fraction)
-    if (not np.isfinite(fraction)) or fraction <= 0.0:
+    if not np.isfinite(fraction) or not 0 <= fraction < 1:
+        raise ValueError("calibration_fraction must be finite and in [0, 1).")
+    if fraction == 0.0:
         return (
             list(rows),
             [],
@@ -315,31 +320,45 @@ def split_external_train_calibration_rows(rows, calibration_fraction=0.0, seed=1
                 "calibration_counts": {},
             },
         )
-    fraction = min(0.95, fraction)
-    rng = random.Random(int(seed))
-    by_class = defaultdict(list)
-    for row in rows:
-        by_class[row.get("localization", "")].append(row)
-    train_rows = list()
-    calibration_rows = list()
-    for class_name in LOCALIZATION_CLASSES:
-        class_rows = list(by_class[class_name])
-        rng.shuffle(class_rows)
-        if len(class_rows) <= 1:
-            train_rows.extend(class_rows)
-            continue
-        n_calibration = round(float(len(class_rows)) * fraction)
-        n_calibration = max(1, min(len(class_rows) - 1, n_calibration))
-        calibration_rows.extend(class_rows[:n_calibration])
-        train_rows.extend(class_rows[n_calibration:])
-    rng.shuffle(train_rows)
-    rng.shuffle(calibration_rows)
+    from cdskit.localize_evaluation import assert_disjoint
+    from cdskit.localize_splits import stratified_group_ids
+
+    if any(row.get("cluster_id") for row in rows) and not all(
+        row.get("cluster_id") for row in rows
+    ):
+        raise ValueError("Supply cluster IDs for every calibration row or none.")
+    from cdskit.localize_model import to_canonical_aa_sequence
+
+    groups = [
+        str(row.get("cluster_id") or to_canonical_aa_sequence(row.get("sequence", "")))
+        for row in rows
+    ]
+    # A group may contain multiple classes; never split it for class balance.
+    if len(set(groups)) < 2:
+        raise ValueError("Calibration requires at least two independent groups.")
+    n_folds = max(2, round(1.0 / min(fraction, 1.0 - fraction)))
+    assigned = stratified_group_ids(
+        [row["localization"] for row in rows], groups, n_folds, seed
+    )
+    calibration_mask = assigned == "0" if fraction <= 0.5 else assigned != "0"
+    train_rows = [
+        row
+        for row, selected in zip(rows, calibration_mask, strict=True)
+        if not selected
+    ]
+    calibration_rows = [
+        row for row, selected in zip(rows, calibration_mask, strict=True) if selected
+    ]
+    assert_disjoint(train_rows, calibration_rows)
     return (
         train_rows,
         calibration_rows,
         {
             "enabled": True,
             "calibration_fraction": float(fraction),
+            "actual_calibration_fraction": len(calibration_rows) / len(rows),
+            "split_method": "provided_cluster_or_exact_sequence",
+            "homology": "not independently checked",
             "train_counts": dict(
                 Counter(row.get("localization", "") for row in train_rows)
             ),
@@ -506,6 +525,9 @@ def build_external_augmented_training_rows(
     )
     return sampled, {
         "candidate_rows": len(rows),
+        "label_contract_counts": dict(
+            Counter(row["label_contract"] for row in sampled)
+        ),
         "deduplicated_rows": len(deduped),
         "similarity_prefilter": similarity_prefilter_report,
         "filtered_rows": len(filtered),
@@ -820,6 +842,24 @@ def run_external_augmented_feature_oof(
     if len(external_rows) == 0:
         raise ValueError("No external rows were available after filtering.")
 
+    from cdskit.localize_evaluation import assert_disjoint
+    from cdskit.localize_splits import sequence_folds
+
+    if any(row.get("cluster_id") for row in target_rows) and not all(
+        row.get("cluster_id") for row in target_rows
+    ):
+        raise ValueError("Supply cluster IDs for every target row or none.")
+    outer_folds, groups, split_report = sequence_folds(
+        [row["sequence"] for row in target_rows],
+        [row["localization"] for row in target_rows],
+        len(set(fold_ids)),
+        seed,
+        fold_ids=fold_ids,
+        group_ids=[row["cluster_id"] for row in target_rows]
+        if all(row.get("cluster_id") for row in target_rows)
+        else None,
+    )
+    assert_disjoint(target_rows, external_rows)
     target_features = build_targetp_feature_matrix(rows=target_rows).astype(np.float32)
     external_features = build_targetp_feature_matrix(rows=external_rows).astype(
         np.float32
@@ -882,6 +922,63 @@ def run_external_augmented_feature_oof(
         class_names=class_names,
         threshold_grid=threshold_grid,
     )
+    nested_predictions = np.zeros(len(target_rows), dtype=np.int64)
+    nested_folds = []
+    if threshold_grid is None:
+        threshold_grid = np.arange(0.05, 2.05, 0.05, dtype=np.float64)
+    for outer_i, held in enumerate(outer_folds):
+        outer_train = np.setdiff1d(np.arange(len(target_rows)), held)
+        inner_folds, _, _ = sequence_folds(
+            [target_rows[i]["sequence"] for i in outer_train],
+            [target_rows[i]["localization"] for i in outer_train],
+            3,
+            seed,
+            group_ids=[groups[i] for i in outer_train],
+        )
+        inner_prob = np.zeros((len(outer_train), len(class_names)))
+        for inner_i, inner_held in enumerate(inner_folds):
+            inner_train = np.delete(outer_train, inner_held)
+            classifier = make_targetp_feature_classifier(
+                model_kind=model_kind,
+                n_estimators=int(n_estimators),
+                random_state=int(random_state) + outer_i * 100 + inner_i,
+                class_weight=class_weight,
+                max_features=max_features,
+                min_samples_leaf=int(min_samples_leaf),
+            )
+            classifier.fit(
+                np.vstack([target_features[inner_train], external_features]),
+                np.concatenate([true_idx[inner_train], external_idx]),
+                sample_weight=np.concatenate(
+                    [np.ones(len(inner_train)), external_sample_weight]
+                ),
+            )
+            inner_prob[inner_held] = predict_feature_classifier_prob_matrix(
+                classifier, target_features[outer_train[inner_held]], class_names
+            )
+        thresholds, _ = optimize_class_thresholds(
+            inner_prob, true_idx[outer_train], class_names, threshold_grid
+        )
+        nested_predictions[held] = _prediction_indices_with_thresholds(
+            prob_matrix[held], thresholds
+        )
+        nested_folds.append(
+            {
+                "fold_id": str(fold_ids[held[0]]),
+                "class_thresholds": dict(
+                    zip(class_names, thresholds.tolist(), strict=True)
+                ),
+                "n_inner_rows": len(outer_train),
+            }
+        )
+    nested_metrics = {
+        "description": "Inner OOF and threshold fitting exclude the outer test fold at every training stage.",
+        "evaluation_scope": "nested_outer_test",
+        "metrics": _metrics_from_prediction_indices(
+            nested_predictions, true_idx, class_names
+        ),
+        "folds": nested_folds,
+    }
     return {
         "prob_matrix": prob_matrix,
         "true_idx": true_idx,
@@ -889,6 +986,8 @@ def run_external_augmented_feature_oof(
         "fold_ids": fold_ids,
         "argmax": argmax_metrics,
         "foldwise_threshold": threshold_metrics,
+        "nested_threshold": nested_metrics,
+        "split_audit": split_report,
         "external_report": external_report,
         "folds": fold_report,
         "profile": {
@@ -1188,6 +1287,8 @@ def write_external_augmented_feature_report(path, result, external_tsv=""):
         "profile": result["profile"],
         "argmax": result["argmax"],
         "foldwise_threshold": result["foldwise_threshold"],
+        "nested_threshold": result["nested_threshold"],
+        "split_audit": result["split_audit"],
         "external_report": result["external_report"],
         "folds": result["folds"],
     }
@@ -1429,6 +1530,7 @@ def main(argv=None):
                 "organism_group",
                 "localization",
                 "peroxisome",
+                "label_contract",
                 "sequence",
             ],
         )
@@ -1482,10 +1584,10 @@ def main(argv=None):
         )
         save_localize_model(model=model, path=str(args.model_out))
     print(
-        "external_rows={} argmax_macro_f1={:.6f} foldwise_threshold_macro_f1={:.6f}".format(
+        "external_rows={} argmax_macro_f1={:.6f} nested_threshold_macro_f1={:.6f}".format(
             int(result["external_report"]["sampled_rows"]),
             float(result["argmax"]["macro_f1"]),
-            float(result["foldwise_threshold"]["metrics"]["macro_f1"]),
+            float(result["nested_threshold"]["metrics"]["macro_f1"]),
         )
     )
 

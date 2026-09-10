@@ -277,7 +277,22 @@ def run_pipeline(config_path, run_dir, stage="all", teacher_run=None, resume=Tru
         raise ValueError("The evaluate stage requires a test partition.")
     root.mkdir(parents=True, exist_ok=True)
     with run_lock(root):
+        new_run = not (root / "run.json").exists()
+        audit = {"status": "provided_groups_only; homology not independently checked"}
+        if new_run and config["data"]["homology_audit"] == "mmseqs":
+            from cdskit.localize_splits import audit_homology_partitions
+
+            audit = {
+                "status": "ok",
+                "pairs": audit_homology_partitions(partitions, config["threads"]),
+            }
+        _, _, current_identity = load_inputs(config_path)
+        if current_identity != identity:
+            raise ValueError("Pipeline inputs changed during partition audit.")
         manifest = prepare_manifest(root, identity)
+        if new_run:
+            manifest["partition_audit"] = audit
+            atomic_write_json(str(root / "run.json"), manifest)
         import torch
 
         previous_threads = torch.get_num_threads()
