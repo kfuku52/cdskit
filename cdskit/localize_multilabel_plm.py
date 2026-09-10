@@ -226,10 +226,21 @@ class ResidueEncoder:
 def _batch(encoder, sequences, torch, device):
     values = [encoder.encode(seq) for seq in sequences]
     length = max(len(value) for value in values)
-    x = np.zeros((len(values), length, values[0].shape[1]), dtype=np.float32)
+    shape = (len(values), length, values[0].shape[1])
+    cuda = torch.device(device).type == "cuda"
+    # Assemble CUDA batches on device, without a large, padded NumPy temporary.
+    # NumPy's huge-page advice can stall allocation on a crowded NUMA node.
+    x: Any = (
+        torch.zeros(shape, dtype=torch.float32, device=device)
+        if cuda
+        else np.zeros(shape, dtype=np.float32)
+    )
     mask = np.zeros((len(values), length), dtype=bool)
     for i, value in enumerate(values):
-        x[i, : len(value)] = value
+        if cuda:
+            x[i, : len(value)].copy_(torch.as_tensor(value, device="cpu"))
+        else:
+            x[i, : len(value)] = value
         mask[i, : len(value)] = True
     return torch.as_tensor(x, device=device), torch.as_tensor(mask, device=device)
 

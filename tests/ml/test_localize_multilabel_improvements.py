@@ -54,6 +54,39 @@ def test_average_precision_handles_ties_and_unsupported_labels():
     assert average_precision([0, 0], [0.1, 0.2]) is None
 
 
+@pytest.mark.parametrize("device", ["cpu", "cuda"])
+def test_plm_batch_preserves_padding_dtype_and_independent_storage(device):
+    torch = pytest.importorskip("torch")
+    from cdskit.localize_multilabel_plm import _batch
+
+    if device == "cuda" and not torch.cuda.is_available():
+        pytest.skip("CUDA is unavailable")
+    # Noncontiguous source embeddings exercise the copy, not just allocation.
+    source = np.arange(24, dtype=np.float32).reshape(6, 4)
+    values = {"short": source[:2, ::2], "long": source[:, ::2]}
+
+    class Encoder:
+        def encode(self, sequence):
+            return values[sequence]
+
+    batch, mask = _batch(Encoder(), ["short", "long"], torch, device)
+    expected = np.zeros((2, 6, 2), dtype=np.float32)
+    expected[0, :2] = values["short"]
+    expected[1] = values["long"]
+    np.testing.assert_array_equal(batch.cpu().numpy(), expected)
+    assert batch.dtype == torch.float32
+    assert batch.device.type == device
+    assert batch.is_contiguous()
+    assert mask.dtype == torch.bool
+    assert mask.tolist() == [[True, True, False, False, False, False], [True] * 6]
+
+    # A later batch or an encoder-cache mutation must not overwrite this batch.
+    next_batch, _ = _batch(Encoder(), ["long", "short"], torch, device)
+    next_batch.fill_(-1)
+    source.fill(-2)
+    np.testing.assert_array_equal(batch.cpu().numpy(), expected)
+
+
 def test_calibration_partition_excluded_from_fitting(monkeypatch):
     import cdskit.deeploc_benchmark as benchmark
 

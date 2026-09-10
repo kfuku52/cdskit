@@ -1,0 +1,103 @@
+{
+  "cuda": {
+    "numpy": {
+      "median_batch_ms": 18.04303399694618,
+      "median_p95_ms": 20.596066492726095,
+      "median_peak_rss_MiB": 685.93359375,
+      "median_system_seconds_per28": 0.18810000000000004
+    },
+    "tensor": {
+      "median_batch_ms": 5.799305989057757,
+      "median_p95_ms": 7.472202851204201,
+      "median_peak_rss_MiB": 629.12109375,
+      "median_system_seconds_per28": 0.0029100000000000237
+    },
+    "speedup": 3.1112402123616385
+  },
+  "memory_probe": {
+    "numpy-1": {
+      "total_seconds": [
+        127.13235309068114,
+        124.57122967203031
+      ],
+      "p95_seconds": [
+        1.7681120315930456,
+        1.7193505526098307
+      ],
+      "system_seconds": [
+        122.375034,
+        119.907073
+      ]
+    },
+    "numpy-0": {
+      "total_seconds": [
+        2.2479738858819474,
+        2.1968680118734483
+      ],
+      "p95_seconds": [
+        0.03004210196086205,
+        0.02821787778957514
+      ],
+      "system_seconds": [
+        2.256075,
+        2.24411
+      ]
+    },
+    "torch": {
+      "total_seconds": [
+        4.209984232322313,
+        4.152843687945278
+      ],
+      "p95_seconds": [
+        0.05958160949521698,
+        0.05822029231931083
+      ],
+      "system_seconds": [
+        4.0038979999999995,
+        3.9971460000000003
+      ]
+    }
+  },
+  "observed_live_slow_interval": {
+    "duration_seconds": 10.00058,
+    "process_user_seconds": 0.07,
+    "process_system_seconds": 9.56,
+    "minor_faults": 39360,
+    "major_faults": 0,
+    "disk_read_byte_increase": 0,
+    "process_swap_kib": 0
+  },
+  "interpretation": "Live process kernel stacks inaccessible; same-node allocation experiment isolates NumPy huge-page advice as a reproducible cause consistent with live high-system-CPU/idle-GPU stalls. CUDA direct assembly removes that padded host allocation. Not an end-to-end training speedup claim.",
+  "environment": {
+    "baseline_commit": "004b9d0",
+    "candidate": "same commit with CUDA _batch assembly change",
+    "gpu": "NVIDIA RTX 6000 Ada, 48 GB",
+    "os": "Linux 6.11.0-25-generic",
+    "numpy": "2.5.3",
+    "torch": "2.6.0+cu124",
+    "cpu_affinity": [
+      32,
+      33,
+      34,
+      35,
+      36,
+      37,
+      38,
+      39
+    ],
+    "threads": 8,
+    "warmup_per_process": 7,
+    "measured_batches_per_process": 28,
+    "processes_per_implementation": 3,
+    "order": [
+      "numpy",
+      "tensor",
+      "tensor",
+      "numpy",
+      "numpy",
+      "tensor"
+    ],
+    "output_sha256": "e1c0fa749afb6b59de170325e8b74ad84da09a66f1f273188b85736b651dba46",
+    "scope": "Mixed synthetic frozen residues, length 400\u20132778, width 1280, batch size 8. Live training remained active during bounded Slurm-overlap diagnostic steps; measurements are not isolated end-to-end training benchmarks."
+  }
+}
