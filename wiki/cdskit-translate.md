@@ -32,3 +32,29 @@ With `--to_stop yes`, translation stops at the first in-frame stop codon.
   uses the amino-acid assignment for dual-use codons because the sequence alone
   does not identify termination context. `--to_stop yes` therefore does not
   stop at a dual-use codon. Backalignment follows the same rule.
+
+## Ordinary translation versus an explicitly complete CDS
+
+Ordinary translation uses the forward amino acid for dual-coding codons in
+codes 27/28/31. `--to_stop yes` stops only at a definite translated `*`, including
+standard-code TAR; it does not infer context-dependent termination. This is an
+intentional CDSKIT contract; Biopython's direct `to_stop=True` rejects these
+code tables instead.
+
+`--complete_cds yes` explicitly asserts complete CDS boundaries. It requires a
+valid start codon, length divisible by three, a terminal-compatible stop, and no
+definite internal stops or missing/invalid codons. The initiator becomes M and
+the terminator is omitted, regardless of `--to_stop`. The ordinary default is
+unchanged. Possible ambiguous internal stops remain X; acceptance is not proof
+of biological completeness or function.
+
+```bash
+cdskit translate --seq_file complete_cds.fasta --out_file proteins.fasta \
+  --codon_table 27 --complete_cds yes
+```
+
+See [codon semantics](codon-semantics.md) for uncertainty and compatibility.
+
+`X` in DNA is treated as any base, like `N`, consistently in ordinary,
+partial-tail and complete-CDS translation. Invalid alphabet characters are
+rejected even when the same codon also contains a missing character.

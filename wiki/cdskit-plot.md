@@ -77,3 +77,9 @@ A clean codon contains no missing character (`-`, `?`, or `.`), no ambiguous nuc
 - `summary` and `map` are useful for alignment QC and trimming decisions.
 - `msa` is designed for compact codon-aware visualization of moderate-length alignments.
 - The plotting backend uses `matplotlib`, so PDF, SVG, and PNG output are available from the same command.
+
+## Codon semantics
+
+See [codon meaning and uncertainty](codon-semantics.md) for definite versus
+possible stops, dual-coding tables 27/28/31, overlapping ambiguity/stop counts,
+and report compatibility. These rules describe sequence QC, not gene function.

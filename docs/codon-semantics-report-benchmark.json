@@ -1,0 +1,74 @@
+[
+  {
+    "implementation": "reference",
+    "workload": "nested-starts",
+    "platform": "macOS-26.6.2-arm64-arm-64bit",
+    "python": "3.12.14",
+    "input_sha256": "4c5d4a4d7f93ad7d308038b19b242fc1ecb275fbaffcb32b1def8f25f8ff1bfc",
+    "nt": 6000,
+    "candidates": 2005,
+    "seconds": [
+      0.7386577920115087,
+      0.7333615840179846,
+      0.7471002500096802
+    ],
+    "median_seconds": 0.7386577920115087,
+    "peak_rss_bytes": 62488576,
+    "serialized_bytes": 6885149,
+    "common_fields_sha256": "e07936f2e4b4b53ff73c3631734d0ca7197afe92448f569ade323b1ad4709c0f"
+  },
+  {
+    "implementation": "current",
+    "workload": "nested-starts",
+    "platform": "macOS-26.6.2-arm64-arm-64bit",
+    "python": "3.12.14",
+    "input_sha256": "4c5d4a4d7f93ad7d308038b19b242fc1ecb275fbaffcb32b1def8f25f8ff1bfc",
+    "nt": 6000,
+    "candidates": 2005,
+    "seconds": [
+      0.019113540998660028,
+      0.02040662500075996,
+      0.02015295802266337
+    ],
+    "median_seconds": 0.02015295802266337,
+    "peak_rss_bytes": 49250304,
+    "serialized_bytes": 910306,
+    "common_fields_sha256": "e07936f2e4b4b53ff73c3631734d0ca7197afe92448f569ade323b1ad4709c0f"
+  },
+  {
+    "implementation": "reference",
+    "workload": "refseq-tp53",
+    "platform": "macOS-26.6.2-arm64-arm-64bit",
+    "python": "3.12.14",
+    "input_sha256": "0c886e7e551d310e2927798a67c9ec865664222ec36ef095711ba4e2d6dc1f42",
+    "nt": 2512,
+    "candidates": 463,
+    "seconds": [
+      0.011581166996620595,
+      0.01143429201329127,
+      0.010516042006202042
+    ],
+    "median_seconds": 0.01143429201329127,
+    "peak_rss_bytes": 45219840,
+    "serialized_bytes": 257470,
+    "common_fields_sha256": "1acc9942478c40b9f4fb24241fd5696b7d162c47047aa076a966b9202f7f94df"
+  },
+  {
+    "implementation": "current",
+    "workload": "refseq-tp53",
+    "platform": "macOS-26.6.2-arm64-arm-64bit",
+    "python": "3.12.14",
+    "input_sha256": "0c886e7e551d310e2927798a67c9ec865664222ec36ef095711ba4e2d6dc1f42",
+    "nt": 2512,
+    "candidates": 463,
+    "seconds": [
+      0.006406166998203844,
+      0.006112875009421259,
+      0.0059965830005239695
+    ],
+    "median_seconds": 0.006112875009421259,
+    "peak_rss_bytes": 45285376,
+    "serialized_bytes": 206787,
+    "common_fields_sha256": "1acc9942478c40b9f4fb24241fd5696b7d162c47047aa076a966b9202f7f94df"
+  }
+]

@@ -17,7 +17,7 @@ For each codon column, `cdskit trimcodon` records:
 
 Sites are retained when their clean fraction is at least `--min_clean_fraction`.
 
-A clean codon contains no missing character (`-`, `?`, or `.`), no ambiguous nucleotide (`N`, `R`, `Y`, etc.), and no unambiguous stop codon.
+A clean codon contains no missing character (`-`, `?`, or `.`), no ambiguous nucleotide (`N`, `R`, `Y`, etc.), and no definite stop codon under ordinary translation. A dual-coding A/C/G/T codon is clean but is also reported as context-dependent.
 
 ## Key options
 
@@ -34,3 +34,9 @@ the codon position, category counts, clean fraction, and `keep=yes|no` result.
 
 - Input sequences must be DNA, aligned, and multiples of three in length.
 - Sequence order is preserved in the trimmed output.
+
+## Codon semantics
+
+See [codon meaning and uncertainty](codon-semantics.md) for definite versus
+possible stops, dual-coding tables 27/28/31, overlapping ambiguity/stop counts,
+and report compatibility. These rules describe sequence QC, not gene function.

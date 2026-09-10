@@ -1,11 +1,17 @@
 import sys
+from array import array
 from concurrent.futures import ProcessPoolExecutor
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+from bisect import bisect_right
 from functools import partial
 
 import Bio.Data.CodonTable
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
+
+from cdskit.atomicio import atomic_output_paths
+from cdskit.codonreport import validate_codon_output_paths, write_codon_report
+from cdskit.codonutil import analyze_codon, codon_matches_stop_set
 
 from cdskit.util import (
     parallel_map_ordered,
@@ -50,7 +56,10 @@ def get_start_stop_codons(codontable):
         table = Bio.Data.CodonTable.unambiguous_dna_by_id[int(codontable)]
     except (KeyError, TypeError, ValueError):
         table = Bio.Data.CodonTable.unambiguous_dna_by_name[str(codontable)]
-    codons = (set(table.start_codons), set(table.stop_codons))
+    codons = (
+        set(table.start_codons),
+        set(table.stop_codons) - set(table.forward_table),
+    )
     _CODON_TABLE_CACHE[codontable] = codons
     return codons
 
@@ -158,6 +167,15 @@ def build_candidate_from_fields(candidate_fields, sort_key):
 def collect_start_stop_positions_by_frame(strand_seq, start_codons, stop_codons):
     start_positions: list[list[int]] = [[], [], []]
     stop_positions: list[list[int]] = [[], [], []]
+    if any(ch not in "ACGT" for ch in strand_seq):
+        stops = frozenset(stop_codons)
+        for pos in range(len(strand_seq) - 2):
+            codon = strand_seq[pos : pos + 3]
+            if codon in start_codons:
+                start_positions[pos % 3].append(pos)
+            if codon_matches_stop_set(codon, stops):
+                stop_positions[pos % 3].append(pos)
+        return start_positions, stop_positions
     seq_find = strand_seq.find
 
     for codon in start_codons:
@@ -323,7 +341,21 @@ def candidate_sort_key(candidate):
     return candidate.sort_key
 
 
-def choose_best_candidate(seq_str, codontable):
+def choose_best_candidate(seq_str, codontable, selection="complete-first"):
+    if selection == "longest":
+        candidate = max(
+            iter_candidates(seq_str, codontable, include_sequence=False),
+            key=lambda c: selection_key(c, selection),
+            default=None,
+        )
+        if candidate is not None:
+            sequence = seq_str.upper()
+            if candidate.strand == "-":
+                sequence = sequence.translate(_REVCOMP_TABLE)[::-1]
+            candidate.output_seq = sequence[candidate.start_idx : candidate.end_idx]
+        return candidate
+    if selection != "complete-first":
+        raise ValueError(f"Unknown ORF selection: {selection}")
     seq_upper = seq_str.upper()
     seq_len = len(seq_upper)
     if seq_len < 3:
@@ -415,12 +447,174 @@ def choose_best_candidate(seq_str, codontable):
     return candidate
 
 
-def choose_best_candidate_from_record(record, codontable):
-    return choose_best_candidate(seq_str=str(record.seq), codontable=codontable)
+def selection_key(candidate, selection):
+    if selection == "complete-first":
+        return candidate.sort_key
+    if selection == "longest":
+        rank, length, *ties = candidate.sort_key
+        return (length, rank, *ties)
+    raise ValueError(f"Unknown ORF selection: {selection}")
 
 
-def choose_candidates_process_parallel(seq_strings, codontable, threads):
-    worker = partial(choose_best_candidate, codontable=codontable)
+def iter_candidates(seq_str, codontable, include_sequence=True):
+    """Yield start-to-first-stop candidates and maximal stop-free segments.
+
+    Dual-coding codons never establish complete boundaries without annotation.
+    All six frames are enumerated, including no-start candidates in length mode.
+    """
+    sequence = seq_str.upper()
+    starts, stops = get_scan_codons(codontable)
+    for strand, oriented in (
+        ("+", sequence),
+        ("-", sequence.translate(_REVCOMP_TABLE)[::-1]),
+    ):
+        start_positions, stop_positions = collect_start_stop_positions_by_frame(
+            oriented, starts, stops
+        )
+        for frame in range(3):
+            end = frame_end_index(len(sequence), frame)
+            boundaries = stop_positions[frame]
+            for start in start_positions[frame]:
+                next_index = bisect_right(boundaries, start)
+                has_stop = next_index < len(boundaries)
+                stop = boundaries[next_index] + 3 if has_stop else end
+                yield make_candidate(
+                    oriented,
+                    strand,
+                    frame,
+                    start,
+                    stop,
+                    True,
+                    has_stop,
+                    include_sequence,
+                )
+            segment_start = frame
+            for stop in [*boundaries, end]:
+                if stop - segment_start >= 3:
+                    yield make_candidate(
+                        oriented,
+                        strand,
+                        frame,
+                        segment_start,
+                        stop,
+                        False,
+                        False,
+                        include_sequence,
+                    )
+                segment_start = stop + 3
+
+
+def make_candidate(
+    sequence, strand, frame, start, end, has_start, has_stop, include_sequence=True
+):
+    category = (
+        "complete" if has_start and has_stop else "partial" if has_start else "no_start"
+    )
+    key, fields = update_best_candidate(
+        None,
+        None,
+        strand,
+        len(sequence),
+        frame,
+        start,
+        end,
+        has_start,
+        has_stop,
+        category,
+    )
+    candidate = build_candidate_from_fields(fields, key)
+    if include_sequence:
+        candidate.output_seq = sequence[start:end]
+    return candidate
+
+
+def candidate_attribute_prefixes(sequence, codontable):
+    """Count each frame once instead of rescanning nested candidate sequences."""
+    prefixes = {}
+    for strand, oriented in (
+        ("+", sequence),
+        ("-", sequence.translate(_REVCOMP_TABLE)[::-1]),
+    ):
+        for frame in range(3):
+            counts = [array("Q", [0]) for _ in range(4)]
+            for start in range(frame, len(oriented) - 2, 3):
+                meaning = analyze_codon(oriented[start : start + 3], codontable)
+                flags = (
+                    meaning.possible_stop,
+                    meaning.context_dependent,
+                    meaning.missing,
+                    meaning.ambiguous,
+                )
+                for prefix, flag in zip(counts, flags, strict=True):
+                    prefix.append(prefix[-1] + int(flag))
+            prefixes[strand, frame + 1] = counts
+    return prefixes
+
+
+def candidate_report(record, codontable, selection, input_order):
+    sequence = str(record.seq).upper()
+    candidates = sorted(
+        iter_candidates(sequence, codontable, include_sequence=False),
+        key=lambda c: selection_key(c, selection),
+        reverse=True,
+    )
+    prefixes = candidate_attribute_prefixes(sequence, codontable) if candidates else {}
+    rows = []
+    best_primary = selection_key(candidates[0], selection)[:2] if candidates else None
+    for index, candidate in enumerate(candidates):
+        left = candidate.start_idx // 3
+        right = candidate.end_idx // 3
+        possible, context, missing, ambiguous = (
+            prefix[right] - prefix[left]
+            for prefix in prefixes[candidate.strand, candidate.frame]
+        )
+        fields = asdict(candidate)
+        fields.pop("output_seq")
+        if index == 0:
+            selected_sequence = (
+                sequence
+                if candidate.strand == "+"
+                else sequence.translate(_REVCOMP_TABLE)[::-1]
+            )
+            fields["output_seq"] = selected_sequence[
+                candidate.start_idx : candidate.end_idx
+            ]
+        rows.append(
+            {
+                **fields,
+                "sort_key": selection_key(candidate, selection),
+                "rank": index + 1,
+                "selected": index == 0,
+                "tied_before_deterministic_order": selection_key(candidate, selection)[
+                    :2
+                ]
+                == best_primary,
+                "stop_evidence": "definite" if candidate.has_stop else "unconfirmed",
+                "possible_stop_codons": possible,
+                "context_dependent_codons": context,
+                "missing_codons": missing,
+                "ambiguous_codons": ambiguous,
+            }
+        )
+    return {
+        "seq_id": record.id,
+        "input_order": input_order,
+        "selection": selection,
+        "candidates": rows,
+        "selected_candidate_0based": 0 if rows else None,
+    }
+
+
+def choose_best_candidate_from_record(record, codontable, selection="complete-first"):
+    return choose_best_candidate(
+        seq_str=str(record.seq), codontable=codontable, selection=selection
+    )
+
+
+def choose_candidates_process_parallel(
+    seq_strings, codontable, threads, selection="complete-first"
+):
+    worker = partial(choose_best_candidate, codontable=codontable, selection=selection)
     max_workers = min(threads, len(seq_strings))
     chunk_size = max(1, len(seq_strings) // (max_workers * 16))
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
@@ -470,17 +664,14 @@ def build_output_record(record, candidate, annotate_seqname):
 
 
 def longestcds_main(args):
+    validate_codon_output_paths(args.seqfile, args.outfile, getattr(args, "report", ""))
     annotate_seqname = bool(getattr(args, "annotate_seqname", False))
     threads = resolve_threads(getattr(args, "threads", 1))
+    selection = getattr(args, "selection", "complete-first")
+    report = getattr(args, "report", "")
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
     stop_if_not_dna(records=records, label="--seq_file")
     stop_if_invalid_codontable(args.codontable)
-    if len(records) == 0:
-        write_seqs(
-            records=records, outfile=args.outfile, outseqformat=args.outseqformat
-        )
-        return
-
     candidates = None
     if should_use_process_pool(records=records, threads=threads):
         try:
@@ -489,13 +680,18 @@ def longestcds_main(args):
                 seq_strings=seq_strings,
                 codontable=args.codontable,
                 threads=threads,
+                selection=selection,
             )
         except (OSError, PermissionError):
             sys.stderr.write(
                 "Process-based parallelism unavailable; falling back to threads.\n"
             )
     if candidates is None:
-        worker = partial(choose_best_candidate_from_record, codontable=args.codontable)
+        worker = partial(
+            choose_best_candidate_from_record,
+            codontable=args.codontable,
+            selection=selection,
+        )
         candidates = parallel_map_ordered(items=records, worker=worker, threads=threads)
 
     output_records = list()
@@ -508,6 +704,22 @@ def longestcds_main(args):
             )
         )
 
-    write_seqs(
-        records=output_records, outfile=args.outfile, outseqformat=args.outseqformat
+    report_records = (
+        [
+            candidate_report(record, args.codontable, selection, index + 1)
+            for index, record in enumerate(records)
+        ]
+        if report
+        else []
     )
+    outputs = [path for path in (args.outfile, report) if path not in ("", "-")]
+    with atomic_output_paths(outputs) as temporary_paths:
+        staged = dict(zip(outputs, temporary_paths, strict=True))
+        write_seqs(
+            records=output_records,
+            outfile=staged.get(args.outfile, args.outfile),
+            outseqformat=args.outseqformat,
+        )
+        write_codon_report(
+            staged.get(report, report), "longestorf", args.codontable, report_records
+        )

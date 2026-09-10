@@ -44,3 +44,9 @@ standard-output stream to its own file. These tables do not use the versioned
 - GC statistics use only unambiguous A/C/G/T bases in the denominator, for
   all positions combined and for each codon position separately. In contrast,
   `cdskit stats` includes ambiguous bases and gaps in its GC denominator.
+
+## Codon semantics
+
+See [codon meaning and uncertainty](codon-semantics.md) for definite versus
+possible stops, dual-coding tables 27/28/31, overlapping ambiguity/stop counts,
+and report compatibility. These rules describe sequence QC, not gene function.

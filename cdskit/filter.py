@@ -4,6 +4,7 @@ from concurrent.futures import ProcessPoolExecutor
 from functools import partial
 
 from cdskit.codonutil import (
+    CODON_SEMANTICS_VERSION,
     summarize_codons,
 )
 from cdskit.atomicio import atomic_output_paths, atomic_write_json
@@ -48,6 +49,10 @@ def analyze_record(record, codontable, inspect_internal_stop):
         "missing_codons": codon_summary["missing"],
         "ambiguous_codons": codon_summary["ambiguous"],
         "stop_codons": codon_summary["stop"],
+        "possible_stop_codons": codon_summary["possible_stop"],
+        "context_dependent_codons": codon_summary["context_dependent"],
+        "internal_possible_stop_codons": codon_summary["internal_possible_stop_count"],
+        "codon_semantics_version": CODON_SEMANTICS_VERSION,
         "clean_codon_fraction": clean_codon_fraction,
     }
 
@@ -165,12 +170,24 @@ def summarize_filter(records, analyses, args):
                 "missing_codons": analysis["missing_codons"],
                 "ambiguous_codons": analysis["ambiguous_codons"],
                 "stop_codons": analysis["stop_codons"],
+                **{
+                    key: analysis[key]
+                    for key in (
+                        "possible_stop_codons",
+                        "context_dependent_codons",
+                        "internal_possible_stop_codons",
+                        "codon_semantics_version",
+                    )
+                },
                 "clean_codon_fraction": analysis["clean_codon_fraction"],
             }
         )
 
     return {
         "num_input_sequences": len(records),
+        "codon_semantics_version": CODON_SEMANTICS_VERSION,
+        "codon_table": getattr(args, "codontable", 1),
+        "terminal_policy": "last_evaluable",
         "num_output_sequences": len(kept_indices),
         "num_dropped_sequences": len(dropped_indices),
         "drop_non_triplet": bool(args.drop_non_triplet),
@@ -195,6 +212,9 @@ def write_filter_report(report_path, summary):
         {"section": "summary", "metric": key, "value": json_cell(summary[key])}
         for key in [
             "num_input_sequences",
+            "codon_semantics_version",
+            "codon_table",
+            "terminal_policy",
             "num_output_sequences",
             "num_dropped_sequences",
             "drop_non_triplet",
@@ -279,6 +299,10 @@ def write_filter_report(report_path, summary):
             "missing_codons",
             "ambiguous_codons",
             "stop_codons",
+            "possible_stop_codons",
+            "context_dependent_codons",
+            "internal_possible_stop_codons",
+            "codon_semantics_version",
             "clean_codon_fraction",
         ],
         rows=rows,

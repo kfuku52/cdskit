@@ -19,7 +19,12 @@ from matplotlib.patches import Patch, PathPatch, Rectangle
 from matplotlib.textpath import TextPath
 from matplotlib.transforms import Affine2D
 
-from cdskit.codonutil import codon_has_missing, get_forward_table, get_stop_codons
+from cdskit.codonutil import (
+    analyze_codon,
+    codon_has_missing,
+    get_forward_table,
+    get_stop_codons,
+)
 from cdskit.draw import classify_codon, summarize_draw
 from cdskit.trimcodon import (
     choose_kept_codon_sites,
@@ -246,11 +251,11 @@ def _translate_codon_for_msa(codon, codontable, forward_table, stop_codons):
         return "?"
     if codon_has_missing(codon_upper):
         return "-"
+    if analyze_codon(codon_upper, codontable).definite_stop:
+        return "*"
     if any(ch not in "ACGT" for ch in codon_upper):
         return "?"
-    if codon_upper in stop_codons:
-        return "*"
-    return forward_table.get(codon_upper, "?")
+    return forward_table.get(codon_upper, "*" if codon_upper in stop_codons else "?")
 
 
 def _consensus_nt_for_codons(codons):

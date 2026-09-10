@@ -23,7 +23,7 @@ cdskit filter --seq_file input.fasta --out_file filtered.fasta --drop_internal_s
 - `--dedup no|keep-first|keep-longest`: Duplicate-ID handling after filtering.
 - `--report PATH`: Optional JSON or TSV report listing kept and dropped IDs.
 
-A clean codon contains no missing character (`-`, `?`, or `.`), no ambiguous nucleotide (`N`, `R`, `Y`, etc.), and no unambiguous stop codon.
+A clean codon contains no missing character (`-`, `?`, or `.`), no ambiguous nucleotide (`N`, `R`, `Y`, etc.), and no definite stop codon under ordinary translation. A dual-coding A/C/G/T codon is clean but is also reported as context-dependent.
 
 ## TSV report format
 
@@ -37,3 +37,9 @@ JSON arrays.
 
 - Input sequences must be DNA.
 - The command filters whole sequences, not alignment columns.
+
+## Codon semantics
+
+See [codon meaning and uncertainty](codon-semantics.md) for definite versus
+possible stops, dual-coding tables 27/28/31, overlapping ambiguity/stop counts,
+and report compatibility. These rules describe sequence QC, not gene function.

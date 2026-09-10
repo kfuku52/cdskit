@@ -3,7 +3,12 @@ from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
 from functools import partial
 
-import Bio.Data.CodonTable
+from cdskit.codonutil import (
+    CODON_SEMANTICS_VERSION,
+    codon_matches_stop_set,
+    get_codon_table_components,
+    summarize_codons,
+)
 
 from cdskit.atomicio import atomic_write_json
 from cdskit.util import (
@@ -21,7 +26,6 @@ MISSING_CHARS = frozenset("-?.")
 GAP_ONLY_CHARS = frozenset("-?.NXnx")
 UNAMBIGUOUS_NT = frozenset("ACGTacgt")
 _DROP_MISSING_CHARS_TABLE = str.maketrans("", "", "".join(sorted(MISSING_CHARS)))
-_STOP_CODON_CACHE: dict = {}
 _AMBIGUOUS_CODON_CLASS_CACHE: dict = {}
 
 
@@ -30,16 +34,9 @@ def chunk_codons(seq):
 
 
 def get_stop_codons(codontable):
-    stop_codons = _STOP_CODON_CACHE.get(codontable)
-    if stop_codons is None:
-        try:
-            table = Bio.Data.CodonTable.unambiguous_dna_by_id[int(codontable)]
-        except (KeyError, TypeError, ValueError):
-            txt = "Invalid --codon_table: {}. Exiting.\n"
-            raise ValueError(txt.format(codontable)) from None
-        stop_codons = frozenset([codon.upper() for codon in table.stop_codons])
-        _STOP_CODON_CACHE[codontable] = stop_codons
-    return stop_codons
+    """Return only unconditional stops; raw sets cannot express dual coding."""
+    table = get_codon_table_components(codontable)
+    return frozenset(table["stop_codons"] - table["forward_table"].keys())
 
 
 def is_gap_only_sequence(seq):
@@ -54,20 +51,19 @@ def has_internal_stop_with_stop_codons(seq, stop_codons):
         for i, codon in enumerate(codons)
         if not any(ch in MISSING_CHARS for ch in codon)
     ]
-    if len(evaluable_indices) <= 1:
+    if not evaluable_indices:
         return False
     terminal_index = evaluable_indices[-1]
     for i in evaluable_indices:
-        if i == terminal_index:
+        if i == terminal_index and len(seq) % 3 == 0:
             continue
-        if codons[i] in stop_codons:
+        if codon_matches_stop_set(codons[i], stop_codons):
             return True
     return False
 
 
 def has_internal_stop(seq, codontable):
-    stop_codons = get_stop_codons(codontable=codontable)
-    return has_internal_stop_with_stop_codons(seq=seq, stop_codons=stop_codons)
+    return bool(summarize_codons(seq, codontable)["internal_stop"])
 
 
 def is_ambiguous_codon(codon):
@@ -114,48 +110,56 @@ def get_duplicate_ids(records):
     return sorted([seq_id for seq_id, count in counts.items() if count > 1])
 
 
-def summarize_single_sequence(seq_id, seq, stop_codons):
-    ambiguous = 0
-    evaluable = 0
-    stop_indices = []
-    last_evaluable = None
-    seq_upper = seq.upper()
-    for codon_index, start in enumerate(range(0, len(seq_upper) - 2, 3)):
-        codon = seq_upper[start : start + 3]
-        if any(ch in MISSING_CHARS for ch in codon):
-            continue
-        evaluable += 1
-        last_evaluable = codon_index
-        if any(ch not in "ACGT" for ch in codon):
-            ambiguous += 1
-        elif codon in stop_codons:
-            stop_indices.append(codon_index)
-    internal_stop = any(index != last_evaluable for index in stop_indices)
+def summarize_single_sequence(seq_id, seq, stop_codons=None, *, codontable=None):
+    # Retain the old six-field API for callers with an explicit unconditional
+    # set. New callers pass a code to retain uncertainty in the extra fields.
+    if codontable is None and isinstance(stop_codons, (int, str)):
+        codontable, stop_codons = stop_codons, None
+    if codontable is None:
+        if stop_codons is None:
+            raise TypeError("Specify codontable or an explicit unconditional stop set.")
+        ambiguous, evaluable = sequence_ambiguous_codon_counts(seq)
+        return (
+            seq_id,
+            len(seq) % 3 != 0,
+            is_gap_only_sequence(seq),
+            has_internal_stop_with_stop_codons(seq, stop_codons),
+            ambiguous,
+            evaluable,
+        )
+    if stop_codons is not None:
+        raise ValueError("Specify codontable or stop_codons, not both.")
+    summary = summarize_codons(seq, codontable)
     return (
         seq_id,
-        (len(seq) % 3 != 0),
+        len(seq) % 3 != 0,
         is_gap_only_sequence(seq),
-        internal_stop,
-        ambiguous,
-        evaluable,
+        summary["internal_stop"],
+        summary["ambiguous"],
+        summary["evaluable"],
+        summary["possible_stop"],
+        summary["context_dependent"],
     )
 
 
-def summarize_single_record(record, stop_codons):
+def summarize_single_record(record, stop_codons=None, *, codontable=None):
     return summarize_single_sequence(
-        seq_id=record.id,
-        seq=str(record.seq),
-        stop_codons=stop_codons,
+        record.id, str(record.seq), stop_codons, codontable=codontable
     )
 
 
-def summarize_single_payload(payload, stop_codons):
-    seq_id, seq = payload
-    return summarize_single_sequence(seq_id=seq_id, seq=seq, stop_codons=stop_codons)
+def summarize_single_payload(payload, stop_codons=None, *, codontable=None):
+    return summarize_single_sequence(
+        payload[0], payload[1], stop_codons, codontable=codontable
+    )
 
 
-def summarize_records_process_parallel(payloads, stop_codons, threads):
-    worker = partial(summarize_single_payload, stop_codons=stop_codons)
+def summarize_records_process_parallel(
+    payloads, stop_codons=None, threads=1, *, codontable=None
+):
+    worker = partial(
+        summarize_single_payload, stop_codons=stop_codons, codontable=codontable
+    )
     max_workers = min(threads, len(payloads))
     chunk_size = max(1, len(payloads) // (max_workers * 16))
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
@@ -170,14 +174,13 @@ def summarize_records(records, codontable, threads=1):
         aligned = all(len(record.seq) == first_len for record in records[1:])
     duplicate_ids = get_duplicate_ids(records)
     worker_threads = resolve_threads(threads=threads)
-    stop_codons = get_stop_codons(codontable=codontable)
     per_record = None
     if should_use_process_pool(records=records, threads=worker_threads):
         try:
             payloads = [(record.id, str(record.seq)) for record in records]
             per_record = summarize_records_process_parallel(
                 payloads=payloads,
-                stop_codons=stop_codons,
+                codontable=codontable,
                 threads=worker_threads,
             )
         except (OSError, PermissionError):
@@ -185,7 +188,7 @@ def summarize_records(records, codontable, threads=1):
                 "Process-based parallelism unavailable; falling back to threads.\n"
             )
     if per_record is None:
-        worker = partial(summarize_single_record, stop_codons=stop_codons)
+        worker = partial(summarize_single_record, codontable=codontable)
         per_record = parallel_map_ordered(
             items=records, worker=worker, threads=worker_threads
         )
@@ -212,6 +215,13 @@ def summarize_records(records, codontable, threads=1):
     issue_ids |= set(duplicate_ids)
 
     return {
+        "codon_semantics_version": CODON_SEMANTICS_VERSION,
+        "codon_table": codontable,
+        "terminal_policy": "last_evaluable",
+        "possible_stop_codons": sum(entry[6] for entry in per_record),
+        "context_dependent_codons": sum(entry[7] for entry in per_record),
+        "possible_stop_ids": [entry[0] for entry in per_record if entry[6]],
+        "context_dependent_ids": [entry[0] for entry in per_record if entry[7]],
         "num_sequences": len(records),
         "aligned": aligned,
         "non_triplet_ids": non_triplet_ids,
@@ -246,6 +256,11 @@ def write_validate_report(report_path, summary):
             "value": json_cell(count_values.get(key, summary.get(key, ""))),
         }
         for key in [
+            "codon_semantics_version",
+            "codon_table",
+            "terminal_policy",
+            "possible_stop_codons",
+            "context_dependent_codons",
             "num_sequences",
             "aligned",
             "num_non_triplet_sequences",
@@ -266,6 +281,8 @@ def write_validate_report(report_path, summary):
                 "ids": json_cell(summary[key]),
             }
             for key in [
+                "possible_stop_ids",
+                "context_dependent_ids",
                 "non_triplet_ids",
                 "duplicate_ids",
                 "gap_only_ids",
@@ -283,6 +300,14 @@ def write_validate_report(report_path, summary):
 
 def print_validate_summary(summary):
     sys.stdout.write("Validation summary\n")
+    for key in (
+        "codon_semantics_version",
+        "possible_stop_codons",
+        "context_dependent_codons",
+        "possible_stop_ids",
+        "context_dependent_ids",
+    ):
+        sys.stdout.write(f"{key}\t{json_cell(summary[key])}\n")
     sys.stdout.write(f"num_sequences\t{summary['num_sequences']}\n")
     sys.stdout.write(f"aligned\t{summary['aligned']}\n")
     sys.stdout.write(f"num_non_triplet_sequences\t{len(summary['non_triplet_ids'])}\n")

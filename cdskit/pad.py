@@ -3,10 +3,18 @@
 from concurrent.futures import ProcessPoolExecutor
 from functools import partial
 
-import Bio.Data.CodonTable
 import Bio.Seq
 import Bio.SeqIO
 import sys
+
+from cdskit.atomicio import atomic_output_paths
+from cdskit.codonreport import validate_codon_output_paths, write_codon_report
+from cdskit.codonutil import (
+    UNAMBIGUOUS_NT,
+    codon_matches_stop_set,
+    get_codon_table_components,
+    summarize_codons,
+)
 
 from cdskit.util import (
     parallel_map_ordered,
@@ -19,46 +27,34 @@ from cdskit.util import (
     write_seqs,
 )
 
-_STOP_CODON_CACHE: dict = {}
-_STOP_CODON_SCAN_CACHE: dict = {}
-
 
 def get_stop_codons(codon_table):
-    if codon_table in _STOP_CODON_CACHE:
-        return _STOP_CODON_CACHE[codon_table]
-    if isinstance(codon_table, int):
-        table = Bio.Data.CodonTable.unambiguous_dna_by_id[codon_table]
-    else:
-        table = Bio.Data.CodonTable.unambiguous_dna_by_name[str(codon_table)]
-    stop_codons = set(table.stop_codons)
-    _STOP_CODON_CACHE[codon_table] = stop_codons
-    return stop_codons
+    table = get_codon_table_components(codon_table)
+    return set(table["stop_codons"] - table["forward_table"].keys())
 
 
 def get_stop_codon_scan_list(codon_table):
-    cached = _STOP_CODON_SCAN_CACHE.get(codon_table)
-    if cached is not None:
-        return cached
-    scan_codons = tuple(sorted(get_stop_codons(codon_table)))
-    _STOP_CODON_SCAN_CACHE[codon_table] = scan_codons
-    return scan_codons
+    return tuple(sorted(get_stop_codons(codon_table)))
 
 
 def count_internal_stop_codons(seq, codon_table):
-    seq_str = seq if isinstance(seq, str) else str(seq)
-    seq_upper = seq_str.upper()
-    internal_stop_limit = len(seq_upper) - 3
-    if internal_stop_limit <= 0:
+    sequence = str(seq).upper()
+    stops = get_stop_codons(codon_table)
+    limit = len(sequence) - 3
+    if not stops or limit <= 0:
         return 0
-    num_stop = 0
-    seq_find = seq_upper.find
-    for codon in get_stop_codon_scan_list(codon_table):
-        pos = seq_find(codon)
-        while pos != -1:
-            if (pos % 3 == 0) and (pos < internal_stop_limit):
-                num_stop += 1
-            pos = seq_find(codon, pos + 1)
-    return num_stop
+    if not set(sequence).issubset(UNAMBIGUOUS_NT):
+        return sum(
+            codon_matches_stop_set(sequence[start : start + 3], stops)
+            for start in range(0, limit, 3)
+        )
+    count = 0
+    for codon in stops:
+        pos = sequence.find(codon)
+        while pos != -1 and pos < limit:
+            count += int(pos % 3 == 0)
+            pos = sequence.find(codon, pos + 1)
+    return count
 
 
 class padseqs:
@@ -135,70 +131,128 @@ def choose_best_padding(
     return best
 
 
-def process_record_padding(record_name, record_seq, codon_table, padchar):
-    clean_seq = record_seq.replace("X", "N")
+def process_record_padding(
+    record_name, record_seq, codon_table, padchar, mode="min-stop", include_report=True
+):
+    if mode not in ("min-stop", "preserve-frame"):
+        raise ValueError(f"Unknown padding mode: {mode}")
+    if padchar not in ("N", "-"):
+        raise ValueError("Padding character must be N or -.")
+    clean_seq = record_seq if mode == "preserve-frame" else record_seq.replace("X", "N")
     seqlen = len(clean_seq)
     adjlen, tailpad_seq = get_adjusted_length_and_tailpadded_sequence(
         clean_seq, padchar
     )
-    num_stop_input = count_internal_stop_codons(tailpad_seq, codon_table)
-
-    if not (num_stop_input or (seqlen % 3)):
-        return {
-            "new_seq": record_seq,
-            "is_no_stop": True,
-            "was_padded": False,
-            "log": "",
-        }
-
     num_missing = adjlen - seqlen
-    best_padseq = choose_best_padding(
-        clean_seq=clean_seq,
-        codon_table=codon_table,
-        padchar=padchar,
-        num_stop_input=num_stop_input,
-        num_missing=num_missing,
-        seqlen=seqlen,
-        tailpad_seq=tailpad_seq,
+    num_stop_input = count_internal_stop_codons(tailpad_seq, codon_table)
+    placements = (
+        [(0, num_missing)]
+        if mode == "preserve-frame"
+        else get_padding_candidates(num_stop_input, num_missing, seqlen)
     )
-    is_no_stop = best_padseq["num_stop"] == 0
-    txt = f"{record_name}, original_seqlen={seqlen}, head_padding={best_padseq['headn']}, tail_padding={best_padseq['tailn']}, "
-    txt += (
-        f"original_num_stop={num_stop_input}, new_num_stop={best_padseq['num_stop']}\n"
+    if not placements:
+        placements = [(0, 0)]
+    candidates = []
+    for headn, tailn in placements:
+        sequence = padchar * headn + clean_seq + padchar * tailn
+        summary = (
+            summarize_codons(sequence, codon_table, "physical")
+            if include_report
+            else {
+                "internal_stop_count": count_internal_stop_codons(sequence, codon_table)
+            }
+        )
+        candidates.append(
+            {
+                "head_padding": headn,
+                "tail_padding": tailn,
+                "original_start_in_output_1based": headn + 1 if seqlen else None,
+                "original_end_in_output_1based": headn + seqlen if seqlen else None,
+                "original_frame_offset": (-headn) % 3,
+                "new_seq": sequence,
+                **summary,
+            }
+        )
+    best_index = min(
+        range(len(candidates)), key=lambda i: candidates[i]["internal_stop_count"]
     )
-    was_padded = not ((best_padseq["headn"] == 0) and (best_padseq["tailn"] == 0))
-    return {
-        "new_seq": str(best_padseq["new_seq"]),
-        "is_no_stop": is_no_stop,
+    best = candidates[best_index]
+    ties = [
+        i
+        for i, candidate in enumerate(candidates)
+        if candidate["internal_stop_count"] == best["internal_stop_count"]
+    ]
+    headn, tailn = best["head_padding"], best["tail_padding"]
+    was_padded = headn != 0 or tailn != 0
+    output_seq = best["new_seq"] if (num_stop_input or seqlen % 3) else record_seq
+    # Preserve the original spelling when no evaluation was needed.
+    best["new_seq"] = output_seq
+    log = ""
+    if num_stop_input or seqlen % 3:
+        log = (
+            f"{record_name}, original_seqlen={seqlen}, head_padding={headn}, tail_padding={tailn}, "
+            f"tail_padded_num_stop={num_stop_input}, new_num_stop={best['internal_stop_count']}\n"
+        )
+    result = {
+        "new_seq": output_seq,
+        "is_no_stop": best["internal_stop_count"] == 0,
         "was_padded": was_padded,
-        "log": txt,
+        "log": log,
+    }
+    if not include_report:
+        return result
+    return {
+        **result,
+        "mode": mode,
+        "terminal_policy": "physical",
+        "original_frame_offset": 0,
+        "original": summarize_codons(record_seq, codon_table, "physical"),
+        "tail_padded": summarize_codons(tailpad_seq, codon_table, "physical"),
+        "candidates": candidates,
+        "selected_candidate_0based": best_index,
+        "tied_candidates_0based": ties,
+        "selection_reason": "preserve_frame"
+        if mode == "preserve-frame"
+        else "minimum_definite_internal_stops_then_candidate_order",
     }
 
 
-def process_record_padding_entry(record, codon_table, padchar):
+def process_record_padding_entry(
+    record, codon_table, padchar, mode="min-stop", include_report=True
+):
     return process_record_padding(
         record_name=record.name,
         record_seq=str(record.seq),
         codon_table=codon_table,
         padchar=padchar,
+        mode=mode,
+        include_report=include_report,
     )
 
 
-def process_record_padding_payload(payload, codon_table, padchar):
+def process_record_padding_payload(
+    payload, codon_table, padchar, mode="min-stop", include_report=True
+):
     record_name, record_seq = payload
     return process_record_padding(
         record_name=record_name,
         record_seq=record_seq,
         codon_table=codon_table,
         padchar=padchar,
+        mode=mode,
+        include_report=include_report,
     )
 
 
-def process_padding_payloads_process_parallel(payloads, codon_table, padchar, threads):
+def process_padding_payloads_process_parallel(
+    payloads, codon_table, padchar, threads, mode="min-stop", include_report=True
+):
     worker = partial(
         process_record_padding_payload,
         codon_table=codon_table,
         padchar=padchar,
+        mode=mode,
+        include_report=include_report,
     )
     max_workers = min(threads, len(payloads))
     chunk_size = max(1, len(payloads) // (max_workers * 16))
@@ -207,10 +261,12 @@ def process_padding_payloads_process_parallel(payloads, codon_table, padchar, th
 
 
 def pad_main(args):
+    validate_codon_output_paths(args.seqfile, args.outfile, getattr(args, "report", ""))
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
     stop_if_not_dna(records=records, label="--seq_file")
     stop_if_invalid_codontable(args.codontable)
     threads = resolve_threads(getattr(args, "threads", 1))
+    report = getattr(args, "report", "")
     results = None
     if should_use_process_pool(records=records, threads=threads):
         try:
@@ -219,6 +275,8 @@ def pad_main(args):
                 payloads=payloads,
                 codon_table=args.codontable,
                 padchar=args.padchar,
+                mode=getattr(args, "mode", "min-stop"),
+                include_report=bool(report),
                 threads=threads,
             )
         except (OSError, PermissionError):
@@ -228,8 +286,24 @@ def pad_main(args):
             process_record_padding_entry,
             codon_table=args.codontable,
             padchar=args.padchar,
+            mode=getattr(args, "mode", "min-stop"),
+            include_report=bool(report),
         )
         results = parallel_map_ordered(items=records, worker=worker, threads=threads)
+    report_records = []
+    for index, (record, result) in enumerate(zip(records, results, strict=True)):
+        if not report:
+            break
+        kept = not args.nopseudo or result["is_no_stop"]
+        report_records.append(
+            {
+                "input_order": index + 1,
+                "seq_id": record.id,
+                **result,
+                "kept": kept,
+                "drop_reason": "" if kept else "definite_internal_stop_after_padding",
+            }
+        )
     is_no_stop = []
     was_padded = []
     log_lines = list()
@@ -250,4 +324,14 @@ def pad_main(args):
     sys.stderr.write(
         "Number of padded sequences: {:,} / {:,}\n".format(seqnum_padded, len(records))
     )
-    write_seqs(records=records, outfile=args.outfile, outseqformat=args.outseqformat)
+    outputs = [path for path in (args.outfile, report) if path not in ("", "-")]
+    with atomic_output_paths(outputs) as temporary_paths:
+        staged = dict(zip(outputs, temporary_paths, strict=True))
+        write_seqs(
+            records=records,
+            outfile=staged.get(args.outfile, args.outfile),
+            outseqformat=args.outseqformat,
+        )
+        write_codon_report(
+            staged.get(report, report), "pad", args.codontable, report_records
+        )

@@ -5,6 +5,12 @@ from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
 from cdskit.atomicio import atomic_output_path
+from cdskit.codonutil import (
+    analyze_codon,
+    get_codon_table_components,
+    get_codon_translator as get_scalar_translator,
+    translate_single_codon,
+)
 from cdskit.util import (
     iter_seq_chunks,
     read_seqs,
@@ -31,6 +37,7 @@ def get_codon_translator(codontable):
     aa_lut = np.empty(alphabet_size**3, dtype=np.uint8)
     error_lut = np.zeros(alphabet_size**3, dtype=bool)
     errors_by_index = {}
+    scalar_translator = get_scalar_translator(codontable)
     for first_code, first in enumerate(_TRANSLATION_ALPHABET):
         for second_code, second in enumerate(_TRANSLATION_ALPHABET):
             for third_code, third in enumerate(_TRANSLATION_ALPHABET):
@@ -46,11 +53,7 @@ def get_codon_translator(codontable):
                     aa = "X"
                 else:
                     try:
-                        aa = str(
-                            Seq(codon).translate(
-                                table=codontable, to_stop=False, gap="-"
-                            )
-                        )
+                        aa = translate_single_codon(codon, scalar_translator)
                     except Exception as exc:
                         errors_by_index[index] = str(exc)
                         error_lut[index] = True
@@ -82,17 +85,8 @@ def translate_sequence_codes(seq_str, codontable, to_stop=False):
         encoded = b"\xff"
     codes = np.frombuffer(encoded, dtype=np.uint8)
     if np.any(codes == 255):
-        try:
-            translated = str(
-                Seq(seq_str).translate(
-                    table=codontable,
-                    to_stop=to_stop,
-                    gap="-",
-                )
-            )
-            return np.frombuffer(translated.encode("ascii"), dtype=np.uint8)
-        except Exception as exc:
-            raise Bio.Data.CodonTable.TranslationError(str(exc)) from exc
+        translated = translate_sequence_scalar(seq_str, codontable, to_stop)
+        return np.frombuffer(translated.encode("ascii"), dtype=np.uint8)
     codons = codes.reshape(-1, 3).astype(np.int32, copy=False)
     alphabet_size = translator["alphabet_size"]
     indices = (
@@ -115,45 +109,75 @@ def translate_sequence_codes(seq_str, codontable, to_stop=False):
     return amino_acids[:limit]
 
 
-def translate_sequence_string(seq_str, codontable, to_stop):
+def translate_sequence_scalar(seq_str, codontable, to_stop):
+    """Fallback/partial-tail translation with the same definite-stop policy."""
+    amino_acids = []
+    translator = get_scalar_translator(codontable)
+    for start in range(0, len(seq_str), 3):
+        codon = seq_str[start : start + 3].upper()
+        if any(ch not in _TRANSLATION_ALPHABET and ch != "U" for ch in codon):
+            raise Bio.Data.CodonTable.TranslationError(f"Invalid codon: {codon!r}")
+        if all(ch in "-." for ch in codon):
+            amino_acid = "-"
+        elif any(ch in "-?." for ch in codon):
+            amino_acid = "X"
+        elif len(codon) == 3:
+            amino_acid = translate_single_codon(codon.replace("U", "T"), translator)
+        else:
+            try:
+                amino_acid = str(
+                    Seq(codon).translate(table=codontable, to_stop=False, gap="-")
+                )
+            except Exception as exc:
+                raise Bio.Data.CodonTable.TranslationError(str(exc)) from exc
+        if to_stop and amino_acid == "*":
+            break
+        amino_acids.append(amino_acid)
+    return "".join(amino_acids)
+
+
+def translate_sequence_string(seq_str, codontable, to_stop, complete_cds=False):
+    if complete_cds:
+        return translate_complete_cds(seq_str, codontable)
     if len(seq_str) % 3 != 0:
-        # CLI callers reject partial codons, but retain the historical helper
-        # behavior for direct callers that use missing or gap tail fragments.
-        amino_acids = []
-        for start in range(0, len(seq_str), 3):
-            codon = seq_str[start : start + 3].upper()
-            if all(ch in "-." for ch in codon):
-                amino_acid = "-"
-            elif any(ch in "-?." for ch in codon):
-                amino_acid = "X"
-            else:
-                try:
-                    amino_acid = str(
-                        Seq(codon).translate(
-                            table=codontable,
-                            to_stop=False,
-                            gap="-",
-                        )
-                    )
-                except Exception as exc:
-                    raise Bio.Data.CodonTable.TranslationError(str(exc)) from exc
-            if to_stop and amino_acid == "*":
-                break
-            amino_acids.append(amino_acid)
-        return "".join(amino_acids)
-    amino_acids = translate_sequence_codes(
-        seq_str=seq_str,
-        codontable=codontable,
-        to_stop=to_stop,
-    )
+        # Preserve direct callers' historical missing/partial tail behavior.
+        return translate_sequence_scalar(seq_str, codontable, to_stop)
+    amino_acids = translate_sequence_codes(seq_str, codontable, to_stop)
     return amino_acids.tobytes().decode("ascii")
 
 
-def translate_record(record, codontable, to_stop):
+def translate_complete_cds(seq_str, codontable):
+    """Validate an explicitly supplied complete CDS, then omit its terminator."""
+    sequence = seq_str.upper()
+    table = get_codon_table_components(codontable)
+    if len(sequence) < 6 or len(sequence) % 3:
+        raise Bio.Data.CodonTable.TranslationError(
+            "A complete CDS needs a start and terminal codon and a length divisible by three."
+        )
+    if sequence[:3] not in table["start_codons"]:
+        raise Bio.Data.CodonTable.TranslationError(
+            "A complete CDS needs a valid start codon."
+        )
+    if not analyze_codon(sequence[-3:], codontable, "complete_terminal").definite_stop:
+        raise Bio.Data.CodonTable.TranslationError(
+            "A complete CDS needs a compatible terminal stop codon."
+        )
+    for start in range(0, len(sequence) - 3, 3):
+        meaning = analyze_codon(sequence[start : start + 3], codontable, "ordinary")
+        if meaning.missing or meaning.invalid or meaning.definite_stop:
+            raise Bio.Data.CodonTable.TranslationError(
+                "Invalid or missing codon, or definite internal stop in complete CDS."
+            )
+    protein = translate_sequence_string(sequence[:-3], codontable, False)
+    return "M" + protein[1:]
+
+
+def translate_record(record, codontable, to_stop, complete_cds=False):
     translated = translate_sequence_string(
         seq_str=str(record.seq),
         codontable=codontable,
         to_stop=to_stop,
+        complete_cds=complete_cds,
     )
     return SeqRecord(
         seq=Seq(translated),
@@ -163,10 +187,12 @@ def translate_record(record, codontable, to_stop):
     )
 
 
-def translate_records(records, codontable, to_stop, threads):
+def translate_records(records, codontable, to_stop, threads, complete_cds=False):
     del threads
     return [
-        translate_record(record, codontable=codontable, to_stop=to_stop)
+        translate_record(
+            record, codontable=codontable, to_stop=to_stop, complete_cds=complete_cds
+        )
         for record in records
     ]
 
@@ -194,6 +220,7 @@ def translate_main(args):
                         codontable=args.codontable,
                         to_stop=args.to_stop,
                         threads=threads,
+                        complete_cds=getattr(args, "complete_cds", False),
                     )
                     output_count += Bio.SeqIO.write(
                         translated_records,
@@ -217,6 +244,7 @@ def translate_main(args):
         codontable=args.codontable,
         to_stop=args.to_stop,
         threads=threads,
+        complete_cds=getattr(args, "complete_cds", False),
     )
     write_seqs(
         records=translated_records, outfile=args.outfile, outseqformat=args.outseqformat

@@ -1,0 +1,542 @@
+{
+  "protocol_version": "1",
+  "codon_semantics_version": "2",
+  "biopython_version": "1.88",
+  "source": "NCBI RefSeq, GenBank CDS annotations; not selected on CDSKIT outputs",
+  "limitations": "Four human transcripts from distinct genes, one code. A small independent annotation check, not a population accuracy estimate or a dual-code termination benchmark. Annotations are external references, not experimental validation of every construct.",
+  "translations": [
+    {
+      "id": "NM_000518.5",
+      "matches_external_translation": true
+    },
+    {
+      "id": "NM_000207.3",
+      "matches_external_translation": true
+    },
+    {
+      "id": "NM_000546.6",
+      "matches_external_translation": true
+    },
+    {
+      "id": "NM_001101.5",
+      "matches_external_translation": true
+    }
+  ],
+  "external_padding_summary": {
+    "intact": {
+      "n": 4,
+      "stop_free_after_padding": 4,
+      "frame_changed": 0,
+      "tied": 0,
+      "correct_frame": 4,
+      "correct_placement": 4
+    },
+    "end_deletion": {
+      "n": 32,
+      "stop_free_after_padding": 32,
+      "frame_changed": 24,
+      "tied": 0,
+      "correct_frame": 32,
+      "correct_placement": 32
+    },
+    "internal_frameshift": {
+      "n": 24,
+      "stop_free_after_padding": 6,
+      "frame_changed": 7,
+      "tied": 2
+    },
+    "internal_stop": {
+      "n": 12,
+      "stop_free_after_padding": 0,
+      "frame_changed": 0,
+      "tied": 3
+    }
+  },
+  "synthetic_padding_summary": {
+    "intact": {
+      "n": 60,
+      "stop_free_after_padding": 60,
+      "frame_changed": 0,
+      "tied": 0,
+      "correct_frame": 60,
+      "correct_placement": 60
+    },
+    "end_deletion": {
+      "n": 480,
+      "stop_free_after_padding": 480,
+      "frame_changed": 255,
+      "tied": 78,
+      "correct_frame": 333,
+      "correct_placement": 333
+    },
+    "internal_frameshift": {
+      "n": 360,
+      "stop_free_after_padding": 235,
+      "frame_changed": 109,
+      "tied": 48
+    },
+    "internal_stop": {
+      "n": 180,
+      "stop_free_after_padding": 88,
+      "frame_changed": 88,
+      "tied": 55
+    }
+  },
+  "orf": [
+    {
+      "id": "NM_000518.5",
+      "reverse_input": false,
+      "selection": "complete-first",
+      "expected": [
+        "+",
+        51,
+        494
+      ],
+      "observed": [
+        "+",
+        51,
+        494
+      ],
+      "exact_boundary_match": true,
+      "strand_frame_match": true
+    },
+    {
+      "id": "NM_000518.5",
+      "reverse_input": false,
+      "selection": "longest",
+      "expected": [
+        "+",
+        51,
+        494
+      ],
+      "observed": [
+        "-",
+        3,
+        518
+      ],
+      "exact_boundary_match": false,
+      "strand_frame_match": false
+    },
+    {
+      "id": "NM_000518.5",
+      "reverse_input": true,
+      "selection": "complete-first",
+      "expected": [
+        "-",
+        135,
+        578
+      ],
+      "observed": [
+        "-",
+        135,
+        578
+      ],
+      "exact_boundary_match": true,
+      "strand_frame_match": true
+    },
+    {
+      "id": "NM_000518.5",
+      "reverse_input": true,
+      "selection": "longest",
+      "expected": [
+        "-",
+        135,
+        578
+      ],
+      "observed": [
+        "+",
+        111,
+        626
+      ],
+      "exact_boundary_match": false,
+      "strand_frame_match": false
+    },
+    {
+      "id": "NM_000207.3",
+      "reverse_input": false,
+      "selection": "complete-first",
+      "expected": [
+        "+",
+        60,
+        392
+      ],
+      "observed": [
+        "-",
+        22,
+        405
+      ],
+      "exact_boundary_match": false,
+      "strand_frame_match": false
+    },
+    {
+      "id": "NM_000207.3",
+      "reverse_input": false,
+      "selection": "longest",
+      "expected": [
+        "+",
+        60,
+        392
+      ],
+      "observed": [
+        "-",
+        25,
+        465
+      ],
+      "exact_boundary_match": false,
+      "strand_frame_match": false
+    },
+    {
+      "id": "NM_000207.3",
+      "reverse_input": true,
+      "selection": "complete-first",
+      "expected": [
+        "-",
+        74,
+        406
+      ],
+      "observed": [
+        "+",
+        61,
+        444
+      ],
+      "exact_boundary_match": false,
+      "strand_frame_match": false
+    },
+    {
+      "id": "NM_000207.3",
+      "reverse_input": true,
+      "selection": "longest",
+      "expected": [
+        "-",
+        74,
+        406
+      ],
+      "observed": [
+        "+",
+        1,
+        441
+      ],
+      "exact_boundary_match": false,
+      "strand_frame_match": false
+    },
+    {
+      "id": "NM_000546.6",
+      "reverse_input": false,
+      "selection": "complete-first",
+      "expected": [
+        "+",
+        143,
+        1324
+      ],
+      "observed": [
+        "+",
+        38,
+        1324
+      ],
+      "exact_boundary_match": false,
+      "strand_frame_match": true
+    },
+    {
+      "id": "NM_000546.6",
+      "reverse_input": false,
+      "selection": "longest",
+      "expected": [
+        "+",
+        143,
+        1324
+      ],
+      "observed": [
+        "+",
+        38,
+        1324
+      ],
+      "exact_boundary_match": false,
+      "strand_frame_match": true
+    },
+    {
+      "id": "NM_000546.6",
+      "reverse_input": true,
+      "selection": "complete-first",
+      "expected": [
+        "-",
+        1189,
+        2370
+      ],
+      "observed": [
+        "-",
+        1189,
+        2475
+      ],
+      "exact_boundary_match": false,
+      "strand_frame_match": true
+    },
+    {
+      "id": "NM_000546.6",
+      "reverse_input": true,
+      "selection": "longest",
+      "expected": [
+        "-",
+        1189,
+        2370
+      ],
+      "observed": [
+        "-",
+        1189,
+        2475
+      ],
+      "exact_boundary_match": false,
+      "strand_frame_match": true
+    },
+    {
+      "id": "NM_001101.5",
+      "reverse_input": false,
+      "selection": "complete-first",
+      "expected": [
+        "+",
+        85,
+        1212
+      ],
+      "observed": [
+        "+",
+        85,
+        1212
+      ],
+      "exact_boundary_match": true,
+      "strand_frame_match": true
+    },
+    {
+      "id": "NM_001101.5",
+      "reverse_input": false,
+      "selection": "longest",
+      "expected": [
+        "+",
+        85,
+        1212
+      ],
+      "observed": [
+        "+",
+        1,
+        1209
+      ],
+      "exact_boundary_match": false,
+      "strand_frame_match": true
+    },
+    {
+      "id": "NM_001101.5",
+      "reverse_input": true,
+      "selection": "complete-first",
+      "expected": [
+        "-",
+        601,
+        1728
+      ],
+      "observed": [
+        "-",
+        601,
+        1728
+      ],
+      "exact_boundary_match": true,
+      "strand_frame_match": true
+    },
+    {
+      "id": "NM_001101.5",
+      "reverse_input": true,
+      "selection": "longest",
+      "expected": [
+        "-",
+        601,
+        1728
+      ],
+      "observed": [
+        "-",
+        604,
+        1812
+      ],
+      "exact_boundary_match": false,
+      "strand_frame_match": true
+    }
+  ],
+  "synthetic_strata": {
+    "gc0.2_len10": {
+      "intact": {
+        "n": 10,
+        "stop_free_after_padding": 10,
+        "frame_changed": 0,
+        "tied": 0,
+        "correct_frame": 10,
+        "correct_placement": 10
+      },
+      "end_deletion": {
+        "n": 80,
+        "stop_free_after_padding": 80,
+        "frame_changed": 54,
+        "tied": 15,
+        "correct_frame": 65,
+        "correct_placement": 65
+      },
+      "internal_frameshift": {
+        "n": 60,
+        "stop_free_after_padding": 43,
+        "frame_changed": 17,
+        "tied": 14
+      },
+      "internal_stop": {
+        "n": 30,
+        "stop_free_after_padding": 9,
+        "frame_changed": 9,
+        "tied": 19
+      }
+    },
+    "gc0.2_len100": {
+      "intact": {
+        "n": 10,
+        "stop_free_after_padding": 10,
+        "frame_changed": 0,
+        "tied": 0,
+        "correct_frame": 10,
+        "correct_placement": 10
+      },
+      "end_deletion": {
+        "n": 80,
+        "stop_free_after_padding": 80,
+        "frame_changed": 60,
+        "tied": 0,
+        "correct_frame": 80,
+        "correct_placement": 80
+      },
+      "internal_frameshift": {
+        "n": 60,
+        "stop_free_after_padding": 2,
+        "frame_changed": 25,
+        "tied": 5
+      },
+      "internal_stop": {
+        "n": 30,
+        "stop_free_after_padding": 0,
+        "frame_changed": 0,
+        "tied": 0
+      }
+    },
+    "gc0.5_len10": {
+      "intact": {
+        "n": 10,
+        "stop_free_after_padding": 10,
+        "frame_changed": 0,
+        "tied": 0,
+        "correct_frame": 10,
+        "correct_placement": 10
+      },
+      "end_deletion": {
+        "n": 80,
+        "stop_free_after_padding": 80,
+        "frame_changed": 27,
+        "tied": 24,
+        "correct_frame": 33,
+        "correct_placement": 33
+      },
+      "internal_frameshift": {
+        "n": 60,
+        "stop_free_after_padding": 60,
+        "frame_changed": 11,
+        "tied": 6
+      },
+      "internal_stop": {
+        "n": 30,
+        "stop_free_after_padding": 28,
+        "frame_changed": 28,
+        "tied": 11
+      }
+    },
+    "gc0.5_len100": {
+      "intact": {
+        "n": 10,
+        "stop_free_after_padding": 10,
+        "frame_changed": 0,
+        "tied": 0,
+        "correct_frame": 10,
+        "correct_placement": 10
+      },
+      "end_deletion": {
+        "n": 80,
+        "stop_free_after_padding": 80,
+        "frame_changed": 60,
+        "tied": 0,
+        "correct_frame": 80,
+        "correct_placement": 80
+      },
+      "internal_frameshift": {
+        "n": 60,
+        "stop_free_after_padding": 13,
+        "frame_changed": 27,
+        "tied": 5
+      },
+      "internal_stop": {
+        "n": 30,
+        "stop_free_after_padding": 0,
+        "frame_changed": 0,
+        "tied": 0
+      }
+    },
+    "gc0.8_len10": {
+      "intact": {
+        "n": 10,
+        "stop_free_after_padding": 10,
+        "frame_changed": 0,
+        "tied": 0,
+        "correct_frame": 10,
+        "correct_placement": 10
+      },
+      "end_deletion": {
+        "n": 80,
+        "stop_free_after_padding": 80,
+        "frame_changed": 15,
+        "tied": 15,
+        "correct_frame": 28,
+        "correct_placement": 28
+      },
+      "internal_frameshift": {
+        "n": 60,
+        "stop_free_after_padding": 60,
+        "frame_changed": 7,
+        "tied": 7
+      },
+      "internal_stop": {
+        "n": 30,
+        "stop_free_after_padding": 30,
+        "frame_changed": 30,
+        "tied": 19
+      }
+    },
+    "gc0.8_len100": {
+      "intact": {
+        "n": 10,
+        "stop_free_after_padding": 10,
+        "frame_changed": 0,
+        "tied": 0,
+        "correct_frame": 10,
+        "correct_placement": 10
+      },
+      "end_deletion": {
+        "n": 80,
+        "stop_free_after_padding": 80,
+        "frame_changed": 39,
+        "tied": 24,
+        "correct_frame": 47,
+        "correct_placement": 47
+      },
+      "internal_frameshift": {
+        "n": 60,
+        "stop_free_after_padding": 57,
+        "frame_changed": 22,
+        "tied": 11
+      },
+      "internal_stop": {
+        "n": 30,
+        "stop_free_after_padding": 21,
+        "frame_changed": 21,
+        "tied": 6
+      }
+    }
+  },
+  "dataset_sha256": "18d389397766dc36e1f7c3b96fda40141572d24387b24114da75b96303ad0523"
+}

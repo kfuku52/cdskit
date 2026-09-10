@@ -3,11 +3,13 @@ import math
 import sys
 
 from cdskit.codonutil import (
+    CODON_SEMANTICS_VERSION,
     CODON_AMBIGUOUS,
     CODON_CLEAN,
     CODON_MISSING,
     CODON_STOP,
     classify_codon,
+    analyze_codon,
 )
 from cdskit.atomicio import atomic_output_paths, atomic_write_json
 from cdskit.util import (
@@ -35,10 +37,16 @@ def summarize_codon_site(seq_strings, codon_site, codontable):
     missing = 0
     ambiguous = 0
     stop = 0
+    possible_stop = 0
+    context_dependent = 0
     start = codon_site * 3
     end = start + 3
     for seq_str in seq_strings:
         codon = seq_str[start:end]
+        meaning = analyze_codon(codon, codontable)
+        ambiguous += int(meaning.ambiguous or meaning.invalid)
+        possible_stop += int(meaning.possible_stop)
+        context_dependent += int(meaning.context_dependent)
         state = classify_codon(codon=codon, codontable=codontable)
         if state == CODON_CLEAN:
             clean += 1
@@ -47,7 +55,6 @@ def summarize_codon_site(seq_strings, codon_site, codontable):
             missing += 1
             continue
         if state == CODON_AMBIGUOUS:
-            ambiguous += 1
             continue
         if state == CODON_STOP:
             stop += 1
@@ -58,6 +65,8 @@ def summarize_codon_site(seq_strings, codon_site, codontable):
         "missing_codons": missing,
         "ambiguous_codons": ambiguous,
         "stop_codons": stop,
+        "possible_stop_codons": possible_stop,
+        "context_dependent_codons": context_dependent,
     }
 
 
@@ -94,6 +103,8 @@ def build_trimcodon_summary(site_summaries, kept_sites, num_sequences, args):
     ]
     return {
         "num_sequences": num_sequences,
+        "codon_semantics_version": CODON_SEMANTICS_VERSION,
+        "codon_table": getattr(args, "codontable", 1),
         "num_input_codon_sites": len(site_summaries),
         "num_output_codon_sites": len(kept_sites),
         "num_removed_codon_sites": len(removed_sites),
@@ -114,6 +125,8 @@ def write_trimcodon_report(report_path, summary):
         {"section": "summary", "metric": key, "value": summary[key]}
         for key in [
             "num_sequences",
+            "codon_semantics_version",
+            "codon_table",
             "num_input_codon_sites",
             "num_output_codon_sites",
             "num_removed_codon_sites",
@@ -139,6 +152,8 @@ def write_trimcodon_report(report_path, summary):
             "missing_codons",
             "ambiguous_codons",
             "stop_codons",
+            "possible_stop_codons",
+            "context_dependent_codons",
             "keep",
         ],
         rows=rows,

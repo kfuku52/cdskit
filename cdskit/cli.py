@@ -657,9 +657,7 @@ command_longestcds = lazy_command(
 )
 
 
-help_longestorf = (
-    "Finding the longest ORF from six-frame translation. See `cdskit longestorf -h`"
-)
+help_longestorf = "Selecting an ORF from six frames (complete-first by default). See `cdskit longestorf -h`"
 p_longestorf = subparsers.add_parser(
     "longestorf",
     help=help_longestorf,
@@ -695,6 +693,19 @@ p_longestcds.add_argument(
     help="default=%(default)s: Whether to append strand/frame/coordinate metadata to FASTA headers.",
 )
 p_longestcds.set_defaults(handler=command_longestcds)
+
+for orf_parser in (p_longestorf, p_longestcds):
+    orf_parser.add_argument(
+        "--selection",
+        choices=["complete-first", "longest"],
+        default="complete-first",
+        help="Candidate ranking: category then length (default), or length then category across all six frames.",
+    )
+    orf_parser.add_argument(
+        "--report",
+        default="",
+        help="Optional candidate provenance report (.json or .tsv).",
+    )
 
 
 command_localize = lazy_command(
@@ -1469,12 +1480,13 @@ p_pad.add_argument(
     help="default=%(default)s: A character to be used to pad when the sequence length is not multiple of three.",
 )
 p_pad.add_argument(
+    "--drop_internal_stop",
     "--drop_pseudo",
     dest="nopseudo",
     metavar="yes|no",
     default=False,
     type=strtobool,
-    help="default=%(default)s: Drop sequences that contain stop codon(s) even after padding to 5'- or 3'- terminal.",
+    help="default=%(default)s: Drop sequences with definite internal stops after padding; does not identify pseudogenes. --drop_pseudo is a compatibility alias.",
 )
 p_pad.add_argument(
     "-n",
@@ -1485,6 +1497,15 @@ p_pad.add_argument(
     help=argparse.SUPPRESS,
 )
 p_pad.set_defaults(handler=command_pad)
+p_pad.add_argument(
+    "--mode",
+    choices=["min-stop", "preserve-frame"],
+    default="min-stop",
+    help="Minimize definite internal stops (default), or add only tail padding to preserve the supplied frame.",
+)
+p_pad.add_argument(
+    "--report", default="", help="Optional padding provenance report (.json or .tsv)."
+)
 
 
 command_parsegb = lazy_command(
@@ -1850,6 +1871,13 @@ p_translate.add_argument(
     help="default=%(default)s: Whether to stop translation at the first in-frame stop codon.",
 )
 p_translate.set_defaults(handler=command_translate)
+p_translate.add_argument(
+    "--complete_cds",
+    type=strtobool,
+    default=False,
+    metavar="yes|no",
+    help="Explicitly validate a complete CDS, translate its initiator as M, and omit its terminal stop. Default no; does not infer CDS boundaries.",
+)
 
 
 command_validate = lazy_command(

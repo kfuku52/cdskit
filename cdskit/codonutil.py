@@ -1,8 +1,12 @@
 from __future__ import annotations
 
-from typing import Any, TypeAlias
+from dataclasses import dataclass
+from functools import lru_cache
+from itertools import product
+from typing import Any, Literal, TypeAlias
 
 import Bio.Data.CodonTable
+from Bio.Data.IUPACData import ambiguous_dna_values
 
 
 MISSING_CHARS = frozenset("-?.")
@@ -25,6 +29,104 @@ CODON_CLEAN = 0
 CODON_MISSING = 1
 CODON_AMBIGUOUS = 2
 CODON_STOP = 3
+CODON_SEMANTICS_VERSION = "2"
+CodonContext: TypeAlias = Literal["ordinary", "unknown", "complete_terminal"]
+
+
+@lru_cache(maxsize=8192)
+def expand_dna_codon(codon: str) -> tuple[str, ...]:
+    """Return all valid IUPAC DNA expansions, or none for missing/invalid input."""
+    codon = codon.upper()
+    if len(codon) != 3 or any(ch not in ambiguous_dna_values for ch in codon):
+        return ()
+    return tuple(
+        "".join(bases) for bases in product(*(ambiguous_dna_values[ch] for ch in codon))
+    )
+
+
+def codon_matches_stop_set(
+    codon: str, unconditional_stops: set[str] | frozenset[str]
+) -> bool:
+    """Compatibility for explicit unconditional-stop sets (not raw dual tables)."""
+    expansions = expand_dna_codon(codon)
+    return bool(expansions) and all(item in unconditional_stops for item in expansions)
+
+
+@dataclass(frozen=True)
+class CodonMeaning:
+    """Independent sequence and coding attributes (counts may overlap).
+
+    ``possible_stop`` means uncertain termination, excluding definite stops.
+    ``context_dependent`` identifies a sense/stop overlap in the code table.
+    A complete_terminal context is an explicit caller assertion, never inferred.
+    """
+
+    ambiguous: bool
+    missing: bool
+    invalid: bool
+    partial: bool
+    amino_acids: tuple[str, ...]
+    definite_stop: bool
+    possible_stop: bool
+    context_dependent: bool
+    terminal_stop_compatible: bool
+
+    @property
+    def clean(self) -> bool:
+        return not (
+            self.ambiguous
+            or self.missing
+            or self.invalid
+            or self.partial
+            or self.definite_stop
+        )
+
+
+def analyze_codon(
+    codon: str, codontable: CodonTableKey, context: CodonContext = "unknown"
+) -> CodonMeaning:
+    """Resolve IUPAC expansions without confusing uncertainty with termination."""
+    if context not in ("ordinary", "unknown", "complete_terminal"):
+        raise ValueError(f"Unknown codon context: {context}")
+    return _analyze_codon(codon.upper(), codontable, context)
+
+
+@lru_cache(maxsize=131072)
+def _analyze_codon(
+    codon: str, codontable: CodonTableKey, context: CodonContext
+) -> CodonMeaning:
+    missing = any(ch in MISSING_CHARS for ch in codon)
+    invalid = any(
+        ch not in ambiguous_dna_values and ch not in MISSING_CHARS for ch in codon
+    )
+    partial = len(codon) != 3
+    ambiguous = not missing and any(
+        ch in ambiguous_dna_values and ch not in UNAMBIGUOUS_NT for ch in codon
+    )
+    if missing or invalid or partial:
+        return CodonMeaning(
+            ambiguous, missing, invalid, partial, (), False, False, False, False
+        )
+    table = get_codon_table_components(codontable)
+    forward = table["forward_table"]
+    stops = table["stop_codons"]
+    expansions = expand_dna_codon(codon)
+    terminal = all(item in stops for item in expansions)
+    definite = all(
+        item in stops and (context == "complete_terminal" or item not in forward)
+        for item in expansions
+    )
+    return CodonMeaning(
+        ambiguous,
+        False,
+        False,
+        False,
+        tuple(sorted({forward[item] for item in expansions if item in forward})),
+        definite,
+        any(item in stops for item in expansions) and not definite,
+        any(item in stops and item in forward for item in expansions),
+        terminal,
+    )
 
 
 def get_codon_translator(codontable: CodonTableKey) -> CodonComponents:
@@ -100,12 +202,13 @@ def classify_codon(codon: str, codontable: CodonTableKey) -> int:
     cached = cache.get(codon_upper)
     if cached is not None:
         return cached
-    if any(ch in MISSING_CHARS for ch in codon_upper):
+    meaning = analyze_codon(codon_upper, codontable)
+    if meaning.missing:
         state = CODON_MISSING
-    elif any(ch not in UNAMBIGUOUS_NT for ch in codon_upper):
-        state = CODON_AMBIGUOUS
-    elif codon_upper in get_stop_codons(codontable=codontable):
+    elif meaning.definite_stop:
         state = CODON_STOP
+    elif meaning.ambiguous or meaning.invalid or meaning.partial:
+        state = CODON_AMBIGUOUS
     else:
         state = CODON_CLEAN
     cache[codon_upper] = state
@@ -150,31 +253,66 @@ def ambiguous_codon_counts(seq: str) -> tuple[int, int]:
     return ambiguous, evaluable
 
 
-def summarize_codons(seq: str, codontable: CodonTableKey) -> dict[str, int | bool]:
-    """Return codon-state counts and internal-stop status in one pass."""
+def summarize_codons(
+    seq: str,
+    codontable: CodonTableKey,
+    terminal_policy: Literal["last_evaluable", "physical"] = "last_evaluable",
+) -> dict[str, int | bool]:
+    """Count independent attributes; terminal exceptions do not certify a CDS.
+
+    Aligned QC ignores trailing missing codons. Padding uses the physical end,
+    so artificial gap padding cannot erase a stop preceding it. A partial tail
+    does not establish a terminal complete codon under either policy.
+    """
+    if terminal_policy not in ("last_evaluable", "physical"):
+        raise ValueError(f"Unknown terminal policy: {terminal_policy}")
     counts = [0, 0, 0, 0]
     last_evaluable_index = None
     stop_indices = []
+    possible_indices = []
+    context_indices = []
+    ambiguous = 0
     total_codons = len(seq) // 3
     for codon_index in range(total_codons):
         start = codon_index * 3
-        state = classify_codon(seq[start : start + 3], codontable=codontable)
+        codon = seq[start : start + 3]
+        meaning = analyze_codon(codon, codontable)
+        state = classify_codon(codon, codontable=codontable)
+        ambiguous += int(meaning.ambiguous or meaning.invalid)
         counts[state] += 1
         if state != CODON_MISSING:
             last_evaluable_index = codon_index
         if state == CODON_STOP:
             stop_indices.append(codon_index)
-    internal_stop = last_evaluable_index is not None and any(
-        index != last_evaluable_index for index in stop_indices
+        if meaning.possible_stop:
+            possible_indices.append(codon_index)
+        if meaning.context_dependent:
+            context_indices.append(codon_index)
+    terminal_index = (
+        last_evaluable_index
+        if terminal_policy == "last_evaluable"
+        else total_codons - 1
     )
+    if len(seq) % 3:
+        terminal_index = None
+    internal_count = sum(index != terminal_index for index in stop_indices)
     return {
         "total": total_codons,
         "clean": counts[CODON_CLEAN],
         "missing": counts[CODON_MISSING],
-        "ambiguous": counts[CODON_AMBIGUOUS],
+        "ambiguous": ambiguous,
         "stop": counts[CODON_STOP],
         "evaluable": total_codons - counts[CODON_MISSING],
-        "internal_stop": internal_stop,
+        "internal_stop": internal_count > 0,
+        "internal_stop_count": internal_count,
+        "possible_stop": len(possible_indices),
+        "context_dependent": len(context_indices),
+        "internal_possible_stop_count": sum(
+            index != terminal_index for index in possible_indices
+        ),
+        "internal_context_dependent_count": sum(
+            index != terminal_index for index in context_indices
+        ),
     }
 
 

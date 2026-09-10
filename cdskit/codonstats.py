@@ -2,11 +2,11 @@ import sys
 from collections import Counter
 
 from cdskit.codonutil import (
-    CODON_AMBIGUOUS,
+    CODON_SEMANTICS_VERSION,
     CODON_MISSING,
-    CODON_STOP,
     UNAMBIGUOUS_NT,
     classify_codon,
+    analyze_codon,
     get_forward_table,
 )
 from cdskit.util import (
@@ -30,6 +30,8 @@ def summarize_record(record, codontable):
     codons_ambiguous = 0
     codons_stop = 0
     codons_complete = 0
+    possible_stop = 0
+    context_dependent = 0
     usage: Counter[str] = Counter()
     gc_counts = [0, 0, 0]
     gc_denoms = [0, 0, 0]
@@ -42,18 +44,20 @@ def summarize_record(record, codontable):
                 if ch in ("G", "C"):
                     gc_counts[pos] += 1
         state = classify_codon(codon=codon_upper, codontable=codontable)
+        meaning = analyze_codon(codon_upper, codontable)
         if state == CODON_MISSING:
             codons_missing += 1
             continue
         if len(codon_upper) < 3:
-            if state != CODON_AMBIGUOUS:
+            if not meaning.ambiguous and not meaning.invalid:
                 usage[codon_upper] += 1
             continue
         codons_complete += 1
-        if state != CODON_AMBIGUOUS:
+        codons_stop += int(meaning.definite_stop)
+        possible_stop += int(meaning.possible_stop)
+        context_dependent += int(meaning.context_dependent)
+        if not meaning.ambiguous and not meaning.invalid:
             usage[codon_upper] += 1
-            if state == CODON_STOP:
-                codons_stop += 1
         else:
             codons_ambiguous += 1
     gc_total = sum(gc_counts)
@@ -66,6 +70,9 @@ def summarize_record(record, codontable):
         "codons_missing": codons_missing,
         "codons_ambiguous": codons_ambiguous,
         "codons_stop": codons_stop,
+        "codons_possible_stop": possible_stop,
+        "codons_context_dependent": context_dependent,
+        "codon_semantics_version": CODON_SEMANTICS_VERSION,
         "gc_all": gc_percent(gc_total, gc_denom_total),
         "gc1": gc_percent(gc_counts[0], gc_denoms[0]),
         "gc2": gc_percent(gc_counts[1], gc_denoms[1]),
@@ -76,11 +83,11 @@ def summarize_record(record, codontable):
 
 def print_summary_table(summaries):
     sys.stdout.write(
-        "seq_id\tnt_length\tcodons_total\tcodons_complete\tcodons_missing\tcodons_ambiguous\tcodons_stop\tgc_all\tgc1\tgc2\tgc3\n"
+        "seq_id\tnt_length\tcodons_total\tcodons_complete\tcodons_missing\tcodons_ambiguous\tcodons_stop\tgc_all\tgc1\tgc2\tgc3\tcodons_possible_stop\tcodons_context_dependent\tcodon_semantics_version\n"
     )
     for summary in summaries:
         sys.stdout.write(
-            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{:.6f}\t{:.6f}\t{:.6f}\t{:.6f}\n".format(
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{:.6f}\t{:.6f}\t{:.6f}\t{:.6f}\t{}\t{}\t{}\n".format(
                 summary["seq_id"],
                 summary["nt_length"],
                 summary["codons_total"],
@@ -92,6 +99,9 @@ def print_summary_table(summaries):
                 summary["gc1"],
                 summary["gc2"],
                 summary["gc3"],
+                summary["codons_possible_stop"],
+                summary["codons_context_dependent"],
+                summary["codon_semantics_version"],
             )
         )
 
