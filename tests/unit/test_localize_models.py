@@ -79,6 +79,30 @@ def test_targeting5_alias_respects_disabled_download(temp_dir, monkeypatch):
     assert "model download is disabled" in str(exc_info.value)
 
 
+@pytest.mark.parametrize("alias", ["esm2-localization-v1", "esm2-localization"])
+@pytest.mark.parametrize("cached", [False, True])
+@pytest.mark.parametrize("offline", [False, True])
+def test_unpublished_default_never_downloads_or_trusts_cache(
+    temp_dir, monkeypatch, alias, cached, offline
+):
+    monkeypatch.setenv("CDSKIT_MODEL_DIR", str(temp_dir))
+    monkeypatch.setenv("CDSKIT_OFFLINE", "1" if offline else "0")
+
+    def unexpected_download(*args, **kwargs):
+        pytest.fail("An unpublished default must not download weights")
+
+    monkeypatch.setattr(
+        "cdskit.localize_models._download_to_cache", unexpected_download
+    )
+    spec = PRETRAINED_LOCALIZE_MODELS["esm2-localization-v1"]
+    if cached:
+        cache_path = temp_dir / "localize" / spec["name"] / "v1" / spec["filename"]
+        cache_path.parent.mkdir(parents=True)
+        cache_path.write_bytes(b"unverified checkpoint")
+    with pytest.raises(FileNotFoundError, match="not published yet"):
+        resolve_localize_model_path(alias, allow_download=not offline)
+
+
 def test_published_perox_alias_respects_disabled_download(temp_dir, monkeypatch):
     monkeypatch.setenv("CDSKIT_MODEL_DIR", str(temp_dir))
 

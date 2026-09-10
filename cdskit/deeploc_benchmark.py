@@ -959,6 +959,8 @@ def fit_deeploc_multilabel_model(
             seed=int(params.get("seed", 1)),
             device=params.get("device", "auto"),
             patience=int(params.get("patience", 3)),
+            loss=params.get("plm_loss", "bce"),
+            selection_metric=params.get("plm_selection_metric", "bce"),
         )
     elif arch == "cnn":
         cnn_params = _deeploc_cnn_params(dl_params=dl_params)
@@ -1584,7 +1586,13 @@ def build_parser():
     parser.add_argument(
         "--plm_pooling",
         default="light_attention",
-        choices=["mean", "light_attention", "label_attention"],
+        choices=["mean", "light_attention", "label_attention", "terminal_attention"],
+    )
+    parser.add_argument(
+        "--plm_loss", default="bce", choices=["bce", "weighted_bce", "asl"]
+    )
+    parser.add_argument(
+        "--plm_selection_metric", default="bce", choices=["bce", "macro_ap"]
     )
     parser.add_argument("--plm_window", default=1000, type=int)
     parser.add_argument("--plm_overlap", default=128, type=int)
@@ -1671,6 +1679,8 @@ def main(argv=None):
             "plm_revision": args.plm_revision,
             "plm_cache_dir": args.plm_cache_dir,
             "plm_pooling": args.plm_pooling,
+            "plm_loss": args.plm_loss,
+            "plm_selection_metric": args.plm_selection_metric,
             "plm_window": args.plm_window,
             "plm_overlap": args.plm_overlap,
             "plm_batch_size": args.plm_batch_size,

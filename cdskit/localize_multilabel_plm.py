@@ -24,7 +24,12 @@ from cdskit.util import atomic_output_path
 
 def _build_head(nn, dim, labels, pooling="light_attention", hidden=128, dropout=0.25):
     torch, _ = require_torch()
-    if pooling not in ("mean", "light_attention", "label_attention"):
+    if pooling not in (
+        "mean",
+        "light_attention",
+        "label_attention",
+        "terminal_attention",
+    ):
         raise ValueError("Unsupported PLM pooling: {}".format(pooling))
 
     class ResidueHead(nn.Module):  # type: ignore[name-defined]
@@ -47,8 +52,9 @@ def _build_head(nn, dim, labels, pooling="light_attention", hidden=128, dropout=
                     padding=4,
                 )
                 self.dropout = nn.Dropout(dropout)
-                if pooling == "light_attention":
-                    self.output = nn.Linear(hidden * 2, labels)
+                if pooling in ("light_attention", "terminal_attention"):
+                    extra = 2 * dim if pooling == "terminal_attention" else 0
+                    self.output = nn.Linear(hidden * 2 + extra, labels)
                 else:
                     self.output_weight = nn.Parameter(torch.empty(labels, hidden))
                     self.output_bias = nn.Parameter(torch.zeros(labels))
@@ -74,7 +80,17 @@ def _build_head(nn, dim, labels, pooling="light_attention", hidden=128, dropout=
                 ) + self.output_bias
             weighted = (features * attention).sum(-1)
             maximum = features.masked_fill(~mask[:, None, :], float("-inf")).amax(-1)
-            return self.output(torch.cat([weighted, maximum], dim=1))
+            parts = [weighted, maximum]
+            if self.pooling == "terminal_attention":
+                positions = torch.arange(mask.shape[1], device=mask.device)[None, :]
+                lengths = mask.sum(1)[:, None]
+                for region in (positions < 32, positions >= (lengths - 32)):
+                    selected = mask & region
+                    parts.append(
+                        (embeddings * selected[:, :, None]).sum(1)
+                        / selected.sum(1)[:, None].clamp_min(1)
+                    )
+            return self.output(torch.cat(parts, dim=1))
 
     return ResidueHead()
 
@@ -218,6 +234,46 @@ def _batch(encoder, sequences, torch, device):
     return torch.as_tensor(x, device=device), torch.as_tensor(mask, device=device)
 
 
+def _training_loss(torch, nn, name, y, device):
+    """Weights use training labels only; ASL focusing weights are detached."""
+
+    class MaskedBCE(nn.BCEWithLogitsLoss):  # type: ignore[name-defined]
+        def forward(self, logits, target):
+            return masked_bce(
+                logits, target, pos_weight=self.pos_weight, reduction=self.reduction
+            )
+
+    if name == "bce":
+        return MaskedBCE()
+    if name == "weighted_bce":
+        positive = (y == 1).sum(0)
+        negative = (y == 0).sum(0)
+        weights = np.ones(y.shape[1], dtype=np.float32)
+        supported = (positive > 0) & (negative > 0)
+        weights[supported] = np.sqrt(negative[supported] / positive[supported])
+        pos_weight = torch.as_tensor(np.minimum(weights, 10), device=device)
+        return MaskedBCE(pos_weight=pos_weight)
+    if name != "asl":
+        raise ValueError("Unsupported PLM loss: {}".format(name))
+
+    def asymmetric(logits, target):
+        observed = ~torch.isnan(target)
+        target = torch.where(observed, target, torch.zeros_like(target))
+        positive = logits.sigmoid()
+        negative = (1 - positive + 0.05).clamp(max=1)
+        log_positive = torch.nn.functional.logsigmoid(logits)
+        log_negative = negative.clamp_min(torch.finfo(logits.dtype).tiny).log()
+        probability = positive * target + negative * (1 - target)
+        gamma = target + 4 * (1 - target)
+        weight = ((1 - probability) ** gamma).detach()
+        cells = -(weight * (target * log_positive + (1 - target) * log_negative))
+        return torch.where(
+            observed, cells, torch.zeros_like(cells)
+        ).sum() / observed.sum().clamp_min(1)
+
+    return asymmetric
+
+
 def fit_multilabel_plm(
     sequences,
     y,
@@ -231,6 +287,8 @@ def fit_multilabel_plm(
     seed=1,
     device="auto",
     patience=3,
+    loss="bce",
+    selection_metric="bce",
 ):
     if validation_sequences and set(str(s).upper() for s in sequences).intersection(
         str(s).upper() for s in validation_sequences
@@ -248,6 +306,8 @@ def fit_multilabel_plm(
         if target.shape != (len(validation_sequences), len(labels)):
             raise ValueError("Invalid PLM validation label dimensions.")
         require_observed(target, "PLM validation data")
+    if selection_metric not in ("bce", "macro_ap"):
+        raise ValueError("Unsupported PLM selection_metric.")
     torch.manual_seed(seed)
     resolved = resolve_torch_device(device)
     encoder = ResidueEncoder(config, resolved)
@@ -258,6 +318,7 @@ def fit_multilabel_plm(
     optimizer = torch.optim.AdamW(
         head.parameters(), lr=learning_rate, weight_decay=1e-4
     )
+    loss_fn = _training_loss(torch, nn, loss, y, resolved)
     rng = np.random.default_rng(seed)
     best, best_state, best_epoch, stale = float("inf"), None, 0, 0
     training_history = []
@@ -270,8 +331,10 @@ def fit_multilabel_plm(
                 continue
             xb, mask = _batch(encoder, [sequences[i] for i in ids], torch, resolved)
             optimizer.zero_grad(set_to_none=True)
-            loss = masked_bce(head(xb, mask), torch.as_tensor(y[ids], device=resolved))
-            loss.backward()
+            batch_loss = loss_fn(
+                head(xb, mask), torch.as_tensor(y[ids], device=resolved)
+            )
+            batch_loss.backward()
             torch.nn.utils.clip_grad_norm_(head.parameters(), 1.0)
             optimizer.step()
         head.eval()
@@ -280,26 +343,50 @@ def fit_multilabel_plm(
             if target.shape != (len(validation_sequences), len(labels)):
                 raise ValueError("Invalid PLM validation label dimensions.")
             total = 0.0
+            probabilities = []
             with torch.no_grad():
                 for start in range(0, len(validation_sequences), batch_size):
                     seqs = validation_sequences[start : start + batch_size]
                     xb, mask = _batch(encoder, seqs, torch, resolved)
+                    logits = head(xb, mask)
+                    probabilities.append(logits.sigmoid().cpu().numpy())
                     total += float(
                         masked_bce(
-                            head(xb, mask),
+                            logits,
                             torch.as_tensor(
                                 target[start : start + batch_size], device=resolved
                             ),
                             reduction="sum",
                         ).item()
                     )
-            score = total / int(np.isfinite(target).sum())
+            validation_bce = total / int(np.isfinite(target).sum())
+            from cdskit.localize_evaluation import average_precision
+
+            probability = np.concatenate(probabilities)
+            aps = [
+                average_precision(
+                    target[np.isfinite(target[:, j]), j],
+                    probability[np.isfinite(target[:, j]), j],
+                )
+                for j in range(len(labels))
+            ]
+            supported_ap = [value for value in aps if value is not None]
+            validation_ap = float(np.mean(supported_ap)) if supported_ap else None
+            if selection_metric == "bce":
+                score = validation_bce
+            elif validation_ap is None:
+                raise ValueError(
+                    "macro_ap selection requires positive validation labels."
+                )
+            else:
+                score = -validation_ap
         else:
             score = -epoch  # Fixed training budget without a validation partition.
         training_history.append(
             {
                 "epoch": epoch + 1,
-                "validation_bce": score if validation_sequences else None,
+                "validation_bce": validation_bce if validation_sequences else None,
+                "validation_macro_ap": validation_ap if validation_sequences else None,
             }
         )
         if score < best:
@@ -323,6 +410,8 @@ def fit_multilabel_plm(
         "pooling": config.get("pooling", "light_attention"),
         "state_dict": best_state,
         "selected_epoch": best_epoch,
+        "training_loss": loss,
+        "selection_metric": selection_metric,
         "training_history": training_history,
         "class_thresholds": {label: 0.5 for label in labels},
         "ensure_one_label": True,

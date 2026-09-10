@@ -72,9 +72,13 @@ its score is not expected to reproduce historical training-threshold benchmarks.
 
 ## Frozen ESM residue heads
 
-`--model_arch plm` uses a frozen ESM encoder with one of `mean`, `light_attention`
-or `label_attention` pooling, a sigmoid multilabel head, validation BCE early
-stopping, and validation-only label thresholds. No full encoder fine-tuning,
+`--model_arch plm` uses a frozen ESM encoder with `mean`, `light_attention`,
+`label_attention`, or `terminal_attention` pooling, a sigmoid multilabel head,
+and validation-only label thresholds. Early stopping uses validation BCE by
+default; `--plm_selection_metric macro_ap` selects by validation macro average
+precision. `--plm_loss` accepts `bce`, `weighted_bce`, or `asl`. Terminal attention
+adds the first/last 32-residue mean embeddings to light attention. See the
+[teacher training settings](localize-teacher-student.md) for loss definitions. No full encoder fine-tuning,
 external specialist stacking or distillation is performed automatically.
 
 Long sequences use overlapping encoder windows and average overlapping residue

@@ -202,7 +202,9 @@ def test_pipeline_interruption_and_input_changes(
 
 
 @pytest.mark.parametrize("layout", ["legacy", "windows", "separate_termini"])
-@pytest.mark.parametrize("pooling", ["mean", "light_attention", "label_attention"])
+@pytest.mark.parametrize(
+    "pooling", ["mean", "light_attention", "label_attention", "terminal_attention"]
+)
 def test_student_layouts_and_no_test(pipeline_config, tmp_path, layout, pooling):
     config = json.loads(pipeline_config.read_text())
     config["student"].update(sequence_layout=layout, train_control=False)

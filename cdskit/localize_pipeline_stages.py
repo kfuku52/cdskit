@@ -144,6 +144,8 @@ def fit_teacher(config, partitions, output):
                 "batch_size",
                 "learning_rate",
                 "patience",
+                "loss",
+                "selection_metric",
                 "seed",
                 "device",
             )

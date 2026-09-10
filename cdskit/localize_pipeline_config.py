@@ -22,6 +22,8 @@ TEACHER_DEFAULTS = {
     "cache_dir": "",
     "local_files_only": False,
     "pooling": "mean",
+    "loss": "bce",
+    "selection_metric": "bce",
     "window": 1000,
     "overlap": 128,
     "epochs": 12,
@@ -136,8 +138,17 @@ def _validate_training(config):
         if settings["device"] not in ("cpu", "cuda", "mps", "auto"):
             raise ValueError("Invalid device in {}.".format(section))
     teacher, student = config["teacher"], config["student"]
-    if teacher["pooling"] not in ("mean", "light_attention", "label_attention"):
+    if teacher["pooling"] not in (
+        "mean",
+        "light_attention",
+        "label_attention",
+        "terminal_attention",
+    ):
         raise ValueError("Invalid teacher.pooling.")
+    if teacher["loss"] not in ("bce", "weighted_bce", "asl"):
+        raise ValueError("Invalid teacher.loss.")
+    if teacher["selection_metric"] not in ("bce", "macro_ap"):
+        raise ValueError("Invalid teacher.selection_metric.")
     if not 0 <= teacher["overlap"] < teacher["window"] or teacher["window"] < 4:
         raise ValueError("Invalid teacher window/overlap.")
     if student["sequence_layout"] not in ("legacy", "separate_termini", "windows"):

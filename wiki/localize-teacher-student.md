@@ -132,6 +132,26 @@ For `sbatch`, supply your site's approved partition and resource options before
 one suitable allocation. The wrapper itself requests no GPU or partition. Per-epoch
 validation BCE and the selected epoch are saved in `teacher/training.json` and
 `distill/student-training.json` (plus the control equivalent when enabled).
+Teacher training also records validation macro average precision.
+
+Teacher experiments can set `teacher.loss` to `bce` (default), `weighted_bce`, or
+`asl`. Weighted BCE uses square-root negative/positive ratios from training labels
+only, capped at 10; labels missing either class retain weight 1. ASL uses positive
+focusing exponent 1, negative exponent 4, negative probability clipping 0.05, and
+detached focusing weights. Validation BCE is always unweighted and comparable
+across training losses.
+
+`teacher.selection_metric` accepts `bce` (default, minimized) or `macro_ap`
+(maximized over validation labels with positive examples). Thresholds are still
+calibrated on validation data only. The selected loss and metric are recorded in
+the model. Do not select recipes or epochs from test results.
+
+`teacher.pooling` accepts `mean`, `light_attention`, `label_attention`, and
+`terminal_attention`. The last adds mean ESM embeddings of the first and last 32
+residues to the light-attention representation. Short sequences use their actual
+residues; padding is excluded. The benchmark CLI exposes the same choices through
+`--plm_pooling`, `--plm_loss`, and `--plm_selection_metric`. These are experiment
+options; their presence does not establish an accuracy improvement.
 
 ## Feature and decision versions
 

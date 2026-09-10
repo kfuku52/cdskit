@@ -9,6 +9,9 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 
 
+DEFAULT_LOCALIZE_MODEL = "esm2-localization-v1"
+
+
 @dataclass(frozen=True)
 class PredictionRuntime:
     device: str = "cpu"

@@ -231,6 +231,7 @@ name = "cdskit"
 source = { editable = "." }
 dependencies = [
     { name = "biopython" },
+    { name = "filelock" },
     { name = "matplotlib", version = "3.10.9", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or (extra == 'extra-6-cdskit-dev' and extra == 'extra-6-cdskit-ml-cpu') or (extra == 'extra-6-cdskit-ml' and extra == 'extra-6-cdskit-ml-cpu')" },
     { name = "matplotlib", version = "3.11.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11' or (extra == 'extra-6-cdskit-dev' and extra == 'extra-6-cdskit-ml-cpu') or (extra == 'extra-6-cdskit-ml' and extra == 'extra-6-cdskit-ml-cpu')" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or (extra == 'extra-6-cdskit-dev' and extra == 'extra-6-cdskit-ml-cpu') or (extra == 'extra-6-cdskit-ml' and extra == 'extra-6-cdskit-ml-cpu')" },
@@ -325,6 +326,7 @@ requires-dist = [
     { name = "biopython", specifier = ">=1.80" },
     { name = "build", marker = "extra == 'build'", specifier = ">=1" },
     { name = "build", marker = "extra == 'dev'", specifier = ">=1" },
+    { name = "filelock", specifier = ">=3.12" },
     { name = "matplotlib", specifier = ">=3.6" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10" },
     { name = "mypy", marker = "extra == 'quality'", specifier = ">=1.10" },

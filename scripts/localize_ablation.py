@@ -23,6 +23,7 @@ RECIPES = {
     "plm_mean": ("plm", {"plm_pooling": "mean"}),
     "plm_light": ("plm", {"plm_pooling": "light_attention"}),
     "plm_label": ("plm", {"plm_pooling": "label_attention"}),
+    "plm_terminal": ("plm", {"plm_pooling": "terminal_attention"}),
 }
 
 
@@ -41,6 +42,12 @@ def main(argv=None):
     parser.add_argument("--plm_model_name", default="facebook/esm2_t6_8M_UR50D")
     parser.add_argument("--plm_revision", default="")
     parser.add_argument("--plm_cache_dir", default="data/localize_bench/embeddings")
+    parser.add_argument(
+        "--plm_loss", default="bce", choices=["bce", "weighted_bce", "asl"]
+    )
+    parser.add_argument(
+        "--plm_selection_metric", default="bce", choices=["bce", "macro_ap"]
+    )
     args = parser.parse_args(argv)
     recipes, seeds = args.recipes.split(","), [int(x) for x in args.seeds.split(",")]
     if any(recipe not in RECIPES for recipe in recipes):
@@ -57,6 +64,8 @@ def main(argv=None):
                 plm_model_name=args.plm_model_name,
                 plm_revision=args.plm_revision,
                 plm_cache_dir=args.plm_cache_dir,
+                plm_loss=args.plm_loss,
+                plm_selection_metric=args.plm_selection_metric,
                 **changes,
             )
             stem = os.path.join(args.out_dir, "{}_seed{}".format(recipe, seed))

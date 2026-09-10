@@ -45,6 +45,8 @@ def test_config_defaults_paths_and_cli(config_file):
 @pytest.mark.parametrize(
     "change",
     [
+        {"teacher": {"loss": "unknown"}},
+        {"teacher": {"selection_metric": "test_f1"}},
         {"extra": 1},
         {"schema_version": True},
         {"threads": 0},

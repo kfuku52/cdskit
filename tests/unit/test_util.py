@@ -56,6 +56,8 @@ class TestThreadHelpers:
 
     def test_resolve_threads_default_and_auto(self, monkeypatch):
         assert util.resolve_threads(None) == 1
+        monkeypatch.delattr(util.os, "sched_getaffinity", raising=False)
+        monkeypatch.delattr(util.os, "process_cpu_count", raising=False)
         monkeypatch.setattr(util.os, "cpu_count", lambda: 7)
         assert util.resolve_threads(0) == 7
 

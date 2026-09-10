@@ -33,7 +33,7 @@ _COMMON_ARGUMENT_HELP = {
     "device": "Computation device, such as cpu, cuda, or auto.",
     "random_state": "Random seed passed to the estimator.",
     "seed": "Random seed for reproducible processing.",
-    "threads": "Number of worker threads; 0 auto-detects CPUs up to the safety limit.",
+    "threads": "Number of worker threads; 0 auto-detects CPUs available to this process up to the safety limit.",
     "verbose": "Enable detailed progress output.",
 }
 
@@ -267,7 +267,7 @@ def warn_deprecated_option(
 
 
 def resolve_threads(threads: Any) -> int:
-    """Resolve threads; 0 auto-detects CPUs without exceeding the safety limit."""
+    """Resolve threads; auto-detection respects CPU affinity and the safety limit."""
     if threads is None:
         return 1
     value = int(threads)
@@ -277,7 +277,14 @@ def resolve_threads(threads: Any) -> int:
     if maximum < 1:
         raise ValueError("CDSKIT_MAX_THREADS should be >= 1.")
     if value == 0:
-        return min(maximum, max(1, int(os.cpu_count() or 1)))
+        # A Slurm job or taskset process may use only part of a large node.
+        # cpu_count() describes the host, not that allocation.
+        if hasattr(os, "sched_getaffinity"):
+            available = len(os.sched_getaffinity(0))
+        else:
+            detect = getattr(os, "process_cpu_count", os.cpu_count)
+            available = int(detect() or 1)
+        return min(maximum, max(1, available))
     if value > maximum:
         raise ValueError(
             "--threads should be <= {}. Set CDSKIT_MAX_THREADS to raise the safety limit.".format(

@@ -25,6 +25,7 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Bio-Informatics",
 ]
 dependencies = [
+  "filelock>=3.12",
   "numpy>=1.23",
   "biopython>=1.80",
   "matplotlib>=3.6",

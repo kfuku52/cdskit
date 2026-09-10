@@ -145,7 +145,9 @@ def test_cnn_legacy_load_and_new_roundtrip():
     )
 
 
-@pytest.mark.parametrize("pooling", ["mean", "light_attention", "label_attention"])
+@pytest.mark.parametrize(
+    "pooling", ["mean", "light_attention", "label_attention", "terminal_attention"]
+)
 def test_plm_pooling_padding_invariance(pooling):
     torch = pytest.importorskip("torch")
     from cdskit.localize_multilabel_plm import _build_head
@@ -184,7 +186,17 @@ def tiny_esm(tmp_path):
     return path
 
 
-def test_plm_window_cache_and_model_roundtrip(tiny_esm, tmp_path):
+@pytest.mark.parametrize(
+    "pooling,loss,metric",
+    [
+        ("label_attention", "bce", "bce"),
+        ("terminal_attention", "weighted_bce", "macro_ap"),
+        ("light_attention", "asl", "macro_ap"),
+    ],
+)
+def test_plm_window_cache_and_model_roundtrip(
+    tiny_esm, tmp_path, pooling, loss, metric
+):
     from cdskit.localize_multilabel_plm import (
         ResidueEncoder,
         fit_multilabel_plm,
@@ -202,7 +214,7 @@ def test_plm_window_cache_and_model_roundtrip(tiny_esm, tmp_path):
         window=8,
         overlap=3,
         cache_dir=str(tmp_path / "cache"),
-        pooling="label_attention",
+        pooling=pooling,
     )
     seqs = ["MACKWDEFGHILMNPQRS", "MLLLKAA"]
     encoder = ResidueEncoder(config)
@@ -218,10 +230,14 @@ def test_plm_window_cache_and_model_roundtrip(tiny_esm, tmp_path):
         config,
         validation_sequences=["MYYYY"],
         validation_y=[[1, 0]],
+        loss=loss,
+        selection_metric=metric,
         epochs=2,
         batch_size=2,
         device="cpu",
     )
+    assert head["training_loss"] == loss
+    assert head["selection_metric"] == metric
     expected = predict_multilabel_plm(seqs, head)["prob_matrix"]
     path = str(tmp_path / "model.pt")
     save_localize_model(
@@ -393,3 +409,62 @@ def test_teacher_weights_do_not_depend_on_embedding_cache(tiny_esm, tmp_path):
     assert cold["training_history"] == warm["training_history"]
     for key in cold["state_dict"]:
         assert torch.equal(cold["state_dict"][key], warm["state_dict"][key])
+
+
+@pytest.mark.parametrize("name", ["bce", "weighted_bce", "asl"])
+def test_plm_training_losses_are_finite_at_extreme_logits(name):
+    torch = pytest.importorskip("torch")
+    from cdskit.localize_multilabel_plm import _training_loss
+
+    y = np.array([[1, 0, 0], [1, 1, 0]], dtype=np.float32)
+    logits = torch.tensor(
+        [[-1000.0, 1000.0, -1000.0], [1000.0, -1000.0, 1000.0]], requires_grad=True
+    )
+    loss_fn = _training_loss(torch, torch.nn, name, y, "cpu")
+    value = loss_fn(logits, torch.tensor(y))
+    assert torch.isfinite(value)
+    value.backward()
+    assert torch.isfinite(logits.grad).all()
+    assert logits.grad[0, 0] < 0
+    assert logits.grad[1, 1] < 0
+    if name == "bce":
+        torch.testing.assert_close(
+            value,
+            torch.nn.functional.binary_cross_entropy_with_logits(
+                logits, torch.tensor(y)
+            ),
+        )
+    if name == "weighted_bce":
+        torch.testing.assert_close(loss_fn.pos_weight, torch.ones(3))
+
+
+def test_plm_terminal_branch_uses_actual_termini():
+    torch = pytest.importorskip("torch")
+    from cdskit.localize_multilabel_plm import _build_head
+
+    head = _build_head(torch.nn, 1, 1, "terminal_attention", hidden=2, dropout=0).eval()
+    with torch.no_grad():
+        head.output.weight.zero_()
+        head.output.bias.zero_()
+        head.output.weight[0, -2:] = torch.tensor([1.0, 2.0])
+    x = torch.zeros(1, 100, 1)
+    x[0, 0, 0], x[0, 79, 0] = 3, 5
+    x[0, 40, 0], x[0, 80:, 0] = 999, 999
+    mask = torch.arange(100)[None, :] < 80
+    torch.testing.assert_close(head(x, mask), torch.tensor([[13 / 32]]))
+    short = torch.tensor([[[2.0], [4.0], [999.0]]])
+    torch.testing.assert_close(
+        head(short, torch.tensor([[True, True, False]])), torch.tensor([[9.0]])
+    )
+
+
+def test_plm_weighted_loss_uses_training_frequency_and_cap():
+    torch = pytest.importorskip("torch")
+    from cdskit.localize_multilabel_plm import _training_loss
+
+    y = np.zeros((401, 3), dtype=np.float32)
+    y[0, 0] = 1
+    y[:80, 1] = 1
+    y[:, 2] = 1
+    loss = _training_loss(torch, torch.nn, "weighted_bce", y, "cpu")
+    np.testing.assert_allclose(loss.pos_weight.numpy(), [10, np.sqrt(321 / 80), 1])

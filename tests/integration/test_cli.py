@@ -18,6 +18,29 @@ from cdskit.cli import main as cli_main
 from cdskit.cliutil import CdskitArgumentParser, parse_bool, resolve_threads
 
 
+@pytest.mark.parametrize("model", [None, "targeting5", "custom.pt"])
+def test_localize_model_default_and_override(model):
+    from cdskit.cli import psr
+
+    argv = ["localize", "--seq_file", "proteins.faa"]
+    if model is not None:
+        argv.extend(["--model", model])
+    assert psr.parse_args(argv).model == (model or "esm2-localization-v1")
+
+
+def test_localize_unpublished_default_reports_actionable_error(tmp_path, capsys):
+    seq_file = tmp_path / "protein.faa"
+    seq_file.write_text(">protein\nMAAAA\n")
+    assert (
+        cli_main(["localize", "--seq_file", str(seq_file), "--seq_type", "protein"])
+        == 1
+    )
+    error = capsys.readouterr().err
+    assert "esm2-localization-v1" in error
+    assert "not published yet" in error
+    assert "--model PATH" in error
+
+
 class TestCLIHelpStrings:
     """Tests for CLI help string formatting.
 
@@ -289,8 +312,31 @@ class TestCLIConsistency:
         assert parse_bool(text) is expected
 
     def test_threads_zero_uses_detected_cpu_count(self, monkeypatch):
+        monkeypatch.delattr("cdskit.cliutil.os.sched_getaffinity", raising=False)
+        monkeypatch.delattr("cdskit.cliutil.os.process_cpu_count", raising=False)
         monkeypatch.setattr("cdskit.cliutil.os.cpu_count", lambda: 6)
         assert resolve_threads(0) == 6
+
+    def test_threads_zero_respects_allocation_and_safety_limit(self, monkeypatch):
+        monkeypatch.setattr("cdskit.cliutil.os.cpu_count", lambda: 128)
+        monkeypatch.setattr(
+            "cdskit.cliutil.os.sched_getaffinity",
+            lambda pid: {16, 17, 18, 19},
+            raising=False,
+        )
+        monkeypatch.setenv("CDSKIT_MAX_THREADS", "64")
+        assert resolve_threads(0) == 4
+        assert resolve_threads(8) == 8  # Explicit requests keep their meaning.
+        monkeypatch.setenv("CDSKIT_MAX_THREADS", "2")
+        assert resolve_threads(0) == 2
+
+    def test_threads_zero_uses_process_count_without_affinity_api(self, monkeypatch):
+        monkeypatch.delattr("cdskit.cliutil.os.sched_getaffinity", raising=False)
+        monkeypatch.setattr("cdskit.cliutil.os.cpu_count", lambda: 128)
+        monkeypatch.setattr(
+            "cdskit.cliutil.os.process_cpu_count", lambda: 3, raising=False
+        )
+        assert resolve_threads(0) == 3
 
     def test_threads_above_safety_limit_are_rejected(self):
         with pytest.raises(ValueError, match="--threads should be <= 64"):

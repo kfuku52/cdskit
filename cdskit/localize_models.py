@@ -11,6 +11,10 @@ import urllib.request
 from pathlib import Path
 from typing import Any, TypeAlias
 
+from filelock import FileLock
+
+from cdskit.localize_runtime import DEFAULT_LOCALIZE_MODEL
+
 
 ModelSpec: TypeAlias = dict[str, Any]
 
@@ -21,6 +25,20 @@ TARGETING5_PEROX_DEEPLOC21_ET_V1_FILENAME = (
 )
 
 PRETRAINED_LOCALIZE_MODELS: dict[str, ModelSpec] = {
+    DEFAULT_LOCALIZE_MODEL: {
+        "name": DEFAULT_LOCALIZE_MODEL,
+        "version": "v1",
+        "filename": "cdskit-localize-esm2-localization-v1.pt",
+        "aliases": (DEFAULT_LOCALIZE_MODEL, "esm2-localization"),
+        "description": (
+            "Default ten-label localization model: frozen ESM2 650M and a trained "
+            "localization head. Requires PyTorch, Transformers and ESM2 weights."
+        ),
+        # Reserve the interface without claiming that a release artifact exists.
+        "url": "",
+        "sha256": "",
+        "published": False,
+    },
     "targeting5-v1": {
         "name": "targeting5-v1",
         "version": "v1",
@@ -119,7 +137,9 @@ def _file_sha256(path: str | os.PathLike[str]) -> str:
 def _verify_checksum(path: str | os.PathLike[str], spec: ModelSpec) -> None:
     expected = str(spec.get("sha256", "") or "").strip().lower()
     if not expected:
-        return
+        raise ValueError(
+            "Pretrained localize model has no registered SHA-256 checksum."
+        )
 
     observed = _file_sha256(path)
     if observed != expected:
@@ -210,6 +230,15 @@ def resolve_localize_model_path(model: Any, allow_download: bool = True) -> str:
             )
         )
 
+    if not spec.get("published", False) and not str(spec.get("sha256", "")).strip():
+        raise FileNotFoundError(
+            'Pretrained localize model "{}" is not published yet. '
+            "Use --model PATH with a trained localization model, or explicitly "
+            "select a published alias such as --model targeting5.".format(
+                spec.get("name", model_text)
+            )
+        )
+
     cache_path = _cache_path_for_spec(spec)
     if cache_path.exists():
         _verify_checksum(cache_path, spec)
@@ -231,6 +260,12 @@ def resolve_localize_model_path(model: Any, allow_download: bool = True) -> str:
             "sha256 checksum are finalized.".format(spec.get("name", model_text))
         )
 
-    _download_to_cache(spec, cache_path)
-    _verify_checksum(cache_path, spec)
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    # Separate processes sharing a cache must wait for the same model download.
+    # Keep the lock file: unlinking it can give waiters different lock inodes.
+    with FileLock(str(cache_path) + ".lock"):
+        # Another process may have published the verified file while we waited.
+        if not cache_path.exists():
+            _download_to_cache(spec, cache_path)
+        _verify_checksum(cache_path, spec)
     return str(cache_path)
