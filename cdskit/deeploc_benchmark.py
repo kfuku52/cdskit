@@ -15,6 +15,7 @@ from cdskit.localize_labels import masked_multilabel_metrics, observed_targets
 from cdskit.localize_decision import guard_multilabel_inputs
 
 from cdskit.localize_evaluation import (
+    normalize_partition_id,
     assert_disjoint,
     dataset_digest,
     grouped_folds,
@@ -1223,7 +1224,9 @@ def evaluate_deeploc21_task_cv(
             compute_multilabel_metrics,
             seed=seed,
         )
-        if all(row.get("cluster_id") for row in rows)
+        if all(
+            normalize_partition_id(row.get("cluster_id")) is not None for row in rows
+        )
         else {
             "status": "not_computed",
             "reason": "cluster_id required; folds are not bootstrap clusters",

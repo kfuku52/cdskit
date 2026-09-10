@@ -322,18 +322,21 @@ def split_external_train_calibration_rows(rows, calibration_fraction=0.0, seed=1
                 "calibration_counts": {},
             },
         )
-    from cdskit.localize_evaluation import assert_disjoint
+    from cdskit.localize_evaluation import assert_disjoint, normalize_partition_id
     from cdskit.localize_splits import stratified_group_ids
 
-    if any(row.get("cluster_id") for row in rows) and not all(
-        row.get("cluster_id") for row in rows
+    cluster_ids = [normalize_partition_id(row.get("cluster_id")) for row in rows]
+    if any(group is not None for group in cluster_ids) and any(
+        group is None for group in cluster_ids
     ):
         raise ValueError("Supply cluster IDs for every calibration row or none.")
     from cdskit.localize_model import to_canonical_aa_sequence
 
     groups = [
-        str(row.get("cluster_id") or to_canonical_aa_sequence(row.get("sequence", "")))
-        for row in rows
+        group
+        if group is not None
+        else to_canonical_aa_sequence(row.get("sequence", ""))
+        for row, group in zip(rows, cluster_ids, strict=True)
     ]
     # A group may contain multiple classes; never split it for class balance.
     if len(set(groups)) < 2:
@@ -844,11 +847,12 @@ def run_external_augmented_feature_oof(
     if len(external_rows) == 0:
         raise ValueError("No external rows were available after filtering.")
 
-    from cdskit.localize_evaluation import assert_disjoint
+    from cdskit.localize_evaluation import assert_disjoint, normalize_partition_id
     from cdskit.localize_splits import sequence_folds
 
-    if any(row.get("cluster_id") for row in target_rows) and not all(
-        row.get("cluster_id") for row in target_rows
+    cluster_ids = [normalize_partition_id(row.get("cluster_id")) for row in target_rows]
+    if any(group is not None for group in cluster_ids) and any(
+        group is None for group in cluster_ids
     ):
         raise ValueError("Supply cluster IDs for every target row or none.")
     outer_folds, groups, split_report = sequence_folds(
@@ -857,8 +861,8 @@ def run_external_augmented_feature_oof(
         len(set(fold_ids)),
         seed,
         fold_ids=fold_ids,
-        group_ids=[row["cluster_id"] for row in target_rows]
-        if all(row.get("cluster_id") for row in target_rows)
+        group_ids=cluster_ids
+        if all(group is not None for group in cluster_ids)
         else None,
     )
     assert_disjoint(target_rows, external_rows)

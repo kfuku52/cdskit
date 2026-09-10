@@ -209,3 +209,16 @@ change. Before releasing new weights:
 
 Repository validation uses `python scripts/check.py quick`, `ml`, and `all`
 (quality, coverage, dependency audit and wheel build/smoke tests).
+
+
+## Evaluation input boundaries
+
+Split and bootstrap group vectors must contain one nonmissing identifier per
+row. Numeric zero is a valid identifier. Null, blank and nonfinite identifiers
+cannot silently omit rows or substitute a different grouping. Bootstrap inputs
+must have matching target/prediction dimensions, binary predictions and a
+positive integer iteration count; wholly unobserved targets produce
+`insufficient_observations` rather than a successful interval estimate.
+Average precision accepts aligned binary targets and finite real ranking scores,
+including integer and boolean scores. Ties are evaluated together; missing
+labels must be masked before calling this one-dimensional ranking function.

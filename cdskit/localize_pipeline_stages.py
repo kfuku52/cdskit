@@ -8,6 +8,7 @@ import numpy as np
 
 from cdskit.deeploc_benchmark import build_label_matrix, compute_multilabel_metrics
 from cdskit.localize_evaluation import (
+    normalize_partition_id,
     dataset_digest,
     probability_metrics,
     stratified_metrics,
@@ -320,7 +321,10 @@ def evaluate_students(config, partitions, student_dir, output):
                 labels,
                 compute_multilabel_metrics,
             )
-            if all(row.get("cluster_id") for row in rows)
+            if all(
+                normalize_partition_id(row.get("cluster_id")) is not None
+                for row in rows
+            )
             else {
                 "status": "unavailable",
                 "reason": "Homology cluster IDs required for paired intervals.",

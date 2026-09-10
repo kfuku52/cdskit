@@ -8,18 +8,69 @@ import numpy as np
 from cdskit.localize_labels import observed_targets
 
 
+def normalize_partition_id(value):
+    """Keep zero-valued identifiers; normalize missing table values to None."""
+    if value is None or (
+        isinstance(value, (float, np.floating)) and not np.isfinite(value)
+    ):
+        return None
+    key = str(value).strip()
+    return None if key.lower() in {"", "none", "nan", "na", "null"} else key
+
+
+def _group_members(groups, rows):
+    if len(groups) != rows:
+        raise ValueError("Complete groups must match evaluation rows.")
+    members: dict[str, list[int]] = {}
+    for i, group in enumerate(groups):
+        key = normalize_partition_id(group)
+        if key is None:
+            raise ValueError("Complete groups must match evaluation rows.")
+        members.setdefault(key, []).append(i)
+    return members
+
+
+def _bootstrap_inputs(target, predictions, groups, labels, iterations):
+    if (
+        isinstance(iterations, (bool, np.bool_))
+        or not isinstance(iterations, (int, np.integer))
+        or iterations < 1
+    ):
+        raise ValueError("Bootstrap iterations must be a positive integer.")
+    target = np.asarray(target)
+    predictions = [np.asarray(prediction) for prediction in predictions]
+    if (
+        target.ndim != 2
+        or target.shape[1] != len(labels)
+        or any(prediction.shape != target.shape for prediction in predictions)
+    ):
+        raise ValueError(
+            "Bootstrap predictions and labels must match target dimensions."
+        )
+    # Validate the full population before resampling: a bad row might otherwise
+    # escape validation when no draw happens to contain it.
+    observed_targets(target)
+    if any(not np.isin(prediction, [0, 1]).all() for prediction in predictions):
+        raise ValueError("Bootstrap predictions must be binary.")
+    return target, predictions, _group_members(groups, len(target))
+
+
 def assert_disjoint(train_rows, test_rows):
     from cdskit.localize_model import to_canonical_aa_sequence
 
-    accessions = {row["accession"] for row in train_rows if row.get("accession")}
+    accessions = {
+        normalize_partition_id(row.get("accession")) for row in train_rows
+    } - {None}
     sequences = {to_canonical_aa_sequence(row["sequence"]) for row in train_rows}
-    clusters = {str(row["cluster_id"]) for row in train_rows if row.get("cluster_id")}
+    clusters = {normalize_partition_id(row.get("cluster_id")) for row in train_rows} - {
+        None
+    }
     overlap = [
         row
         for row in test_rows
-        if row.get("accession", "") in accessions
+        if normalize_partition_id(row.get("accession")) in accessions
         or to_canonical_aa_sequence(row["sequence"]) in sequences
-        or (row.get("cluster_id") and str(row["cluster_id"]) in clusters)
+        or normalize_partition_id(row.get("cluster_id")) in clusters
     ]
     if overlap:
         raise ValueError(
@@ -49,11 +100,13 @@ def assert_model_partitions(model, train_rows, validation_rows):
 
 
 def grouped_folds(rows, groups, n_folds=5, seed=1):
-    if n_folds < 2:
-        raise ValueError("n_folds must be at least 2.")
-    members: dict[str, list[int]] = {}
-    for i, group in enumerate(groups):
-        members.setdefault(str(group), []).append(i)
+    if (
+        isinstance(n_folds, (bool, np.bool_))
+        or not isinstance(n_folds, (int, np.integer))
+        or n_folds < 2
+    ):
+        raise ValueError("n_folds must be an integer of at least 2.")
+    members = _group_members(groups, len(rows))
     if len(members) < 2:
         raise ValueError("At least two independent groups are required for evaluation.")
     rng = np.random.default_rng(seed)
@@ -71,11 +124,23 @@ def grouped_folds(rows, groups, n_folds=5, seed=1):
 
 def average_precision(target, scores):
     target, scores = np.asarray(target), np.asarray(scores)
+    if (
+        target.ndim != 1
+        or target.shape != scores.shape
+        or not np.isin(target, [0, 1]).all()
+        or scores.dtype.kind not in "biuf"
+        or not np.isfinite(scores).all()
+    ):
+        raise ValueError(
+            "AP requires matching binary targets and finite numeric scores."
+        )
     if not target.sum():
         return None  # Undefined for a label with no positives; never silently report 0.
-    order = np.argsort(-scores, kind="stable")
+    # Negating unsigned integers wraps at zero; negating booleans fails.
+    # Ties are evaluated as a group, so reversing their internal order is safe.
+    order = np.argsort(scores, kind="stable")[::-1]
     truth, ordered = target[order], scores[order]
-    ends = np.r_[np.flatnonzero(np.diff(ordered)), len(ordered) - 1]
+    ends = np.r_[np.flatnonzero(ordered[1:] != ordered[:-1]), len(ordered) - 1]
     tp = np.cumsum(truth)[ends]
     precision = tp / (ends + 1)
     recall = tp / target.sum()
@@ -161,9 +226,10 @@ def stratified_metrics(
 def cluster_bootstrap(
     target, prediction, groups, labels, metric_fn, iterations=200, seed=1
 ):
-    members: dict[str, list[int]] = {}
-    for i, group in enumerate(groups):
-        members.setdefault(str(group), []).append(i)
+    target, predictions, members = _bootstrap_inputs(
+        target, [prediction], groups, labels, iterations
+    )
+    prediction = predictions[0]
     if len(members) < 2:
         return {"status": "insufficient_clusters"}
     clusters = list(members.values())
@@ -178,7 +244,7 @@ def cluster_bootstrap(
             if metrics[key] is not None:
                 samples[key].append(metrics[key])
     return {
-        "status": "ok",
+        "status": "ok" if all(samples.values()) else "insufficient_observations",
         "iterations": iterations,
         "seed": seed,
         "cluster_count": len(clusters),
@@ -224,13 +290,9 @@ def paired_cluster_bootstrap(
     seed=1,
 ):
     """Paired B-minus-A intervals; related proteins are resampled together."""
-    if len(groups) != len(target) or any(not str(group).strip() for group in groups):
-        raise ValueError("Complete bootstrap groups must match target rows.")
-    if iterations < 1:
-        raise ValueError("Bootstrap iterations must be positive.")
-    members: dict[str, list[int]] = {}
-    for i, group in enumerate(groups):
-        members.setdefault(str(group), []).append(i)
+    target, predictions, members = _bootstrap_inputs(
+        target, [prediction_a, prediction_b], groups, labels, iterations
+    )
     if len(members) < 2:
         return {"status": "insufficient_clusters", "cluster_count": len(members)}
     clusters = list(members.values())
@@ -241,8 +303,8 @@ def paired_cluster_bootstrap(
             [clusters[i] for i in rng.integers(len(clusters), size=len(clusters))]
         )
         a, b = [
-            metric_fn(np.asarray(target)[ids], np.asarray(prediction)[ids], labels)
-            for prediction in (prediction_a, prediction_b)
+            metric_fn(target[ids], prediction[ids], labels)
+            for prediction in predictions
         ]
         for key in samples:
             if a[key] is not None and b[key] is not None:

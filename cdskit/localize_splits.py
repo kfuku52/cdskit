@@ -2,7 +2,11 @@
 
 import numpy as np
 
-from cdskit.localize_evaluation import assert_disjoint, dataset_digest
+from cdskit.localize_evaluation import (
+    assert_disjoint,
+    dataset_digest,
+    normalize_partition_id,
+)
 from cdskit.localize_model import to_canonical_aa_sequence
 
 
@@ -197,10 +201,4 @@ def audit_homology_partitions(partitions, threads=1):
 
 
 def valid_partition_id(value):
-    return value is not None and str(value).strip().lower() not in {
-        "",
-        "none",
-        "nan",
-        "na",
-        "null",
-    }
+    return normalize_partition_id(value) is not None

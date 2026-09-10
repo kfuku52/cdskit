@@ -4,6 +4,19 @@ This project follows semantic versioning. Deprecated CLI spellings remain
 available for at least the 0.24 release series and print their canonical
 replacement to standard error.
 
+## 0.30.4 — 2026-09-11
+
+### Fixed
+
+- Reject incomplete cluster vectors and misaligned bootstrap predictions before
+  evaluation, so rows cannot silently disappear from a split or interval.
+- Preserve numeric zero cluster IDs across overlap audits, calibration and
+  bootstrap consumers; normalize missing identifiers consistently.
+- Compute average precision correctly for unsigned/boolean and extreme numeric
+  scores; validate dimensions, binary targets and finite scores.
+- Report insufficient observations when bootstrap intervals cannot be estimated
+  from entirely unknown targets. Published model weights are unchanged.
+
 ## 0.30.3 — 2026-09-11
 
 ### Fixed
