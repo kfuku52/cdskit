@@ -10,6 +10,7 @@ import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import numpy as np
+from cdskit.localize_schema import CURRENT_FEATURE_SCHEMA
 from cdskit.deeploc_benchmark import (
     DEEPLOC_LOCALIZATION_LABELS as LABELS,
     _read_prepared_tsv,
@@ -62,7 +63,10 @@ def main():
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
     config = dict(
-        vars(args), dataset_sha256=dataset_digest(rows), code_sha256=code_identity()
+        vars(args),
+        code_sha256=code_identity(),
+        feature_schema=CURRENT_FEATURE_SCHEMA,
+        dataset_sha256=dataset_digest(rows),
     )
     config_path = output / "config.json"
     if config_path.exists() and json.loads(config_path.read_text()) != config:

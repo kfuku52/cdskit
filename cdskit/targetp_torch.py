@@ -4,6 +4,8 @@ import json
 import os
 import time
 
+from cdskit.localize_schema import CURRENT_FEATURE_SCHEMA
+
 import numpy as np
 
 from cdskit import __version__
@@ -1360,6 +1362,7 @@ def _targetp_torch_payload(
     training_fingerprint=None,
 ):
     payload = {
+        "feature_schema": CURRENT_FEATURE_SCHEMA,
         "model_type": TARGETP_TORCH_MODEL_TYPE,
         "class_order": list(LOCALIZATION_CLASSES),
         "config": dict(config),
@@ -1928,6 +1931,7 @@ def export_targetp2_torch_localize_model(
         else:
             thresholds = {class_name: 1.0 for class_name in LOCALIZATION_CLASSES}
     return {
+        "feature_schema": CURRENT_FEATURE_SCHEMA,
         "model_type": TARGETP_TORCH_MODEL_TYPE,
         "feature_names": list(FEATURE_NAMES),
         "localization_model": {

@@ -22,6 +22,9 @@ def config_file(tmp_path):
 
 def test_config_defaults_paths_and_cli(config_file):
     config = load_config(config_file)
+    assert config["decision_policy"] == "safe-v1"
+    assert config["feature_schema"] == "localize-pts2-9-v2"
+    assert config["ensure_one_label"] is False
     assert config["data"]["path"] == str(config_file.parent / "data.tsv")
     assert len(load_partitions(config)["test"]) == 1
     args = psr.parse_args(
@@ -46,6 +49,7 @@ def test_config_defaults_paths_and_cli(config_file):
         {"schema_version": True},
         {"threads": 0},
         {"ensure_one_label": "no"},
+        {"decision_policy": "future"},
         {"student": {"seed": 2**32}},
         {"teacher": {"learning_rate": float("nan")}},
         {"labels": ["nucleus", "nucleus"]},
@@ -75,6 +79,7 @@ def test_invalid_config(config_file, change):
         ("b\t", "a\t"),
         ("c2", ""),
         ("MCCC", "XXXX"),
+        ("MCCC", "M"),
     ],
 )
 def test_partition_errors(config_file, old, new):
@@ -124,3 +129,15 @@ def test_loaded_defaults_are_independent(config_file):
     second = load_config(config_file)
     first["student"]["kernel_sizes"].append(17)
     assert second["student"]["kernel_sizes"] == [3, 5, 9, 15]
+
+
+@pytest.mark.parametrize("sequence", ["", "X", "XXXX", "M"])
+def test_safe_test_rows_retain_abstention_coverage(config_file, sequence):
+    data = config_file.parent / "data.tsv"
+    data.write_text(data.read_text().replace("MDDD", sequence))
+    config = load_config(config_file)
+    assert load_partitions(config)["test"][0]["sequence"] == sequence
+    if not sequence or set(sequence) == {"X"}:
+        config["decision_policy"] = "legacy"
+        with pytest.raises(ValueError, match="sequence"):
+            load_partitions(config)

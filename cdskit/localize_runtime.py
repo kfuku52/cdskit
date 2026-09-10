@@ -15,10 +15,21 @@ class PredictionRuntime:
     offline: bool = False
     batch_size: int = 512
     esm_batch_size: int = 128
+    decision_policy: str = "model"
+    report_schema: str = "model"
+    taxonomy_id: str = ""
 
     def __post_init__(self) -> None:
         if self.batch_size < 1 or self.esm_batch_size < 1:
             raise ValueError("Prediction batch sizes must be positive.")
+        if self.decision_policy not in ("model", "legacy", "safe-v1"):
+            raise ValueError("Unsupported localization decision policy.")
+        if self.report_schema not in ("model", "legacy", "v2"):
+            raise ValueError("Unsupported localization report schema.")
+        if self.taxonomy_id and (
+            not self.taxonomy_id.isdigit() or int(self.taxonomy_id) < 1
+        ):
+            raise ValueError("taxonomy_id must be a positive NCBI taxonomy ID.")
 
 
 _DEFAULT_RUNTIME = PredictionRuntime()

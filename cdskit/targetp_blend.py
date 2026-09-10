@@ -5,6 +5,8 @@ import os
 import sys
 import warnings
 
+from cdskit.localize_schema import CURRENT_FEATURE_SCHEMA, model_feature_schema
+
 import numpy as np
 
 from cdskit import __version__
@@ -1827,6 +1829,7 @@ def _predict_oof_fold(
         labels=perox_train,
     )
     tmp_model = {
+        "feature_schema": CURRENT_FEATURE_SCHEMA,
         "model_type": _model_type_from_arch(model_arch=model_arch),
         "localization_model": local_model,
         "perox_model": perox_model,
@@ -2136,10 +2139,12 @@ def _build_targetp_blend_runtime_model(
         "class_order": list(LOCALIZATION_CLASSES),
         "base_models": [
             {
+                "feature_schema": model_feature_schema(base_model_a),
                 "model_type": str(base_model_a["model_type"]),
                 "localization_model": base_model_a["localization_model"],
             },
             {
+                "feature_schema": model_feature_schema(base_model_b),
                 "model_type": str(base_model_b["model_type"]),
                 "localization_model": base_model_b["localization_model"],
             },
@@ -2156,6 +2161,7 @@ def _build_targetp_blend_runtime_model(
     if specialist_postprocess is not None:
         localization_model["targetp_specialist_postprocess"] = specialist_postprocess
     return {
+        "feature_schema": CURRENT_FEATURE_SCHEMA,
         "model_type": "targetp_blend_v1",
         "feature_names": list(FEATURE_NAMES),
         "localization_model": localization_model,
@@ -2439,6 +2445,7 @@ def _export_targetp_blend_runtime_model(
     save_localize_model(model=model, path=str(args.model_out))
     return {
         "path": str(args.model_out),
+        "feature_schema": CURRENT_FEATURE_SCHEMA,
         "model_type": "targetp_blend_v1",
         "specialist_postprocess": bool(specialist is not None),
     }

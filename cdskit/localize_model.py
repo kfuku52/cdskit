@@ -1,6 +1,9 @@
 from contextlib import contextmanager
+from typing import Any
 from importlib.metadata import PackageNotFoundError, version as package_version
 import json
+import hashlib
+import os
 import math
 import re
 import warnings
@@ -12,6 +15,23 @@ from cdskit.tsvio import write_tsv as write_tsv_file
 from cdskit.atomicio import atomic_output_path, atomic_write_json
 from cdskit.util import DNA_ALLOWED_CHARS
 from cdskit.localize_runtime import current_prediction_runtime
+from cdskit.localize_schema import (
+    LEGACY_FEATURE_SCHEMA,
+    extraction_schema,
+    feature_schema_changed,
+    scoped_localization_head,
+    with_model_feature_schema,
+    version_model,
+)
+
+from cdskit.localize_decision import (
+    threshold_decisions,
+    validate_scores,
+    sequence_quality,
+    decision_policy,
+    SAFE_POLICY,
+    single_decision,
+)
 
 LOCALIZATION_CLASSES = ("noTP", "SP", "mTP", "cTP", "lTP")
 TP_STAGE_CLASSES = ("SP", "mTP", "cTP", "lTP")
@@ -119,7 +139,8 @@ TARGETP_FEATURE_WINDOW_GROUP_ORDS = (
 )
 
 PTS1_REGEX = re.compile(r"[ASNCGTP][KRHQ][LIVMF]$")
-PTS2_REGEX = re.compile(r"[RK][LIVQ].{4}[HQ][LA]")
+PTS2_REGEX = re.compile(r"[RK][LIVQ].{5}[HQ][LA]")
+LEGACY_PTS2_REGEX = re.compile(r"[RK][LIVQ].{4}[HQ][LA]")
 LTP_RR_HYDRO_REGEX = re.compile(r"RR.{0,12}[AILMFWVY]{5,}")
 NLS_BASIC_CLUSTER_REGEX = re.compile(r"[KR]{3,}")
 NLS_BIPARTITE_REGEX = re.compile(r"[KR]{2}.{8,12}[KR]{3,}")
@@ -516,13 +537,15 @@ def is_dna_like(seq):
     return True
 
 
-def detect_perox_signals(aa_seq):
+def detect_perox_signals(aa_seq, feature_schema=None):
     seq = aa_seq
     tail3 = seq[-3:] if len(seq) >= 3 else ""
     n40 = seq[:40]
     pts1_match = bool(PTS1_REGEX.search(seq))
     pts1_skl = tail3 == "SKL"
-    pts2_match = bool(PTS2_REGEX.search(n40))
+    schema = extraction_schema(feature_schema)
+    regex = LEGACY_PTS2_REGEX if schema == LEGACY_FEATURE_SCHEMA else PTS2_REGEX
+    pts2_match = bool(regex.search(n40))
     if pts1_match:
         signal_type = "PTS1"
     elif pts2_match:
@@ -537,18 +560,18 @@ def detect_perox_signals(aa_seq):
     }
 
 
-def extract_localize_features(aa_seq):
+def extract_localize_features(aa_seq, feature_schema=None):
     seq = to_canonical_aa_sequence(aa_seq)
-    return _extract_localize_features_from_canonical(seq)
+    return _extract_localize_features_from_canonical(seq, feature_schema=feature_schema)
 
 
-def _extract_localize_features_from_canonical(seq):
+def _extract_localize_features_from_canonical(seq, feature_schema=None):
     n20 = seq[:20]
     n40 = seq[:40]
     n60 = seq[:60]
     c10 = seq[-10:] if len(seq) >= 10 else seq
     cleavage_zone = seq[18:35]
-    perox = detect_perox_signals(seq)
+    perox = detect_perox_signals(seq, feature_schema=feature_schema)
 
     signal_window = seq[6:30] if len(seq) > 6 else ""
     signal_peptide_like = 1.0 if longest_hydrophobic_run(signal_window) >= 7 else 0.0
@@ -596,13 +619,19 @@ def _extract_localize_features_from_canonical(seq):
     return feats, perox
 
 
-def extract_broad_localize_features(aa_seq, kingdom=""):
+def extract_broad_localize_features(aa_seq, kingdom="", feature_schema=None):
     seq = to_canonical_aa_sequence(aa_seq)
-    return _extract_broad_localize_features_from_canonical(seq=seq, kingdom=kingdom)
+    return _extract_broad_localize_features_from_canonical(
+        seq=seq, kingdom=kingdom, feature_schema=feature_schema
+    )
 
 
-def _extract_broad_localize_features_from_canonical(seq, kingdom=""):
-    base_feats, perox = _extract_localize_features_from_canonical(seq)
+def _extract_broad_localize_features_from_canonical(
+    seq, kingdom="", feature_schema=None
+):
+    base_feats, perox = _extract_localize_features_from_canonical(
+        seq, feature_schema=feature_schema
+    )
     n60 = seq[:60]
     n100 = seq[:100]
     c20 = seq[-20:] if len(seq) >= 20 else seq
@@ -640,11 +669,12 @@ def _extract_broad_localize_features_from_canonical(seq, kingdom=""):
     return np.concatenate([base_feats, extra_feats]), perox
 
 
-def extract_perox_features(aa_seq, kingdom=""):
+def extract_perox_features(aa_seq, kingdom="", feature_schema=None):
     seq = to_canonical_aa_sequence(aa_seq)
     broad_feats, perox = _extract_broad_localize_features_from_canonical(
         seq=seq,
         kingdom=kingdom,
+        feature_schema=feature_schema,
     )
     c3 = seq[-3:] if len(seq) >= 3 else seq
     c4 = seq[-4:] if len(seq) >= 4 else seq
@@ -790,7 +820,8 @@ def safe_log(x):
     return math.log(x)
 
 
-def fit_nearest_centroid_classifier(features, labels, class_order):
+def fit_nearest_centroid_classifier(features, labels, class_order, feature_schema=None):
+    feature_schema = extraction_schema(feature_schema)
     x = np.asarray(features, dtype=np.float64)
     if x.ndim != 2:
         raise ValueError("Feature matrix should be 2D.")
@@ -814,6 +845,7 @@ def fit_nearest_centroid_classifier(features, labels, class_order):
         centroids.append(class_z.mean(axis=0))
         priors.append((len(indices) + 1.0) / (total + float(len(class_order))))
     return {
+        "feature_schema": feature_schema,
         "mean": mean.tolist(),
         "std": std.tolist(),
         "class_order": list(class_order),
@@ -822,7 +854,8 @@ def fit_nearest_centroid_classifier(features, labels, class_order):
     }
 
 
-def fit_perox_binary_classifier(features, labels):
+def fit_perox_binary_classifier(features, labels, feature_schema=None):
+    feature_schema = extraction_schema(feature_schema)
     labels = [
         normalize_yes_no(v, default="unknown")
         if str(v).lower() != "unknown"
@@ -842,11 +875,13 @@ def fit_perox_binary_classifier(features, labels):
         return {
             "mode": "constant",
             "yes_probability": yes_fraction,
+            "feature_schema": feature_schema,
         }
     model = fit_nearest_centroid_classifier(
         features=features,
         labels=labels,
         class_order=("no", "yes"),
+        feature_schema=feature_schema,
     )
     model["mode"] = "centroid"
     return model
@@ -970,7 +1005,9 @@ def fit_multilabel_centroid_classifier(
     threshold_objective_by_class=None,
     ensure_one_label=True,
     tune_thresholds=True,
+    feature_schema=None,
 ):
+    feature_schema = extraction_schema(feature_schema)
     x = np.asarray(features, dtype=np.float64)
     from cdskit.localize_labels import observed_targets
 
@@ -1031,6 +1068,7 @@ def fit_multilabel_centroid_classifier(
     model = {
         "mode": "multilabel_centroid",
         "class_order": list(class_order),
+        "feature_schema": feature_schema,
         "mean": mean.tolist(),
         "std": std.tolist(),
         "label_models": label_models,
@@ -1100,30 +1138,22 @@ def predict_multilabel_centroid_matrix(
             - float(label_model.get("log_prior_negative", 0.0))
         )
         prob[:, class_i] = _sigmoid(logits)
-    prob = np.clip(prob, 0.0, 1.0)
+    prob = validate_scores(prob, class_order)
     if not apply_thresholds:
         return {"prob_matrix": prob}
 
-    thresholds = localization_model.get("class_thresholds", {})
-    threshold_vec = np.asarray(
-        [float(thresholds.get(class_name, 0.5)) for class_name in class_order],
-        dtype=np.float64,
-    )
-    threshold_vec[~np.isfinite(threshold_vec)] = 0.5
-    threshold_vec[threshold_vec <= 0.0] = 0.5
-    pred = (prob >= threshold_vec.reshape((1, -1))).astype(np.int64)
-    if bool(localization_model.get("ensure_one_label", True)):
-        empty = np.where(np.sum(pred, axis=1) == 0)[0]
-        if empty.shape[0] > 0:
-            scores = prob[empty, :] / threshold_vec.reshape((1, -1))
-            best = np.argmax(scores, axis=1)
-            pred[empty, best] = 1
     return {
         "prob_matrix": prob,
-        "prediction_matrix": pred,
+        **threshold_decisions(
+            prob,
+            localization_model.get("class_thresholds", {}),
+            class_order,
+            localization_model.get("ensure_one_label", True),
+        ),
     }
 
 
+@with_model_feature_schema("model")
 def predict_multilabel_localization(aa_seq, model, kingdom=""):
     feats, perox_signals = extract_broad_localize_features(
         aa_seq=aa_seq,
@@ -1131,7 +1161,20 @@ def predict_multilabel_localization(aa_seq, model, kingdom=""):
     )
     model_type = str(model.get("model_type", ""))
     localization_model = model["localization_model"]
-    if model_type == "multilabel_centroid_v1":
+    pred: dict[str, Any]
+    reason = sequence_quality(aa_seq)
+    available = not reason or decision_policy(model) != SAFE_POLICY
+    if not available:
+        width = len(localization_model["class_order"])
+        pred = {
+            "prob_matrix": np.zeros((1, width)),
+            "prediction_matrix": np.zeros((1, width), dtype=int),
+            "decision_status": [
+                "invalid_input" if reason == "empty_sequence" else "abstained"
+            ],
+            "forced_label": [False],
+        }
+    elif model_type == "multilabel_centroid_v1":
         pred = predict_multilabel_centroid_matrix(
             features=feats,
             localization_model=localization_model,
@@ -1163,6 +1206,10 @@ def predict_multilabel_localization(aa_seq, model, kingdom=""):
     labels = [class_order[i] for i in range(len(class_order)) if int(pred_vec[i]) == 1]
     return {
         "predicted_labels": labels,
+        "decision_status": pred["decision_status"][0],
+        "forced_label": bool(pred["forced_label"][0]),
+        "quality_reason": reason,
+        "score_available": available,
         "class_probabilities": {
             class_order[i]: float(prob_vec[i]) for i in range(len(class_order))
         },
@@ -1193,6 +1240,8 @@ def _perox_feature_vector_for_model(
 ):
     profile = str(perox_model.get("feature_profile", "") or "").strip().lower()
     if profile in ["", "localize_features_v1", "feature_names"]:
+        if aa_seq is not None and feature_schema_changed():
+            return extract_localize_features(aa_seq)[0]
         return np.asarray(feature_vec, dtype=np.float64)
     if profile in ["broad_localize_v1", "broad_localize_features_v1"]:
         if aa_seq is None:
@@ -1261,6 +1310,7 @@ def _predict_sklearn_binary_perox(feature_vec, perox_model):
     return pred, {"yes": p_yes, "no": 1.0 - p_yes}
 
 
+@with_model_feature_schema("perox_model")
 def predict_perox_batch(
     feature_matrix, perox_model, aa_sequences=None, organism_group=""
 ):
@@ -1336,6 +1386,10 @@ def predict_perox_batch(
             1.0,
         )
 
+    if aa_sequences is not None and feature_schema_changed():
+        feature_matrix = np.asarray(
+            [extract_localize_features(seq)[0] for seq in aa_sequences]
+        )
     mean = np.asarray(perox_model["mean"], dtype=np.float64)
     std = np.asarray(perox_model["std"], dtype=np.float64)
     centroids = np.asarray(perox_model["centroids"], dtype=np.float64)
@@ -1361,6 +1415,7 @@ def predict_perox_batch(
     )
 
 
+@with_model_feature_schema("perox_model")
 def predict_perox(feature_vec, perox_model, aa_seq=None, organism_group=""):
     if perox_model.get("mode") == "constant":
         p_yes = _clamp_probability(perox_model["yes_probability"])
@@ -1376,6 +1431,8 @@ def predict_perox(feature_vec, perox_model, aa_seq=None, organism_group=""):
             feature_vec=model_feature_vec,
             perox_model=perox_model,
         )
+    if aa_seq is not None and feature_schema_changed():
+        feature_vec = extract_localize_features(aa_seq)[0]
     pred, probs = predict_nearest_centroid(feature_vec=feature_vec, model=perox_model)
     return pred, probs
 
@@ -1397,9 +1454,12 @@ def _predict_constant_localization(localization_model):
     return class_label, probs
 
 
+@with_model_feature_schema("localization_model")
 def _predict_localization_from_model(
     aa_seq, feature_vec, localization_model, model_type, organism_group=""
 ):
+    if feature_schema_changed():
+        feature_vec = extract_localize_features(aa_seq)[0]
     if str(localization_model.get("mode", "")).strip().lower() == "constant":
         return _predict_constant_localization(localization_model=localization_model)
     if model_type == "nearest_centroid_v1":
@@ -2076,6 +2136,7 @@ def _targetp_predict_sklearn_proba(model, features):
         return model.predict_proba(features)
 
 
+@with_model_feature_schema("localization_model")
 def predict_targetp_feature_ensemble_localization(
     aa_seq, localization_model, organism_group=""
 ):
@@ -2089,6 +2150,7 @@ def predict_targetp_feature_ensemble_localization(
     return LOCALIZATION_CLASSES[pred_idx], probs
 
 
+@with_model_feature_schema("localization_model")
 def predict_targetp_feature_ensemble_batch(
     aa_sequences, localization_model, organism_group=""
 ):
@@ -2849,6 +2911,7 @@ def apply_targetp_feature_ltp_specialist_postprocess_batch(
     return out
 
 
+@with_model_feature_schema("localization_model")
 def predict_targetp_blend_localization(
     aa_seq,
     feature_vec,
@@ -2864,7 +2927,7 @@ def predict_targetp_blend_localization(
         if not isinstance(base_model, dict):
             raise ValueError("Invalid targetp_blend_v1 base model payload.")
         base_model_type = str(base_model.get("model_type", "")).strip()
-        submodel = base_model.get("localization_model", {})
+        submodel = scoped_localization_head(base_model)
         _, probs = _predict_localization_from_model(
             aa_seq=aa_seq,
             feature_vec=feature_vec,
@@ -3085,8 +3148,24 @@ def predict_two_stage_ctp_ltp_localization(
     return pred_class, out_probs
 
 
+@with_model_feature_schema("model")
 def predict_localization_and_peroxisome(aa_seq, model, organism_group=""):
     feats, perox_signals = extract_localize_features(aa_seq=aa_seq)
+    if sequence_quality(aa_seq) and decision_policy(model) == SAFE_POLICY:
+        return single_decision(
+            aa_seq,
+            model,
+            {
+                "predicted_class": "",
+                "class_probabilities": {name: 0.0 for name in LOCALIZATION_CLASSES},
+                "perox_probability_yes": 0.0,
+                "perox_signal_type": perox_signals["signal_type"],
+                "feature_values": feats,
+                "feature_names": list(FEATURE_NAMES),
+                "pts1_match": perox_signals["pts1_match"],
+                "pts2_match": perox_signals["pts2_match"],
+            },
+        )
     model_type = str(model.get("model_type", ""))
     localization_model = model["localization_model"]
     localization_strategy = (
@@ -3163,7 +3242,7 @@ def predict_localization_and_peroxisome(aa_seq, model, organism_group=""):
         out["two_stage_ctp_ltp_details"] = strategy_details
     if model_type == "targetp_blend_v1":
         out["targetp_blend_details"] = strategy_details
-    return out
+    return single_decision(aa_seq, model, out)
 
 
 def _strip_runtime_caches(value):
@@ -3172,7 +3251,7 @@ def _strip_runtime_caches(value):
     if isinstance(value, dict):
         out = dict()
         for key, val in value.items():
-            if key == "_runtime_model_cache":
+            if key in {"_runtime_model_cache", "_artifact_sha256"}:
                 continue
             out[key] = _strip_runtime_caches(val)
         return out
@@ -3184,9 +3263,10 @@ def _strip_runtime_caches(value):
 
 
 def save_localize_model(model, path):
+    model = version_model(model, default=LEGACY_FEATURE_SCHEMA)
     model_type = str(model.get("model_type", ""))
     if model_type in ["nearest_centroid_v1", "multilabel_centroid_v1"]:
-        atomic_write_json(path, model, indent=2, sort_keys=True)
+        atomic_write_json(path, _strip_runtime_caches(model), indent=2, sort_keys=True)
         return
     if model_type in [
         "bilstm_attention_v1",
@@ -3207,12 +3287,11 @@ def save_localize_model(model, path):
     raise ValueError("Unsupported model_type: {}".format(model_type))
 
 
-def load_localize_model(path, allow_unsafe=False):
+def _read_localize_payload(stream, allow_unsafe=False):
     model = None
     json_error = None
     try:
-        with open(path, "r", encoding="utf-8") as inp:
-            model = json.load(inp)
+        model = json.load(stream)
     except Exception as exc:
         json_error = exc
 
@@ -3222,13 +3301,15 @@ def load_localize_model(path, allow_unsafe=False):
 
             torch, _ = require_torch()
             try:
-                payload = torch.load(path, map_location="cpu", weights_only=True)
+                stream.seek(0)
+                payload = torch.load(stream, map_location="cpu", weights_only=True)
             except TypeError:
                 if not allow_unsafe:
                     raise ValueError(
                         "This PyTorch version cannot perform safe model loading."
                     ) from None
-                payload = torch.load(path, map_location="cpu")
+                stream.seek(0)
+                payload = torch.load(stream, map_location="cpu")
             except Exception:
                 if not allow_unsafe:
                     raise ValueError(
@@ -3242,8 +3323,9 @@ def load_localize_model(path, allow_unsafe=False):
                 )
                 from cdskit import localize_pickle
 
+                stream.seek(0)
                 payload = torch.load(
-                    path,
+                    stream,
                     map_location="cpu",
                     weights_only=False,
                     pickle_module=localize_pickle,
@@ -3256,7 +3338,28 @@ def load_localize_model(path, allow_unsafe=False):
                 raise ValueError("Unsupported model payload type.")
         except Exception as exc:
             txt = "Failed to load model from {}. json_error={}, torch_error={}"
-            raise ValueError(txt.format(path, str(json_error), str(exc))) from exc
+            raise ValueError(
+                txt.format(stream.name, str(json_error), str(exc))
+            ) from exc
+
+    if not isinstance(model, dict):
+        raise ValueError("Unsupported model payload type.")
+    return model
+
+
+def load_localize_model(path, allow_unsafe=False):
+    # One open descriptor binds the digest and deserializer to the same artifact,
+    # even when another task atomically replaces the path during loading.
+    with open(path, "rb") as stream:
+        before = os.fstat(stream.fileno())
+        digest = hashlib.sha256()
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+        stream.seek(0)
+        model = _read_localize_payload(stream, allow_unsafe=allow_unsafe)
+        after = os.fstat(stream.fileno())
+        if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
+            raise ValueError("Model file changed in place while loading.")
 
     required = ["model_type", "localization_model", "perox_model", "feature_names"]
     for key in required:
@@ -3275,6 +3378,7 @@ def load_localize_model(path, allow_unsafe=False):
     ]
     if model["model_type"] not in allowed_model_types:
         raise ValueError("Unsupported model_type: {}".format(model["model_type"]))
+    model = version_model(model)
     localization_model = model["localization_model"]
     if "specialist_head" in localization_model:
         from cdskit.localize_specialists import (
@@ -3312,6 +3416,7 @@ def load_localize_model(path, allow_unsafe=False):
                 RuntimeWarning,
                 stacklevel=2,
             )
+    model["_artifact_sha256"] = digest.hexdigest()
     return model
 
 

@@ -1,5 +1,10 @@
+from cdskit.localize_schema import extraction_schema
+
+from cdskit.localize_decision import guard_multilabel_inputs, threshold_decisions
+
 import numpy as np
 
+from cdskit.localize_schema import with_model_feature_schema
 from cdskit.localize_labels import masked_bce, require_observed
 
 from cdskit.localize_bilstm import (
@@ -256,7 +261,9 @@ def fit_multilabel_cnn_classifier(
     patience=3,
     teacher_probabilities=None,
     distillation_weight=0.5,
+    feature_schema=None,
 ):
+    feature_schema = extraction_schema(feature_schema)
     if tune_thresholds and not validation_sequences:
         raise ValueError("Threshold tuning requires independent validation sequences.")
     if validation_sequences and set(str(s).upper() for s in aa_sequences).intersection(
@@ -488,6 +495,7 @@ def fit_multilabel_cnn_classifier(
         else 0.0,
         "sample_weight_power": float(sample_weight_power),
         "ensure_one_label": bool(ensure_one_label),
+        "feature_schema": feature_schema,
         "state_dict": {
             key: value.detach().cpu() for key, value in model.state_dict().items()
         },
@@ -574,6 +582,8 @@ def _normalize_runtime_features(feature_matrix, localization_model, n_row):
     return feat.astype(np.float32)
 
 
+@with_model_feature_schema("localization_model")
+@guard_multilabel_inputs("aa_sequences", "localization_model")
 def predict_multilabel_cnn_batch(
     aa_sequences,
     localization_model,
@@ -634,22 +644,12 @@ def predict_multilabel_cnn_batch(
     prob = apply_specialists(aa_sequences, localization_model, prob)
     if not apply_thresholds:
         return {"prob_matrix": prob}
-    class_order = list(localization_model["class_order"])
-    thresholds = localization_model.get("class_thresholds", {})
-    threshold_vec = np.asarray(
-        [float(thresholds.get(class_name, 0.5)) for class_name in class_order],
-        dtype=np.float64,
-    )
-    threshold_vec[~np.isfinite(threshold_vec)] = 0.5
-    threshold_vec[threshold_vec <= 0.0] = 0.5
-    pred = (prob >= threshold_vec.reshape((1, -1))).astype(np.int64)
-    if bool(localization_model.get("ensure_one_label", True)):
-        empty = np.where(np.sum(pred, axis=1) == 0)[0]
-        if empty.shape[0] > 0:
-            scores = prob[empty, :] / threshold_vec.reshape((1, -1))
-            best = np.argmax(scores, axis=1)
-            pred[empty, best] = 1
     return {
         "prob_matrix": prob,
-        "prediction_matrix": pred,
+        **threshold_decisions(
+            prob,
+            localization_model.get("class_thresholds", {}),
+            localization_model["class_order"],
+            localization_model.get("ensure_one_label", True),
+        ),
     }

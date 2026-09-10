@@ -1,5 +1,7 @@
 import os
 
+from cdskit.localize_schema import CURRENT_FEATURE_SCHEMA, model_feature_schema
+
 import numpy as np
 
 from cdskit.cliutil import CdskitArgumentParser, parse_bool, resolve_threads
@@ -328,6 +330,7 @@ def fit_targetp_feature_runtime_model(
     if class_thresholds is None:
         class_thresholds = {class_name: 1.0 for class_name in class_names}
     model = {
+        "feature_schema": CURRENT_FEATURE_SCHEMA,
         "model_type": "targetp_feature_ensemble_v1",
         "feature_names": list(FEATURE_NAMES),
         "localization_model": {
@@ -385,16 +388,19 @@ def build_targetp_feature_blend_runtime_model(
         blend_base = base_models[blend_base_index]
     else:
         blend_base = {
+            "feature_schema": model_feature_schema(blend_source_model),
             "model_type": str(blend_source_model.get("model_type", "")),
             "localization_model": blend_source_model.get("localization_model", {}),
         }
     model = {
+        "feature_schema": CURRENT_FEATURE_SCHEMA,
         "model_type": "targetp_blend_v1",
         "feature_names": list(FEATURE_NAMES),
         "localization_model": {
             "class_order": list(LOCALIZATION_CLASSES),
             "base_models": [
                 {
+                    "feature_schema": CURRENT_FEATURE_SCHEMA,
                     "model_type": "targetp_feature_ensemble_v1",
                     "localization_model": feature_model["localization_model"],
                 },

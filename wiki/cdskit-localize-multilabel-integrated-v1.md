@@ -66,3 +66,12 @@ and the release model card for split design, homology checks and limitations.
 The CDSKIT-trained weights are MIT-licensed. The release's model card preserves
 UniProt, DeepLoc and HPA attribution; source datasets retain their own terms.
 The MIT license update changed no checkpoint bytes.
+
+## Feature and decision versions
+
+See the [localization feature and decision contract](../docs/localize-scientific-contract.md)
+for the corrected nine-residue PTS2 definition, legacy model compatibility,
+`--decision_policy safe-v1`, v2 output and explicit taxonomy constraints.
+Published artifacts retain their historical defaults; new staged pipeline models
+default to safe inference with `ensure_one_label=False`. Scores remain unverified
+as calibrated biological probabilities.

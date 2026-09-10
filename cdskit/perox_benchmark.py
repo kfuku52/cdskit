@@ -16,6 +16,8 @@ import warnings
 from collections import Counter
 from pathlib import Path
 
+from cdskit.localize_schema import extraction_schema, with_model_feature_schema
+
 import numpy as np
 
 from cdskit.localize_model import (
@@ -315,6 +317,7 @@ def fit_sklearn_perox_binary_model(
     classifier.fit(x, y)
     return {
         "mode": "sklearn_binary",
+        "feature_schema": extraction_schema(),
         "classifier": classifier,
         "classes": [int(v) for v in list(getattr(classifier, "classes_", [0, 1]))],
         "positive_class": 1,
@@ -340,6 +343,7 @@ def fit_sklearn_perox_binary_model(
     }
 
 
+@with_model_feature_schema("perox_model")
 def predict_perox_yes_probabilities(rows, perox_model):
     mode = str(perox_model.get("mode", "")).strip().lower()
     if mode == "constant":

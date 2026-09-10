@@ -223,3 +223,12 @@ For independently calibrated thresholds, CNN terminal/window comparisons, frozen
 ESM heads and audited specialist integration, see
 [localization improvements](https://github.com/kfuku52/cdskit/wiki/cdskit-localize-improvements)
 and the [full-data experiment](https://github.com/kfuku52/cdskit/wiki/cdskit-localize-full-experiment).
+
+## Feature and decision versions
+
+See the [localization feature and decision contract](../docs/localize-scientific-contract.md)
+for the corrected nine-residue PTS2 definition, legacy model compatibility,
+`--decision_policy safe-v1`, v2 output and explicit taxonomy constraints.
+Published artifacts retain their historical defaults; new staged pipeline models
+default to safe inference with `ensure_one_label=False`. Scores remain unverified
+as calibrated biological probabilities.

@@ -7,6 +7,17 @@ from typing import Any
 
 import numpy as np
 
+from cdskit.localize_schema import (
+    with_model_feature_schema,
+    feature_schema_changed,
+    scoped_localization_head,
+)
+from cdskit.localize_decision import (
+    sequence_quality,
+    decision_policy,
+    SAFE_POLICY,
+    single_decision,
+)
 from cdskit.localize_runtime import current_prediction_runtime
 from cdskit.localize_model import (
     FEATURE_NAMES,
@@ -31,6 +42,7 @@ def _float_or_default(value: Any, default: float) -> float:
         return default
 
 
+@with_model_feature_schema("localization_model")
 def predict_model_probability_matrix(
     aa_sequences: Sequence[str],
     feature_matrix: np.ndarray,
@@ -40,6 +52,10 @@ def predict_model_probability_matrix(
 ) -> tuple[np.ndarray, list[str], dict[str, Any]]:
     """Batch base predictors and recursively batch TargetP blend models."""
     num_rows = len(aa_sequences)
+    if feature_schema_changed():
+        feature_matrix = np.asarray(
+            [extract_localize_features(seq)[0] for seq in aa_sequences]
+        )
     strategy = str(localization_model.get("strategy", "single_stage")).strip().lower()
     if strategy in {"two_stage", "two_stage_ctp_ltp"}:
         stage1, stage1_order, _ = predict_model_probability_matrix(
@@ -213,7 +229,7 @@ def predict_model_probability_matrix(
                 aa_sequences=aa_sequences,
                 feature_matrix=feature_matrix,
                 model_type=str(base_model.get("model_type", "")).strip(),
-                localization_model=base_model.get("localization_model", {}),
+                localization_model=scoped_localization_head(base_model),
                 organism_group=organism_group,
             )
             reordered = np.zeros(
@@ -264,6 +280,27 @@ def _predict_same_organism(
     organism_group: str,
     feature_matrix: np.ndarray | None = None,
 ) -> list[dict[str, Any]]:
+    if decision_policy(model) == SAFE_POLICY:
+        valid = [i for i, seq in enumerate(aa_sequences) if not sequence_quality(seq)]
+        if len(valid) != len(aa_sequences):
+            from cdskit.localize_model import predict_localization_and_peroxisome
+
+            skipped_results: list[dict[str, Any]] = [{} for _ in aa_sequences]
+            for i, seq in enumerate(aa_sequences):
+                if sequence_quality(seq):
+                    skipped_results[i] = predict_localization_and_peroxisome(
+                        seq, model, organism_group
+                    )
+            if valid:
+                accepted = _predict_same_organism(
+                    [aa_sequences[i] for i in valid],
+                    model,
+                    organism_group,
+                    None if feature_matrix is None else feature_matrix[valid],
+                )
+                for i, result in zip(valid, accepted, strict=True):
+                    skipped_results[i] = result
+            return skipped_results
     model_type = str(model.get("model_type", ""))
     localization_model = model["localization_model"]
     feature_rows = [extract_localize_features(seq) for seq in aa_sequences]
@@ -335,10 +372,11 @@ def _predict_same_organism(
             result["two_stage_ctp_ltp_details"] = details["two_stage_ctp_ltp_details"][
                 index
             ]
-        results.append(result)
+        results.append(single_decision(aa_sequences[index], model, result))
     return results
 
 
+@with_model_feature_schema("model")
 def predict_localization_batch(
     aa_sequences: Sequence[str],
     model: dict[str, Any],

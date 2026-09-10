@@ -121,3 +121,12 @@ python -m cdskit.perox_benchmark \
   --out_md data/localize_bench/perox_deeploc21_et_v1/perox_benchmark_hpa_external.md \
   --predictions_prefix data/localize_bench/perox_deeploc21_et_v1/perox_predictions_hpa
 ```
+
+## Feature and decision versions
+
+See the [localization feature and decision contract](../docs/localize-scientific-contract.md)
+for the corrected nine-residue PTS2 definition, legacy model compatibility,
+`--decision_policy safe-v1`, v2 output and explicit taxonomy constraints.
+Published artifacts retain their historical defaults; new staged pipeline models
+default to safe inference with `ensure_one_label=False`. Scores remain unverified
+as calibrated biological probabilities.

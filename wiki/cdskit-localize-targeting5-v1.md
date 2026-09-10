@@ -96,3 +96,12 @@ constant zero, not a trained peroxisome detector.
 - [TargetP-2.0 data page](https://services.healthtech.dtu.dk/services/TargetP-2.0/3-Data.php)
 - [TargetP-2.0 source repository](https://github.com/JJAlmagro/TargetP-2.0)
 - [cdskit targeting5-v1 release](https://github.com/kfuku52/cdskit/releases/tag/localize-targeting5-v1)
+
+## Feature and decision versions
+
+See the [localization feature and decision contract](../docs/localize-scientific-contract.md)
+for the corrected nine-residue PTS2 definition, legacy model compatibility,
+`--decision_policy safe-v1`, v2 output and explicit taxonomy constraints.
+Published artifacts retain their historical defaults; new staged pipeline models
+default to safe inference with `ensure_one_label=False`. Scores remain unverified
+as calibrated biological probabilities.

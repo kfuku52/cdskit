@@ -6,8 +6,11 @@ import warnings
 from urllib import parse as urllib_parse
 from urllib import request as urllib_request
 
+from cdskit.localize_schema import CURRENT_FEATURE_SCHEMA
+
 import numpy as np
 
+from cdskit.localize_schema import with_model_feature_schema
 from cdskit.localize_labels import masked_multilabel_metrics, observed_targets
 
 from cdskit.localize_evaluation import (
@@ -1065,6 +1068,7 @@ def fit_deeploc_multilabel_model(
         metadata["cnn_params"] = dict(cnn_params)
     return {
         "model_type": model_type,
+        "feature_schema": CURRENT_FEATURE_SCHEMA,
         "feature_names": list(BROAD_FEATURE_NAMES),
         "localization_model": localization_model,
         "perox_model": {"mode": "embedded_multilabel"},
@@ -1072,6 +1076,7 @@ def fit_deeploc_multilabel_model(
     }
 
 
+@with_model_feature_schema("model")
 def _predict_model_on_rows(model, rows):
     model_type = str(model.get("model_type", ""))
     if model_type == "multilabel_plm_v1":

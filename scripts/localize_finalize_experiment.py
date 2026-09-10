@@ -9,6 +9,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import numpy as np
+from cdskit.localize_schema import CURRENT_FEATURE_SCHEMA
 from cdskit.deeploc_benchmark import (
     DEEPLOC_LOCALIZATION_LABELS as LABELS,
     _read_prepared_tsv,
@@ -65,6 +66,7 @@ def main():
     assert_disjoint(train, val)
     config = dict(
         {key: value for key, value in vars(args).items() if key != "fit_only"},
+        feature_schema=CURRENT_FEATURE_SCHEMA,
         dataset_sha256=dataset_digest(rows),
         validation_fold=val_fold,
     )

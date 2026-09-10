@@ -10,6 +10,7 @@ import time
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import numpy as np
+from cdskit.localize_schema import CURRENT_FEATURE_SCHEMA
 from cdskit.deeploc_benchmark import (
     DEEPLOC_LOCALIZATION_LABELS as LABELS,
     _read_prepared_tsv,
@@ -53,6 +54,7 @@ def run_baselines(rows, output, recipes, seeds, device, epochs):
                 mask_padding=recipe != "cnn_legacy",
             )
             config = dict(
+                feature_schema=CURRENT_FEATURE_SCHEMA,
                 code_sha256=code_identity(),
                 dataset_sha256=dataset_digest(rows),
                 parameters=parameters,

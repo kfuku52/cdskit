@@ -10,6 +10,8 @@ from urllib import error as urllib_error
 from urllib import parse as urllib_parse
 from urllib import request as urllib_request
 
+from cdskit.localize_schema import CURRENT_FEATURE_SCHEMA
+
 import numpy as np
 
 from cdskit import __version__
@@ -1359,6 +1361,7 @@ def evaluate_cross_validation(
             raise ValueError("Unsupported model_arch: {}".format(model_arch))
         tmp_model = {
             "model_type": tmp_model_type,
+            "feature_schema": CURRENT_FEATURE_SCHEMA,
             "localization_model": local_model,
             "perox_model": perox_model,
         }
@@ -1865,6 +1868,7 @@ def localize_learn_main(args):
 
     model = {
         "model_type": model_type,
+        "feature_schema": CURRENT_FEATURE_SCHEMA,
         "feature_names": list(FEATURE_NAMES),
         "localization_model": localization_model,
         "perox_model": perox_model,

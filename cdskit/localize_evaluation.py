@@ -121,7 +121,16 @@ def probability_metrics(target, probability, labels):
     }
 
 
-def stratified_metrics(rows, target, prediction, probability, labels, metric_fn):
+def stratified_metrics(
+    rows, target, prediction, probability, labels, metric_fn, score_available=None
+):
+    available = (
+        np.ones(len(rows), dtype=bool)
+        if score_available is None
+        else np.asarray(score_available, dtype=bool)
+    )
+    if available.shape != (len(rows),):
+        raise ValueError("Score availability must match evaluation rows.")
     groups: dict[str, list[int]] = {}
     for i, row in enumerate(rows):
         organism = str(row.get("organism_group", "unknown")) or "unknown"
@@ -139,7 +148,12 @@ def stratified_metrics(rows, target, prediction, probability, labels, metric_fn)
     result = {}
     for name, ids in sorted(groups.items()):
         metrics = metric_fn(target[ids], prediction[ids], labels)
-        metrics.update(probability_metrics(target[ids], probability[ids], labels))
+        scored = np.asarray(ids)[available[ids]]
+        metrics.update(probability_metrics(target[scored], probability[scored], labels))
+        if score_available is not None:
+            metrics["scored_rows"] = len(scored)
+            metrics["unscored_rows"] = len(ids) - len(scored)
+            metrics["score_coverage"] = len(scored) / len(ids)
         result[name] = metrics
     return result
 

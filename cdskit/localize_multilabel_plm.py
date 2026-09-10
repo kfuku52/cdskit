@@ -10,6 +10,9 @@ import os
 from pathlib import Path
 from typing import Any
 
+from cdskit.localize_schema import CURRENT_FEATURE_SCHEMA
+from cdskit.localize_decision import guard_multilabel_inputs, threshold_decisions
+
 import numpy as np
 
 from cdskit.localize_labels import masked_bce, require_observed
@@ -323,9 +326,11 @@ def fit_multilabel_plm(
         "training_history": training_history,
         "class_thresholds": {label: 0.5 for label in labels},
         "ensure_one_label": True,
+        "feature_schema": CURRENT_FEATURE_SCHEMA,
     }
 
 
+@guard_multilabel_inputs("sequences", "model")
 def predict_multilabel_plm(
     sequences, model, device="cpu", batch_size=8, apply_thresholds=True
 ):
@@ -361,12 +366,12 @@ def predict_multilabel_plm(
     prob = apply_specialists(sequences, model, prob)
     result = {"prob_matrix": prob}
     if apply_thresholds:
-        thresholds = np.asarray(
-            [model["class_thresholds"][label] for label in model["class_order"]]
+        result.update(
+            threshold_decisions(
+                prob,
+                model.get("class_thresholds", {}),
+                model["class_order"],
+                model.get("ensure_one_label", True),
+            )
         )
-        prediction = (prob >= thresholds).astype(np.int64)
-        if model.get("ensure_one_label", True):
-            empty = np.flatnonzero(prediction.sum(1) == 0)
-            prediction[empty, (prob[empty] / thresholds).argmax(1)] = 1
-        result["prediction_matrix"] = prediction
     return result

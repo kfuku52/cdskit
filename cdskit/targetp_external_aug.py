@@ -2,6 +2,8 @@ import os
 import random
 from collections import Counter, defaultdict
 
+from cdskit.localize_schema import CURRENT_FEATURE_SCHEMA
+
 import numpy as np
 
 from cdskit.cliutil import CdskitArgumentParser, parse_bool, resolve_threads
@@ -1212,6 +1214,7 @@ def fit_external_augmented_feature_runtime_model(
             mass_threshold=float(ltp_specialist_mass_threshold),
         )
     model = {
+        "feature_schema": CURRENT_FEATURE_SCHEMA,
         "model_type": "targetp_feature_ensemble_v1",
         "feature_names": list(FEATURE_NAMES),
         "localization_model": {

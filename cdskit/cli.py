@@ -788,6 +788,24 @@ p_localize.add_argument(
     choices=["unknown", "plant", "non_plant"],
     help="default=%(default)s: Optional organism group used to constrain plant-only cTP/lTP predictions.",
 )
+p_localize.add_argument(
+    "--decision_policy",
+    choices=["model", "legacy", "safe-v1"],
+    default="model",
+    help="default=%(default)s: Use artifact policy, preserve legacy predictions, or abstain on empty/all-X/single-residue inputs.",
+)
+p_localize.add_argument(
+    "--report_schema",
+    choices=["model", "legacy", "v2"],
+    default="model",
+    help="default=%(default)s: v2 adds decision/head/feature provenance and null scores for abstained rows; model selects v2 for safe inference.",
+)
+p_localize.add_argument(
+    "--taxonomy_id",
+    default="",
+    type=str,
+    help="Optional NCBI organism taxonomy ID. Currently only 9606 suppresses chloroplast in ten-label inference; other IDs apply no mask. Requires v2 output.",
+)
 p_localize.set_defaults(handler=command_localize)
 
 

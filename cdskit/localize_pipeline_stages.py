@@ -2,6 +2,8 @@
 
 import json
 
+from cdskit.localize_schema import CURRENT_FEATURE_SCHEMA
+
 import numpy as np
 
 from cdskit.deeploc_benchmark import build_label_matrix, compute_multilabel_metrics
@@ -54,8 +56,11 @@ def predict(model, rows, device="cpu", batch_size=8, thresholds=True):
 
 def wrap_model(head, config, partitions, kind):
     head["ensure_one_label"] = config["ensure_one_label"]
+    head["feature_schema"] = CURRENT_FEATURE_SCHEMA
+    head["decision_policy"] = config["decision_policy"]
     return {
         "model_type": "multilabel_{}_v1".format(kind),
+        "feature_schema": CURRENT_FEATURE_SCHEMA,
         "localization_model": head,
         "feature_names": [],
         "perox_model": {"mode": "embedded_multilabel"},
@@ -81,9 +86,10 @@ def wrap_model(head, config, partitions, kind):
 
 def calibrate(model, config, rows, settings):
     labels = config["labels"]
-    probability = predict(
+    result = predict(
         model, rows, settings["device"], settings["batch_size"], thresholds=False
-    )["prob_matrix"]
+    )
+    probability = require_scored_rows(result)
     y = target(rows, labels)
     # Probability validation also catches non-finite model outputs before export.
     probability_metrics(y, probability, labels)
@@ -95,6 +101,16 @@ def calibrate(model, config, rows, settings):
                 probability[observed, i], y[observed, i], objective="f1"
             )
     model["localization_model"]["class_thresholds"] = thresholds
+
+
+def require_scored_rows(result):
+    """Never fit thresholds or a student to an abstention's numeric placeholders."""
+    available = np.asarray(result["score_available"], dtype=bool)
+    if available.shape != (len(result["prob_matrix"]),) or not available.all():
+        raise ValueError(
+            "Unscored rows cannot be used for calibration or distillation."
+        )
+    return result["prob_matrix"]
 
 
 def fit_teacher(config, partitions, output):
@@ -144,7 +160,9 @@ def fit_teacher(config, partitions, output):
 
 def prediction_identity(config, partitions, teacher_path):
     return {
-        "schema_version": 1,
+        "schema_version": 2,
+        "feature_schema": config["feature_schema"],
+        "decision_policy": config["decision_policy"],
         "labels": config["labels"],
         "training_data_sha256": dataset_digest(partitions["train"]),
         "teacher_sha256": file_digest(teacher_path),
@@ -164,9 +182,8 @@ def make_teacher_predictions(config, partitions, teacher_path, output):
         )
     rows = partitions["train"]
     settings = config["teacher"]
-    probabilities = predict(
-        model, rows, settings["device"], settings["batch_size"], False
-    )["prob_matrix"]
+    result = predict(model, rows, settings["device"], settings["batch_size"], False)
+    probabilities = require_scored_rows(result)
     probability_metrics(target(rows, config["labels"]), probabilities, config["labels"])
     identity = prediction_identity(config, partitions, teacher_path)
     np.savez_compressed(
@@ -254,7 +271,20 @@ def evaluate_students(config, partitions, student_dir, output):
         )
         y = target(rows, labels)
         metrics = compute_multilabel_metrics(y, result["prediction_matrix"], labels)
-        metrics.update(probability_metrics(y, result["prob_matrix"], labels))
+        available = np.asarray(result["score_available"], dtype=bool)
+        metrics.update(
+            probability_metrics(y[available], result["prob_matrix"][available], labels)
+        )
+        metrics["scored_rows"] = int(available.sum())
+        metrics["unscored_rows"] = int((~available).sum())
+        metrics["score_coverage"] = float(available.mean())
+        metrics["accepted_only"] = (
+            compute_multilabel_metrics(
+                y[available], result["prediction_matrix"][available], labels
+            )
+            if available.any()
+            else None
+        )
         metrics["model_sha256"] = file_digest(model_path)
         metrics["strata"] = stratified_metrics(
             rows,
@@ -263,6 +293,7 @@ def evaluate_students(config, partitions, student_dir, output):
             result["prob_matrix"],
             labels,
             compute_multilabel_metrics,
+            score_available=available,
         )
         predictions[name] = result["prediction_matrix"]
         report["models"][name] = metrics
@@ -271,6 +302,8 @@ def evaluate_students(config, partitions, student_dir, output):
             target=y,
             observation_mask=np.isfinite(y),
             probability=result["prob_matrix"],
+            score_available=available,
+            decision_status=np.asarray(result["decision_status"]),
             prediction=result["prediction_matrix"],
             labels=np.asarray(labels),
             accessions=np.asarray([row["accession"] for row in rows]),

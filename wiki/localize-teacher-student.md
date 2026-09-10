@@ -132,3 +132,12 @@ For `sbatch`, supply your site's approved partition and resource options before
 one suitable allocation. The wrapper itself requests no GPU or partition. Per-epoch
 validation BCE and the selected epoch are saved in `teacher/training.json` and
 `distill/student-training.json` (plus the control equivalent when enabled).
+
+## Feature and decision versions
+
+See the [localization feature and decision contract](../docs/localize-scientific-contract.md)
+for the corrected nine-residue PTS2 definition, legacy model compatibility,
+`--decision_policy safe-v1`, v2 output and explicit taxonomy constraints.
+Published artifacts retain their historical defaults; new staged pipeline models
+default to safe inference with `ensure_one_label=False`. Scores remain unverified
+as calibrated biological probabilities.

@@ -2,9 +2,20 @@ from functools import partial
 
 import numpy as np
 
+from cdskit.localize_schema import with_model_feature_schema
 from cdskit.atomicio import validate_distinct_paths
 from cdskit.localize_batch import predict_localization_batch
-from cdskit.localize_runtime import PredictionRuntime, prediction_runtime
+from cdskit.localize_runtime import (
+    PredictionRuntime,
+    prediction_runtime,
+    current_prediction_runtime,
+)
+from cdskit.localize_decision import (
+    detailed_row,
+    DETAIL_FIELDS,
+    decision_policy,
+    SAFE_POLICY,
+)
 
 from cdskit.localize_models import (
     is_pretrained_localize_model_alias,
@@ -120,7 +131,34 @@ def _record_to_aa_sequence(record, codontable, seqtype):
     raise ValueError("--seq_type should be dna or protein.")
 
 
+def _detailed_output(model):
+    schema = current_prediction_runtime().report_schema
+    safe = decision_policy(model) == SAFE_POLICY
+    if schema == "legacy" and (safe or current_prediction_runtime().taxonomy_id):
+        raise ValueError(
+            "Safe inference and taxonomy constraints require report_schema v2 or model."
+        )
+    return schema == "v2" or (
+        schema == "model" and (safe or bool(current_prediction_runtime().taxonomy_id))
+    )
+
+
 def _predict_single_record(
+    record,
+    codontable,
+    seqtype,
+    model,
+    include_features,
+    organism_group="",
+    runtime=None,
+):
+    with prediction_runtime(runtime or current_prediction_runtime()):
+        return _predict_single_record_impl(
+            record, codontable, seqtype, model, include_features, organism_group
+        )
+
+
+def _predict_single_record_impl(
     record, codontable, seqtype, model, include_features, organism_group=""
 ):
     aa_seq = _record_to_aa_sequence(
@@ -150,7 +188,9 @@ def _predict_single_record(
                 BROAD_FEATURE_NAMES, pred["feature_values"], strict=False
             ):
                 row[name] = float(value)
-        return row
+        return (
+            detailed_row(row, model, pred, aa_seq) if _detailed_output(model) else row
+        )
 
     pred = predict_localization_and_peroxisome(
         aa_seq=aa_seq,
@@ -171,7 +211,7 @@ def _predict_single_record(
     if include_features:
         for name, value in zip(FEATURE_NAMES, pred["feature_values"], strict=False):
             row[name] = float(value)
-    return row
+    return detailed_row(row, model, pred, aa_seq) if _detailed_output(model) else row
 
 
 def _row_from_single_label_prediction(
@@ -212,8 +252,9 @@ def _predict_single_label_records_batched(
         model,
         organism_groups=[organism_group] * len(records),
     )
-    return [
-        _row_from_single_label_prediction(
+    rows = []
+    for record, pred, aa_seq in zip(records, predictions, aa_sequences, strict=True):
+        row = _row_from_single_label_prediction(
             record_id=record.id,
             pred_class=pred["predicted_class"],
             class_probs=pred["class_probabilities"],
@@ -222,10 +263,13 @@ def _predict_single_label_records_batched(
             feature_vec=pred["feature_values"],
             include_features=include_features,
         )
-        for record, pred in zip(records, predictions, strict=True)
-    ]
+        rows.append(
+            detailed_row(row, model, pred, aa_seq) if _detailed_output(model) else row
+        )
+    return rows
 
 
+@with_model_feature_schema("model")
 def _predict_multilabel_records_batched(
     records,
     aa_sequences,
@@ -286,6 +330,17 @@ def _predict_multilabel_records_batched(
         if include_features:
             for name, value in zip(BROAD_FEATURE_NAMES, feature_vec, strict=False):
                 row[name] = float(value)
+        if _detailed_output(model):
+            details = {
+                key: pred[key][i]
+                for key in (
+                    "decision_status",
+                    "quality_reason",
+                    "score_available",
+                    "forced_label",
+                )
+            }
+            detailed_row(row, model, details, aa_sequences[i])
         rows.append(row)
     return rows
 
@@ -343,7 +398,7 @@ def _resolve_output_fields(include_features, model=None):
             fields.append("perox_signal_type")
         if include_features:
             fields.extend(BROAD_FEATURE_NAMES)
-        return fields
+        return fields + DETAIL_FIELDS if _detailed_output(model) else fields
 
     fields = [
         "seq_id",
@@ -358,7 +413,7 @@ def _resolve_output_fields(include_features, model=None):
     ]
     if include_features:
         fields.extend(FEATURE_NAMES)
-    return fields
+    return fields + DETAIL_FIELDS if model and _detailed_output(model) else fields
 
 
 def localize_main(args):
@@ -367,7 +422,14 @@ def localize_main(args):
         if hasattr(args, "model_download")
         else not _is_true_arg(getattr(args, "no_model_download", False))
     )
-    with prediction_runtime(PredictionRuntime(offline=not allow_download)):
+    with prediction_runtime(
+        PredictionRuntime(
+            offline=not allow_download,
+            decision_policy=getattr(args, "decision_policy", "model"),
+            report_schema=getattr(args, "report_schema", "model"),
+            taxonomy_id=getattr(args, "taxonomy_id", ""),
+        )
+    ):
         return _localize_main(args)
 
 
@@ -409,6 +471,7 @@ def _localize_main(args):
                 txt.format(",".join(LOCALIZATION_CLASSES), ",".join(model_classes))
             )
 
+    _detailed_output(model)
     threads = resolve_threads(getattr(args, "threads", 1))
     _configure_ml_threads(model=model, threads=threads)
     rows = _predict_records_batched_if_supported(
@@ -427,6 +490,7 @@ def _localize_main(args):
             model=model,
             include_features=args.include_features,
             organism_group=getattr(args, "organism_group", ""),
+            runtime=current_prediction_runtime(),
         )
         rows = parallel_map_ordered(items=records, worker=worker, threads=threads)
 

@@ -11,6 +11,8 @@ from cdskit.deeploc_benchmark import DEEPLOC_LOCALIZATION_LABELS
 from cdskit.localize_evaluation import assert_disjoint
 from cdskit.localize_labels import validate_label_evidence
 from cdskit.localize_model import to_canonical_aa_sequence
+from cdskit.localize_schema import CURRENT_FEATURE_SCHEMA
+from cdskit.localize_decision import SAFE_POLICY, LEGACY_POLICY, sequence_quality
 from cdskit.tsvio import read_tsv
 
 
@@ -168,6 +170,7 @@ def load_config(path):
         "teacher",
         "student",
         "ensure_one_label",
+        "decision_policy",
     }
     if not isinstance(raw, dict) or set(raw) - allowed:
         raise ValueError("Unknown keys or invalid pipeline configuration.")
@@ -198,6 +201,10 @@ def load_config(path):
     ):
         raise ValueError("labels must be unique supported localization names.")
     config["labels"] = labels
+    config["feature_schema"] = CURRENT_FEATURE_SCHEMA
+    config["decision_policy"] = raw.get("decision_policy", SAFE_POLICY)
+    if config["decision_policy"] not in (SAFE_POLICY, LEGACY_POLICY):
+        raise ValueError("Invalid decision_policy.")
     config["ensure_one_label"] = raw.get("ensure_one_label", False)
     if type(config["ensure_one_label"]) is not bool:
         raise ValueError("ensure_one_label must be a boolean.")
@@ -250,9 +257,25 @@ def load_partitions(config):
         sequence = to_canonical_aa_sequence(row[settings["sequence_col"]])
         split = row[settings["split_col"]].strip()
         labels = [x.strip() for x in row[settings["label_col"]].split(";") if x.strip()]
-        if not accession or accession in seen or not sequence or set(sequence) == {"X"}:
+        safe_test = (
+            config.get("decision_policy", SAFE_POLICY) == SAFE_POLICY
+            and split == "test"
+        )
+        if (
+            not accession
+            or accession in seen
+            or (not safe_test and (not sequence or set(sequence) == {"X"}))
+        ):
             raise ValueError(
                 "Empty/duplicate ID or empty/unknown sequence: {}".format(accession)
+            )
+        if (
+            config.get("decision_policy", SAFE_POLICY) == SAFE_POLICY
+            and not safe_test
+            and sequence_quality(sequence)
+        ):
+            raise ValueError(
+                "Sequence outside safe inference domain: {}".format(accession)
             )
         if split not in partitions or set(labels) - set(config["labels"]):
             raise ValueError(

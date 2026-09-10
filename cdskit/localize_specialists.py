@@ -5,6 +5,11 @@ Only numeric tree nodes are exported; inference needs no sklearn pickle loading.
 
 from typing import Any
 
+from cdskit.localize_schema import (
+    with_model_feature_schema,
+    extraction_schema,
+)
+
 import numpy as np
 
 from cdskit.localize_labels import observed_targets, require_observed
@@ -80,7 +85,8 @@ def validate_specialists(model, class_order=None):
                 raise ValueError("Specialist tree contains unreachable nodes.")
 
 
-def fit_specialists(features, labels, seed=1, max_iter=100):
+def fit_specialists(features, labels, seed=1, max_iter=100, feature_schema=None):
+    feature_schema = extraction_schema(feature_schema)
     from sklearn.ensemble import HistGradientBoostingClassifier
 
     x, y = np.asarray(features, dtype=np.float32), np.asarray(labels)
@@ -133,6 +139,7 @@ def fit_specialists(features, labels, seed=1, max_iter=100):
         models.append(exported)
     return {
         "mode": "localization_specialists_v1",
+        "feature_schema": feature_schema,
         "feature_dim": x.shape[1],
         "labels": models,
         "seed": seed,
@@ -233,15 +240,14 @@ def blend_probabilities(base, specialists, weights):
 
 
 def threshold_predictions(probability, thresholds, labels, ensure_one_label=True):
-    vector = np.asarray([thresholds[name] for name in labels])
-    prediction = (probability >= vector).astype(int)
-    if ensure_one_label:
-        empty = np.flatnonzero(prediction.sum(1) == 0)
-        prediction[empty, (probability[empty] / vector).argmax(1)] = 1
-    return prediction
+    from cdskit.localize_decision import threshold_decisions
+
+    return threshold_decisions(probability, thresholds, labels, ensure_one_label)[
+        "prediction_matrix"
+    ]
 
 
-def sequence_features(sequences):
+def sequence_features(sequences, feature_schema=None):
     from cdskit.localize_model import (
         extract_broad_localize_features,
         BROAD_FEATURE_NAMES,
@@ -250,12 +256,21 @@ def sequence_features(sequences):
     if not sequences:
         return np.zeros((0, len(BROAD_FEATURE_NAMES)))
     return np.asarray(
-        [extract_broad_localize_features(seq, kingdom="")[0] for seq in sequences]
+        [
+            extract_broad_localize_features(
+                seq, kingdom="", feature_schema=feature_schema
+            )[0]
+            for seq in sequences
+        ]
     )
 
 
+@with_model_feature_schema("model")
 def apply_specialists(sequences, model, probabilities):
     if "specialist_head" not in model:
         return probabilities
-    expert = predict_specialists(sequence_features(sequences), model["specialist_head"])
+    schema = model["specialist_head"].get("feature_schema", extraction_schema())
+    expert = predict_specialists(
+        sequence_features(sequences, feature_schema=schema), model["specialist_head"]
+    )
     return blend_probabilities(probabilities, expert, model["specialist_weights"])
