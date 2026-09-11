@@ -47,3 +47,10 @@ cdskit mask --seq_file input.fasta --out_file output.fasta
 Input must be nucleotide data with every sequence length divisible by three.
 Partial-gap codons such as `AT-` are masked even when both optional masking
 switches are set to `no`.
+
+## References
+
+Cite the method or resource actually used and report the CDSKIT version and
+options.
+
+- Fukushima K, Pollock DD (2023). Detecting macroevolutionary genotype–phenotype associations using error-corrected rates of protein convergence. *Nature Ecology & Evolution* 7:155–170. [Paper](https://doi.org/10.1038/s41559-022-01932-7) — Published CDSKIT workflow context; describes pad, mask, backtrim and hammer, not all later options.

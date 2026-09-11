@@ -218,3 +218,13 @@ CTGCTGCGCATGCGCAGCGCT
 >Drosophila_melanogaster_AE014297.3_cds_AAF56245.1_28374
 ATGACTTCAAAGCTACTGCCC
 ```
+
+## References
+
+Cite the method or resource actually used and report the CDSKIT version and
+options.
+
+- Fukushima K, Pollock DD (2023). Detecting macroevolutionary genotype–phenotype associations using error-corrected rates of protein convergence. *Nature Ecology & Evolution* 7:155–170. [Paper](https://doi.org/10.1038/s41559-022-01932-7) — Published CDSKIT workflow context; describes pad, mask, backtrim and hammer, not all later options.
+- Shen W, Le S, Li Y, Hu F (2016). SeqKit: A Cross-Platform and Ultrafast Toolkit for FASTA/Q File Manipulation. *PLOS ONE* 11:e0163962. [Paper](https://doi.org/10.1371/journal.pone.0163962) — Cite if using SeqKit in the example workflow.
+- Steenwyk JL et al. (2020). ClipKIT: A multiple sequence alignment trimming software for accurate phylogenomic inference. *PLOS Biology* 18:e3001007. [Paper](https://doi.org/10.1371/journal.pbio.3001007) — Cite if ClipKIT produced the trimmed alignment or retained-column log.
+- Capella-Gutiérrez S, Silla-Martínez JM, Gabaldón T (2009). trimAl: a tool for automated alignment trimming in large-scale phylogenetic analyses. *Bioinformatics* 25:1972–1973. [Paper](https://doi.org/10.1093/bioinformatics/btp348) — Cite if trimAl produced the trimmed alignment or retained-column map.

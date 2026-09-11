@@ -171,3 +171,11 @@ ACTCCGGCGACCTCCTCAACGCCGAGTACCAGAAGACGGAGGTGTTCGGCCTGGAGATCC
 CCACCAAGCTCGACGGCGTGCCGTCAGAAATCCTCGACCCCATCAACACCTGGACGGACA
 AGGCCGCGTACAAGGAGACGCTCCTGAAGCTCGCCGGGCTCTTCAAGAAGAACTTCGAG
 ```
+
+## References
+
+Cite the method or resource actually used and report the CDSKIT version and
+options.
+
+- Sayers EW et al. (2025). GenBank 2025 update. *Nucleic Acids Research* 53:D56–D61. [Paper](https://doi.org/10.1093/nar/gkae1114) — Data resource; also record the accession.version identifiers and retrieval date of the sequences used.
+- Cock PJA et al. (2009). Biopython: freely available Python tools for computational molecular biology and bioinformatics. *Bioinformatics* 25:1422–1423. [Paper](https://doi.org/10.1093/bioinformatics/btp163) — Sequence parsing, feature extraction and genetic-code infrastructure used by CDSKIT.

@@ -46,4 +46,11 @@ ATGAAAGGG---
 - CDS lengths in `--seq_file` should be multiples of three after removing gap characters.
 - A terminal stop codon in CDS can be omitted in `--aa_aln`.
 
-For trimmed protein alignments, use [backtrim](cdskit-backtrim.md) with the trimmer's retained column positions. Backalign requires the complete corresponding protein sequence (apart from the documented terminal stop exception); it cannot infer deleted codon positions from repeated amino acids.
+For trimmed protein alignments, use [backtrim](https://github.com/kfuku52/cdskit/wiki/cdskit-backtrim) with the trimmer's retained column positions. Backalign requires the complete corresponding protein sequence (apart from the documented terminal stop exception); it cannot infer deleted codon positions from repeated amino acids.
+
+## References
+
+Cite the method or resource actually used and report the CDSKIT version and
+options.
+
+- Cock PJA et al. (2009). Biopython: freely available Python tools for computational molecular biology and bioinformatics. *Bioinformatics* 25:1422–1423. [Paper](https://doi.org/10.1093/bioinformatics/btp163) — Sequence parsing, feature extraction and genetic-code infrastructure used by CDSKIT.

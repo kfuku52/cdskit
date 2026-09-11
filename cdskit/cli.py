@@ -1732,6 +1732,25 @@ help_stats = "Printing sequence statistics. See `cdskit stats -h`"
 p_stats = subparsers.add_parser(
     "stats", help=help_stats, parents=[p_version, p_infile, p_threads]
 )
+p_stats.add_argument(
+    "--mode",
+    choices=["sequence", "alignment"],
+    default="sequence",
+    help="Sequence: aggregate DNA statistics; alignment: AMAS-compatible TSV.",
+)
+p_stats.add_argument(
+    "--seq_type",
+    choices=["dna", "aa"],
+    default="dna",
+    help="Input alphabet. aa requires --mode alignment; sites are not codons.",
+)
+p_stats.add_argument(
+    "-o",
+    "--out_file",
+    dest="outfile",
+    default="-",
+    help="Output path; default: stdout. Alignment mode writes TSV.",
+)
 p_stats.set_defaults(handler=command_stats)
 
 

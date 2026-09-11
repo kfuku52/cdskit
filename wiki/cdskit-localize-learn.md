@@ -264,4 +264,16 @@ cdskit localize \
 
 ## Staged teacher/student learning
 
-Use `--stage teacher|predict|distill|evaluate|all` with `--config` and `--run_dir` for restartable multilabel experiments. See [the teacher/student guide](localize-teacher-student.md) for partition rules, GPU-to-CPU execution, provenance and model export.
+Use `--stage teacher|predict|distill|evaluate|all` with `--config` and `--run_dir` for restartable multilabel experiments. See [the teacher/student guide](https://github.com/kfuku52/cdskit/wiki/localize-teacher-student) for partition rules, GPU-to-CPU execution, provenance and model export.
+
+## References
+
+Cite the method or resource actually used, in addition to the CDSKIT version and
+command. Papers below do not validate newly trained CDSKIT models or new options.
+
+- Almagro Armenteros JJ et al. (2019). Detecting sequence signals in targeting peptides using deep learning. *Life Science Alliance* 2:e201900429. [Paper](https://doi.org/10.26508/lsa.201900429) — TargetP 2.0 methodology and targeting-peptide dataset; CDSKIT targeting5 weights are separately trained, not the official TargetP predictor.
+- The UniProt Consortium (2025). UniProt: the Universal Protein Knowledgebase in 2025. *Nucleic Acids Research* 53:D609–D617. [Paper](https://doi.org/10.1093/nar/gkae1010) — Protein sequences and annotations; also report the downloaded snapshot/query and evidence filters.
+- Lin Z et al. (2023). Evolutionary-scale prediction of atomic-level protein structure with a language model. *Science* 379:1123–1130. [Paper](https://doi.org/10.1126/science.ade2574) — ESM2 encoder used by frozen-encoder models; CDSKIT does not run the paper’s structure predictor.
+- Stärk H, Dallago C, Heinzinger M, Rost B (2021). Light attention predicts protein location from the language of life. *Bioinformatics Advances* 1:vbab035. [Paper](https://doi.org/10.1093/bioadv/vbab035) — Light Attention architecture adapted for the CDSKIT multilabel head.
+- Hinton G, Vinyals O, Dean J (2015). Distilling the Knowledge in a Neural Network. *arXiv preprint* arXiv:1503.02531. [Paper](https://doi.org/10.48550/arXiv.1503.02531) — Knowledge-distillation background; CDSKIT’s optional multilabel BCE teacher/student recipe differs from the original softmax-temperature recipe.
+- Ridnik T et al. (2021). Asymmetric Loss For Multi-Label Classification. *Proceedings of ICCV*, 82–91. [Paper](https://doi.org/10.1109/ICCV48922.2021.00015) — Cite when selecting the optional asymmetric loss; it is not the default BCE training loss.

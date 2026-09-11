@@ -37,7 +37,7 @@ conda activate cdskit
 cdskit --version
 ```
 
-As checked on 2026-09-08, the
+As checked on 2026-09-11, the
 [Bioconda 0.27.0 recipe](https://github.com/bioconda/bioconda-recipes/blob/master/recipes/cdskit/meta.yaml)
 still declares Python >=3.8 and Biopython >=1.77, and omits Matplotlib.
 The explicit requirements above are a workaround for that packaging mismatch,
@@ -47,7 +47,9 @@ already resolves the required base dependencies. Tagged releases also need a
 downstream recipe update and successful build before appearing in Bioconda;
 publication is not immediate. This 0.27.0 recipe still describes the older
 BSD-3-Clause release; current source and CDSKIT-trained model weights are MIT.
-Use GitHub source for the integrated model, which requires CDSKIT >=0.29.0.
+Use current GitHub source for `stats --mode alignment` (CDSKIT >=0.31.0) and
+the default ESM2 localization model. The optional integrated CNN requires
+CDSKIT >=0.29.0.
 
 Bioconda supports Linux and macOS. For native Windows, use the GitHub pip
 installation; the project tests Windows separately from Bioconda packaging.
@@ -58,7 +60,9 @@ The GitHub pip installation includes:
 
 - [Biopython](https://biopython.org/) >=1.80 for sequence and GenBank I/O;
 - [NumPy](https://numpy.org/) >=1.23 for numerical operations;
-- [Matplotlib](https://matplotlib.org/) >=3.6 for `cdskit plot`.
+- [Matplotlib](https://matplotlib.org/) >=3.6 for `cdskit plot`;
+- [filelock](https://py-filelock.readthedocs.io/) >=3.12 for model-cache and
+  other cross-process locks.
 
 These dependencies are installed automatically.
 
@@ -71,13 +75,24 @@ The full neural training and prediction toolset uses the `ml` extra:
 python -m pip install --upgrade 'cdskit[ml] @ git+https://github.com/kfuku52/cdskit.git'
 ```
 
-This extra includes **torch >=2.2, scikit-learn >=1.4, and transformers >=4.40**.
+This extra includes **torch >=2.2, scikit-learn >=1.4, transformers >=4.40,
+and PyYAML >=6**. PyYAML supports the staged training configuration format.
 Transformers is already included; installing only torch and scikit-learn is not
 equivalent to installing the full extra. ESM models also need their encoder
 files, downloaded from a pinned revision or supplied locally.
 
 GPU support is optional. Published cdskit localization models run on CPU; CUDA
 or Apple MPS mainly helps when retraining neural models.
+
+## Default ESM2 localization model runtime
+
+The default `esm2-localization-v1` alias uses ESM2 650M and a CDSKIT-trained
+Light Attention head. Install the `ml` extra above. Both the head and encoder
+are downloaded on first use; the CDSKIT model cache and Hugging Face encoder
+cache are separate. CPU inference is supported, but this model is more costly
+than the compact CNN because the encoder runs for every sequence. See the
+[model guide](https://github.com/kfuku52/cdskit/wiki/cdskit-localize-esm2-localization-v1)
+for offline cache setup and measured runtime conditions.
 
 ## Integrated ten-label model runtime
 

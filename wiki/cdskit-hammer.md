@@ -56,3 +56,10 @@ ATGATT---TTGTAT
 
 Input must be an aligned nucleotide sequence set whose lengths are multiples
 of three.
+
+## References
+
+Cite the method or resource actually used and report the CDSKIT version and
+options.
+
+- Fukushima K, Pollock DD (2023). Detecting macroevolutionary genotype–phenotype associations using error-corrected rates of protein convergence. *Nature Ecology & Evolution* 7:155–170. [Paper](https://doi.org/10.1038/s41559-022-01932-7) — Published CDSKIT workflow context; describes pad, mask, backtrim and hammer, not all later options.

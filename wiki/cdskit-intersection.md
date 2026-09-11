@@ -120,3 +120,8 @@ seq2	cdskit	exon	5	10	.	+	.	ID=gene2-mRNA1:exon2;Parent=gene2-mRNA1
 seq2	cdskit	CDS	1	3	.	+	0	ID=gene2-mRNA1-cds1;Parent=gene2-mRNA1
 seq2	cdskit	CDS	5	10	.	+	2	ID=gene2-mRNA1-cds2;Parent=gene2-mRNA1
 ```
+
+## Citation
+
+No separate method paper is designated for this utility. Report the CDSKIT
+version, command and options; see [citing CDSKIT](https://github.com/kfuku52/cdskit/wiki#citing-cdskit).

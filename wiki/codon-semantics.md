@@ -97,3 +97,8 @@ workers. These establish software behavior, not gene functionality.
 
 A fixed small RefSeq panel and synthetic perturbations are documented in the
 [2026-09-10 evaluation](https://github.com/kfuku52/cdskit/blob/master/docs/codon-semantics-evaluation-2026-09-10.md).
+
+## References
+
+- Swart EC, Serra V, Petroni G, Nowacki M (2016). Genetic Codes with No Dedicated Stop Codon: Context-Dependent Translation Termination. *Cell* 166:691–702. [Paper](https://doi.org/10.1016/j.cell.2016.06.020) — Biological background for context-dependent termination in the discussed ciliate codes; CDSKIT does not infer termination context.
+- Cock PJA et al. (2009). Biopython: freely available Python tools for computational molecular biology and bioinformatics. *Bioinformatics* 25:1422–1423. [Paper](https://doi.org/10.1093/bioinformatics/btp163) — Sequence parsing, feature extraction and genetic-code infrastructure used by CDSKIT.

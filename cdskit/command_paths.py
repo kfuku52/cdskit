@@ -56,7 +56,7 @@ COMMAND_PATHS.update(
         ),
         "validate": CommandPaths(outputs=("report",)),
         "printseq": CommandPaths(outputs=()),
-        "stats": CommandPaths(outputs=()),
+        "stats": CommandPaths(),
         "codonstats": CommandPaths(outputs=()),
         # These commands generate filenames from a prefix, not --out_file itself.
         "split": CommandPaths(outputs=()),

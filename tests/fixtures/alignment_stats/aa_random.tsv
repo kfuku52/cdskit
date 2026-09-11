@@ -1,0 +1,2 @@
+Alignment_name	No_of_taxa	Alignment_length	Total_matrix_cells	Undetermined_characters	Missing_percent	No_variable_sites	Proportion_variable_sites	Parsimony_informative_sites	Proportion_parsimony_informative	A	C	D	E	F	G	H	I	K	L	M	N	P	Q	R	S	T	V	W	Y	B	J	Z	X	.	*	-	?
+aa_random.fasta	9	173	1557	291	18.69	173	1.0	31	0.179	50	44	65	58	58	49	50	51	63	55	62	62	52	53	55	55	64	49	66	43	68	50	44	73	57	54	60	47

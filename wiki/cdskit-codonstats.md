@@ -40,13 +40,21 @@ standard-output stream to its own file. These tables do not use the versioned
 ## Notes
 
 - Input sequences must be DNA and their lengths must be multiples of three.
-- Missing codons are counted separately from ambiguous codons.
+- Missing codons are counted separately from ambiguous codons. Ambiguous and
+  definite-stop counts can overlap (for example, standard-code `TAR`).
+- Summary rows also include `codons_possible_stop`, `codons_context_dependent`
+  and `codon_semantics_version`; read fields by column name.
 - GC statistics use only unambiguous A/C/G/T bases in the denominator, for
   all positions combined and for each codon position separately. In contrast,
-  `cdskit stats` includes ambiguous bases and gaps in its GC denominator.
+  `cdskit stats --mode sequence` includes ambiguous bases and gaps in its GC denominator.
 
 ## Codon semantics
 
-See [codon meaning and uncertainty](codon-semantics.md) for definite versus
+See [codon meaning and uncertainty](https://github.com/kfuku52/cdskit/wiki/codon-semantics) for definite versus
 possible stops, dual-coding tables 27/28/31, overlapping ambiguity/stop counts,
 and report compatibility. These rules describe sequence QC, not gene function.
+
+## Citation
+
+No separate method paper is designated for this utility. Report the CDSKIT
+version, command and options; see [citing CDSKIT](https://github.com/kfuku52/cdskit/wiki#citing-cdskit).

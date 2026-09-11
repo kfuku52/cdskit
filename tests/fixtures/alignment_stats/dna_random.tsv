@@ -1,0 +1,2 @@
+Alignment_name	No_of_taxa	Alignment_length	Total_matrix_cells	Undetermined_characters	Missing_percent	No_variable_sites	Proportion_variable_sites	Parsimony_informative_sites	Proportion_parsimony_informative	AT_content	GC_content	A	C	G	T	K	M	R	Y	S	W	B	V	H	D	X	N	O	-	?
+dna_random.fasta	9	173	1557	410	26.333	91	0.526	5	0.029	0.511	0.489	88	65	91	97	59	79	86	89	95	77	79	91	74	77	94	82	62	92	80

@@ -40,6 +40,11 @@ JSON arrays.
 
 ## Codon semantics
 
-See [codon meaning and uncertainty](codon-semantics.md) for definite versus
+See [codon meaning and uncertainty](https://github.com/kfuku52/cdskit/wiki/codon-semantics) for definite versus
 possible stops, dual-coding tables 27/28/31, overlapping ambiguity/stop counts,
 and report compatibility. These rules describe sequence QC, not gene function.
+
+## Citation
+
+No separate method paper is designated for this utility. Report the CDSKIT
+version, command and options; see [citing CDSKIT](https://github.com/kfuku52/cdskit/wiki#citing-cdskit).

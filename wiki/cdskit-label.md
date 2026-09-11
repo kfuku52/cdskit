@@ -38,3 +38,8 @@ may share a prefix.
 Label editing runs serially and has no `--threads` option.
 
 Counts of changed, clipped, and duplicate IDs are written to standard error.
+
+## Citation
+
+No separate method paper is designated for this utility. Report the CDSKIT
+version, command and options; see [citing CDSKIT](https://github.com/kfuku52/cdskit/wiki#citing-cdskit).

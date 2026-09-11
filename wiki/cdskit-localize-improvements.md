@@ -78,7 +78,7 @@ and validation-only label thresholds. Early stopping uses validation BCE by
 default; `--plm_selection_metric macro_ap` selects by validation macro average
 precision. `--plm_loss` accepts `bce`, `weighted_bce`, or `asl`. Terminal attention
 adds the first/last 32-residue mean embeddings to light attention. See the
-[teacher training settings](localize-teacher-student.md) for loss definitions. No full encoder fine-tuning,
+[teacher training settings](https://github.com/kfuku52/cdskit/wiki/localize-teacher-student) for loss definitions. No full encoder fine-tuning,
 external specialist stacking or distillation is performed automatically.
 
 Long sequences use overlapping encoder windows and average overlapping residue
@@ -122,7 +122,7 @@ Compare `plm_mean,plm_light,plm_label` with the ablation script and the same
 running a frozen external evaluation. Specialist integration and distillation
 should follow only after the base representation shows a reproducible gain.
 
-## References
+## Implementation and data resources
 
 - [Light Attention reference implementation](https://github.com/HannesStark/protein-localization/blob/master/models/light_attention.py): feature and attention convolutions, weighted/max pooling. This implementation additionally masks the max pool and supports multilabel heads.
 - [DeepLoc 2.1 official data and model description](https://services.healthtech.dtu.dk/services/DeepLoc-2.1/): localization ontology and provided partitions.
@@ -130,3 +130,14 @@ should follow only after the base representation shows a reproducible gain.
 
 For full-data comparisons, portable per-location specialist integration and controlled
 distillation experiments, see [Full-data localization experiments](https://github.com/kfuku52/cdskit/wiki/cdskit-localize-full-experiment).
+
+## References
+
+Cite the method or resource actually used, in addition to the CDSKIT version and
+command. Papers below do not validate newly trained CDSKIT models or new options.
+
+- Lin Z et al. (2023). Evolutionary-scale prediction of atomic-level protein structure with a language model. *Science* 379:1123–1130. [Paper](https://doi.org/10.1126/science.ade2574) — ESM2 encoder used by frozen-encoder models; CDSKIT does not run the paper’s structure predictor.
+- Stärk H, Dallago C, Heinzinger M, Rost B (2021). Light attention predicts protein location from the language of life. *Bioinformatics Advances* 1:vbab035. [Paper](https://doi.org/10.1093/bioadv/vbab035) — Light Attention architecture adapted for the CDSKIT multilabel head.
+- Thumuluri V et al. (2022). DeepLoc 2.0: multi-label subcellular localization prediction using protein language models. *Nucleic Acids Research* 50:W228–W234. [Paper](https://doi.org/10.1093/nar/gkac278) — Localization labels, sorting-signal data and protein-language-model methodology where used.
+- Ødum M et al. (2024). DeepLoc 2.1: multi-label membrane protein type prediction using protein language models. *Nucleic Acids Research* 52:W215–W220. [Paper](https://doi.org/10.1093/nar/gkae237) — DeepLoc 2.1 data/partition provenance; citing the dataset does not mean CDSKIT executes the DeepLoc predictor.
+- Ridnik T et al. (2021). Asymmetric Loss For Multi-Label Classification. *Proceedings of ICCV*, 82–91. [Paper](https://doi.org/10.1109/ICCV48922.2021.00015) — Cite when selecting the optional asymmetric loss; it is not the default BCE training loss.

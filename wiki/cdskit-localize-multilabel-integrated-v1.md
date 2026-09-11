@@ -42,7 +42,9 @@ setting. After installation and download, inference can run offline.
 
 Output contains `seq_id`, semicolon-separated `predicted_labels`, ten `p_LABEL`
 columns and `perox_signal_type`. The model uses a separate threshold for each
-label and always returns at least one label. A `.json` report contains the same
+label. Its default legacy decision policy forces at least one label; an explicit
+`--decision_policy safe-v1` supports input abstention while preserving the
+checkpoint’s label-selection setting for valid sequences. A `.json` report contains the same
 row objects; `predicted_labels` remains a string.
 
 ## Evaluation and limits
@@ -56,8 +58,11 @@ UniProt positives, recall was 25/115 versus baseline 31/115; that positive-only
 panel cannot estimate precision or F1.
 
 These results do not establish universal improvement or calibrated biological
-confidence. The model has no abstention or taxonomy masking: `--organism_group`
-does not suppress chloroplast predictions in this ten-label model. See the
+confidence. The reported evaluations used the legacy decision policy. Current
+CDSKIT supports `--decision_policy safe-v1` for input abstention and explicit
+`--taxonomy_id 9606` to exclude chloroplast labels for human proteins.
+`--organism_group` does not suppress chloroplast predictions in this ten-label
+model. These runtime overrides were not used in the historical metrics above. See the
 [full experiment and audit](https://github.com/kfuku52/cdskit/wiki/cdskit-localize-full-experiment)
 and the release model card for split design, homology checks and limitations.
 
@@ -75,3 +80,14 @@ for the corrected nine-residue PTS2 definition, legacy model compatibility,
 Published artifacts retain their historical defaults; new staged pipeline models
 default to safe inference with `ensure_one_label=False`. Scores remain unverified
 as calibrated biological probabilities.
+
+## References
+
+Cite the method or resource actually used, in addition to the CDSKIT version and
+command. Papers below do not validate newly trained CDSKIT models or new options.
+
+- Thumuluri V et al. (2022). DeepLoc 2.0: multi-label subcellular localization prediction using protein language models. *Nucleic Acids Research* 50:W228–W234. [Paper](https://doi.org/10.1093/nar/gkac278) — Localization labels, sorting-signal data and protein-language-model methodology where used.
+- Ødum M et al. (2024). DeepLoc 2.1: multi-label membrane protein type prediction using protein language models. *Nucleic Acids Research* 52:W215–W220. [Paper](https://doi.org/10.1093/nar/gkae237) — DeepLoc 2.1 data/partition provenance; citing the dataset does not mean CDSKIT executes the DeepLoc predictor.
+- The UniProt Consortium (2025). UniProt: the Universal Protein Knowledgebase in 2025. *Nucleic Acids Research* 53:D609–D617. [Paper](https://doi.org/10.1093/nar/gkae1010) — Protein sequences and annotations; also report the downloaded snapshot/query and evidence filters.
+- Thul PJ et al. (2017). A subcellular map of the human proteome. *Science* 356:eaal3321. [Paper](https://doi.org/10.1126/science.aal3321) — Human Protein Atlas Cell Atlas annotation resource for the HPA evaluations; report the actual snapshot and label mapping.
+- Steinegger M, Söding J (2017). MMseqs2 enables sensitive protein sequence searching for the analysis of massive data sets. *Nature Biotechnology* 35:1026–1028. [Paper](https://doi.org/10.1038/nbt.3988) — Cite when MMseqs2 is used for homology filtering or clustering in the research workflow.

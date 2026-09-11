@@ -4,6 +4,25 @@ This project follows semantic versioning. Deprecated CLI spellings remain
 available for at least the 0.24 release series and print their canonical
 replacement to standard error.
 
+## 0.31.0 — 2026-09-11
+
+### Added
+
+- `stats --mode alignment` provides DNA/protein alignment TSV summaries with AMAS-compatible
+  site statistics, missing-data counts, character frequencies, and DNA GC
+  semantics. Protein AT/GC fields are `NA`. Reject malformed alignments and
+  preserve existing files on errors. Reference fixtures compare against AMAS.
+
+### Fixed
+
+- Match AMAS's missing-percentage arithmetic order at rounding boundaries;
+  reject empty alignment IDs and invalid thread counts in alignment mode.
+
+### Documentation
+
+- Refresh command guides and localization installation guidance, and add
+  method/data/software citations to the relevant wiki pages.
+
 ## 0.30.4 — 2026-09-11
 
 ### Fixed

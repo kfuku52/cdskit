@@ -55,3 +55,8 @@ AGGGTTCAATACGTTCTGAGCCGTATCCGTAATGCTGCAAGGCATCTTCTTACCCTGGAT
 
 The ID and problematic-character rules are combined with OR: satisfying either
 rule removes the record.
+
+## Citation
+
+No separate method paper is designated for this utility. Report the CDSKIT
+version, command and options; see [citing CDSKIT](https://github.com/kfuku52/cdskit/wiki#citing-cdskit).

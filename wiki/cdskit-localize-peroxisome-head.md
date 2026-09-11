@@ -22,9 +22,10 @@ cdskit localize \
 
 The peroxisome head is a CPU-runtime scikit-learn ExtraTrees classifier trained
 on DeepLoc21 Swiss-Prot train/validation rows with sequence-level features,
-including C-terminal PTS-like features. Interpret it as a peroxisome
-sequence-label probability that is strongest for PTS-like targeting signals,
-not as a general peroxisome-associated localization detector.
+including C-terminal PTS-like features. Its `p_peroxisome` output is a learned
+sequence-label score, not an independently calibrated biological probability.
+The historical evaluation below does not establish broad peroxisome-associated
+localization accuracy, and a PTS motif match alone does not prove targeting.
 
 ## Release asset
 
@@ -130,3 +131,17 @@ for the corrected nine-residue PTS2 definition, legacy model compatibility,
 Published artifacts retain their historical defaults; new staged pipeline models
 default to safe inference with `ensure_one_label=False`. Scores remain unverified
 as calibrated biological probabilities.
+
+## References
+
+Cite the method or resource actually used, in addition to the CDSKIT version and
+command. Papers below do not validate newly trained CDSKIT models or new options.
+
+- Thumuluri V et al. (2022). DeepLoc 2.0: multi-label subcellular localization prediction using protein language models. *Nucleic Acids Research* 50:W228–W234. [Paper](https://doi.org/10.1093/nar/gkac278) — Localization labels, sorting-signal data and protein-language-model methodology where used.
+- Ødum M et al. (2024). DeepLoc 2.1: multi-label membrane protein type prediction using protein language models. *Nucleic Acids Research* 52:W215–W220. [Paper](https://doi.org/10.1093/nar/gkae237) — DeepLoc 2.1 data/partition provenance; citing the dataset does not mean CDSKIT executes the DeepLoc predictor.
+- Geurts P, Ernst D, Wehenkel L (2006). Extremely randomized trees. *Machine Learning* 63:3–42. [Paper](https://doi.org/10.1007/s10994-006-6226-1) — ExtraTrees method used for the peroxisome/specialist head.
+- The UniProt Consortium (2025). UniProt: the Universal Protein Knowledgebase in 2025. *Nucleic Acids Research* 53:D609–D617. [Paper](https://doi.org/10.1093/nar/gkae1010) — Protein sequences and annotations; also report the downloaded snapshot/query and evidence filters.
+- Thul PJ et al. (2017). A subcellular map of the human proteome. *Science* 356:eaal3321. [Paper](https://doi.org/10.1126/science.aal3321) — Human Protein Atlas Cell Atlas annotation resource for the HPA evaluations; report the actual snapshot and label mapping.
+- Steinegger M, Söding J (2017). MMseqs2 enables sensitive protein sequence searching for the analysis of massive data sets. *Nature Biotechnology* 35:1026–1028. [Paper](https://doi.org/10.1038/nbt.3988) — Cite when MMseqs2 is used for homology filtering or clustering in the research workflow.
+- Flynn CR, Mullen RT, Trelease RN (1998). Mutational analyses of a type 2 peroxisomal targeting signal that is capable of directing oligomeric protein import into tobacco BY-2 glyoxysomes. *The Plant Journal* 16:709–720. [Paper](https://doi.org/10.1046/j.1365-313x.1998.00344.x) — Experimental PTS2 nonapeptide evidence; the CDSKIT motif/window detector is a heuristic.
+- Gonzalez NH et al. (2011). A Single Peroxisomal Targeting Signal Mediates Matrix Protein Import in Diatoms. *PLOS ONE* 6:e25316. [Paper](https://doi.org/10.1371/journal.pone.0025316) — Evidence that PTS2-mediated import is not universal across taxa; motif matches alone do not prove localization.

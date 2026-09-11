@@ -88,5 +88,12 @@ padding. Artificial padding is not recovered sequence evidence.
 For example, default padding can turn `ATGTAAGGG` into `NATGTAAGGGNN` with zero
 internal stops. This does not demonstrate that the new frame is correct.
 Internal frameshifts cannot in general be repaired by changing only the ends.
-See [codon meaning and uncertainty](codon-semantics.md) for terminal rules,
+See [codon meaning and uncertainty](https://github.com/kfuku52/cdskit/wiki/codon-semantics) for terminal rules,
 report formats and interpretation.
+
+## References
+
+Cite the method or resource actually used and report the CDSKIT version and
+options.
+
+- Fukushima K, Pollock DD (2023). Detecting macroevolutionary genotype–phenotype associations using error-corrected rates of protein convergence. *Nature Ecology & Evolution* 7:155–170. [Paper](https://doi.org/10.1038/s41559-022-01932-7) — Published CDSKIT workflow context; describes pad, mask, backtrim and hammer, not all later options.

@@ -161,3 +161,12 @@ for the corrected nine-residue PTS2 definition, legacy model compatibility,
 Published artifacts retain their historical defaults; new staged pipeline models
 default to safe inference with `ensure_one_label=False`. Scores remain unverified
 as calibrated biological probabilities.
+
+## References
+
+- Lin Z et al. (2023). Evolutionary-scale prediction of atomic-level protein structure with a language model. *Science* 379:1123–1130. [Paper](https://doi.org/10.1126/science.ade2574) — ESM2 encoder used by frozen-encoder models; CDSKIT does not run the paper’s structure predictor.
+- Stärk H, Dallago C, Heinzinger M, Rost B (2021). Light attention predicts protein location from the language of life. *Bioinformatics Advances* 1:vbab035. [Paper](https://doi.org/10.1093/bioadv/vbab035) — Light Attention architecture adapted for the CDSKIT multilabel head.
+- Hinton G, Vinyals O, Dean J (2015). Distilling the Knowledge in a Neural Network. *arXiv preprint* arXiv:1503.02531. [Paper](https://doi.org/10.48550/arXiv.1503.02531) — Knowledge-distillation background; CDSKIT’s optional multilabel BCE teacher/student recipe differs from the original softmax-temperature recipe.
+- Ridnik T et al. (2021). Asymmetric Loss For Multi-Label Classification. *Proceedings of ICCV*, 82–91. [Paper](https://doi.org/10.1109/ICCV48922.2021.00015) — Cite when selecting the optional asymmetric loss; it is not the default BCE training loss.
+- Thumuluri V et al. (2022). DeepLoc 2.0: multi-label subcellular localization prediction using protein language models. *Nucleic Acids Research* 50:W228–W234. [Paper](https://doi.org/10.1093/nar/gkac278) — Localization labels, sorting-signal data and protein-language-model methodology where used.
+- Ødum M et al. (2024). DeepLoc 2.1: multi-label membrane protein type prediction using protein language models. *Nucleic Acids Research* 52:W215–W220. [Paper](https://doi.org/10.1093/nar/gkae237) — DeepLoc 2.1 data/partition provenance; citing the dataset does not mean CDSKIT executes the DeepLoc predictor.

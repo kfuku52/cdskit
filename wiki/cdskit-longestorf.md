@@ -87,9 +87,14 @@ Codes 27/28/31 do not terminate a candidate at a dual-coding codon based solely
 on table membership. Such boundaries are unconfirmed, and the candidate may
 extend to frame end. An explicit annotated CDS can instead be checked with
 `translate --complete_cds yes`. Standard-code TAR is a definite boundary;
-TAN is not. See [codon semantics](codon-semantics.md).
+TAN is not. See [codon semantics](https://github.com/kfuku52/cdskit/wiki/codon-semantics).
 
 Neither selection mode identifies a functional gene. For example, the default
 selects the 6 nt complete `ATGTAA` even if a much longer partial region follows.
 Longer candidates are not inherently more accurate gene annotations; compare
 coordinates to independent annotation, homology and other biological evidence.
+
+## Citation
+
+No separate method paper is designated for this utility. Report the CDSKIT
+version, command and options; see [citing CDSKIT](https://github.com/kfuku52/cdskit/wiki#citing-cdskit).

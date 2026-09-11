@@ -29,10 +29,11 @@ see [documentation maintenance](https://github.com/kfuku52/cdskit/blob/master/do
 
 ## Localization models and licensing
 
-The [published integrated model](https://github.com/kfuku52/cdskit/wiki/cdskit-localize-multilabel-integrated-v1)
+The default [ESM2 + Light Attention model](https://github.com/kfuku52/cdskit/wiki/cdskit-localize-esm2-localization-v1)
 predicts ten subcellular locations from protein or CDS input. The
 [prediction guide](https://github.com/kfuku52/cdskit/wiki/cdskit-localize) compares
-it with the targeting5 models and explains their different runtime requirements.
+it with the optional integrated CNN and legacy targeting5 models, including
+their different dependencies and label meanings.
 
 CDSKIT code and CDSKIT-trained model weights are
 [MIT-licensed](https://github.com/kfuku52/cdskit/blob/master/LICENSE).
@@ -84,10 +85,22 @@ Third-party software and source datasets retain their own license terms.
 
 - [`split`](https://github.com/kfuku52/cdskit/wiki/cdskit-split): Splitting 1st, 2nd, and 3rd codon positions
 
-- [`stats`](https://github.com/kfuku52/cdskit/wiki/cdskit-stats): Printing sequence statistics
+- [`stats`](https://github.com/kfuku52/cdskit/wiki/cdskit-stats): Printing sequence statistics or AMAS-compatible alignment summaries with `--mode alignment`
 
 - [`translate`](https://github.com/kfuku52/cdskit/wiki/cdskit-translate): Translating CDS nucleotide sequences to amino acids
 
 - [`trimcodon`](https://github.com/kfuku52/cdskit/wiki/cdskit-trimcodon): Trimming aligned CDS codon columns by clean-codon fraction
 
 - [`validate`](https://github.com/kfuku52/cdskit/wiki/cdskit-validate): Validating aligned CDS quality and reporting issues
+
+## Citing CDSKIT
+
+Report the CDSKIT version, commands/options, genetic code where applicable,
+and the accession/model/data versions used. Function pages list relevant
+method, software and dataset papers at the end. Cite only the components used;
+a shared task does not imply that CDSKIT implements another program's algorithm.
+Generic ID and sequence utilities have no separate method paper designated.
+
+## References
+
+- Fukushima K, Pollock DD (2023). Detecting macroevolutionary genotype–phenotype associations using error-corrected rates of protein convergence. *Nature Ecology & Evolution* 7:155–170. [Paper](https://doi.org/10.1038/s41559-022-01932-7) — Published use of CDSKIT, including pad, mask, backtrim and hammer. This is not a methods reference for every function added since 2023.

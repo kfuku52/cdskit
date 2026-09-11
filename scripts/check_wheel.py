@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import os
+import csv
+from io import StringIO
 from pathlib import Path
 import shutil
 import subprocess
@@ -52,6 +54,26 @@ def main() -> None:
         padded = run([cli, "pad"], input=">wheel-smoke\nATGA\n", capture_output=True)
         if padded.stdout.splitlines() != [">wheel-smoke", "ATGANN"]:
             raise RuntimeError("Installed CLI returned unexpected padding output.")
+        stats = run(
+            [cli, "stats", "--mode", "alignment", "--seq_type", "dna"],
+            input=">a\nAAN\n>b\nACN\n>c\nGCN\n>d\nGCN\n",
+            capture_output=True,
+        )
+        summary = list(csv.DictReader(StringIO(stats.stdout), delimiter="\t"))
+        if len(summary) != 1 or any(
+            summary[0].get(key) != value
+            for key, value in {
+                "No_of_taxa": "4",
+                "Alignment_length": "3",
+                "Missing_percent": "33.333",
+                "No_variable_sites": "2",
+                "Parsimony_informative_sites": "1",
+                "GC_content": "0.625",
+            }.items()
+        ):
+            raise RuntimeError(
+                "Installed CLI returned unexpected alignment statistics."
+            )
         plot = root / "smoke.svg"
         run(
             [
@@ -68,7 +90,9 @@ def main() -> None:
         if "<svg" not in plot.read_text(encoding="utf-8"):
             raise RuntimeError("Installed CLI did not create an SVG plot.")
         run([uv, "pip", "check", "--python", python])
-    print("Fresh installed-wheel import, CLI, padding and SVG checks passed.")
+    print(
+        "Fresh installed-wheel import, CLI, padding, alignment statistics and SVG checks passed."
+    )
 
 
 if __name__ == "__main__":

@@ -14,7 +14,7 @@ The default checkpoint uses the baseline recipe: Light Attention, ordinary BCE
 loss, and epoch selection by validation BCE. Experimental improvement candidates
 are not adopted as the default; alternative losses, attention heads, and macro-AP
 epoch selection remain opt-in training options. See the
-[model card](cdskit-localize-esm2-localization-v1.md) for evaluation and offline use.
+[model card](https://github.com/kfuku52/cdskit/wiki/cdskit-localize-esm2-localization-v1) for evaluation and offline use.
 
 ## Choose a model
 
@@ -136,7 +136,7 @@ seq_mtp	mTP	0.0742	0.0099	0.9122	0.0007	0.0029	0.0	none
 - `--report PATH`: Output report. Use `-` for standard output. `.json` writes JSON; other suffixes write TSV.
 - `--organism_group unknown|plant|non_plant`: Optional organism group used to constrain targeting-model cTP/lTP predictions. The integrated ten-label model does not mask chloroplast predictions by taxonomy.
 - `--include_features yes|no`: Include internal feature values in the output report.
-- `--model_download yes|no`: Allow checksum-verified downloads for pretrained aliases. The default is `yes`; use `no` for offline-only operation.
+- `--model_download yes|no`: Allow checksum-verified downloads for pretrained aliases. Downloads are enabled unless `CDSKIT_OFFLINE` is set; use `no` for offline-only operation.
 - `--threads INT`: Requested CPU workers/ML threads. `0` detects CPUs available
   to the process (respecting CPU affinity on Linux), up to
   the safety limit (64 by default); small workloads may run serially.
@@ -250,7 +250,7 @@ evaluation options.
 
 ## Multi-label evaluation and research
 
-For independently calibrated thresholds, CNN terminal/window comparisons, frozen
+For development-fitted decision thresholds, CNN terminal/window comparisons, frozen
 ESM heads and audited specialist integration, see
 [localization improvements](https://github.com/kfuku52/cdskit/wiki/cdskit-localize-improvements)
 and the [full-data experiment](https://github.com/kfuku52/cdskit/wiki/cdskit-localize-full-experiment).
@@ -263,3 +263,16 @@ for the corrected nine-residue PTS2 definition, legacy model compatibility,
 Published artifacts retain their historical defaults; new staged pipeline models
 default to safe inference with `ensure_one_label=False`. Scores remain unverified
 as calibrated biological probabilities.
+
+## References
+
+Cite the method or resource actually used, in addition to the CDSKIT version and
+command. Papers below do not validate newly trained CDSKIT models or new options.
+
+- Lin Z et al. (2023). Evolutionary-scale prediction of atomic-level protein structure with a language model. *Science* 379:1123–1130. [Paper](https://doi.org/10.1126/science.ade2574) — ESM2 encoder used by frozen-encoder models; CDSKIT does not run the paper’s structure predictor.
+- Stärk H, Dallago C, Heinzinger M, Rost B (2021). Light attention predicts protein location from the language of life. *Bioinformatics Advances* 1:vbab035. [Paper](https://doi.org/10.1093/bioadv/vbab035) — Light Attention architecture adapted for the CDSKIT multilabel head.
+- Thumuluri V et al. (2022). DeepLoc 2.0: multi-label subcellular localization prediction using protein language models. *Nucleic Acids Research* 50:W228–W234. [Paper](https://doi.org/10.1093/nar/gkac278) — Localization labels, sorting-signal data and protein-language-model methodology where used.
+- Ødum M et al. (2024). DeepLoc 2.1: multi-label membrane protein type prediction using protein language models. *Nucleic Acids Research* 52:W215–W220. [Paper](https://doi.org/10.1093/nar/gkae237) — DeepLoc 2.1 data/partition provenance; citing the dataset does not mean CDSKIT executes the DeepLoc predictor.
+- Almagro Armenteros JJ et al. (2019). Detecting sequence signals in targeting peptides using deep learning. *Life Science Alliance* 2:e201900429. [Paper](https://doi.org/10.26508/lsa.201900429) — TargetP 2.0 methodology and targeting-peptide dataset; CDSKIT targeting5 weights are separately trained, not the official TargetP predictor.
+- Flynn CR, Mullen RT, Trelease RN (1998). Mutational analyses of a type 2 peroxisomal targeting signal that is capable of directing oligomeric protein import into tobacco BY-2 glyoxysomes. *The Plant Journal* 16:709–720. [Paper](https://doi.org/10.1046/j.1365-313x.1998.00344.x) — Experimental PTS2 nonapeptide evidence; the CDSKIT motif/window detector is a heuristic.
+- Gonzalez NH et al. (2011). A Single Peroxisomal Targeting Signal Mediates Matrix Protein Import in Diatoms. *PLOS ONE* 6:e25316. [Paper](https://doi.org/10.1371/journal.pone.0025316) — Evidence that PTS2-mediated import is not universal across taxa; motif matches alone do not prove localization.

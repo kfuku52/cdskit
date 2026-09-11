@@ -57,7 +57,9 @@ This mode draws the nucleotide alignment as codon-aware blocks. Each sequence ro
 
 - `--min_clean_fraction FLOAT`: Minimum fraction of sequences with a clean codon required to keep a codon site in `summary` and `map`.
 
-A clean codon contains no missing character (`-`, `?`, or `.`), no ambiguous nucleotide (`N`, `R`, `Y`, etc.), and no unambiguous stop codon.
+A clean codon contains no missing character (`-`, `?`, or `.`), no ambiguous nucleotide (`N`, `R`, `Y`, etc.), and no definite stop codon under ordinary translation. For example, standard-code
+`TAR` is a definite stop despite being ambiguous. Dual-coding A/C/G/T codons
+remain clean despite their context-dependent termination.
 
 ## Layout options
 
@@ -80,6 +82,13 @@ A clean codon contains no missing character (`-`, `?`, or `.`), no ambiguous nuc
 
 ## Codon semantics
 
-See [codon meaning and uncertainty](codon-semantics.md) for definite versus
+See [codon meaning and uncertainty](https://github.com/kfuku52/cdskit/wiki/codon-semantics) for definite versus
 possible stops, dual-coding tables 27/28/31, overlapping ambiguity/stop counts,
 and report compatibility. These rules describe sequence QC, not gene function.
+
+## References
+
+Cite the method or resource actually used and report the CDSKIT version and
+options.
+
+- Hunter JD (2007). Matplotlib: A 2D Graphics Environment. *Computing in Science & Engineering* 9:90–95. [Paper](https://doi.org/10.1109/MCSE.2007.55) — Plotting backend. The MSA logo shows amino-acid frequencies, not information content in bits.

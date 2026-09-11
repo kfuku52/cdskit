@@ -53,8 +53,16 @@ cdskit translate --seq_file complete_cds.fasta --out_file proteins.fasta \
   --codon_table 27 --complete_cds yes
 ```
 
-See [codon semantics](codon-semantics.md) for uncertainty and compatibility.
+See [codon semantics](https://github.com/kfuku52/cdskit/wiki/codon-semantics) for uncertainty and compatibility.
 
 `X` in DNA is treated as any base, like `N`, consistently in ordinary,
 partial-tail and complete-CDS translation. Invalid alphabet characters are
 rejected even when the same codon also contains a missing character.
+
+## References
+
+Cite the method or resource actually used and report the CDSKIT version and
+options.
+
+- Cock PJA et al. (2009). Biopython: freely available Python tools for computational molecular biology and bioinformatics. *Bioinformatics* 25:1422–1423. [Paper](https://doi.org/10.1093/bioinformatics/btp163) — Sequence parsing, feature extraction and genetic-code infrastructure used by CDSKIT.
+- Swart EC, Serra V, Petroni G, Nowacki M (2016). Genetic Codes with No Dedicated Stop Codon: Context-Dependent Translation Termination. *Cell* 166:691–702. [Paper](https://doi.org/10.1016/j.cell.2016.06.020) — Biological background for context-dependent termination in the discussed ciliate codes; CDSKIT does not infer termination context.

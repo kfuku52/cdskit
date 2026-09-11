@@ -128,3 +128,8 @@ See the [validation record](https://github.com/kfuku52/cdskit/blob/master/docs/g
 checks, independent CDS extraction, and validation limitations. Coordinate-valued
 custom attributes are preserved verbatim, not lifted; check those separately when
 using annotation dialects that embed additional genomic coordinates in attributes.
+
+## Citation
+
+No separate method paper is designated for this utility. Report the CDSKIT
+version, command and options; see [citing CDSKIT](https://github.com/kfuku52/cdskit/wiki#citing-cdskit).

@@ -27,3 +27,8 @@ This writes separate files such as `genes_4fold_positions.fasta` and `genes_2fol
 
 - Input sequences must be DNA, aligned, and multiples of three in length.
 - Output alignments preserve sequence order while retaining only the selected nucleotide positions.
+
+## Citation
+
+No separate method paper is designated for this utility. Report the CDSKIT
+version, command and options; see [citing CDSKIT](https://github.com/kfuku52/cdskit/wiki#citing-cdskit).

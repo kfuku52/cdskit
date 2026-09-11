@@ -186,3 +186,8 @@ GCACTAGGCGCCT
 `PREFIX_3rd_codon_positions.FORMAT`. If no prefix is supplied, the input path
 is used; standard input uses `stdin`. Input sequences must be nucleotide data
 with lengths divisible by three.
+
+## Citation
+
+No separate method paper is designated for this utility. Report the CDSKIT
+version, command and options; see [citing CDSKIT](https://github.com/kfuku52/cdskit/wiki#citing-cdskit).

@@ -37,3 +37,8 @@ GGGGGGGGGGGG
 - `--show_seq_name no` writes sequence strings without FASTA header lines.
 - This command has no `--out_file` option; redirect standard output as shown
   above when a file is required.
+
+## Citation
+
+No separate method paper is designated for this utility. Report the CDSKIT
+version, command and options; see [citing CDSKIT](https://github.com/kfuku52/cdskit/wiki#citing-cdskit).

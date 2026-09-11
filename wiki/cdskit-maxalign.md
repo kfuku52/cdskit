@@ -63,3 +63,10 @@ and each removal step. List-valued `removed_ids` cells are JSON arrays.
 - Input sequence lengths should be multiples of three.
 - Output keeps only retained sequences and codon sites that are complete in the retained set.
 - `--mode auto` switches to `greedy` when the number of input sequences exceeds `--max_exact_sequences`.
+
+## References
+
+Cite the method or resource actually used and report the CDSKIT version and
+options.
+
+- Gouveia-Oliveira R, Sackett PW, Pedersen AG (2007). MaxAlign: maximizing usable data in an alignment. *BMC Bioinformatics* 8:312. [Paper](https://doi.org/10.1186/1471-2105-8-312) — Original alignment-area objective; CDSKIT adapts the objective to codons and supplies its own solvers.

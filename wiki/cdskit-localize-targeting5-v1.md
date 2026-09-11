@@ -105,3 +105,11 @@ for the corrected nine-residue PTS2 definition, legacy model compatibility,
 Published artifacts retain their historical defaults; new staged pipeline models
 default to safe inference with `ensure_one_label=False`. Scores remain unverified
 as calibrated biological probabilities.
+
+## References
+
+Cite the method or resource actually used, in addition to the CDSKIT version and
+command. Papers below do not validate newly trained CDSKIT models or new options.
+
+- Almagro Armenteros JJ et al. (2019). Detecting sequence signals in targeting peptides using deep learning. *Life Science Alliance* 2:e201900429. [Paper](https://doi.org/10.26508/lsa.201900429) — TargetP 2.0 methodology and targeting-peptide dataset; CDSKIT targeting5 weights are separately trained, not the official TargetP predictor.
+- The UniProt Consortium (2025). UniProt: the Universal Protein Knowledgebase in 2025. *Nucleic Acids Research* 53:D609–D617. [Paper](https://doi.org/10.1093/nar/gkae1010) — Protein sequences and annotations; also report the downloaded snapshot/query and evidence filters.

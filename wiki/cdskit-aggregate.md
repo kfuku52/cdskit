@@ -40,3 +40,8 @@ ATGTCGAGATCCCGAGAATTGCGAGTAAGCACCAGCTTCTCAAAACCAAAATAA
 - `--mode longest` is currently the only selection mode. Ties retain the first
   record encountered in the input.
 - If `--expression` is omitted, records are copied without aggregation.
+
+## Citation
+
+No separate method paper is designated for this utility. Report the CDSKIT
+version, command and options; see [citing CDSKIT](https://github.com/kfuku52/cdskit/wiki#citing-cdskit).
