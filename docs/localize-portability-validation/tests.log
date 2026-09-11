@@ -1,0 +1,28 @@
+........................................................................ [ 85%]
+............                                                             [100%]
+=============================== warnings summary ===============================
+tests/ml/test_localize_pickle.py::test_sklearn152_classifier_retains_reference_probabilities
+  /opt/conda/lib/python3.12/site-packages/sklearn/base.py:525: InconsistentVersionWarning: Trying to unpickle estimator _BinMapper from version 1.5.2 when using version 1.9.0. This might lead to breaking code or invalid results. Use at your own risk. For more info please refer to:
+  https://scikit-learn.org/stable/model_persistence.html#security-maintainability-limitations
+    warnings.warn(
+
+tests/ml/test_localize_pickle.py::test_sklearn152_classifier_retains_reference_probabilities
+  /opt/conda/lib/python3.12/site-packages/sklearn/base.py:525: InconsistentVersionWarning: Trying to unpickle estimator HistGradientBoostingClassifier from version 1.5.2 when using version 1.9.0. This might lead to breaking code or invalid results. Use at your own risk. For more info please refer to:
+  https://scikit-learn.org/stable/model_persistence.html#security-maintainability-limitations
+    warnings.warn(
+
+tests/integration/test_localize.py::TestLocalizeMain::test_localize_pt_model_uses_sklearn_binary_perox_head
+  /cdskit/cdskit/localize_model.py:3359: RuntimeWarning: Loading a trusted legacy model with pickle deserialization enabled.
+    model = _read_localize_payload(stream, allow_unsafe=allow_unsafe)
+
+tests/integration/test_localize.py::test_localize_learn_uniprot_download_mocked
+  /Users/kf/repos/cdskit/tests/integration/test_localize.py:2154: UserWarning: UniProt location-derived targeting labels are weak proxies, not experimental peptide evidence.
+
+tests/integration/test_localize.py::test_localize_learn_uniprot_preset_combines_query
+  /Users/kf/repos/cdskit/tests/integration/test_localize.py:2253: UserWarning: UniProt location-derived targeting labels are weak proxies, not experimental peptide evidence.
+
+tests/integration/test_localize.py::test_localize_learn_uniprot_cc_adds_cc_field_not_localization
+  /Users/kf/repos/cdskit/tests/integration/test_localize.py:2448: UserWarning: UniProt location-derived targeting labels are weak proxies, not experimental peptide evidence.
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+84 passed, 6 warnings in 4.06s

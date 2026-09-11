@@ -113,32 +113,31 @@ not validation of every PyTorch version allowed by package metadata.
 ## Pretrained targeting5 runtime
 
 The published `targeting5` and `targeting5-perox-deeploc21-et-v1` artifacts
-contain scikit-learn **1.5.2** estimators. Installing the latest `ml` extra alone
-does not reproduce that environment: scikit-learn 1.9.0 fails to load both
-artifacts with `No module named '_loss'`. Scikit-learn does not support loading
-pickled estimators across versions; see its
+contain scikit-learn **1.5.2** estimators. Current CDSKIT handles their short
+Cython module names and the stateless binomial reconstructor removed in
+scikit-learn 1.9.0. Both published models were compared against 1.5.2 on Linux
+ARM64: 384 output rows across DNA/protein inputs and all organism groups matched.
+General cross-version loading of custom sklearn estimators remains outside
+this validation; see sklearn's
 [model persistence guidance](https://scikit-learn.org/stable/model_persistence.html).
 
-Use a separate Python 3.12 environment for these existing artifacts:
+For these published models, install the ML extra in a Python 3.12 environment:
 
 ```bash
 python3.12 -m venv .venv-targeting5
 source .venv-targeting5/bin/activate
 python -m pip install \
-  'cdskit[ml] @ git+https://github.com/kfuku52/cdskit.git' 'scikit-learn==1.5.2'
+  'cdskit[ml] @ git+https://github.com/kfuku52/cdskit.git'
 ```
 
 On Windows, use `py -3.12 -m venv .venv-targeting5` and activate
-`.venv-targeting5\Scripts\Activate.ps1` in PowerShell. The runtime was checked
-on macOS ARM64 with Python 3.12.13, torch 2.13.0, NumPy 2.5.2, and scikit-learn
-1.5.2; this is a smoke check, not a claim that every platform or dependency
-combination has been validated for these artifacts.
-
-The exact scikit-learn pin is specific to the published model files, not a
-library-wide upper bound or a recommendation for new training. It can be
-retired after replacement artifacts are trained or re-exported and verified
-with the newer runtime. Keep this environment separate from current ML
-development, and record dependencies when training custom sklearn models.
+`.venv-targeting5\Scripts\Activate.ps1` in PowerShell. The 1.9.0 compatibility
+comparison used Python 3.12.14, torch 2.13.0 and NumPy 1.26.4 on Linux ARM64;
+it does not validate every platform or dependency combination. sklearn's
+version warnings remain visible. For an exact training-version reference,
+install `scikit-learn==1.5.2` in a separate environment; this is a reproduction
+choice, not a library dependency bound. Record dependencies when training
+custom sklearn models.
 
 ## Parallel work and resource limits
 

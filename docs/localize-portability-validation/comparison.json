@@ -1,0 +1,98 @@
+[
+  {
+    "model": "targeting5-v1",
+    "group": "plant",
+    "seq_type": "protein",
+    "rows": 32,
+    "numeric_columns": 6,
+    "max_abs_diff": 0.0
+  },
+  {
+    "model": "targeting5-v1",
+    "group": "plant",
+    "seq_type": "dna",
+    "rows": 32,
+    "numeric_columns": 6,
+    "max_abs_diff": 0.0
+  },
+  {
+    "model": "targeting5-v1",
+    "group": "non_plant",
+    "seq_type": "protein",
+    "rows": 32,
+    "numeric_columns": 6,
+    "max_abs_diff": 0.0
+  },
+  {
+    "model": "targeting5-v1",
+    "group": "non_plant",
+    "seq_type": "dna",
+    "rows": 32,
+    "numeric_columns": 6,
+    "max_abs_diff": 0.0
+  },
+  {
+    "model": "targeting5-v1",
+    "group": "unknown",
+    "seq_type": "protein",
+    "rows": 32,
+    "numeric_columns": 6,
+    "max_abs_diff": 0.0
+  },
+  {
+    "model": "targeting5-v1",
+    "group": "unknown",
+    "seq_type": "dna",
+    "rows": 32,
+    "numeric_columns": 6,
+    "max_abs_diff": 0.0
+  },
+  {
+    "model": "targeting5-perox-deeploc21-et-v1",
+    "group": "plant",
+    "seq_type": "protein",
+    "rows": 32,
+    "numeric_columns": 6,
+    "max_abs_diff": 0.0
+  },
+  {
+    "model": "targeting5-perox-deeploc21-et-v1",
+    "group": "plant",
+    "seq_type": "dna",
+    "rows": 32,
+    "numeric_columns": 6,
+    "max_abs_diff": 0.0
+  },
+  {
+    "model": "targeting5-perox-deeploc21-et-v1",
+    "group": "non_plant",
+    "seq_type": "protein",
+    "rows": 32,
+    "numeric_columns": 6,
+    "max_abs_diff": 0.0
+  },
+  {
+    "model": "targeting5-perox-deeploc21-et-v1",
+    "group": "non_plant",
+    "seq_type": "dna",
+    "rows": 32,
+    "numeric_columns": 6,
+    "max_abs_diff": 0.0
+  },
+  {
+    "model": "targeting5-perox-deeploc21-et-v1",
+    "group": "unknown",
+    "seq_type": "protein",
+    "rows": 32,
+    "numeric_columns": 6,
+    "max_abs_diff": 0.0
+  },
+  {
+    "model": "targeting5-perox-deeploc21-et-v1",
+    "group": "unknown",
+    "seq_type": "dna",
+    "rows": 32,
+    "numeric_columns": 6,
+    "max_abs_diff": 0.0
+  }
+]

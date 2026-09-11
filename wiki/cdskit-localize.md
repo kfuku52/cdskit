@@ -22,7 +22,7 @@ epoch selection remain opt-in training options. See the
 | --- | --- | --- |
 | `esm2-localization-v1` (default) | Ten subcellular locations, multiple labels per protein | ESM2 650M + baseline Light Attention head; PyTorch and Transformers; automatic download |
 | [Integrated v1](https://github.com/kfuku52/cdskit/wiki/cdskit-localize-multilabel-integrated-v1) | Ten subcellular locations, multiple labels per protein | CDSKIT >=0.29.0 and PyTorch; downloaded file path |
-| `targeting5` | Five targeting-peptide classes, one class per protein | PyTorch and scikit-learn 1.5.2; registered alias |
+| `targeting5` | Five targeting-peptide classes, one class per protein | PyTorch and scikit-learn; verified with 1.5.2 and 1.9.0; registered alias |
 | `targeting5-perox-deeploc21-et-v1` | Five targeting-peptide classes plus a peroxisome score | Same legacy runtime; experimental alias |
 
 The three published CDSKIT-trained model releases are MIT-licensed. Source datasets retain
@@ -50,8 +50,9 @@ without scikit-learn, Transformers, or `--allow_unsafe_model yes`.
 The pretrained `targeting5` model predicts `noTP`, `SP`, `mTP`, `cTP`, and
 `lTP`. It runs on CPU. First follow the
 [pretrained runtime setup](https://github.com/kfuku52/cdskit/wiki/Installation-and-dependencies#pretrained-targeting5-runtime):
-the targeting5 release artifacts need scikit-learn 1.5.2 as well as torch, and
-do not load with every newer scikit-learn version.
+the targeting5 release artifacts need scikit-learn as well as torch. Current
+CDSKIT restores their legacy loss objects on scikit-learn 1.9.0, with prediction
+checks against 1.5.2. This does not establish compatibility with every version.
 
 ```bash
 cdskit localize \

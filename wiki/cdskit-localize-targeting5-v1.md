@@ -34,8 +34,8 @@ runtime:
 
 The embedded sklearn estimators were serialized with scikit-learn 1.5.2.
 Use the [dedicated runtime setup](https://github.com/kfuku52/cdskit/wiki/Installation-and-dependencies#pretrained-targeting5-runtime);
-an unconstrained install of the latest `ml` extra is not sufficient for these
-legacy artifacts. The alias verifies the release checksum before enabling
+current CDSKIT supports their known legacy loss layout with scikit-learn 1.9.0
+and has been compared with the 1.5.2 reference. The alias verifies the release checksum before enabling
 legacy pickle loading.
 
 ## Model cache

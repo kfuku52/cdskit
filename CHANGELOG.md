@@ -4,6 +4,18 @@ This project follows semantic versioning. Deprecated CLI spellings remain
 available for at least the 0.24 release series and print their canonical
 replacement to standard error.
 
+## Unreleased
+
+## 0.31.1 — 2026-09-11
+
+### Fixed
+
+- Load the published targeting5 models with scikit-learn 1.9 after removal of
+  its generated binomial-loss reconstructor. Restore only the known empty
+  legacy state, preserve existing native reconstructors, and reject unknown
+  layouts. Published-model outputs match the 1.5.2 reference on the retained
+  compatibility fixture.
+
 ## 0.31.0 — 2026-09-11
 
 ### Added

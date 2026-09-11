@@ -30,8 +30,9 @@ localization accuracy, and a PTS motif match alone does not prove targeting.
 ## Release asset
 
 Use the [pretrained runtime setup](https://github.com/kfuku52/cdskit/wiki/Installation-and-dependencies#pretrained-targeting5-runtime).
-This artifact contains legacy scikit-learn 1.5.2 estimators; installing the
-latest ML extra alone does not ensure it can be loaded.
+This artifact contains legacy scikit-learn 1.5.2 estimators. Current CDSKIT
+supports their known loss layout on scikit-learn 1.9.0 and has been compared
+against the 1.5.2 reference on a retained synthetic fixture.
 
 - [GitHub model release](https://github.com/kfuku52/cdskit/releases/tag/localize-targeting5-perox-deeploc21-et-v1)
 - Asset: `cdskit-localize-targeting5-perox-deeploc21-et-v1.pt`
