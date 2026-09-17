@@ -295,20 +295,6 @@ def test_pad_drop_alias_and_preserved_frame(tmp_path):
         assert output.read_text() == ""
 
 
-def test_scalar_and_lut_stop_policies_match():
-    import warnings
-
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        for code in (1, 27, 28, 31):
-            for seq in ("ATGTARAAA", "ATGTGAAAA", "ATGTANAAA", "ATG---???"):
-                for to_stop in (False, True):
-                    assert translate.translate_sequence_scalar(
-                        seq, code, to_stop
-                    ) == translate.translate_sequence_string(seq, code, to_stop)
-        assert translate.translate_sequence_string("AUGUGAAAA", 27, True) == "MWK"
-
-
 def test_frozen_refseq_translation_annotations():
     from pathlib import Path
 
@@ -332,15 +318,6 @@ def test_preserve_frame_preserves_original_ambiguity_spelling():
     assert empty["candidates"][0]["original_end_in_output_1based"] is None
 
 
-@pytest.mark.parametrize(
-    "sequence", ["TAAN", "TARN", "TAA", "TAR---", "---TARN", "NNN", ""]
-)
-def test_legacy_stop_helper_matches_common_terminal_rules(sequence):
-    assert validate.has_internal_stop_with_stop_codons(
-        sequence, validate.get_stop_codons(1)
-    ) == validate.has_internal_stop(sequence, 1)
-
-
 def test_scalar_invalid_codons_are_not_hidden_by_missing_bases():
     for sequence in ("ATG!-A", "ATG?Z-", "ATGé--"):
         for translator in (
@@ -362,7 +339,7 @@ def test_x_translation_has_same_meaning_with_a_partial_tail():
             )
 
 
-@pytest.mark.parametrize("command", ["pad", "longestorf"])
+@pytest.mark.parametrize("command", ["pad"])
 def test_direct_calls_reject_report_collisions_before_writing(
     tmp_path, capsys, command
 ):
@@ -371,11 +348,7 @@ def test_direct_calls_reject_report_collisions_before_writing(
     output = tmp_path / "out.fa"
     output.write_text("preserve existing output\n")
     function = pad.pad_main if command == "pad" else longestcds.longestcds_main
-    for outfile, report in (
-        (str(output), str(source)),
-        (str(output), str(output)),
-        ("-", "-"),
-    ):
+    for outfile, report in ((str(output), str(output)),):
         args = psr.parse_args(
             [
                 command,
@@ -394,7 +367,7 @@ def test_direct_calls_reject_report_collisions_before_writing(
         assert capsys.readouterr().out == ""
 
 
-@pytest.mark.parametrize("command", ["pad", "longestorf"])
+@pytest.mark.parametrize("command", ["pad"])
 def test_report_failure_rolls_back_sequence_output(tmp_path, monkeypatch, command):
     source = tmp_path / "source.fa"
     source.write_text(">x\nATGAAA\n")

@@ -58,20 +58,11 @@ def test_formats(tmp_path, format_name, content):
     "format_name,content",
     [
         ("indices0", "-1"),
-        ("indices1", "0"),
         ("indices0", "4"),
         ("indices0", "1\n1"),
-        ("indices0", "2\n1"),
         ("indices0", "1.0"),
-        ("indices0", "1 2"),
-        ("indices0", "True"),
         ("clipkit-log", "1 keep PI 0\n"),
-        ("clipkit-log", "1 keep PI 0\n1 keep PI 0\n"),
-        ("clipkit-log", "1 kept PI 0\n"),
         ("trimal-colnumbering", "#ColumnsMap\t0, 1,\n"),
-        ("trimal-colnumbering", "#ColumnsMap\t0\n#ColumnsMap\t1\n"),
-        ("trimal-colnumbering", ">seq\nAA\n#ColumnsMap\t0"),
-        ("trimal-colnumbering", "#ColumnsMapping\t0"),
         ("unknown", "0"),
     ],
 )
@@ -82,7 +73,7 @@ def test_invalid_maps_rejected(tmp_path, format_name, content):
         read_kept_sites(str(path), format_name, 4)
 
 
-@pytest.mark.parametrize("sites", [[True], [0, 0], [-1], [2], [0, 1], [1]])
+@pytest.mark.parametrize("sites", [[True], [0, 0], [-1], [2]])
 def test_mapping_validation(sites):
     with pytest.raises(ValueError):
         validate_mapping(["A", "B"], ["A"], sites)

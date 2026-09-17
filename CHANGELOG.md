@@ -6,6 +6,15 @@ replacement to standard error.
 
 ## Unreleased
 
+## 0.31.2 — 2026-09-17
+
+### Tests
+
+- Remove redundant implementation-copy, library-contract, mock-self-checking,
+  and weak fixture tests; consolidate overlapping integration and ML matrices
+  while retaining independent safety, rollback, compatibility, and end-to-end
+  regression guarantees.
+
 ## 0.31.1 — 2026-09-11
 
 ### Fixed

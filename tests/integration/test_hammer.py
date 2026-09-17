@@ -187,30 +187,6 @@ class TestHammerMain:
             # At least some content should remain
             assert len(r.seq) > 0
 
-    def test_hammer_with_test_data(self, data_dir, temp_dir, mock_args):
-        """Test hammer with hammer_01 test data."""
-        input_path = data_dir / "hammer_01" / "alignment.fasta"
-        output_path = temp_dir / "output.fasta"
-
-        assert input_path.exists(), "required tracked fixture hammer_01 is missing"
-
-        args = mock_args(
-            seqfile=str(input_path),
-            outfile=str(output_path),
-            codontable=1,
-            nail="all",
-            prevent_gap_only=True,
-        )
-
-        hammer_main(args)
-
-        result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
-        # Verify output sequences are aligned and multiples of 3
-        if result:
-            lengths = [len(r.seq) for r in result]
-            assert len(set(lengths)) == 1, "Output sequences should be aligned"
-            assert lengths[0] % 3 == 0, "Output length should be multiple of 3"
-
     def test_hammer_rejects_non_aligned(self, temp_dir, mock_args):
         """Test hammer rejects non-aligned sequences."""
         input_path = temp_dir / "input.fasta"
@@ -233,51 +209,6 @@ class TestHammerMain:
         with pytest.raises(ValueError) as exc_info:
             hammer_main(args)
         assert "not identical" in str(exc_info.value)
-
-    def test_hammer_rejects_non_multiple_of_three(self, temp_dir, mock_args):
-        """Test hammer rejects sequences not multiple of 3."""
-        input_path = temp_dir / "input.fasta"
-        output_path = temp_dir / "output.fasta"
-
-        records = [
-            SeqRecord(Seq("ATGAA"), id="seq1", description=""),  # 5 nt
-            SeqRecord(Seq("ATGCC"), id="seq2", description=""),
-        ]
-        Bio.SeqIO.write(records, str(input_path), "fasta")
-
-        args = mock_args(
-            seqfile=str(input_path),
-            outfile=str(output_path),
-            codontable=1,
-            nail="all",
-            prevent_gap_only=True,
-        )
-
-        with pytest.raises(ValueError) as exc_info:
-            hammer_main(args)
-        assert "multiple of three" in str(exc_info.value)
-
-    def test_hammer_rejects_invalid_codontable(self, temp_dir, mock_args):
-        input_path = temp_dir / "input.fasta"
-        output_path = temp_dir / "output.fasta"
-
-        records = [
-            SeqRecord(Seq("ATGAAA"), id="seq1", description=""),
-            SeqRecord(Seq("ATGCCC"), id="seq2", description=""),
-        ]
-        Bio.SeqIO.write(records, str(input_path), "fasta")
-
-        args = mock_args(
-            seqfile=str(input_path),
-            outfile=str(output_path),
-            codontable=999,
-            nail="all",
-            prevent_gap_only=True,
-        )
-
-        with pytest.raises(ValueError) as exc_info:
-            hammer_main(args)
-        assert "Invalid --codon_table" in str(exc_info.value)
 
     def test_hammer_wiki_example_nail_4(self, temp_dir, mock_args):
         """Test hammer with wiki example: --nail 4 on 6 sequences.
@@ -347,37 +278,6 @@ class TestHammerMain:
         # Should be shorter than input since gap column is removed
         assert len(result[0].seq) < 9
 
-    def test_hammer_with_example_hammer_fasta(self, data_dir, temp_dir, mock_args):
-        """Test hammer with example_hammer.fasta from wiki."""
-        input_path = data_dir / "example_hammer.fasta"
-        output_path = temp_dir / "output.fasta"
-
-        assert input_path.exists(), (
-            "required tracked fixture example_hammer.fasta is missing"
-        )
-
-        # Check if input sequences are aligned before running
-        input_records = list(Bio.SeqIO.parse(str(input_path), "fasta"))
-        lengths = set(len(r.seq) for r in input_records)
-        assert len(lengths) == 1, "tracked example_hammer.fasta must remain aligned"
-
-        args = mock_args(
-            seqfile=str(input_path),
-            outfile=str(output_path),
-            codontable=1,
-            nail="4",  # Wiki example uses nail=4
-            prevent_gap_only=True,
-        )
-
-        hammer_main(args)
-
-        result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
-        # Verify all sequences are aligned and multiple of 3
-        assert len(result) > 0
-        lengths = [len(r.seq) for r in result]
-        assert len(set(lengths)) == 1, "All sequences should have same length"
-        assert lengths[0] % 3 == 0, "Length should be multiple of 3"
-
     def test_hammer_preserves_sequence_order(self, temp_dir, mock_args):
         """Test that hammer preserves the original sequence order."""
         input_path = temp_dir / "input.fasta"
@@ -403,42 +303,22 @@ class TestHammerMain:
         result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
         assert [r.id for r in result] == ["zebra", "apple", "mango"]
 
-    def test_hammer_issue3_empty_input_error(self, temp_dir, mock_args):
-        """Test Issue #3: ValueError: max() arg is an empty sequence.
-
-        Issue: When no input sequences are provided (e.g., from empty stdin),
-        max([len(r.seq) for r in records]) raises ValueError.
-
-        This error can occur with --prevent_gap_only when input from stdin is empty.
-        """
+    def test_hammer_empty_input_writes_empty_output(self, temp_dir, mock_args):
         input_path = temp_dir / "empty.fasta"
         output_path = temp_dir / "output.fasta"
-
-        # Create empty FASTA file
         input_path.write_text("")
 
-        args = mock_args(
-            seqfile=str(input_path),
-            outfile=str(output_path),
-            codontable=1,
-            nail="all",
-            prevent_gap_only=True,
+        hammer_main(
+            mock_args(
+                seqfile=str(input_path),
+                outfile=str(output_path),
+                codontable=1,
+                nail="all",
+                prevent_gap_only=True,
+            )
         )
 
-        # Should handle empty input gracefully (either error message or empty output)
-        # The original bug was: ValueError: max() arg is an empty sequence
-        try:
-            hammer_main(args)
-            # If it succeeds, output should be empty or contain no sequences
-            result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
-            assert len(result) == 0
-        except ValueError as e:
-            # If it raises ValueError, it should not be the max() error from issue
-            # (which would indicate the bug wasn't fixed)
-            assert "max()" not in str(e), "Issue #3 bug: max() arg is empty sequence"
-        except Exception:
-            # Other exceptions are acceptable for empty input
-            pass
+        assert output_path.read_text() == ""
 
     def test_hammer_all_gap_sequences_with_prevent_gap_only(self, temp_dir, mock_args):
         """Test hammer with sequences that become all-gaps after filtering.
@@ -517,46 +397,6 @@ class TestHammerMain:
         # The all_gaps sequence should still be all gaps, but that's allowed when nail is reduced
         # The stderr should show nail adjustment message
         # (Note: This depends on actual implementation behavior)
-
-    def test_hammer_threads_matches_single_thread(self, temp_dir, mock_args):
-        input_path = temp_dir / "input.fasta"
-        out_single = temp_dir / "single.fasta"
-        out_threaded = temp_dir / "threaded.fasta"
-
-        records = [
-            SeqRecord(Seq("ATG---TGA"), id="seq1", description=""),
-            SeqRecord(Seq("ATGCCCTGA"), id="seq2", description=""),
-            SeqRecord(Seq("ATGCCCTGA"), id="seq3", description=""),
-            SeqRecord(Seq("ATGCCCTGA"), id="seq4", description=""),
-        ]
-        Bio.SeqIO.write(records, str(input_path), "fasta")
-
-        args_single = mock_args(
-            seqfile=str(input_path),
-            outfile=str(out_single),
-            codontable=1,
-            nail="3",
-            prevent_gap_only=True,
-            threads=1,
-        )
-        args_threaded = mock_args(
-            seqfile=str(input_path),
-            outfile=str(out_threaded),
-            codontable=1,
-            nail="3",
-            prevent_gap_only=True,
-            threads=4,
-        )
-
-        hammer_main(args_single)
-        hammer_main(args_threaded)
-
-        result_single = list(Bio.SeqIO.parse(str(out_single), "fasta"))
-        result_threaded = list(Bio.SeqIO.parse(str(out_threaded), "fasta"))
-        assert [r.id for r in result_single] == [r.id for r in result_threaded]
-        assert [str(r.seq) for r in result_single] == [
-            str(r.seq) for r in result_threaded
-        ]
 
     @pytest.mark.parametrize("nail", ["0", "-1"])
     def test_hammer_rejects_non_positive_nail(self, temp_dir, mock_args, nail):

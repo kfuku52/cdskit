@@ -2,8 +2,6 @@
 Tests for cdskit split command.
 """
 
-import pytest
-
 import Bio.SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
@@ -203,41 +201,6 @@ class TestSplitMain:
         # 6 codons = 6 first positions
         assert len(first[0].seq) == 6
 
-    def test_split_rejects_non_multiple_of_three(self, temp_dir, mock_args):
-        """Test split rejects sequences not multiple of 3."""
-        input_path = temp_dir / "input.fasta"
-
-        records = [
-            SeqRecord(Seq("ATGCC"), id="seq1", description=""),  # 5 nt
-        ]
-        Bio.SeqIO.write(records, str(input_path), "fasta")
-
-        args = mock_args(
-            seqfile=str(input_path),
-            prefix=str(temp_dir / "output"),
-        )
-
-        with pytest.raises(ValueError) as exc_info:
-            split_main(args)
-        assert "multiple of three" in str(exc_info.value)
-
-    def test_split_rejects_non_dna_input(self, temp_dir, mock_args):
-        input_path = temp_dir / "input.fasta"
-
-        records = [
-            SeqRecord(Seq("PPPPPP"), id="seq1", description=""),
-        ]
-        Bio.SeqIO.write(records, str(input_path), "fasta")
-
-        args = mock_args(
-            seqfile=str(input_path),
-            prefix=str(temp_dir / "output"),
-        )
-
-        with pytest.raises(ValueError) as exc_info:
-            split_main(args)
-        assert "DNA-only input is required" in str(exc_info.value)
-
     def test_split_with_test_data(self, data_dir, temp_dir, mock_args):
         """Test split with split_01 test data."""
         input_path = data_dir / "split_01" / "input.fasta"
@@ -406,40 +369,3 @@ class TestSplitMain:
         assert (temp_dir / "output_1st_codon_positions.fasta").exists()
         assert (temp_dir / "output_2nd_codon_positions.fasta").exists()
         assert (temp_dir / "output_3rd_codon_positions.fasta").exists()
-
-    def test_split_threads_matches_single_thread(self, temp_dir, mock_args):
-        input_path = temp_dir / "input.fasta"
-        records = [
-            SeqRecord(Seq("ATGCCCGGG"), id="seq1", description=""),
-            SeqRecord(Seq("ATG---CCC"), id="seq2", description=""),
-            SeqRecord(Seq("ATGAAATTT"), id="seq3", description=""),
-        ]
-        Bio.SeqIO.write(records, str(input_path), "fasta")
-
-        single_prefix = str(temp_dir / "single")
-        threaded_prefix = str(temp_dir / "threaded")
-        args_single = mock_args(
-            seqfile=str(input_path),
-            prefix=single_prefix,
-            threads=1,
-        )
-        args_threaded = mock_args(
-            seqfile=str(input_path),
-            prefix=threaded_prefix,
-            threads=4,
-        )
-
-        split_main(args_single)
-        split_main(args_threaded)
-
-        for suffix in [
-            "_1st_codon_positions.fasta",
-            "_2nd_codon_positions.fasta",
-            "_3rd_codon_positions.fasta",
-        ]:
-            single_records = list(Bio.SeqIO.parse(single_prefix + suffix, "fasta"))
-            threaded_records = list(Bio.SeqIO.parse(threaded_prefix + suffix, "fasta"))
-            assert [r.id for r in single_records] == [r.id for r in threaded_records]
-            assert [str(r.seq) for r in single_records] == [
-                str(r.seq) for r in threaded_records
-            ]

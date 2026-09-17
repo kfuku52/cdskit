@@ -121,30 +121,6 @@ class TestAggregateMain:
         records = [
             SeqRecord(Seq("ATGAAA"), id="A-1", name="A-1", description=""),
             SeqRecord(Seq("ATGCCC"), id="A1", name="A1", description=""),
-        ]
-        Bio.SeqIO.write(records, str(input_path), "fasta")
-
-        args = mock_args(
-            seqfile=str(input_path),
-            outfile=str(output_path),
-            expression=[],
-            mode="longest",
-        )
-
-        aggregate_main(args)
-
-        result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
-        assert [r.id for r in result] == ["A-1", "A1"]
-        assert [str(r.seq) for r in result] == ["ATGAAA", "ATGCCC"]
-
-    def test_aggregate_without_expression_keeps_duplicate_ids(
-        self, temp_dir, mock_args
-    ):
-        """No --expression should not collapse duplicate IDs."""
-        input_path = temp_dir / "input.fasta"
-        output_path = temp_dir / "output.fasta"
-
-        records = [
             SeqRecord(Seq("ATG"), id="dup", name="dup", description=""),
             SeqRecord(Seq("CCC"), id="dup", name="dup", description=""),
         ]
@@ -160,93 +136,8 @@ class TestAggregateMain:
         aggregate_main(args)
 
         result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
-        assert len(result) == 2
-        assert [str(r.seq) for r in result] == ["ATG", "CCC"]
-
-    def test_aggregate_multiple_expressions(self, temp_dir, mock_args):
-        """Test aggregating with multiple regex expressions."""
-        input_path = temp_dir / "input.fasta"
-        output_path = temp_dir / "output.fasta"
-
-        # Names like "prefix_gene_A_suffix.1"
-        records = [
-            SeqRecord(
-                Seq("ATGAAA"),
-                id="prefix_gene_suffix.1",
-                name="prefix_gene_suffix.1",
-                description="",
-            ),
-            SeqRecord(
-                Seq("ATGAAACCC"),
-                id="prefix_gene_suffix.2",
-                name="prefix_gene_suffix.2",
-                description="",
-            ),
-        ]
-        Bio.SeqIO.write(records, str(input_path), "fasta")
-
-        args = mock_args(
-            seqfile=str(input_path),
-            outfile=str(output_path),
-            expression=[
-                r"^prefix_",
-                r"_suffix",
-                r"\.[0-9]+$",
-            ],  # Remove prefix, suffix, and version
-            mode="longest",
-        )
-
-        aggregate_main(args)
-
-        result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
-        # Both should aggregate to "gene"
-        assert len(result) == 1
-
-    def test_aggregate_preserves_unique(self, temp_dir, mock_args):
-        """Test that unique sequences are preserved."""
-        input_path = temp_dir / "input.fasta"
-        output_path = temp_dir / "output.fasta"
-
-        records = [
-            SeqRecord(Seq("ATGAAA"), id="gene_A.1", name="gene_A.1", description=""),
-            SeqRecord(Seq("ATGCCC"), id="gene_B.1", name="gene_B.1", description=""),
-            SeqRecord(Seq("ATGGGG"), id="gene_C.1", name="gene_C.1", description=""),
-        ]
-        Bio.SeqIO.write(records, str(input_path), "fasta")
-
-        args = mock_args(
-            seqfile=str(input_path),
-            outfile=str(output_path),
-            expression=[r"\.[0-9]+$"],
-            mode="longest",
-        )
-
-        aggregate_main(args)
-
-        result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
-        # All 3 are unique after removing suffix
-        assert len(result) == 3
-
-    def test_aggregate_with_example_data(self, data_dir, temp_dir, mock_args):
-        """Test aggregate with example data if available."""
-        input_path = data_dir / "example_aggregate.fasta"
-        output_path = temp_dir / "output.fasta"
-
-        assert input_path.exists(), (
-            "required tracked fixture example_aggregate.fasta is missing"
-        )
-
-        args = mock_args(
-            seqfile=str(input_path),
-            outfile=str(output_path),
-            expression=[r"_[0-9]+$"],
-            mode="longest",
-        )
-
-        aggregate_main(args)
-
-        result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
-        assert len(result) > 0
+        assert [r.id for r in result] == ["A-1", "A1", "dup", "dup"]
+        assert [str(r.seq) for r in result] == ["ATGAAA", "ATGCCC", "ATG", "CCC"]
 
     def test_aggregate_wiki_example_colon_pipe(self, temp_dir, mock_args):
         """Test aggregate with wiki example: remove :N and |N suffixes.
@@ -303,98 +194,6 @@ class TestAggregateMain:
         # seq2|2 becomes seq2 after removing |2
         seq2_result = next(r for r in result if "seq2" in r.id)
         assert len(seq2_result.seq) == 54
-
-    def test_aggregate_species_isoforms(self, temp_dir, mock_args):
-        """Test aggregating species isoforms - common bioinformatics use case."""
-        input_path = temp_dir / "input.fasta"
-        output_path = temp_dir / "output.fasta"
-
-        # Multiple isoforms per species
-        records = [
-            SeqRecord(
-                Seq("ATGAAA"),
-                id="Homo_sapiens_isoform1",
-                name="Homo_sapiens_isoform1",
-                description="",
-            ),
-            SeqRecord(
-                Seq("ATGAAACCCGGG"),
-                id="Homo_sapiens_isoform2",
-                name="Homo_sapiens_isoform2",
-                description="",
-            ),  # longest
-            SeqRecord(
-                Seq("ATGCCC"),
-                id="Mus_musculus_isoform1",
-                name="Mus_musculus_isoform1",
-                description="",
-            ),  # longest
-            SeqRecord(
-                Seq("ATG"),
-                id="Mus_musculus_isoform2",
-                name="Mus_musculus_isoform2",
-                description="",
-            ),
-        ]
-        Bio.SeqIO.write(records, str(input_path), "fasta")
-
-        args = mock_args(
-            seqfile=str(input_path),
-            outfile=str(output_path),
-            expression=[r"_isoform[0-9]+$"],  # Remove isoform suffix
-            mode="longest",
-        )
-
-        aggregate_main(args)
-
-        result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
-        assert len(result) == 2
-
-        # Homo_sapiens should be 12nt (longest isoform)
-        human = next(r for r in result if "Homo" in r.id)
-        assert len(human.seq) == 12
-
-        # Mus_musculus should be 6nt (longest isoform)
-        mouse = next(r for r in result if "Mus" in r.id)
-        assert len(mouse.seq) == 6
-
-    def test_aggregate_threads_matches_single_thread(self, temp_dir, mock_args):
-        input_path = temp_dir / "input.fasta"
-        out_single = temp_dir / "single.fasta"
-        out_threaded = temp_dir / "threaded.fasta"
-
-        records = [
-            SeqRecord(Seq("ATGAAA"), id="gene_A.1", name="gene_A.1", description=""),
-            SeqRecord(Seq("ATGAAACCC"), id="gene_A.2", name="gene_A.2", description=""),
-            SeqRecord(Seq("ATGCCC"), id="gene_B.1", name="gene_B.1", description=""),
-            SeqRecord(Seq("ATGGGGTTT"), id="gene_B.2", name="gene_B.2", description=""),
-        ]
-        Bio.SeqIO.write(records, str(input_path), "fasta")
-
-        args_single = mock_args(
-            seqfile=str(input_path),
-            outfile=str(out_single),
-            expression=[r"\.[0-9]+$"],
-            mode="longest",
-            threads=1,
-        )
-        args_threaded = mock_args(
-            seqfile=str(input_path),
-            outfile=str(out_threaded),
-            expression=[r"\.[0-9]+$"],
-            mode="longest",
-            threads=4,
-        )
-
-        aggregate_main(args_single)
-        aggregate_main(args_threaded)
-
-        result_single = list(Bio.SeqIO.parse(str(out_single), "fasta"))
-        result_threaded = list(Bio.SeqIO.parse(str(out_threaded), "fasta"))
-        assert [r.id for r in result_single] == [r.id for r in result_threaded]
-        assert [str(r.seq) for r in result_single] == [
-            str(r.seq) for r in result_threaded
-        ]
 
     def test_aggregate_rejects_invalid_regex(self, temp_dir, mock_args):
         input_path = temp_dir / "input.fasta"

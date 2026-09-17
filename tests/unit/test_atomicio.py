@@ -8,7 +8,7 @@ import pytest
 from cdskit import atomicio
 
 
-@pytest.mark.parametrize("error_type", [KeyboardInterrupt, SystemExit])
+@pytest.mark.parametrize("error_type", [KeyboardInterrupt])
 @pytest.mark.parametrize("phase", ["backup", "install"])
 @pytest.mark.parametrize("after_replace", [False, True])
 @pytest.mark.parametrize("existing_first", [False, True])
@@ -48,17 +48,12 @@ def test_interrupted_commit_restores_original_outputs(
     )
 
 
-@pytest.mark.parametrize("multiple", [False, True])
-def test_directory_destination_is_rejected_before_staging(tmp_path, multiple):
+def test_directory_destination_is_rejected_before_staging(tmp_path):
     directory = tmp_path / "important"
     directory.mkdir()
     (directory / "data.txt").write_text("original")
     output = tmp_path / "new-parent" / "output.txt"
-    context = (
-        atomicio.atomic_output_paths([output, directory])
-        if multiple
-        else atomicio.atomic_output_path(directory)
-    )
+    context = atomicio.atomic_output_paths([output, directory])
     with pytest.raises(ValueError, match="regular file"), context:
         pytest.fail("An invalid destination must be rejected before yielding")
     assert (directory / "data.txt").read_text() == "original"

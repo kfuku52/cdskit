@@ -201,9 +201,16 @@ def test_pipeline_interruption_and_input_changes(
         run_pipeline(pipeline_config, root, "teacher")
 
 
-@pytest.mark.parametrize("layout", ["legacy", "windows", "separate_termini"])
 @pytest.mark.parametrize(
-    "pooling", ["mean", "light_attention", "label_attention", "terminal_attention"]
+    ("layout", "pooling"),
+    [
+        ("legacy", "mean"),
+        ("windows", "mean"),
+        ("separate_termini", "mean"),
+        ("legacy", "light_attention"),
+        ("legacy", "label_attention"),
+        ("legacy", "terminal_attention"),
+    ],
 )
 def test_student_layouts_and_no_test(pipeline_config, tmp_path, layout, pooling):
     config = json.loads(pipeline_config.read_text())
@@ -225,20 +232,19 @@ def test_student_layouts_and_no_test(pipeline_config, tmp_path, layout, pooling)
         run_pipeline(pipeline_config, root, "evaluate")
 
 
-@pytest.mark.parametrize("nested", ["cache", "run"])
-def test_encoder_cannot_contain_mutable_pipeline_outputs(
-    pipeline_config, tmp_path, nested
-):
-    config = json.loads(pipeline_config.read_text())
-    root = tmp_path / "run"
-    if nested == "cache":
-        config["teacher"]["cache_dir"] = "encoder/cache"
-    else:
-        root = tmp_path / "encoder/run"
-    pipeline_config.write_text(json.dumps(config))
-    with pytest.raises(ValueError, match="overlap"):
-        run_pipeline(pipeline_config, root, "teacher")
-    assert not root.exists()
+def test_encoder_cannot_contain_mutable_pipeline_outputs(pipeline_config, tmp_path):
+    original = json.loads(pipeline_config.read_text())
+    for nested in ("cache", "run"):
+        config = json.loads(json.dumps(original))
+        root = tmp_path / "run"
+        if nested == "cache":
+            config["teacher"]["cache_dir"] = "encoder/cache"
+        else:
+            root = tmp_path / "encoder/run"
+        pipeline_config.write_text(json.dumps(config))
+        with pytest.raises(ValueError, match="overlap"):
+            run_pipeline(pipeline_config, root, "teacher")
+        assert not root.exists()
 
 
 @pytest.mark.parametrize("changed", ["data", "config", "encoder", "code"])
@@ -296,15 +302,6 @@ def test_single_label_model_can_predict_negative(
         model["localization_model"]["class_thresholds"] = {"nucleus": 1.0}
         result = predict(model, [{"sequence": "MHHH"}])
         assert bool(result["prediction_matrix"].any()) == ensure_one_label
-
-
-def test_all_positive_class_has_nonzero_training_weight():
-    from cdskit.localize_multilabel_cnn import _class_pos_weight
-
-    weights = _class_pos_weight(np.array([[1, 0, 1], [1, 0, 0], [1, 0, 0]]))
-    assert weights[0] == 1.0
-    assert weights[1] == 1.0
-    assert weights[2] == 2.0
 
 
 def test_test_labels_do_not_affect_training(pipeline_config, tmp_path):

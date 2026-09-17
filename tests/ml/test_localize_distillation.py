@@ -121,19 +121,18 @@ def test_integrated_safe_roundtrip_and_input_normalization(integrated_model, tmp
         predict_multilabel_cnn_batch(["MA*AA"], head)
 
 
-@pytest.mark.parametrize("model_type", ["multilabel_cnn_v1", "multilabel_plm_v1"])
-def test_multilabel_cli_applies_requested_threads(monkeypatch, model_type):
+def test_multilabel_cli_applies_requested_threads(monkeypatch):
     torch = pytest.importorskip("torch")
     from cdskit.localize import _configure_ml_threads
 
     calls = []
     monkeypatch.setattr(torch, "set_num_threads", lambda n: calls.append(n))
     monkeypatch.setattr(torch, "set_num_interop_threads", lambda n: None)
-    _configure_ml_threads({"model_type": model_type}, 2)
+    _configure_ml_threads({"model_type": "multilabel_cnn_v1"}, 2)
     assert calls == [2]
 
 
-@pytest.mark.parametrize("weights", [[0.5], [0.5, np.nan], [-0.1, 0.5], [0.5, 1.1]])
+@pytest.mark.parametrize("weights", [[0.5], [0.5, np.nan]])
 def test_corrupt_integrated_weights_rejected_on_load(
     integrated_model, tmp_path, weights
 ):

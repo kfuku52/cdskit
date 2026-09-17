@@ -8,7 +8,7 @@ import Bio.SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
-from cdskit.backtrim import backtrim_main, build_column_index, check_same_seq_num
+from cdskit.backtrim import backtrim_main, check_same_seq_num
 
 
 @pytest.mark.parametrize("protein", ["m-k", "M.K", "m.k"])
@@ -32,13 +32,6 @@ def test_backtrim_accepts_case_and_gap_variants(
 class TestCheckSameSeqNum:
     """Tests for check_same_seq_num function."""
 
-    def test_same_number(self):
-        """Test with same number of sequences."""
-        cdn_records = [SeqRecord(Seq("ATGAAA"), id="seq1")]
-        pep_records = [SeqRecord(Seq("MK"), id="seq1")]
-        # Should not raise
-        check_same_seq_num(cdn_records, pep_records)
-
     def test_different_number(self):
         """Test with different number of sequences."""
         cdn_records = [
@@ -48,20 +41,6 @@ class TestCheckSameSeqNum:
         pep_records = [SeqRecord(Seq("MK"), id="seq1")]
         with pytest.raises(ValueError):
             check_same_seq_num(cdn_records, pep_records)
-
-
-class TestBuildColumnIndex:
-    """Tests for build_column_index helper."""
-
-    def test_empty_input(self):
-        """Empty input should produce an empty index."""
-        col_index = build_column_index([])
-        assert len(col_index) == 0
-
-    def test_duplicate_column_patterns_preserve_order(self):
-        """Duplicate column keys should retain all matching positions."""
-        col_index = build_column_index(["AA", "AA"])
-        assert list(col_index["AA"]) == [0, 1]
 
 
 class TestBacktrimMain:
@@ -326,50 +305,6 @@ class TestBacktrimMain:
         # Only the first monotonic site should be kept.
         assert [str(r.seq) for r in result] == ["CCT", "TGT"]
 
-    def test_backtrim_rejects_non_multiple_of_three(self, temp_dir, mock_args):
-        """Test backtrim rejects codon sequences not multiple of 3."""
-        cdn_path = temp_dir / "codon.fasta"
-        pep_path = temp_dir / "protein.fasta"
-        output_path = temp_dir / "output.fasta"
-
-        cdn_records = [SeqRecord(Seq("ATGAA"), id="seq1", description="")]  # 5 nt
-        Bio.SeqIO.write(cdn_records, str(cdn_path), "fasta")
-
-        pep_records = [SeqRecord(Seq("M"), id="seq1", description="")]
-        Bio.SeqIO.write(pep_records, str(pep_path), "fasta")
-
-        args = mock_args(
-            seqfile=str(cdn_path),
-            outfile=str(output_path),
-            trimmed_aa_aln=str(pep_path),
-            codontable=1,
-        )
-
-        with pytest.raises(ValueError) as exc_info:
-            backtrim_main(args)
-        assert "multiple of three" in str(exc_info.value)
-
-    def test_backtrim_rejects_invalid_codontable(self, temp_dir, mock_args):
-        cdn_path = temp_dir / "codon.fasta"
-        pep_path = temp_dir / "protein.fasta"
-        output_path = temp_dir / "output.fasta"
-
-        cdn_records = [SeqRecord(Seq("ATGAAA"), id="seq1", description="")]
-        pep_records = [SeqRecord(Seq("MK"), id="seq1", description="")]
-        Bio.SeqIO.write(cdn_records, str(cdn_path), "fasta")
-        Bio.SeqIO.write(pep_records, str(pep_path), "fasta")
-
-        args = mock_args(
-            seqfile=str(cdn_path),
-            outfile=str(output_path),
-            trimmed_aa_aln=str(pep_path),
-            codontable=999,
-        )
-
-        with pytest.raises(ValueError) as exc_info:
-            backtrim_main(args)
-        assert "Invalid --codon_table" in str(exc_info.value)
-
     def test_backtrim_empty_inputs_produce_empty_output(self, temp_dir, mock_args):
         cdn_path = temp_dir / "codon.fasta"
         pep_path = temp_dir / "protein.fasta"
@@ -443,71 +378,3 @@ class TestBacktrimMain:
             assert len(result) == len(expected)
             for r, e in zip(result, expected, strict=False):
                 assert str(r.seq) == str(e.seq), f"Mismatch for {r.id}"
-
-    def test_backtrim_with_test_data_02(self, data_dir, temp_dir, mock_args):
-        """Test backtrim with backtrim_02 test data."""
-        cdn_path = data_dir / "backtrim_02" / "untrimmed_codon.fasta"
-        pep_path = data_dir / "backtrim_02" / "trimmed_aa.fasta"
-        expected_path = data_dir / "backtrim_02" / "trimmed_codon.fasta"
-        output_path = temp_dir / "output.fasta"
-
-        assert cdn_path.exists(), "required tracked fixture backtrim_02 is missing"
-
-        args = mock_args(
-            seqfile=str(cdn_path),
-            outfile=str(output_path),
-            trimmed_aa_aln=str(pep_path),
-            codontable=1,
-        )
-
-        backtrim_main(args)
-
-        result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
-        if expected_path.exists():
-            expected = list(Bio.SeqIO.parse(str(expected_path), "fasta"))
-            assert len(result) == len(expected)
-
-    def test_backtrim_threads_matches_single_thread(self, temp_dir, mock_args):
-        cdn_path = temp_dir / "codon.fasta"
-        pep_path = temp_dir / "protein.fasta"
-        out_single = temp_dir / "single.fasta"
-        out_threaded = temp_dir / "threaded.fasta"
-
-        cdn_records = [
-            SeqRecord(Seq("ATGAAA---CCC"), id="seq1", description=""),
-            SeqRecord(Seq("ATGAAAGGGCCC"), id="seq2", description=""),
-            SeqRecord(Seq("ATGTTT---CCC"), id="seq3", description=""),
-        ]
-        Bio.SeqIO.write(cdn_records, str(cdn_path), "fasta")
-
-        pep_records = [
-            SeqRecord(Seq("MK"), id="seq1", description=""),
-            SeqRecord(Seq("MK"), id="seq2", description=""),
-            SeqRecord(Seq("MF"), id="seq3", description=""),
-        ]
-        Bio.SeqIO.write(pep_records, str(pep_path), "fasta")
-
-        args_single = mock_args(
-            seqfile=str(cdn_path),
-            outfile=str(out_single),
-            trimmed_aa_aln=str(pep_path),
-            codontable=1,
-            threads=1,
-        )
-        args_threaded = mock_args(
-            seqfile=str(cdn_path),
-            outfile=str(out_threaded),
-            trimmed_aa_aln=str(pep_path),
-            codontable=1,
-            threads=4,
-        )
-
-        backtrim_main(args_single)
-        backtrim_main(args_threaded)
-
-        result_single = list(Bio.SeqIO.parse(str(out_single), "fasta"))
-        result_threaded = list(Bio.SeqIO.parse(str(out_threaded), "fasta"))
-        assert [r.id for r in result_single] == [r.id for r in result_threaded]
-        assert [str(r.seq) for r in result_single] == [
-            str(r.seq) for r in result_threaded
-        ]

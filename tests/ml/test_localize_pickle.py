@@ -48,13 +48,10 @@ def test_legacy_binomial_reducer_without_generated_function(monkeypatch, module)
     assert set(vars(loss)) == before
 
 
-@pytest.mark.parametrize("checksum,state", [(0, ()), (238750788, (1,))])
-def test_legacy_binomial_reducer_rejects_unknown_state(checksum, state):
+def test_legacy_binomial_reducer_rejects_unknown_state():
     loss = pytest.importorskip("sklearn._loss._loss")
     with pytest.raises(pickle.UnpicklingError, match="Unsupported legacy"):
-        localize_pickle._restore_legacy_binomial_loss(
-            loss.CyHalfBinomialLoss, checksum, state
-        )
+        localize_pickle._restore_legacy_binomial_loss(loss.CyHalfBinomialLoss, 0, ())
 
 
 def test_legacy_binomial_reducer_rejects_other_classes():

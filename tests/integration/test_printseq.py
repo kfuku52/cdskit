@@ -9,7 +9,7 @@ import Bio.SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
-from cdskit.printseq import format_printseq_lines, printseq_main, record_matches_seqname
+from cdskit.printseq import printseq_main
 
 
 class TestPrintseqMain:
@@ -142,29 +142,6 @@ class TestPrintseqMain:
         assert "transcript_001" not in captured.out
         assert "gene_100" not in captured.out
 
-    def test_printseq_with_example_data(self, data_dir, mock_args, capsys):
-        """Test printseq with example_printseq.fasta from wiki."""
-        input_path = data_dir / "example_printseq.fasta"
-
-        assert input_path.exists(), (
-            "required tracked fixture example_printseq.fasta is missing"
-        )
-
-        args = mock_args(
-            seqfile=str(input_path),
-            seqname="seq_[AG]",  # Wiki example regex
-            show_seqname=True,
-        )
-
-        printseq_main(args)
-
-        captured = capsys.readouterr()
-        # Wiki example: should match seq_A and seq_G
-        assert ">seq_A" in captured.out
-        assert ">seq_G" in captured.out
-        assert ">seq_T" not in captured.out
-        assert ">seq_C" not in captured.out
-
     def test_printseq_match_all(self, temp_dir, mock_args, capsys):
         """Test printseq matching all sequences with wildcard."""
         input_path = temp_dir / "input.fasta"
@@ -187,35 +164,6 @@ class TestPrintseqMain:
         assert ">seq1" in captured.out
         assert ">seq2" in captured.out
 
-    def test_printseq_threads_matches_single_thread(self, temp_dir, mock_args, capsys):
-        input_path = temp_dir / "input.fasta"
-        records = [
-            SeqRecord(Seq("AAAAAAAA"), id="seq_A", name="seq_A", description=""),
-            SeqRecord(Seq("TTTTTTTT"), id="seq_T", name="seq_T", description=""),
-            SeqRecord(Seq("GGGGGGGG"), id="seq_G", name="seq_G", description=""),
-            SeqRecord(Seq("CCCCCCCC"), id="seq_C", name="seq_C", description=""),
-        ]
-        Bio.SeqIO.write(records, str(input_path), "fasta")
-
-        args_single = mock_args(
-            seqfile=str(input_path),
-            seqname="seq_[AG]",
-            show_seqname=True,
-            threads=1,
-        )
-        args_threaded = mock_args(
-            seqfile=str(input_path),
-            seqname="seq_[AG]",
-            show_seqname=True,
-            threads=4,
-        )
-
-        printseq_main(args_single)
-        captured_single = capsys.readouterr()
-        printseq_main(args_threaded)
-        captured_threaded = capsys.readouterr()
-        assert captured_single.out == captured_threaded.out
-
     def test_printseq_rejects_invalid_regex(self, temp_dir, mock_args):
         input_path = temp_dir / "input.fasta"
         records = [SeqRecord(Seq("ATGAAA"), id="seq1", name="seq1", description="")]
@@ -229,21 +177,6 @@ class TestPrintseqMain:
         with pytest.raises(ValueError) as exc_info:
             printseq_main(args)
         assert "Invalid regex in --seq_name_regex" in str(exc_info.value)
-
-    def test_printseq_rejects_non_dna_input(self, temp_dir, mock_args):
-        input_path = temp_dir / "input.fasta"
-        records = [SeqRecord(Seq("PPP"), id="prot1", name="prot1", description="")]
-        Bio.SeqIO.write(records, str(input_path), "fasta")
-
-        args = mock_args(
-            seqfile=str(input_path),
-            seqname="prot1",
-            show_seqname=True,
-            seqtype="dna",
-        )
-        with pytest.raises(ValueError) as exc_info:
-            printseq_main(args)
-        assert "DNA-only input is required" in str(exc_info.value)
 
     def test_printseq_accepts_protein_input_when_seqtype_protein(
         self, temp_dir, mock_args, capsys
@@ -266,29 +199,3 @@ class TestPrintseqMain:
         captured = capsys.readouterr()
         lines = [line for line in captured.out.strip().split("\n") if line]
         assert lines == [">prot1", "MKT"]
-
-
-class TestPrintseqHelpers:
-    """Tests for printseq helper functions."""
-
-    def test_record_matches_seqname(self):
-        record = SeqRecord(Seq("ATGAAA"), id="seq_A", name="seq_A", description="")
-        assert record_matches_seqname(record, r"seq_[AG]") is True
-        assert record_matches_seqname(record, r"seq_[TC]") is False
-
-    def test_record_matches_seqname_uses_id_not_name(self):
-        record = SeqRecord(
-            Seq("ATGAAA"), id="wanted_id", name="other_name", description=""
-        )
-        assert record_matches_seqname(record, r"wanted_id") is True
-        assert record_matches_seqname(record, r"other_name") is False
-
-    def test_format_printseq_lines_with_header(self):
-        record = SeqRecord(Seq("ATGAAA"), id="seq_A", name="seq_A", description="")
-        lines = format_printseq_lines(record, show_seqname=True)
-        assert lines == [">seq_A", "ATGAAA"]
-
-    def test_format_printseq_lines_without_header(self):
-        record = SeqRecord(Seq("ATGAAA"), id="seq_A", name="seq_A", description="")
-        lines = format_printseq_lines(record, show_seqname=False)
-        assert lines == ["ATGAAA"]

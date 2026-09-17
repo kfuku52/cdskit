@@ -79,20 +79,3 @@ class TestCodonstatsMain:
         assert captured.out.startswith("codon\taa\tcount\tfraction")
         assert "ATG\tM\t3\t0.500000" in captured.out
         assert "TTT\tF\t3\t0.500000" in captured.out
-
-    def test_codonstats_rejects_non_triplet_input(self, temp_dir, mock_args):
-        input_path = temp_dir / "input.fasta"
-
-        records = [
-            SeqRecord(Seq("ATGAA"), id="seq1", description=""),
-        ]
-        Bio.SeqIO.write(records, str(input_path), "fasta")
-
-        args = mock_args(
-            seqfile=str(input_path),
-            mode="summary",
-        )
-
-        with pytest.raises(ValueError) as exc_info:
-            codonstats_main(args)
-        assert "multiple of three" in str(exc_info.value)

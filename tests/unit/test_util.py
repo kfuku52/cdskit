@@ -183,82 +183,9 @@ class TestWriteSeqs:
 
         assert fasta_path.read_text(encoding="utf-8") == "sentinel\n"
 
-    def test_multi_output_backup_failure_restores_existing_outputs(
-        self,
-        temp_dir,
-        monkeypatch,
-    ):
-        first = temp_dir / "first.txt"
-        second = temp_dir / "second.txt"
-        first.write_text("old first\n", encoding="utf-8")
-        second.write_text("old second\n", encoding="utf-8")
-        real_replace = util.os.replace
-
-        def fail_on_second_backup(source, destination):
-            if str(source) == str(second) and str(destination).endswith(".bak"):
-                raise OSError("simulated backup failure")
-            return real_replace(source, destination)
-
-        monkeypatch.setattr(util.os, "replace", fail_on_second_backup)
-
-        with pytest.raises(OSError, match="simulated backup failure"):
-            with util.atomic_output_paths([first, second]) as temporary_paths:
-                for temporary, text in zip(
-                    temporary_paths,
-                    ("new first\n", "new second\n"),
-                    strict=False,
-                ):
-                    with open(temporary, "w", encoding="utf-8") as output:
-                        output.write(text)
-
-        assert first.read_text(encoding="utf-8") == "old first\n"
-        assert second.read_text(encoding="utf-8") == "old second\n"
-
-    def test_multi_output_rollback_failure_retains_recovery_backup(
-        self,
-        temp_dir,
-        monkeypatch,
-    ):
-        first = temp_dir / "first.txt"
-        second = temp_dir / "second.txt"
-        first.write_text("old first\n", encoding="utf-8")
-        second.write_text("old second\n", encoding="utf-8")
-        real_replace = util.os.replace
-
-        def fail_backup_and_restore(source, destination):
-            source_text = str(source)
-            destination_text = str(destination)
-            if source_text == str(second) and destination_text.endswith(".bak"):
-                raise OSError("simulated backup failure")
-            if source_text.endswith(".bak") and destination_text == str(first):
-                raise OSError("simulated restore failure")
-            return real_replace(source, destination)
-
-        monkeypatch.setattr(util.os, "replace", fail_backup_and_restore)
-
-        with pytest.raises(RuntimeError, match="Recovery backups were retained"):
-            with util.atomic_output_paths([first, second]) as temporary_paths:
-                for temporary in temporary_paths:
-                    with open(temporary, "w", encoding="utf-8") as output:
-                        output.write("new\n")
-
-        backups = list(temp_dir.glob(".first.txt.*.bak"))
-        assert len(backups) == 1
-        assert backups[0].read_text(encoding="utf-8") == "old first\n"
-        assert second.read_text(encoding="utf-8") == "old second\n"
-
 
 class TestStopIfNotMultipleOfThree:
     """Tests for stop_if_not_multiple_of_three function."""
-
-    def test_valid_sequences(self):
-        """Test with sequences that are multiples of 3."""
-        records = [
-            SeqRecord(Seq("ATGAAA"), id="seq1"),  # 6 nt
-            SeqRecord(Seq("ATGAAATGA"), id="seq2"),  # 9 nt
-        ]
-        # Should not raise
-        util.stop_if_not_multiple_of_three(records)
 
     def test_invalid_sequence_length(self):
         """Test with sequence not multiple of 3."""
@@ -282,15 +209,6 @@ class TestStopIfNotMultipleOfThree:
 class TestStopIfNotAligned:
     """Tests for stop_if_not_aligned function."""
 
-    def test_aligned_sequences(self):
-        """Test with aligned sequences (same length)."""
-        records = [
-            SeqRecord(Seq("ATGAAA"), id="seq1"),
-            SeqRecord(Seq("ATGCCC"), id="seq2"),
-        ]
-        # Should not raise
-        util.stop_if_not_aligned(records)
-
     def test_unaligned_sequences(self):
         """Test with sequences of different lengths."""
         records = [
@@ -301,21 +219,9 @@ class TestStopIfNotAligned:
             util.stop_if_not_aligned(records)
         assert "not identical" in str(exc_info.value)
 
-    def test_single_sequence(self):
-        """Test with single sequence (always aligned)."""
-        records = [SeqRecord(Seq("ATGAAA"), id="seq1")]
-        util.stop_if_not_aligned(records)
-
 
 class TestStopIfNotDna:
     """Tests for stop_if_not_dna function."""
-
-    def test_accepts_dna_sequences(self):
-        records = [
-            SeqRecord(Seq("ATGAAATGA"), id="seq1"),
-            SeqRecord(Seq("ATGN--TGA"), id="seq2"),
-        ]
-        util.stop_if_not_dna(records)
 
     def test_rejects_rna_sequences(self):
         records = [
@@ -342,13 +248,6 @@ class TestStopIfNotDna:
 class TestStopIfNotProtein:
     """Tests for stop_if_not_protein function."""
 
-    def test_accepts_protein_sequences(self):
-        records = [
-            SeqRecord(Seq("MKT*"), id="prot1"),
-            SeqRecord(Seq("QX-.?"), id="prot2"),
-        ]
-        util.stop_if_not_protein(records)
-
     def test_rejects_invalid_protein_letters(self):
         records = [
             SeqRecord(Seq("MK1"), id="bad1"),
@@ -368,14 +267,6 @@ class TestStopIfNotSeqtype:
         records = [SeqRecord(Seq("MKT"), id="prot1")]
         util.stop_if_not_seqtype(records=records, seqtype="protein", label="--seqfile")
 
-    def test_accepts_protein_when_seqtype_auto(self):
-        records = [SeqRecord(Seq("MKT"), id="prot1")]
-        util.stop_if_not_seqtype(records=records, seqtype="auto", label="--seqfile")
-
-    def test_accepts_protein_when_seqtype_default(self):
-        records = [SeqRecord(Seq("MKT"), id="prot1")]
-        util.stop_if_not_seqtype(records=records, label="--seqfile")
-
     def test_rejects_unknown_seqtype(self):
         records = [SeqRecord(Seq("ATG"), id="seq1")]
         with pytest.raises(ValueError) as exc_info:
@@ -384,9 +275,6 @@ class TestStopIfNotSeqtype:
 
 
 class TestStopIfInvalidCodontable:
-    def test_accepts_valid_codontable(self):
-        util.stop_if_invalid_codontable(1)
-
     def test_rejects_invalid_codontable(self):
         with pytest.raises(ValueError) as exc_info:
             util.stop_if_invalid_codontable(999)

@@ -222,29 +222,6 @@ class TestRmseqMain:
         result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
         assert len(result) == 2
 
-    def test_rmseq_with_test_data(self, data_dir, temp_dir, mock_args):
-        """Test rmseq with rmseq_01 test data."""
-        input_path = data_dir / "rmseq_01" / "input.fasta"
-        output_path = temp_dir / "output.fasta"
-
-        assert input_path.exists(), "required tracked fixture rmseq_01 is missing"
-
-        input_records = list(Bio.SeqIO.parse(str(input_path), "fasta"))
-
-        args = mock_args(
-            seqfile=str(input_path),
-            outfile=str(output_path),
-            seqname="$^",
-            problematic_percent=50,
-            problematic_char=["N", "-"],
-        )
-
-        rmseq_main(args)
-
-        result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
-        # Result should have same or fewer sequences than input
-        assert len(result) <= len(input_records)
-
     def test_rmseq_wiki_example_species_removal(self, temp_dir, mock_args):
         """Test wiki example: remove Arabidopsis sequences and high-N sequences.
 
@@ -389,46 +366,6 @@ class TestRmseqMain:
         assert "some_gaps" in result_ids  # 33% < 50%
         assert "many_gaps" not in result_ids  # 67% >= 50%
 
-    def test_rmseq_threads_matches_single_thread(self, temp_dir, mock_args):
-        input_path = temp_dir / "input.fasta"
-        out_single = temp_dir / "single.fasta"
-        out_threaded = temp_dir / "threaded.fasta"
-
-        records = [
-            SeqRecord(Seq("ATGAAA"), id="keep_this", description=""),
-            SeqRecord(Seq("ATGCCC"), id="remove_me", description=""),
-            SeqRecord(Seq("NNNNNN"), id="all_n", description=""),
-            SeqRecord(Seq("ATGNNN"), id="half_n", description=""),
-        ]
-        Bio.SeqIO.write(records, str(input_path), "fasta")
-
-        args_single = mock_args(
-            seqfile=str(input_path),
-            outfile=str(out_single),
-            seqname="remove.*",
-            problematic_percent=50,
-            problematic_char=["N"],
-            threads=1,
-        )
-        args_threaded = mock_args(
-            seqfile=str(input_path),
-            outfile=str(out_threaded),
-            seqname="remove.*",
-            problematic_percent=50,
-            problematic_char=["N"],
-            threads=4,
-        )
-
-        rmseq_main(args_single)
-        rmseq_main(args_threaded)
-
-        result_single = list(Bio.SeqIO.parse(str(out_single), "fasta"))
-        result_threaded = list(Bio.SeqIO.parse(str(out_threaded), "fasta"))
-        assert [r.id for r in result_single] == [r.id for r in result_threaded]
-        assert [str(r.seq) for r in result_single] == [
-            str(r.seq) for r in result_threaded
-        ]
-
     def test_rmseq_boundary_percent(self, temp_dir, mock_args):
         """Test behavior at exactly the boundary percent."""
         input_path = temp_dir / "input.fasta"
@@ -537,24 +474,6 @@ class TestRmseqMain:
         assert "--problematic_chars must contain at least one character" in str(
             exc_info.value
         )
-
-    def test_rmseq_rejects_non_dna_input(self, temp_dir, mock_args):
-        input_path = temp_dir / "input.fasta"
-        output_path = temp_dir / "output.fasta"
-        records = [SeqRecord(Seq("PPP"), id="prot1", description="")]
-        Bio.SeqIO.write(records, str(input_path), "fasta")
-
-        args = mock_args(
-            seqfile=str(input_path),
-            outfile=str(output_path),
-            seqname="$^",
-            problematic_percent=0,
-            problematic_char=["N"],
-            seqtype="dna",
-        )
-        with pytest.raises(ValueError) as exc_info:
-            rmseq_main(args)
-        assert "DNA-only input is required" in str(exc_info.value)
 
     def test_rmseq_accepts_protein_input_when_seqtype_protein(
         self, temp_dir, mock_args

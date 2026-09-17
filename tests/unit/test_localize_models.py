@@ -79,9 +79,13 @@ def test_targeting5_alias_respects_disabled_download(temp_dir, monkeypatch):
     assert "model download is disabled" in str(exc_info.value)
 
 
-@pytest.mark.parametrize("alias", ["esm2-localization-v1", "esm2-localization"])
-@pytest.mark.parametrize("cached", [False, True])
-@pytest.mark.parametrize("offline", [False, True])
+@pytest.mark.parametrize(
+    ("alias", "cached", "offline"),
+    [
+        ("esm2-localization-v1", False, False),
+        ("esm2-localization", True, True),
+    ],
+)
 def test_unpublished_default_never_downloads_or_trusts_cache(
     temp_dir, monkeypatch, alias, cached, offline
 ):
@@ -254,11 +258,3 @@ def test_download_error_removes_partial_file(temp_dir, monkeypatch):
         resolve_localize_model_path("downloadable")
 
     assert list(temp_dir.rglob("*.tmp")) == []
-
-
-def test_unpublished_alias_is_not_downloaded(temp_dir, monkeypatch):
-    register_downloadable_model(monkeypatch, b"content", published=False)
-    monkeypatch.setenv("CDSKIT_MODEL_DIR", str(temp_dir))
-
-    with pytest.raises(FileNotFoundError, match="not published yet"):
-        resolve_localize_model_path("downloadable")

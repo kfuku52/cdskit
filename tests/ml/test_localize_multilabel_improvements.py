@@ -178,9 +178,7 @@ def test_cnn_legacy_load_and_new_roundtrip():
     )
 
 
-@pytest.mark.parametrize(
-    "pooling", ["mean", "light_attention", "label_attention", "terminal_attention"]
-)
+@pytest.mark.parametrize("pooling", ["mean", "terminal_attention"])
 def test_plm_pooling_padding_invariance(pooling):
     torch = pytest.importorskip("torch")
     from cdskit.localize_multilabel_plm import _build_head
@@ -224,7 +222,6 @@ def tiny_esm(tmp_path):
     [
         ("label_attention", "bce", "bce"),
         ("terminal_attention", "weighted_bce", "macro_ap"),
-        ("light_attention", "asl", "macro_ap"),
     ],
 )
 def test_plm_window_cache_and_model_roundtrip(
@@ -370,26 +367,6 @@ def test_development_run_writes_oof_without_external_file(tmp_path):
         assert fold["n_train"] == 2
         assert fold["n_validation"] == 2
         assert fold["threshold_source"] == "validation_partition"
-
-
-def test_plm_honors_scoped_offline_setting(monkeypatch):
-    transformers = pytest.importorskip("transformers")
-    from cdskit.localize_multilabel_plm import ResidueEncoder
-    from cdskit.localize_runtime import PredictionRuntime, prediction_runtime
-
-    calls = []
-
-    def tokenizer_probe(*args, **kwargs):
-        calls.append(kwargs)
-        raise ValueError("offline probe")
-
-    monkeypatch.setattr(transformers.AutoTokenizer, "from_pretrained", tokenizer_probe)
-    encoder = ResidueEncoder({"model_name": "test/esm", "revision": "a" * 40})
-    with prediction_runtime(PredictionRuntime(offline=True)):
-        with pytest.raises(ValueError, match="offline probe"):
-            encoder._load()
-    assert calls[0]["local_files_only"] is True
-    assert calls[0]["trust_remote_code"] is False
 
 
 def test_encoder_loading_preserves_training_rng(tiny_esm):

@@ -7,12 +7,9 @@ and don't cause errors (e.g., Issue #10 with % characters).
 
 import pytest
 import sys
-import argparse
 import os
 import subprocess
 from pathlib import Path
-from io import StringIO
-from unittest.mock import patch
 
 from cdskit.cli import main as cli_main
 from cdskit.cliutil import CdskitArgumentParser, parse_bool, resolve_threads
@@ -53,35 +50,6 @@ class TestCLIHelpStrings:
     which was interpreted as a format specifier.
     """
 
-    def test_argparse_help_with_percent_character(self):
-        """Test that help strings with % character are properly escaped.
-
-        This tests the root cause of Issue #10: argparse help strings with
-        %(default)s format specifiers can fail if the help text contains
-        unescaped % characters.
-        """
-        # Test that a properly escaped help string works
-        parser = argparse.ArgumentParser()
-        # This should NOT raise ValueError
-        parser.add_argument(
-            "--test",
-            default="",
-            help="default=%(default)s: Special chars like !@#$%%^&* are OK",  # %% escapes %
-        )
-
-        # Get help without error
-        help_output = StringIO()
-        with patch("sys.stdout", help_output):
-            try:
-                parser.parse_args(["--help"])
-            except SystemExit:
-                pass  # --help causes sys.exit
-
-        # Verify % was properly handled
-        output = help_output.getvalue()
-        assert "ValueError" not in output
-        assert "badly formed" not in output
-
     def test_label_replace_chars_help_format(self, capsys):
         """Test the specific help string format from Issue #10.
 
@@ -96,25 +64,6 @@ class TestCLIHelpStrings:
         assert "--replace_chars" in captured.out
         assert "!@#$%^&*+=/?<>|--_" in captured.out
         assert captured.err == ""
-
-    def test_argparse_special_chars_in_metavar(self):
-        """Test that special characters in metavar don't cause issues."""
-        parser = argparse.ArgumentParser()
-        # Metavar with special characters (like the one in Issue #10)
-        parser.add_argument(
-            "--test",
-            metavar="FROM1FROM2...--TO",
-            default="",
-            help="default=%(default)s: Replace characters",
-        )
-
-        # Should not raise any errors
-        help_output = StringIO()
-        with patch("sys.stdout", help_output):
-            try:
-                parser.parse_args(["--help"])
-            except SystemExit:
-                pass
 
 
 class TestCLIModuleImport:
@@ -162,15 +111,6 @@ class TestCLIModuleImport:
         for module_name in modules:
             __import__(module_name)
 
-    def test_import_util_functions(self):
-        """Test that commonly used utility functions are available."""
-        from cdskit.util import read_seqs, write_seqs, stop_if_not_multiple_of_three
-
-        # These should be callable
-        assert callable(read_seqs)
-        assert callable(write_seqs)
-        assert callable(stop_if_not_multiple_of_three)
-
     @pytest.mark.subprocess
     def test_root_version_option(self):
         """Test that cdskit --version works without a subcommand."""
@@ -188,107 +128,17 @@ class TestCLIModuleImport:
         assert result.stderr == ""
 
 
-class TestCLIEdgeCases:
-    """Tests for edge cases in CLI behavior."""
-
-    def test_empty_default_value_with_format(self):
-        """Test that empty default values work with %(default)s format."""
-        parser = argparse.ArgumentParser()
-        parser.add_argument(
-            "--empty", default="", help="default=%(default)s: An empty default"
-        )
-
-        # Should handle empty default
-        help_output = StringIO()
-        with patch("sys.stdout", help_output):
-            try:
-                parser.parse_args(["--help"])
-            except SystemExit:
-                pass
-
-        output = help_output.getvalue()
-        assert "default=" in output
-
-    def test_numeric_default_with_format(self):
-        """Test that numeric default values work with %(default)s format."""
-        parser = argparse.ArgumentParser()
-        parser.add_argument(
-            "--number",
-            type=int,
-            default=42,
-            help="default=%(default)s: A numeric default",
-        )
-
-        # Should handle numeric default
-        help_output = StringIO()
-        with patch("sys.stdout", help_output):
-            try:
-                parser.parse_args(["--help"])
-            except SystemExit:
-                pass
-
-        output = help_output.getvalue()
-        assert "42" in output
-
-
 class TestCLIConsistency:
-    def test_automatic_help_describes_common_argument_roles(self):
+    def test_automatic_help_describes_representative_argument_roles(self):
         parser = CdskitArgumentParser()
         parser.add_argument("--training_tsv")
-        parser.add_argument("--out_json")
-        parser.add_argument("--threshold_grid")
         parser.add_argument("--verbose", action="store_true")
 
         help_text = parser.format_help()
 
         assert "Path to the training TSV file." in help_text
-        assert "Path for the output result JSON file." in help_text
-        assert "Decision threshold or candidate thresholds" in help_text
         assert "Enable detailed progress output." in help_text
         assert "Set training tsv." not in help_text
-
-    @pytest.mark.parametrize(
-        ("option", "kwargs", "expected"),
-        [
-            ("--input_dir", {}, "Directory containing the input inputs."),
-            ("--out_dir", {}, "Directory where result outputs are written."),
-            (
-                "--align_mmseqs",
-                {},
-                "Path or command name for the align mmseqs executable.",
-            ),
-            ("--resume_state", {}, "Path to the resume state file."),
-            (
-                "--strategy",
-                {"choices": ("mean", "max")},
-                "Method or mode used for strategy.",
-            ),
-            (
-                "--fold_learning_rate",
-                {},
-                "Optimizer learning rate used for fold learning rate.",
-            ),
-            (
-                "--forest_n_estimators",
-                {},
-                "Number of estimators used for forest n estimators.",
-            ),
-            (
-                "--score_grid_step",
-                {},
-                "Step size used for the score grid step search grid.",
-            ),
-            ("--encoder_num_layers", {}, "Training value for encoder num layers."),
-            ("--num_replicates", {}, "Number of replicates."),
-            ("--num_dropout", {}, "Number of dropout."),
-            ("--custom_value", {}, "Value used for custom value."),
-        ],
-    )
-    def test_automatic_help_rule_categories(self, option, kwargs, expected):
-        parser = CdskitArgumentParser()
-        parser.add_argument(option, **kwargs)
-
-        assert expected in parser.format_help()
 
     def test_deprecated_long_option_is_accepted_with_warning(self, capsys):
         parser = CdskitArgumentParser()

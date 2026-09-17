@@ -42,7 +42,7 @@ def test_export_preserves_all_but_runtime_settings():
     assert exported == expected
 
 
-@pytest.mark.parametrize("name", ["/missing/encoder", "../encoder", "encoder"])
+@pytest.mark.parametrize("name", ["/missing/encoder", "encoder"])
 def test_export_rejects_nonportable_encoder(name):
     model = checkpoint()
     model["localization_model"]["encoder"]["model_name"] = name

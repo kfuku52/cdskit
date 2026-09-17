@@ -162,25 +162,6 @@ class TestStatsMain:
         assert "Total length: 0" in captured.out
         assert "GC content: 0.0%" in captured.out
 
-    def test_stats_with_test_data(self, temp_dir, mock_args, capsys):
-        """Test stats with a checkout-independent fixture."""
-        input_path = temp_dir / "example_stats.fasta"
-        input_path.write_text(
-            ">seq1\nATGCGC\n>seq2\natgn--\n",
-            encoding="utf-8",
-        )
-
-        args = mock_args(
-            seqfile=str(input_path),
-        )
-
-        stats_main(args)
-
-        captured = capsys.readouterr()
-        assert "Number of sequences:" in captured.out
-        assert "Total length:" in captured.out
-        assert "GC content:" in captured.out
-
     def test_stats_wiki_example(self, temp_dir, mock_args, capsys):
         """Test stats output format matching wiki example.
 
@@ -218,29 +199,6 @@ class TestStatsMain:
         # 10 GC / 20 total = 50%
         assert "50" in captured.out
 
-    def test_stats_large_sequence(self, temp_dir, mock_args, capsys):
-        """Test stats with a larger sequence."""
-        input_path = temp_dir / "input.fasta"
-
-        # Create a 1000 bp sequence
-        seq = "ATGC" * 250  # 1000 bp, 50% GC
-        records = [
-            SeqRecord(Seq(seq), id="large_seq", description=""),
-        ]
-        Bio.SeqIO.write(records, str(input_path), "fasta")
-
-        args = mock_args(
-            seqfile=str(input_path),
-        )
-
-        stats_main(args)
-
-        captured = capsys.readouterr()
-        assert (
-            "Total length: 1,000" in captured.out
-            or "Total length: 1000" in captured.out
-        )
-
     def test_stats_mixed_content(self, temp_dir, mock_args, capsys):
         """Test stats with mixed content (gaps, Ns, softmasked)."""
         input_path = temp_dir / "input.fasta"
@@ -262,24 +220,6 @@ class TestStatsMain:
         assert "Total gap (-) length: 3" in captured.out
         assert "Total N length: 3" in captured.out
         assert "Total softmasked length: 3" in captured.out
-
-    def test_stats_single_sequence(self, temp_dir, mock_args, capsys):
-        """Test stats with single sequence."""
-        input_path = temp_dir / "input.fasta"
-
-        records = [
-            SeqRecord(Seq("ATGCCC"), id="only_one", description=""),
-        ]
-        Bio.SeqIO.write(records, str(input_path), "fasta")
-
-        args = mock_args(
-            seqfile=str(input_path),
-        )
-
-        stats_main(args)
-
-        captured = capsys.readouterr()
-        assert "Number of sequences: 1" in captured.out
 
     def test_stats_threads_matches_single_thread(self, temp_dir, mock_args, capsys):
         input_path = temp_dir / "input.fasta"

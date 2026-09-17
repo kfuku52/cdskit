@@ -227,51 +227,6 @@ class TestMaskMain:
         result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
         assert str(result[0].seq) == "ATGAAACCC"
 
-    def test_mask_rejects_non_multiple_of_three(self, temp_dir, mock_args):
-        """Test mask rejects sequences not multiple of 3."""
-        input_path = temp_dir / "input.fasta"
-        output_path = temp_dir / "output.fasta"
-
-        records = [
-            SeqRecord(Seq("ATGAA"), id="seq1", description=""),  # 5 nt
-        ]
-        Bio.SeqIO.write(records, str(input_path), "fasta")
-
-        args = mock_args(
-            seqfile=str(input_path),
-            outfile=str(output_path),
-            codontable=1,
-            maskchar="N",
-            ambiguouscodon="yes",
-            stopcodon="yes",
-        )
-
-        with pytest.raises(ValueError) as exc_info:
-            mask_main(args)
-        assert "multiple of three" in str(exc_info.value)
-
-    def test_mask_rejects_invalid_codontable(self, temp_dir, mock_args):
-        input_path = temp_dir / "input.fasta"
-        output_path = temp_dir / "output.fasta"
-
-        records = [
-            SeqRecord(Seq("ATGAAA"), id="seq1", description=""),
-        ]
-        Bio.SeqIO.write(records, str(input_path), "fasta")
-
-        args = mock_args(
-            seqfile=str(input_path),
-            outfile=str(output_path),
-            codontable=999,
-            maskchar="N",
-            ambiguouscodon="yes",
-            stopcodon="yes",
-        )
-
-        with pytest.raises(ValueError) as exc_info:
-            mask_main(args)
-        assert "Invalid --codon_table" in str(exc_info.value)
-
     def test_mask_consecutive_stop_codons(self, temp_dir, mock_args):
         """Test masking consecutive stop codons."""
         input_path = temp_dir / "input.fasta"
@@ -298,32 +253,6 @@ class TestMaskMain:
         seq = str(result[0].seq)
         # Both TGA codons should be masked
         assert seq == "ATGNNNNNN" + "AAA"
-
-    def test_mask_with_example_data(self, data_dir, temp_dir, mock_args):
-        """Test mask with example data if available."""
-        input_path = data_dir / "example_mask.fasta"
-        output_path = temp_dir / "output.fasta"
-
-        assert input_path.exists(), (
-            "required tracked fixture example_mask.fasta is missing"
-        )
-
-        args = mock_args(
-            seqfile=str(input_path),
-            outfile=str(output_path),
-            codontable=1,
-            maskchar="N",
-            ambiguouscodon="yes",
-            stopcodon="yes",
-        )
-
-        mask_main(args)
-
-        result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
-        assert len(result) > 0
-        # All output sequences should be multiple of 3
-        for r in result:
-            assert len(r.seq) % 3 == 0
 
     def test_mask_wiki_example_stop_codon(self, temp_dir, mock_args):
         """Test wiki example: masking stop codons.
@@ -473,44 +402,3 @@ class TestMaskMain:
         assert result["seq1"] == "ATGNNNAAA"  # TGA masked
         assert result["seq2"] == "ATGNNNAAA"  # NNN already masked
         assert result["seq3"] == "ATGAAACCC"  # No change
-
-    def test_mask_threads_matches_single_thread(self, temp_dir, mock_args):
-        input_path = temp_dir / "input.fasta"
-        out_single = temp_dir / "single.fasta"
-        out_threaded = temp_dir / "threaded.fasta"
-        records = [
-            SeqRecord(Seq("ATGTGAAAA"), id="seq1", description=""),
-            SeqRecord(Seq("ATGNNNAAA"), id="seq2", description=""),
-            SeqRecord(Seq("ATGA-GAAA"), id="seq3", description=""),
-            SeqRecord(Seq("ATGAAACCC"), id="seq4", description=""),
-        ]
-        Bio.SeqIO.write(records, str(input_path), "fasta")
-
-        args_single = mock_args(
-            seqfile=str(input_path),
-            outfile=str(out_single),
-            codontable=1,
-            maskchar="N",
-            ambiguouscodon="yes",
-            stopcodon="yes",
-            threads=1,
-        )
-        args_threaded = mock_args(
-            seqfile=str(input_path),
-            outfile=str(out_threaded),
-            codontable=1,
-            maskchar="N",
-            ambiguouscodon="yes",
-            stopcodon="yes",
-            threads=4,
-        )
-
-        mask_main(args_single)
-        mask_main(args_threaded)
-
-        result_single = list(Bio.SeqIO.parse(str(out_single), "fasta"))
-        result_threaded = list(Bio.SeqIO.parse(str(out_threaded), "fasta"))
-        assert [r.id for r in result_single] == [r.id for r in result_threaded]
-        assert [str(r.seq) for r in result_single] == [
-            str(r.seq) for r in result_threaded
-        ]

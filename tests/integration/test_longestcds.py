@@ -3,7 +3,6 @@ Tests for cdskit longestcds command.
 """
 
 import Bio.SeqIO
-import pytest
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
@@ -13,19 +12,6 @@ from cdskit.longestcds import longestcds_main
 
 class TestLongestCdsMain:
     """Tests for longestcds_main function."""
-
-    def test_longestcds_rejects_invalid_codontable(self, temp_dir, mock_args):
-        input_path = temp_dir / "input.fasta"
-        output_path = temp_dir / "output.fasta"
-        records = [SeqRecord(Seq("ATGAAATGA"), id="seq1", description="")]
-        Bio.SeqIO.write(records, str(input_path), "fasta")
-
-        args = mock_args(
-            seqfile=str(input_path), outfile=str(output_path), codontable=999
-        )
-        with pytest.raises(ValueError) as exc_info:
-            longestcds_main(args)
-        assert "Invalid --codon_table" in str(exc_info.value)
 
     def test_longestcds_accepts_codontable_name_when_called_programmatically(
         self, temp_dir, mock_args
@@ -208,47 +194,6 @@ class TestLongestCdsMain:
 
         result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
         assert [r.id for r in result] == ["zebra", "apple"]
-
-    def test_longestcds_threads_matches_single_thread(self, temp_dir, mock_args):
-        input_path = temp_dir / "input.fasta"
-        out_single = temp_dir / "single.fasta"
-        out_threaded = temp_dir / "threaded.fasta"
-        records = [
-            SeqRecord(Seq("GGGATGAAATAGCCC"), id="seq1", description=""),
-            SeqRecord(Seq("CCCATGAAACCC"), id="seq2", description=""),
-            SeqRecord(Seq("GGGCTATTTCATCCC"), id="seq3", description=""),
-            SeqRecord(Seq("CCCCCCCCC"), id="seq4", description=""),
-        ]
-        Bio.SeqIO.write(records, str(input_path), "fasta")
-
-        args_single = mock_args(
-            seqfile=str(input_path),
-            outfile=str(out_single),
-            codontable=1,
-            annotate_seqname=True,
-            threads=1,
-        )
-        args_threaded = mock_args(
-            seqfile=str(input_path),
-            outfile=str(out_threaded),
-            codontable=1,
-            annotate_seqname=True,
-            threads=3,
-        )
-
-        longestcds_main(args_single)
-        longestcds_main(args_threaded)
-
-        result_single = list(Bio.SeqIO.parse(str(out_single), "fasta"))
-        result_threaded = list(Bio.SeqIO.parse(str(out_threaded), "fasta"))
-
-        assert [r.id for r in result_single] == [r.id for r in result_threaded]
-        assert [str(r.seq) for r in result_single] == [
-            str(r.seq) for r in result_threaded
-        ]
-        assert [r.description for r in result_single] == [
-            r.description for r in result_threaded
-        ]
 
 
 class TestLongestCommandAliases:

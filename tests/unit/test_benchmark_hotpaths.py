@@ -3,7 +3,7 @@ import json
 import pytest
 
 from cdskit import benchmark_hotpaths
-from cdskit.benchmark_hotpaths import measure, run_benchmarks
+from cdskit.benchmark_hotpaths import measure
 from cdskit.benchmarking import compare_reports, output_fingerprint
 
 
@@ -16,22 +16,10 @@ def test_hotpath_benchmark_measure_reports_all_samples():
     assert report["output_sha256"] == output_fingerprint(None)
 
 
-def test_small_hotpath_benchmark_covers_every_tracked_workload():
-    report = run_benchmarks(scale=1, repeats=1)
-
-    assert set(report) == {
-        "translate",
-        "filter",
-        "degeneracy",
-        "hammer",
-        "maxalign_exact",
-        "targetp_features",
-        "read_gff",
-    }
-    assert all(result["samples_seconds"] for result in report.values())
-
-
 def test_benchmark_main_serializes_results(monkeypatch, capsys):
+    with pytest.raises(SystemExit):
+        benchmark_hotpaths.main(["--repeats", "0"])
+
     observed = {}
 
     def fake_run_benchmarks(scale, repeats):
@@ -46,19 +34,10 @@ def test_benchmark_main_serializes_results(monkeypatch, capsys):
     assert json.loads(capsys.readouterr().out) == report
 
 
-def test_benchmark_main_rejects_nonpositive_repeats():
-    with pytest.raises(SystemExit):
-        benchmark_hotpaths.main(["--repeats", "0"])
-
-
 def test_benchmark_rejects_changing_output_between_repetitions():
     outputs = iter(["warmup", "different"])
     with pytest.raises(ValueError, match="output changed"):
         measure(lambda: next(outputs), 1)
-
-
-def test_output_fingerprint_distinguishes_dictionary_nesting():
-    assert output_fingerprint({"a": {}, "b": 1}) != output_fingerprint({"a": {"b": 1}})
 
 
 @pytest.mark.parametrize(

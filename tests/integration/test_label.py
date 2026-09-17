@@ -284,45 +284,6 @@ class TestLabelMain:
         result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
         assert result[0].id == "a_b_c_d"
 
-    def test_label_threads_matches_single_thread(self, temp_dir, mock_args):
-        input_path = temp_dir / "input.fasta"
-        out_single = temp_dir / "single.fasta"
-        out_threaded = temp_dir / "threaded.fasta"
-
-        records = [
-            SeqRecord(Seq("ATGAAA"), id="dup:seq|name", description=""),
-            SeqRecord(Seq("ATGCCC"), id="dup:seq|name", description=""),
-            SeqRecord(Seq("ATGGGG"), id="unique:seq|name", description=""),
-        ]
-        Bio.SeqIO.write(records, str(input_path), "fasta")
-
-        args_single = mock_args(
-            seqfile=str(input_path),
-            outfile=str(out_single),
-            replace_chars=":|--_",
-            clip_len=12,
-            unique=True,
-            threads=1,
-        )
-        args_threaded = mock_args(
-            seqfile=str(input_path),
-            outfile=str(out_threaded),
-            replace_chars=":|--_",
-            clip_len=12,
-            unique=True,
-            threads=4,
-        )
-
-        label_main(args_single)
-        label_main(args_threaded)
-
-        result_single = list(Bio.SeqIO.parse(str(out_single), "fasta"))
-        result_threaded = list(Bio.SeqIO.parse(str(out_threaded), "fasta"))
-        assert [r.id for r in result_single] == [r.id for r in result_threaded]
-        assert [str(r.seq) for r in result_single] == [
-            str(r.seq) for r in result_threaded
-        ]
-
     def test_label_rejects_negative_clip_len(self, temp_dir, mock_args):
         input_path = temp_dir / "input.fasta"
         output_path = temp_dir / "output.fasta"
@@ -339,24 +300,6 @@ class TestLabelMain:
         with pytest.raises(ValueError) as exc_info:
             label_main(args)
         assert "--clip_len should be >= 0" in str(exc_info.value)
-
-    def test_label_rejects_non_dna_input(self, temp_dir, mock_args):
-        input_path = temp_dir / "input.fasta"
-        output_path = temp_dir / "output.fasta"
-        records = [SeqRecord(Seq("PPP"), id="prot1", description="")]
-        Bio.SeqIO.write(records, str(input_path), "fasta")
-
-        args = mock_args(
-            seqfile=str(input_path),
-            outfile=str(output_path),
-            replace_chars="",
-            clip_len=0,
-            unique=False,
-            seqtype="dna",
-        )
-        with pytest.raises(ValueError) as exc_info:
-            label_main(args)
-        assert "DNA-only input is required" in str(exc_info.value)
 
     def test_label_accepts_protein_input_when_seqtype_protein(
         self, temp_dir, mock_args

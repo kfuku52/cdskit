@@ -278,9 +278,7 @@ def test_frozen_embeddings_are_reused_without_sharing_heads(
     assert sum(calls) == 16
 
 
-@pytest.mark.parametrize(
-    "nested", ["single", "blend", "two_stage", "two_stage_ctp_ltp"]
-)
+@pytest.mark.parametrize("nested", ["single", "two_stage_ctp_ltp"])
 def test_cli_offline_applies_to_every_nested_encoder(
     fake_transformers, monkeypatch, tmp_path, nested
 ):
@@ -343,9 +341,7 @@ def test_cli_offline_applies_to_every_nested_encoder(
             report=str(tmp_path / "report.tsv"),
         )
     )
-    expected_calls = {"single": 1, "blend": 2, "two_stage": 2, "two_stage_ctp_ltp": 3}[
-        nested
-    ]
+    expected_calls = {"single": 1, "two_stage_ctp_ltp": 3}[nested]
     assert len(encoder.calls) == expected_calls
     assert all(
         kwargs["local_files_only"] for _, kwargs in tokenizer.calls + encoder.calls

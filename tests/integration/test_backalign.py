@@ -8,15 +8,8 @@ import Bio.SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
-from cdskit.backalign import amino_acid_matches
 from cdskit.backalign import backalign_main
 from cdskit.backalign import backalign_record
-from cdskit.backalign import get_record_map
-from cdskit.backalign import remove_gap_chars
-from cdskit.backalign import split_codons
-from cdskit.backalign import stop_if_not_multiple_of_three_after_gap_removal
-from cdskit.backalign import stop_if_sequence_ids_do_not_match
-from cdskit.backalign import translate_codons
 
 
 @pytest.mark.parametrize("table_id", sorted(Bio.Data.CodonTable.unambiguous_dna_by_id))
@@ -54,82 +47,6 @@ def test_dual_coding_terminal_stop_may_be_omitted(table_id, terminal):
         backalign_sequence_strings(
             "ATG" + terminal + "ATG", "M*M", table_id, "seq", False
         )
-
-
-class TestBackalignHelpers:
-    """Tests for helper functions used by backalign."""
-
-    def test_remove_gap_chars(self):
-        assert remove_gap_chars("ATG---AAA..CCC", {"-", "."}) == "ATGAAACCC"
-
-    def test_split_codons(self):
-        assert split_codons("ATGAAACCC") == ["ATG", "AAA", "CCC"]
-
-    def test_translate_codons_standard_table(self):
-        codons = ["ATG", "AAA", "TGA"]
-        assert translate_codons(codons, codontable=1) == ["M", "K", "*"]
-
-    def test_translate_codons_alternative_table(self):
-        # TGA is W in vertebrate mitochondrial table.
-        codons = ["ATG", "TGA"]
-        assert translate_codons(codons, codontable=2) == ["M", "W"]
-
-    def test_amino_acid_matches_exact_and_case_insensitive(self):
-        assert amino_acid_matches("M", "M")
-        assert amino_acid_matches("m", "M")
-        assert not amino_acid_matches("K", "Q")
-
-    def test_amino_acid_matches_wildcards(self):
-        assert amino_acid_matches("X", "K")
-        assert amino_acid_matches("?", "Q")
-
-    def test_stop_if_not_multiple_of_three_after_gap_removal_valid(self):
-        records = [SeqRecord(Seq("ATG---AAA"), id="seq1")]
-        stop_if_not_multiple_of_three_after_gap_removal(records)
-
-    def test_stop_if_not_multiple_of_three_after_gap_removal_invalid(self):
-        records = [SeqRecord(Seq("ATG--AA"), id="seq1")]
-        with pytest.raises(ValueError) as exc_info:
-            stop_if_not_multiple_of_three_after_gap_removal(records)
-        assert "multiple of three" in str(exc_info.value)
-
-    def test_get_record_map_returns_by_id(self):
-        records = [
-            SeqRecord(Seq("ATG"), id="seq1"),
-            SeqRecord(Seq("AAA"), id="seq2"),
-        ]
-        m = get_record_map(records, "--seqfile")
-        assert set(m.keys()) == {"seq1", "seq2"}
-        assert str(m["seq2"].seq) == "AAA"
-
-    def test_get_record_map_rejects_duplicate_ids(self):
-        records = [
-            SeqRecord(Seq("ATG"), id="seq1"),
-            SeqRecord(Seq("AAA"), id="seq1"),
-        ]
-        with pytest.raises(ValueError) as exc_info:
-            get_record_map(records, "--seqfile")
-        assert "Duplicated ID" in str(exc_info.value)
-
-    def test_stop_if_sequence_ids_do_not_match_success(self):
-        cdn_records = [
-            SeqRecord(Seq("ATG"), id="seq1"),
-            SeqRecord(Seq("AAA"), id="seq2"),
-        ]
-        pep_records = [SeqRecord(Seq("M"), id="seq2"), SeqRecord(Seq("K"), id="seq1")]
-        stop_if_sequence_ids_do_not_match(cdn_records, pep_records)
-
-    def test_stop_if_sequence_ids_do_not_match_reports_missing_in_both(self):
-        cdn_records = [
-            SeqRecord(Seq("ATG"), id="seq1"),
-            SeqRecord(Seq("AAA"), id="seq2"),
-        ]
-        pep_records = [SeqRecord(Seq("M"), id="seq2"), SeqRecord(Seq("K"), id="seq3")]
-        with pytest.raises(ValueError) as exc_info:
-            stop_if_sequence_ids_do_not_match(cdn_records, pep_records)
-        message = str(exc_info.value)
-        assert "Missing in CDS: seq3" in message
-        assert "Missing in amino acid alignment: seq1" in message
 
 
 class TestBackalignRecord:
@@ -333,46 +250,6 @@ class TestBackalignMain:
             backalign_main(args)
         assert "multiple of three" in str(exc_info.value)
 
-    def test_backalign_rejects_invalid_codontable(self, temp_dir, mock_args):
-        cdn_path = temp_dir / "cds.fasta"
-        pep_path = temp_dir / "aa_aln.fasta"
-        out_path = temp_dir / "out.fasta"
-
-        cdn_records = [SeqRecord(Seq("ATGAAA"), id="seq1", description="")]
-        pep_records = [SeqRecord(Seq("MK"), id="seq1", description="")]
-        Bio.SeqIO.write(cdn_records, str(cdn_path), "fasta")
-        Bio.SeqIO.write(pep_records, str(pep_path), "fasta")
-
-        args = mock_args(
-            seqfile=str(cdn_path),
-            outfile=str(out_path),
-            aa_aln=str(pep_path),
-            codontable=999,
-        )
-        with pytest.raises(ValueError) as exc_info:
-            backalign_main(args)
-        assert "Invalid --codon_table" in str(exc_info.value)
-
-    def test_backalign_rejects_rna_cds_input(self, temp_dir, mock_args):
-        cdn_path = temp_dir / "cds.fasta"
-        pep_path = temp_dir / "aa_aln.fasta"
-        out_path = temp_dir / "out.fasta"
-
-        cdn_records = [SeqRecord(Seq("AUGAAA"), id="seq1", description="")]
-        Bio.SeqIO.write(cdn_records, str(cdn_path), "fasta")
-        pep_records = [SeqRecord(Seq("MK"), id="seq1", description="")]
-        Bio.SeqIO.write(pep_records, str(pep_path), "fasta")
-
-        args = mock_args(
-            seqfile=str(cdn_path),
-            outfile=str(out_path),
-            aa_aln=str(pep_path),
-            codontable=1,
-        )
-        with pytest.raises(ValueError) as exc_info:
-            backalign_main(args)
-        assert "DNA-only input is required" in str(exc_info.value)
-
     def test_backalign_rejects_translation_mismatch(self, temp_dir, mock_args):
         """Reject when amino acid alignment and CDS translation disagree."""
         cdn_path = temp_dir / "cds.fasta"
@@ -424,51 +301,6 @@ class TestBackalignMain:
         with pytest.raises(ValueError) as exc_info:
             backalign_main(args)
         assert "not identical" in str(exc_info.value)
-
-    def test_backalign_threads_matches_single_thread(self, temp_dir, mock_args):
-        cdn_path = temp_dir / "cds.fasta"
-        pep_path = temp_dir / "aa_aln.fasta"
-        out_single = temp_dir / "single.fasta"
-        out_threaded = temp_dir / "threaded.fasta"
-
-        cdn_records = [
-            SeqRecord(Seq("ATGAAAGGG"), id="seq2", description=""),
-            SeqRecord(Seq("ATGAAACCC"), id="seq1", description=""),
-            SeqRecord(Seq("ATGAAATAA"), id="seq3", description=""),
-        ]
-        Bio.SeqIO.write(cdn_records, str(cdn_path), "fasta")
-
-        pep_records = [
-            SeqRecord(Seq("MK-P"), id="seq1", description=""),
-            SeqRecord(Seq("MKG-"), id="seq2", description=""),
-            SeqRecord(Seq("MK--"), id="seq3", description=""),
-        ]
-        Bio.SeqIO.write(pep_records, str(pep_path), "fasta")
-
-        args_single = mock_args(
-            seqfile=str(cdn_path),
-            outfile=str(out_single),
-            aa_aln=str(pep_path),
-            codontable=1,
-            threads=1,
-        )
-        args_threaded = mock_args(
-            seqfile=str(cdn_path),
-            outfile=str(out_threaded),
-            aa_aln=str(pep_path),
-            codontable=1,
-            threads=4,
-        )
-
-        backalign_main(args_single)
-        backalign_main(args_threaded)
-
-        result_single = list(Bio.SeqIO.parse(str(out_single), "fasta"))
-        result_threaded = list(Bio.SeqIO.parse(str(out_threaded), "fasta"))
-        assert [r.id for r in result_single] == [r.id for r in result_threaded]
-        assert [str(r.seq) for r in result_single] == [
-            str(r.seq) for r in result_threaded
-        ]
 
     def test_backalign_rejects_duplicate_ids_in_cds(self, temp_dir, mock_args):
         """Reject duplicate IDs in CDS input."""

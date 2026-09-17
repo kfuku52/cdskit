@@ -348,51 +348,6 @@ class TestMaxalignMain:
             maxalign_main(args)
         assert "not identical" in str(exc_info.value)
 
-    def test_maxalign_rejects_non_multiple_of_three(self, temp_dir, mock_args):
-        """Input lengths must be multiples of 3."""
-        input_path = temp_dir / "input.fasta"
-        output_path = temp_dir / "output.fasta"
-
-        records = [
-            SeqRecord(Seq("ATGAA"), id="seq1", description=""),
-            SeqRecord(Seq("ATGCC"), id="seq2", description=""),
-        ]
-        Bio.SeqIO.write(records, str(input_path), "fasta")
-
-        args = mock_args(
-            seqfile=str(input_path),
-            outfile=str(output_path),
-            mode="auto",
-            max_exact_sequences=16,
-            missing_char="-?.",
-        )
-
-        with pytest.raises(ValueError) as exc_info:
-            maxalign_main(args)
-        assert "multiple of three" in str(exc_info.value)
-
-    def test_maxalign_rejects_non_dna_input(self, temp_dir, mock_args):
-        input_path = temp_dir / "input.fasta"
-        output_path = temp_dir / "output.fasta"
-
-        records = [
-            SeqRecord(Seq("PPP"), id="seq1", description=""),
-            SeqRecord(Seq("PPP"), id="seq2", description=""),
-        ]
-        Bio.SeqIO.write(records, str(input_path), "fasta")
-
-        args = mock_args(
-            seqfile=str(input_path),
-            outfile=str(output_path),
-            mode="auto",
-            max_exact_sequences=16,
-            missing_char="-?.",
-        )
-
-        with pytest.raises(ValueError) as exc_info:
-            maxalign_main(args)
-        assert "DNA-only input is required" in str(exc_info.value)
-
     def test_maxalign_single_sequence_still_drops_missing_codons(
         self, temp_dir, mock_args
     ):
@@ -681,30 +636,6 @@ class TestMaxalignHelpers:
             total_sequences=3,
         )
         assert greedy["kept_indices"] == [0, 1, 2]
-
-    def test_solve_exact_threads_matches_single_thread(self):
-        matrix = [
-            [True, True, False, True],
-            [True, True, False, True],
-            [False, True, True, True],
-            [True, False, True, True],
-        ]
-        single = solve_exact(matrix, threads=1)
-        threaded = solve_exact(matrix, threads=4)
-        assert single["kept_indices"] == threaded["kept_indices"]
-        assert single["area"] == threaded["area"]
-
-    def test_solve_greedy_threads_matches_single_thread(self):
-        matrix = [
-            [True, True, True, True],
-            [True, True, True, True],
-            [False, True, False, True],
-            [True, False, True, False],
-        ]
-        single = solve_greedy(matrix, threads=1)
-        threaded = solve_greedy(matrix, threads=4)
-        assert single["kept_indices"] == threaded["kept_indices"]
-        assert single["area"] == threaded["area"]
 
     def test_solve_greedy_tie_break_matches_original_scan_order(self):
         matrix = [

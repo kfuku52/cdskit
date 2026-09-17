@@ -367,39 +367,6 @@ class TestGapjustMain:
         assert "Number of gap justifications: 2" in captured.err
         assert "Minimum and maximum original gap lengths: 2 and 6" in captured.err
 
-    def test_gapjust_with_gff(self, temp_dir, mock_args):
-        """Test gapjust updates GFF coordinates."""
-        input_fasta = temp_dir / "input.fasta"
-        input_gff = temp_dir / "input.gff"
-        output_fasta = temp_dir / "output.fasta"
-        output_gff = temp_dir / "output.gff"
-
-        # Create FASTA with gap
-        records = [
-            SeqRecord(Seq("ATGNNNAAA"), id="seq1", description=""),  # 3 Ns at pos 3-5
-        ]
-        Bio.SeqIO.write(records, str(input_fasta), "fasta")
-
-        # Create GFF with feature after gap
-        gff_content = "##gff-version 3\nseq1\tsource\tgene\t7\t9\t.\t+\t.\tID=gene1\n"
-        input_gff.write_text(gff_content)
-
-        args = mock_args(
-            seqfile=str(input_fasta),
-            outfile=str(output_fasta),
-            gap_len=5,  # Expand gap from 3 to 5
-            ingff=str(input_gff),
-            outgff=str(output_gff),
-        )
-
-        gapjust_main(args)
-
-        # Check GFF output file exists and contains seq1
-        assert output_gff.exists()
-        with open(output_gff) as f:
-            gff_output = f.read()
-        assert "seq1" in gff_output
-
     def test_gapjust_rejects_duplicate_ids_with_gff(self, temp_dir, mock_args):
         input_fasta = temp_dir / "input.fasta"
         input_gff = temp_dir / "input.gff"
@@ -456,77 +423,6 @@ class TestGapjustMain:
         seq_str = str(result[0].seq)
         # Should have two gaps of 5 Ns each = 10 total Ns
         assert seq_str.count("N") == 10
-
-    def test_gapjust_with_test_data(self, data_dir, temp_dir, mock_args):
-        """Test gapjust with gapjust_01 test data."""
-        input_fasta = data_dir / "gapjust_01" / "input.fasta"
-        input_gff = data_dir / "gapjust_01" / "input.gff"
-        output_fasta = temp_dir / "output.fasta"
-        output_gff = temp_dir / "output.gff"
-
-        assert input_fasta.exists(), "required tracked fixture gapjust_01 is missing"
-
-        args = mock_args(
-            seqfile=str(input_fasta),
-            outfile=str(output_fasta),
-            gap_len=10,  # Reasonable gap length
-            ingff=str(input_gff) if input_gff.exists() else None,
-            outgff=str(output_gff) if input_gff.exists() else None,
-        )
-
-        gapjust_main(args)
-
-        result = list(Bio.SeqIO.parse(str(output_fasta), "fasta"))
-        assert len(result) > 0
-
-    def test_gapjust_01_compare_expected(self, data_dir, temp_dir, mock_args):
-        """Test gapjust_01 data comparing with expected output."""
-        input_fasta = data_dir / "gapjust_01" / "input.fasta"
-        expected_fasta = data_dir / "gapjust_01" / "output.fasta"
-        output_fasta = temp_dir / "output.fasta"
-
-        assert input_fasta.exists(), (
-            "required tracked fixture gapjust_01 input is missing"
-        )
-        assert expected_fasta.exists(), (
-            "required tracked fixture gapjust_01 output is missing"
-        )
-
-        # Read expected to determine gap length
-        expected = list(Bio.SeqIO.parse(str(expected_fasta), "fasta"))
-        assert expected, "required tracked fixture gapjust_01 output is empty"
-
-        # Determine gap length from expected output
-        # Count N stretches and their lengths
-        import re
-
-        expected_seq = str(expected[0].seq)
-        n_runs = re.findall(r"N+", expected_seq)
-        if n_runs:
-            gap_len = len(n_runs[0])  # Use first gap's length as target
-        else:
-            gap_len = 10
-
-        args = mock_args(
-            seqfile=str(input_fasta),
-            outfile=str(output_fasta),
-            gap_len=gap_len,
-            ingff=None,
-            outgff=None,
-        )
-
-        gapjust_main(args)
-
-        result = list(Bio.SeqIO.parse(str(output_fasta), "fasta"))
-
-        # Verify all gap runs have uniform length
-        for r in result:
-            seq_str = str(r.seq)
-            n_runs = re.findall(r"N+", seq_str)
-            for run in n_runs:
-                assert len(run) == gap_len, (
-                    f"Gap length {len(run)} != expected {gap_len}"
-                )
 
     def test_gapjust_threads_matches_single_thread(self, temp_dir, mock_args):
         input_path = temp_dir / "input.fasta"
