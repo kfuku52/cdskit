@@ -6,6 +6,17 @@ replacement to standard error.
 
 ## Unreleased
 
+## 0.31.6 — 2026-09-22
+
+### Documentation
+
+- Reconcile installation requirements, CPU extras and localization offline
+  behavior with the current implementation and Bioconda recipe.
+- Clarify QC defaults, codon-statistics denominators and output replacement;
+  record the unresolved `validate --report -` stream collision.
+- Audit executable examples and report verification boundaries in the
+  [documentation review](docs/documentation-review-0.31.6.md).
+
 ## 0.31.5 — 2026-09-22
 
 ### Development

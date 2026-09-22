@@ -33,7 +33,16 @@ arrays for each category of affected sequence IDs.
 
 ## Notes
 
-- Validation output is printed to standard output.
+- Validation output is printed to standard output. Successful reporting exits
+  with status 0 even when QC issues are found; inspect the report fields to
+  decide whether an alignment meets your criteria.
+- Known issue: `--report -` currently appends TSV to the human-readable
+  summary, violating the single-table stream convention. Until this is fixed,
+  use a named `.tsv` or `.json` report file for machine-readable results.
+- `ambiguous_codon_rate` is a 0–1 ratio: ambiguous complete codons divided by
+  evaluable complete codons (excluding codons with `-`, `?`, or `.`). A zero
+  denominator reports 0. `gap_only_ids` also includes all-N/all-X sequences,
+  not just literal dashes.
 - This command does not modify input sequences.
 
 ## Codon semantics

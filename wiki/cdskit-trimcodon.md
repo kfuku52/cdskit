@@ -21,14 +21,15 @@ A clean codon contains no missing character (`-`, `?`, or `.`), no ambiguous nuc
 
 ## Key options
 
-- `--min_clean_fraction FLOAT`: Minimum fraction of sequences with a clean codon required to retain a site.
+- `--min_clean_fraction FLOAT` (0–1, default `0.5`): Minimum fraction of sequences with a clean codon required to retain a site.
 - `--report PATH`: Optional JSON or TSV site-level report.
 
 ## TSV report format
 
 TSV reports use schema version 2 and begin with `schema_version` and `section`.
 `summary` rows contain run-level counts and the threshold; `site` rows contain
-the codon position, category counts, clean fraction, and `keep=yes|no` result.
+the original one-based `codon_site_1based` position, category counts, clean
+fraction (0–1, six decimals), and `keep=yes|no` result.
 
 ## Notes
 

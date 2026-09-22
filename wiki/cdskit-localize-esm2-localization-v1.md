@@ -9,7 +9,8 @@ selection are not used in this checkpoint.
 
 ## Use and distribution
 
-Install cdskit with its `ml` extra, or `ml-cpu` for CPU-only use, following the
+Install cdskit with its `ml` extra, following the CPU profile notes for `ml-cpu`
+in the
 [installation guide](https://github.com/kfuku52/cdskit/wiki/Installation-and-dependencies). Then run:
 
 ```sh
@@ -33,8 +34,9 @@ is not required. The checkpoint loads with the normal safe reader, without
 
 For offline use, first run an online prediction to populate both the cdskit
 checkpoint cache and the Hugging Face backbone cache. Then set
-`CDSKIT_OFFLINE=1`. `--model_download no` alone only disables the cdskit
-checkpoint download; it does not by itself disable backbone downloads.
+`CDSKIT_OFFLINE=1` or pass `--model_download no`; both disable checkpoint
+and nested encoder downloads. An enabled `CDSKIT_OFFLINE` takes precedence
+over `--model_download yes`. Missing cached assets still cause an error.
 `CDSKIT_MODEL_DIR` changes the cdskit checkpoint cache root; Hugging Face's cache
 settings control the backbone cache. This exported checkpoint contains no
 training-machine residue-cache path and does not force local-only downloads.

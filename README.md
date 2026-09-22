@@ -25,13 +25,13 @@ Stable packages are available from [Bioconda](https://anaconda.org/bioconda/cdsk
 
 ```bash
 conda create -n cdskit -c conda-forge -c bioconda --strict-channel-priority \
-  cdskit 'python>=3.10' 'biopython>=1.80' 'numpy>=1.23' 'matplotlib-base>=3.6'
+  cdskit 'python>=3.10' 'biopython>=1.80' 'numpy>=1.23' 'matplotlib-base>=3.6' 'filelock>=3.12'
 conda activate cdskit
 cdskit --help
 ```
 
-The explicit dependencies compensate for omissions in the Bioconda 0.27.0
-recipe; see [installation notes](wiki/Installation-and-dependencies.md).
+The explicit dependencies compensate for omissions in the Bioconda recipe;
+see [installation notes](wiki/Installation-and-dependencies.md).
 
 Install the latest source from GitHub into an activated Python environment:
 
@@ -51,8 +51,7 @@ Lightweight centroid JSON models need only the base installation. Pretrained
 localization models run on CPU; a GPU is not required for prediction.
 The [integrated ten-label model](wiki/cdskit-localize-multilabel-integrated-v1.md)
 needs only PyTorch in addition to the base installation. Published `targeting5`
-model artifacts additionally require their original
-scikit-learn environment; follow the
+model artifacts additionally use legacy scikit-learn estimators; follow the
 [pretrained runtime setup](wiki/Installation-and-dependencies.md#pretrained-targeting5-runtime).
 
 ## Subcommands
@@ -89,12 +88,16 @@ See [Wiki](https://github.com/kfuku52/cdskit/wiki) for detailed descriptions.
 
 ## Command-line use
 
-Sequence commands accept standard input and output, so they can be piped:
+Create `input.fasta` with your nucleotide records first (the name below is a
+placeholder). Sequence commands accept standard input and output, so they can be piped:
 
 ```bash
 cdskit pad --seq_file input.fasta | cdskit mask | cdskit translate | \
   cdskit aggregate --expression ':.*' > output.faa
 ```
+
+Named sequence outputs replace existing files without prompting; use a new path
+to retain an earlier result. See [output handling](wiki/Installation-and-dependencies.md#output-file-permissions).
 
 Only one output per command may use standard output. When writing a report to
 `--report -`, send the sequence output to a file.
@@ -130,8 +133,9 @@ one TSV table. Use `--mode summary` or `--mode usage` for machine-readable outpu
 
 `localize` defaults to the ESM2 650M encoder plus a trained ten-label localization
 head (`esm2-localization-v1`). The baseline checkpoint downloads on first use;
-ESM2 backbone weights are fetched separately. Install the `ml` extra (or
-`ml-cpu` for CPU-only use). See the [model card](wiki/cdskit-localize-esm2-localization-v1.md)
+ESM2 backbone weights are fetched separately. Install the `ml` extra; see
+[CPU installation](wiki/Installation-and-dependencies.md#optional-machine-learning-dependencies)
+for the `ml-cpu` profile. See the [model card](wiki/cdskit-localize-esm2-localization-v1.md)
 for evaluation, hardware requirements, and offline setup.
 
 The [published integrated model](wiki/cdskit-localize-multilabel-integrated-v1.md)

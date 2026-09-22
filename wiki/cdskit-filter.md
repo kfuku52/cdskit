@@ -17,10 +17,10 @@ cdskit filter --seq_file input.fasta --out_file filtered.fasta --drop_internal_s
 
 ## Key options
 
-- `--drop_non_triplet yes|no`: Drop sequences whose length is not divisible by three.
-- `--drop_internal_stop yes|no`: Drop sequences with internal stop codons.
-- `--min_clean_codon_fraction FLOAT`: Minimum fraction of clean codons required to retain a sequence.
-- `--dedup no|keep-first|keep-longest`: Duplicate-ID handling after filtering.
+- `--drop_non_triplet yes|no` (default `yes`): Drop sequences whose length is not divisible by three.
+- `--drop_internal_stop yes|no` (default `no`): Drop sequences with internal stop codons.
+- `--min_clean_codon_fraction FLOAT` (0–1, default `0.5`): Minimum fraction of clean codons required to retain a sequence.
+- `--dedup no|keep-first|keep-longest` (default `no`): Duplicate-ID handling after filtering.
 - `--report PATH`: Optional JSON or TSV report listing kept and dropped IDs.
 
 A clean codon contains no missing character (`-`, `?`, or `.`), no ambiguous nucleotide (`N`, `R`, `Y`, etc.), and no definite stop codon under ordinary translation. A dual-coding A/C/G/T codon is clean but is also reported as context-dependent.

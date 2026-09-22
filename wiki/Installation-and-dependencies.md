@@ -32,24 +32,25 @@ Use [Bioconda's channel order and strict priority](https://bioconda.github.io/in
 
 ```bash
 conda create -n cdskit -c conda-forge -c bioconda --strict-channel-priority \
-  cdskit 'python>=3.10' 'biopython>=1.80' 'numpy>=1.23' 'matplotlib-base>=3.6'
+  cdskit 'python>=3.10' 'biopython>=1.80' 'numpy>=1.23' 'matplotlib-base>=3.6' 'filelock>=3.12'
 conda activate cdskit
 cdskit --version
 ```
 
-As checked on 2026-09-11, the
-[Bioconda 0.27.0 recipe](https://github.com/bioconda/bioconda-recipes/blob/master/recipes/cdskit/meta.yaml)
-still declares Python >=3.8 and Biopython >=1.77, and omits Matplotlib.
+As checked on 2026-09-22, the
+[Bioconda 0.31.0 recipe](https://github.com/bioconda/bioconda-recipes/blob/master/recipes/cdskit/meta.yaml)
+still declares Python >=3.8 and Biopython >=1.77, leaves NumPy unbounded,
+and omits Matplotlib and filelock.
 The explicit requirements above are a workaround for that packaging mismatch,
 not extra CDSKIT features. They can be removed once the published recipe's
 runtime dependencies match upstream metadata. GitHub source installation
 already resolves the required base dependencies. Tagged releases also need a
 downstream recipe update and successful build before appearing in Bioconda;
-publication is not immediate. This 0.27.0 recipe still describes the older
-BSD-3-Clause release; current source and CDSKIT-trained model weights are MIT.
-Use current GitHub source for `stats --mode alignment` (CDSKIT >=0.31.0) and
-the default ESM2 localization model. The optional integrated CNN requires
-CDSKIT >=0.29.0.
+publication is not immediate. The recipe still lists BSD-3-Clause, whereas
+current source and CDSKIT-trained model weights are MIT. Check the installed
+version: `stats --mode alignment` requires CDSKIT >=0.31.0, the default ESM2
+localization model requires >=0.30.3, and the optional integrated CNN requires
+>=0.29.0. Recipe inspection alone does not verify a published binary or solve.
 
 Bioconda supports Linux and macOS. For native Windows, use the GitHub pip
 installation; the project tests Windows separately from Bioconda packaging.
@@ -80,6 +81,12 @@ and PyYAML >=6**. PyYAML supports the staged training configuration format.
 Transformers is already included; installing only torch and scikit-learn is not
 equivalent to installing the full extra. ESM models also need their encoder
 files, downloaded from a pinned revision or supplied locally.
+
+The `ml-cpu` extra selects CPU-only PyTorch on Linux when installed through
+uv with this repository's source configuration, as in the [development profiles](https://github.com/kfuku52/cdskit/blob/master/TESTING.md).
+Pip does not read that uv index configuration: installing `.[ml-cpu]` with pip
+alone does not select CPU-only wheels. Pip users must select the appropriate
+PyTorch index separately.
 
 GPU support is optional. Published cdskit localization models run on CPU; CUDA
 or Apple MPS mainly helps when retraining neural models.
@@ -163,6 +170,12 @@ default crossover is 16,000,000 input residues, configurable with
   [the prediction guide](https://github.com/kfuku52/cdskit/wiki/cdskit-localize#model-safety-and-offline-use).
 
 ## Output file permissions
+
+Named sequence/report outputs are replaced without a confirmation prompt; missing
+parent directories are created. Input/output and output/output path collisions
+are rejected. Shell redirection (`> file`) is handled by the shell and does not
+provide CDSKIT's atomic replacement or collision checks. Staged training runs
+have separate [resume rules](https://github.com/kfuku52/cdskit/wiki/localize-teacher-student#execute-and-resume).
 
 Atomic replacement preserves an existing file's POSIX permission bits. Newly
 created outputs are private (`0600`); explicitly change their permissions when
