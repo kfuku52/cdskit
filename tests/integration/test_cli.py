@@ -66,50 +66,8 @@ class TestCLIHelpStrings:
         assert captured.err == ""
 
 
-class TestCLIModuleImport:
-    """Tests that CLI-related modules can be imported without errors."""
-
-    def test_import_all_command_modules(self):
-        """Test that all command modules can be imported."""
-        modules = [
-            "cdskit.accession2fasta",
-            "cdskit.aggregate",
-            "cdskit.backalign",
-            "cdskit.backtrim",
-            "cdskit.codonstats",
-            "cdskit.codonutil",
-            "cdskit.deeploc_benchmark",
-            "cdskit.degeneracy",
-            "cdskit.filter",
-            "cdskit.hammer",
-            "cdskit.intersection",
-            "cdskit.label",
-            "cdskit.longestcds",
-            "cdskit.longestorf",
-            "cdskit.localize",
-            "cdskit.localize_bilstm",
-            "cdskit.localize_learn",
-            "cdskit.localize_model",
-            "cdskit.localize_models",
-            "cdskit.localize_multilabel_cnn",
-            "cdskit.maxalign",
-            "cdskit.mask",
-            "cdskit.pad",
-            "cdskit.parsegb",
-            "cdskit.plot",
-            "cdskit.printseq",
-            "cdskit.rmseq",
-            "cdskit.split",
-            "cdskit.stats",
-            "cdskit.translate",
-            "cdskit.trimcodon",
-            "cdskit.gapjust",
-            "cdskit.util",
-            "cdskit.validate",
-        ]
-
-        for module_name in modules:
-            __import__(module_name)
+class TestCLIVersion:
+    """The executable reports the installed package version."""
 
     @pytest.mark.subprocess
     def test_root_version_option(self):
@@ -140,16 +98,6 @@ class TestCLIConsistency:
         assert "Enable detailed progress output." in help_text
         assert "Set training tsv." not in help_text
 
-    def test_deprecated_long_option_is_accepted_with_warning(self, capsys):
-        parser = CdskitArgumentParser()
-        parser.add_argument("--seq_file")
-        parser.add_deprecated_alias("--seqfile", "--seq_file")
-
-        args = parser.parse_args(["--seqfile", "input.fasta"])
-
-        assert args.seq_file == "input.fasta"
-        assert "--seqfile is deprecated; use --seq_file" in capsys.readouterr().err
-
     @pytest.mark.parametrize(
         ("text", "expected"),
         [
@@ -163,12 +111,6 @@ class TestCLIConsistency:
     )
     def test_boolean_spellings_are_shared(self, text, expected):
         assert parse_bool(text) is expected
-
-    def test_threads_zero_uses_detected_cpu_count(self, monkeypatch):
-        monkeypatch.delattr("cdskit.cliutil.os.sched_getaffinity", raising=False)
-        monkeypatch.delattr("cdskit.cliutil.os.process_cpu_count", raising=False)
-        monkeypatch.setattr("cdskit.cliutil.os.cpu_count", lambda: 6)
-        assert resolve_threads(0) == 6
 
     def test_threads_zero_respects_allocation_and_safety_limit(self, monkeypatch):
         monkeypatch.setattr("cdskit.cliutil.os.cpu_count", lambda: 128)

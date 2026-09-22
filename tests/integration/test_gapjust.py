@@ -234,36 +234,6 @@ class TestShouldJustifyGap:
 class TestGapjustMain:
     """Tests for gapjust_main function."""
 
-    def test_gapjust_uniform_length(self, temp_dir, mock_args):
-        """Test gapjust makes gaps uniform length."""
-        input_path = temp_dir / "input.fasta"
-        output_path = temp_dir / "output.fasta"
-
-        # Sequence with variable gap lengths
-        records = [
-            SeqRecord(Seq("ATGNNNNNNAAA"), id="seq1", description=""),  # 6 Ns
-            SeqRecord(Seq("ATGNNNAAA"), id="seq2", description=""),  # 3 Ns
-        ]
-        Bio.SeqIO.write(records, str(input_path), "fasta")
-
-        args = mock_args(
-            seqfile=str(input_path),
-            outfile=str(output_path),
-            gap_len=5,  # Target gap length
-            ingff=None,
-            outgff=None,
-        )
-
-        gapjust_main(args)
-
-        result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
-        # All gaps should now be 5 Ns
-        for r in result:
-            seq_str = str(r.seq)
-            n_count = seq_str.count("N")
-            # Each sequence should have exactly 5 Ns (one gap of length 5)
-            assert n_count == 5, f"{r.id} has {n_count} Ns, expected 5"
-
     def test_gapjust_lowercase_n(self, temp_dir, mock_args):
         """Test gapjust normalizes lowercase n to uppercase N."""
         input_path = temp_dir / "input.fasta"
@@ -313,60 +283,6 @@ class TestGapjustMain:
         # Sequence should be unchanged
         assert str(result[0].seq) == "ATGAAATGA"
 
-    def test_gapjust_reports_no_edits_when_all_gaps_already_target(
-        self, temp_dir, mock_args, capsys
-    ):
-        """Summary should report no edits when target already matches all gaps."""
-        input_path = temp_dir / "input.fasta"
-        output_path = temp_dir / "output.fasta"
-
-        records = [
-            SeqRecord(Seq("ATGNNNAAA"), id="seq1", description=""),
-            SeqRecord(Seq("CCCNNNTTT"), id="seq2", description=""),
-        ]
-        Bio.SeqIO.write(records, str(input_path), "fasta")
-
-        args = mock_args(
-            seqfile=str(input_path),
-            outfile=str(output_path),
-            gap_len=3,
-            ingff=None,
-            outgff=None,
-        )
-
-        gapjust_main(args)
-
-        captured = capsys.readouterr()
-        assert "Number of gap justifications: 0" in captured.err
-        assert "No gap edits were made." in captured.err
-
-    def test_gapjust_reports_min_max_original_gap_lengths(
-        self, temp_dir, mock_args, capsys
-    ):
-        """Summary should report min/max original gap lengths for edited gaps."""
-        input_path = temp_dir / "input.fasta"
-        output_path = temp_dir / "output.fasta"
-
-        records = [
-            SeqRecord(Seq("ATGNNAAA"), id="seq1", description=""),  # 2 Ns
-            SeqRecord(Seq("CCCNNNNNNTTT"), id="seq2", description=""),  # 6 Ns
-        ]
-        Bio.SeqIO.write(records, str(input_path), "fasta")
-
-        args = mock_args(
-            seqfile=str(input_path),
-            outfile=str(output_path),
-            gap_len=4,
-            ingff=None,
-            outgff=None,
-        )
-
-        gapjust_main(args)
-
-        captured = capsys.readouterr()
-        assert "Number of gap justifications: 2" in captured.err
-        assert "Minimum and maximum original gap lengths: 2 and 6" in captured.err
-
     def test_gapjust_rejects_duplicate_ids_with_gff(self, temp_dir, mock_args):
         input_fasta = temp_dir / "input.fasta"
         input_gff = temp_dir / "input.gff"
@@ -397,32 +313,6 @@ class TestGapjustMain:
         )
         assert not output_fasta.exists()
         assert not output_gff.exists()
-
-    def test_gapjust_multiple_gaps(self, temp_dir, mock_args):
-        """Test gapjust with multiple gaps in one sequence."""
-        input_path = temp_dir / "input.fasta"
-        output_path = temp_dir / "output.fasta"
-
-        # Two separate gaps
-        records = [
-            SeqRecord(Seq("ATGNNNAAA" + "CCCNNNNTTT"), id="seq1", description=""),
-        ]
-        Bio.SeqIO.write(records, str(input_path), "fasta")
-
-        args = mock_args(
-            seqfile=str(input_path),
-            outfile=str(output_path),
-            gap_len=5,
-            ingff=None,
-            outgff=None,
-        )
-
-        gapjust_main(args)
-
-        result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
-        seq_str = str(result[0].seq)
-        # Should have two gaps of 5 Ns each = 10 total Ns
-        assert seq_str.count("N") == 10
 
     def test_gapjust_threads_matches_single_thread(self, temp_dir, mock_args):
         input_path = temp_dir / "input.fasta"
@@ -458,63 +348,15 @@ class TestGapjustMain:
 
         result_single = list(Bio.SeqIO.parse(str(out_single), "fasta"))
         result_threaded = list(Bio.SeqIO.parse(str(out_threaded), "fasta"))
+        assert [(r.id, str(r.seq)) for r in result_single] == [
+            ("seq1", "ATGNNNNNAAACCCNNNNNTTT"),
+            ("seq2", "ATGNNNNNAAACCCNNNNNTTT"),
+            ("seq3", "ATGAAACCC"),
+        ]
         assert [r.id for r in result_single] == [r.id for r in result_threaded]
         assert [str(r.seq) for r in result_single] == [
             str(r.seq) for r in result_threaded
         ]
-
-    def test_gapjust_shrink_gaps(self, temp_dir, mock_args):
-        """Test gapjust can shrink gaps."""
-        input_path = temp_dir / "input.fasta"
-        output_path = temp_dir / "output.fasta"
-
-        # Large gaps that should be shrunk
-        records = [
-            SeqRecord(Seq("ATGNNNNNNNNNNNNNAAA"), id="seq1", description=""),  # 12 Ns
-        ]
-        Bio.SeqIO.write(records, str(input_path), "fasta")
-
-        args = mock_args(
-            seqfile=str(input_path),
-            outfile=str(output_path),
-            gap_len=3,  # Shrink to 3
-            ingff=None,
-            outgff=None,
-        )
-
-        gapjust_main(args)
-
-        result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
-        seq_str = str(result[0].seq)
-        assert seq_str.count("N") == 3
-
-    def test_gapjust_preserves_non_n_content(self, temp_dir, mock_args):
-        """Test gapjust preserves non-N sequence content."""
-        input_path = temp_dir / "input.fasta"
-        output_path = temp_dir / "output.fasta"
-
-        records = [
-            SeqRecord(Seq("ATGCCCNNNGGGAAATTT"), id="seq1", description=""),
-        ]
-        Bio.SeqIO.write(records, str(input_path), "fasta")
-
-        args = mock_args(
-            seqfile=str(input_path),
-            outfile=str(output_path),
-            gap_len=5,  # Change gap from 3 to 5
-            ingff=None,
-            outgff=None,
-        )
-
-        gapjust_main(args)
-
-        result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
-        seq_str = str(result[0].seq)
-
-        # Non-N content should be preserved
-        seq_without_n = seq_str.replace("N", "")
-        original_without_n = "ATGCCCGGGAAATTT"
-        assert seq_without_n == original_without_n
 
     def test_gapjust_min_threshold_for_extension(self, temp_dir, mock_args):
         """Gaps smaller than --gap_just_min should not be extended."""
@@ -539,8 +381,10 @@ class TestGapjustMain:
         gapjust_main(args)
 
         result = {r.id: str(r.seq) for r in Bio.SeqIO.parse(str(output_path), "fasta")}
-        assert result["skip_small_gap"].count("N") == 2
-        assert result["extend_large_gap"].count("N") == 5
+        assert result == {
+            "skip_small_gap": "ATGNNAAA",
+            "extend_large_gap": "ATGNNNNNAAA",
+        }
 
     def test_gapjust_max_threshold_for_shortening(self, temp_dir, mock_args):
         """Gaps larger than --gap_just_max should not be shortened."""
@@ -569,8 +413,10 @@ class TestGapjustMain:
         gapjust_main(args)
 
         result = {r.id: str(r.seq) for r in Bio.SeqIO.parse(str(output_path), "fasta")}
-        assert result["skip_large_gap"].count("N") == 8
-        assert result["shorten_allowed_gap"].count("N") == 3
+        assert result == {
+            "skip_large_gap": "ATGNNNNNNNNAAA",
+            "shorten_allowed_gap": "ATGNNNAAA",
+        }
 
     def test_gapjust_gff_coordinate_shift(self, data_dir, temp_dir, mock_args):
         """Test gapjust properly shifts GFF coordinates."""

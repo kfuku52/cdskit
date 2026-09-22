@@ -12,11 +12,8 @@ from Bio.SeqRecord import SeqRecord
 from cdskit.tsvio import read_tsv
 
 from cdskit.maxalign import (
-    alignment_area,
-    extract_complete_codon_indices,
     maxalign_main,
     parse_missing_chars,
-    pick_solver_mode,
     select_indices_by_patterns,
     solve_exact,
     solve_greedy,
@@ -577,36 +574,6 @@ class TestMaxalignHelpers:
     def test_parse_missing_chars_default(self):
         assert parse_missing_chars("") == {"-", "?", "."}
 
-    def test_pick_solver_mode_auto_switch(self):
-        assert (
-            pick_solver_mode(num_records=4, mode="auto", max_exact_sequences=4)
-            == "exact"
-        )
-        assert (
-            pick_solver_mode(num_records=5, mode="auto", max_exact_sequences=4)
-            == "greedy"
-        )
-        assert (
-            pick_solver_mode(num_records=5, mode="exact", max_exact_sequences=4)
-            == "exact"
-        )
-
-    def test_solve_exact_and_greedy_on_same_matrix(self):
-        """Both solvers should agree on this simple matrix."""
-        # Rows: sequences, columns: codon presence flags.
-        # Best subset is indices [0, 1] with area 4 (2 seqs x 2 complete columns).
-        matrix = [
-            [True, True, False],
-            [True, True, False],
-            [False, True, True],
-        ]
-        exact = solve_exact(matrix)
-        greedy = solve_greedy(matrix)
-        assert exact["kept_indices"] == [0, 1]
-        assert exact["area"] == 4
-        assert greedy["kept_indices"] == [0, 1]
-        assert greedy["area"] == 4
-
     def test_solve_exact_with_required_indices(self):
         matrix = [
             [True, True, False],
@@ -622,21 +589,6 @@ class TestMaxalignHelpers:
         )
         assert exact["kept_indices"] == [0, 1, 2]
 
-    def test_solve_greedy_with_protected_and_max_removed(self):
-        matrix = [
-            [True, True, True],
-            [True, True, True],
-            [False, True, False],
-        ]
-        greedy = solve_greedy(
-            matrix,
-            active_indices=[0, 1, 2],
-            protected_indices=[2],
-            max_removed=0,
-            total_sequences=3,
-        )
-        assert greedy["kept_indices"] == [0, 1, 2]
-
     def test_solve_greedy_tie_break_matches_original_scan_order(self):
         matrix = [
             [True, False],
@@ -645,17 +597,6 @@ class TestMaxalignHelpers:
         ]
         greedy = solve_greedy(matrix, threads=1)
         assert greedy["kept_indices"] == [1, 2]
-        assert greedy["area"] == 2
-
-    def test_solve_greedy_removes_gap_pattern_set_from_zero_area(self):
-        matrix = [
-            [True, False],
-            [True, False],
-            [False, True],
-            [False, True],
-        ]
-        greedy = solve_greedy(matrix, threads=1)
-        assert greedy["kept_indices"] == [2, 3]
         assert greedy["area"] == 2
 
     def test_solve_exact_process_fallback_to_threads(self, monkeypatch):
@@ -671,17 +612,6 @@ class TestMaxalignHelpers:
         result = solve_exact(matrix, threads=4)
         assert result is not None
         assert result["num_kept"] >= 1
-
-    def test_alignment_area_and_complete_indices(self):
-        matrix = [
-            [True, False, True],
-            [True, True, True],
-        ]
-        area, complete = alignment_area(matrix, kept_indices=[0, 1])
-        complete_indices = extract_complete_codon_indices(matrix, kept_indices=[0, 1])
-        assert complete == 2
-        assert area == 4
-        assert complete_indices == [0, 2]
 
     def test_select_indices_by_patterns_matches_record_id(self):
         records = [

@@ -20,11 +20,6 @@ from cdskit.label import (
 class TestLabelHelpers:
     """Tests for label helper functions."""
 
-    def test_parse_replace_chars(self):
-        from_chars, to_char = parse_replace_chars(":|--_")
-        assert from_chars == [":", "|"]
-        assert to_char == "_"
-
     @pytest.mark.parametrize(
         "replace_chars",
         ["abc", "a--b--c", "--_", "abc--", "abc--xy"],
@@ -43,25 +38,6 @@ class TestLabelHelpers:
         assert replaced == 1
         assert records[0].id == "a_b_c"
         assert records[1].id == "plain"
-
-    def test_apply_char_replacement_clears_stale_description_on_change(self):
-        records = [
-            SeqRecord(Seq("ATG"), id="seq1", description="seq1 old"),
-        ]
-        replaced = apply_char_replacement(records, ["1"], "2")
-        assert replaced == 1
-        assert records[0].id == "seq2"
-        assert records[0].description == ""
-
-    def test_clip_label_ids(self):
-        records = [
-            SeqRecord(Seq("ATG"), id="long_name_here", description=""),
-            SeqRecord(Seq("ATG"), id="short", description=""),
-        ]
-        clipped = clip_label_ids(records, 5)
-        assert clipped == 1
-        assert records[0].id == "long_"
-        assert records[1].id == "short"
 
     def test_clip_label_ids_clears_stale_description_on_change(self):
         records = [
@@ -260,29 +236,6 @@ class TestLabelMain:
         result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
         assert result[0].id == "seq1"
         assert result[1].id == "seq2"
-
-    def test_label_replace_single_char(self, temp_dir, mock_args):
-        """Test replacing a single character type."""
-        input_path = temp_dir / "input.fasta"
-        output_path = temp_dir / "output.fasta"
-
-        records = [
-            SeqRecord(Seq("ATGAAA"), id="a|b|c|d", description=""),
-        ]
-        Bio.SeqIO.write(records, str(input_path), "fasta")
-
-        args = mock_args(
-            seqfile=str(input_path),
-            outfile=str(output_path),
-            replace_chars="|--_",  # Replace | with _
-            clip_len=0,
-            unique=False,
-        )
-
-        label_main(args)
-
-        result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
-        assert result[0].id == "a_b_c_d"
 
     def test_label_rejects_negative_clip_len(self, temp_dir, mock_args):
         input_path = temp_dir / "input.fasta"

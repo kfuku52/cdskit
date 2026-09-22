@@ -4,9 +4,7 @@ import numpy as np
 import pytest
 
 from cdskit.targetp_benchmark import (
-    TARGETP_LABEL_TO_LOCALIZATION,
     TARGETP_TABLE1_REFERENCE,
-    TARGETP_YTYPE_TO_LABEL,
     _read_targetp_npz,
     build_targetp_comparison_table,
     compute_prf_by_class,
@@ -111,13 +109,6 @@ def test_compute_prf_by_class_and_comparison_table():
     md = render_markdown_table(comparison=comparison)
     assert "| Class | TargetP P | TargetP R | TargetP F1 |" in md
     assert "| Macro F1 (5-class) |" in md
-
-
-def test_targetp_label_mapping_constants_are_consistent():
-    for label in TARGETP_YTYPE_TO_LABEL.values():
-        assert label in TARGETP_LABEL_TO_LOCALIZATION
-        loc = TARGETP_LABEL_TO_LOCALIZATION[label]
-        assert loc in TARGETP_TABLE1_REFERENCE
 
 
 def test_targetp_npz_rejects_pickle_backed_object_arrays(temp_dir):

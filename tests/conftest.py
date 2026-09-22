@@ -80,61 +80,6 @@ def write_tsv():
     return _write
 
 
-@pytest.fixture
-def temp_fasta(temp_dir):
-    """Create a temporary FASTA file with simple sequences."""
-    fasta_path = temp_dir / "test.fasta"
-    records = [
-        SeqRecord(Seq("ATGAAATGA"), id="seq1", description=""),
-        SeqRecord(Seq("ATGCCCTGA"), id="seq2", description=""),
-    ]
-    Bio.SeqIO.write(records, str(fasta_path), "fasta")
-    return fasta_path
-
-
-@pytest.fixture
-def aligned_fasta(temp_dir):
-    """Create a temporary aligned FASTA file."""
-    fasta_path = temp_dir / "aligned.fasta"
-    records = [
-        SeqRecord(Seq("ATGAAA---TGA"), id="seq1", description=""),
-        SeqRecord(Seq("ATGCCCTCCTGA"), id="seq2", description=""),
-        SeqRecord(Seq("ATG---TCCTGA"), id="seq3", description=""),
-    ]
-    Bio.SeqIO.write(records, str(fasta_path), "fasta")
-    return fasta_path
-
-
-@pytest.fixture
-def unpadded_fasta(temp_dir):
-    """Create a FASTA file with sequences not multiple of 3."""
-    fasta_path = temp_dir / "unpadded.fasta"
-    records = [
-        SeqRecord(
-            Seq("ATGAAAT"), id="miss_2nt", description=""
-        ),  # 7 nt, needs 2 padding
-        SeqRecord(
-            Seq("ATGAAATG"), id="miss_1nt", description=""
-        ),  # 8 nt, needs 1 padding
-        SeqRecord(Seq("ATGAAATGA"), id="complete", description=""),  # 9 nt, complete
-    ]
-    Bio.SeqIO.write(records, str(fasta_path), "fasta")
-    return fasta_path
-
-
-@pytest.fixture
-def gff_file(temp_dir):
-    """Create a simple GFF file for testing."""
-    gff_path = temp_dir / "test.gff"
-    gff_content = """##gff-version 3
-seq1\tsource\tgene\t1\t100\t.\t+\t.\tID=gene1
-seq1\tsource\texon\t10\t50\t.\t+\t.\tID=exon1
-seq1\tsource\texon\t60\t90\t.\t+\t.\tID=exon2
-"""
-    gff_path.write_text(gff_content)
-    return gff_path
-
-
 class MockArgs:
     """Mock argument object for testing command functions."""
 

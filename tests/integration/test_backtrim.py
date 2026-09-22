@@ -46,74 +46,6 @@ class TestCheckSameSeqNum:
 class TestBacktrimMain:
     """Tests for backtrim_main function."""
 
-    def test_backtrim_basic(self, temp_dir, mock_args):
-        """Test basic backtrim functionality."""
-        cdn_path = temp_dir / "codon.fasta"
-        pep_path = temp_dir / "protein.fasta"
-        output_path = temp_dir / "output.fasta"
-
-        # Codon sequences: MK (ATG AAA) + P (CCC)
-        # Trimmed protein: MK (only first 2 amino acids)
-        cdn_records = [
-            SeqRecord(Seq("ATGAAACCC"), id="seq1", description=""),
-            SeqRecord(Seq("ATGAAAGGG"), id="seq2", description=""),
-        ]
-        Bio.SeqIO.write(cdn_records, str(cdn_path), "fasta")
-
-        # Trimmed protein alignment
-        pep_records = [
-            SeqRecord(Seq("MK"), id="seq1", description=""),
-            SeqRecord(Seq("MK"), id="seq2", description=""),
-        ]
-        Bio.SeqIO.write(pep_records, str(pep_path), "fasta")
-
-        args = mock_args(
-            seqfile=str(cdn_path),
-            outfile=str(output_path),
-            trimmed_aa_aln=str(pep_path),
-            codontable=1,
-        )
-
-        backtrim_main(args)
-
-        result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
-        # Should have kept only first 2 codons = 6 nucleotides
-        assert len(result[0].seq) == 6
-        assert str(result[0].seq) == "ATGAAA"
-
-    def test_backtrim_with_gaps(self, temp_dir, mock_args):
-        """Test backtrim with gapped alignment."""
-        cdn_path = temp_dir / "codon.fasta"
-        pep_path = temp_dir / "protein.fasta"
-        output_path = temp_dir / "output.fasta"
-
-        # Aligned codon sequences with gaps
-        cdn_records = [
-            SeqRecord(Seq("ATGAAA---CCC"), id="seq1", description=""),  # M K - P
-            SeqRecord(Seq("ATGAAAGGGCCC"), id="seq2", description=""),  # M K G P
-        ]
-        Bio.SeqIO.write(cdn_records, str(cdn_path), "fasta")
-
-        # Trimmed protein - keep only M and K columns
-        pep_records = [
-            SeqRecord(Seq("MK"), id="seq1", description=""),
-            SeqRecord(Seq("MK"), id="seq2", description=""),
-        ]
-        Bio.SeqIO.write(pep_records, str(pep_path), "fasta")
-
-        args = mock_args(
-            seqfile=str(cdn_path),
-            outfile=str(output_path),
-            trimmed_aa_aln=str(pep_path),
-            codontable=1,
-        )
-
-        backtrim_main(args)
-
-        result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
-        # Should have kept only M and K codons
-        assert len(result[0].seq) == 6
-
     def test_backtrim_handles_question_codon_as_missing_not_error(
         self, temp_dir, mock_args
     ):
@@ -304,24 +236,6 @@ class TestBacktrimMain:
         result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
         # Only the first monotonic site should be kept.
         assert [str(r.seq) for r in result] == ["CCT", "TGT"]
-
-    def test_backtrim_empty_inputs_produce_empty_output(self, temp_dir, mock_args):
-        cdn_path = temp_dir / "codon.fasta"
-        pep_path = temp_dir / "protein.fasta"
-        output_path = temp_dir / "output.fasta"
-
-        cdn_path.write_text("")
-        pep_path.write_text("")
-
-        args = mock_args(
-            seqfile=str(cdn_path),
-            outfile=str(output_path),
-            trimmed_aa_aln=str(pep_path),
-            codontable=1,
-        )
-        backtrim_main(args)
-        result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
-        assert len(result) == 0
 
     def test_backtrim_rejects_unaligned_codons(self, temp_dir, mock_args):
         """Test backtrim rejects unaligned codon sequences."""

@@ -10,7 +10,6 @@ from cdskit.localize_model import (
 )
 from cdskit.localize_learn import LOCALIZATION_CLASSES
 from cdskit.targetp_feature_ensemble import (
-    build_targetp_feature_matrix,
     build_targetp_feature_blend_runtime_model,
     evaluate_foldwise_thresholds,
     fit_targetp_feature_runtime_model,
@@ -69,16 +68,6 @@ def _write_targetp_fixture(path):
     return rows
 
 
-def test_targetp_feature_matrix_has_stable_row_count(temp_dir):
-    training_tsv = temp_dir / "targetp.tsv"
-    rows = _write_targetp_fixture(training_tsv)
-
-    features = build_targetp_feature_matrix(rows=rows)
-
-    assert features.shape[0] == len(rows)
-    assert features.shape[1] > 1000
-
-
 def test_targetp_feature_ensemble_oof_and_foldwise_threshold_eval(temp_dir):
     training_tsv = temp_dir / "targetp.tsv"
     _write_targetp_fixture(training_tsv)
@@ -118,45 +107,13 @@ def test_targetp_feature_binary_ovr_oof(temp_dir):
     assert oof["profile"]["model_kind"] == "binary_extra_trees"
 
 
-def test_fit_targetp_feature_runtime_model_uses_localize_perox_features(temp_dir):
-    training_tsv = temp_dir / "targetp.tsv"
-    _write_targetp_fixture(training_tsv)
-
-    model = fit_targetp_feature_runtime_model(
-        training_tsv=str(training_tsv),
-        n_estimators=5,
-        random_state=3,
-    )
-
-    assert model["model_type"] == "targetp_feature_ensemble_v1"
-    assert model["localization_model"]["feature_dim"] > 1000
-    assert model["perox_model"]["mode"] in ["constant", "centroid"]
-
-
-def test_fit_targetp_binary_feature_runtime_model(temp_dir):
-    training_tsv = temp_dir / "targetp.tsv"
-    _write_targetp_fixture(training_tsv)
-
-    model = fit_targetp_feature_runtime_model(
-        training_tsv=str(training_tsv),
-        model_kind="binary_extra_trees",
-        n_estimators=5,
-        random_state=3,
-    )
-
-    assert model["model_type"] == "targetp_feature_ensemble_v1"
-    assert model["localization_model"]["classifier"] is None
-    assert len(model["localization_model"]["binary_classifiers"]) == len(
-        LOCALIZATION_CLASSES
-    )
-
-
-def test_targetp_binary_feature_runtime_predicts_with_binary_classifiers(temp_dir):
+@pytest.mark.parametrize("model_kind", ["extra_trees", "binary_extra_trees"])
+def test_trained_feature_runtime_predicts_normalized_scores(temp_dir, model_kind):
     training_tsv = temp_dir / "targetp.tsv"
     _write_targetp_fixture(training_tsv)
     model = fit_targetp_feature_runtime_model(
         training_tsv=str(training_tsv),
-        model_kind="binary_extra_trees",
+        model_kind=model_kind,
         n_estimators=5,
         random_state=3,
     )
@@ -168,6 +125,9 @@ def test_targetp_binary_feature_runtime_predicts_with_binary_classifiers(temp_di
     )
 
     assert result["predicted_class"] in LOCALIZATION_CLASSES
+    assert result["class_probabilities"]["cTP"] == 0.0
+    assert result["class_probabilities"]["lTP"] == 0.0
+    assert result["perox_probability_yes"] == 0.0
     np.testing.assert_allclose(
         sum(result["class_probabilities"].values()),
         1.0,

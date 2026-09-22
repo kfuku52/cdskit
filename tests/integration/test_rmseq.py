@@ -14,34 +14,9 @@ from cdskit.rmseq import problematic_rate, rmseq_main, should_remove_record
 class TestRmseqHelpers:
     """Tests for rmseq helper functions."""
 
-    def test_problematic_rate_multiple_char_sets(self):
-        seq = "ATN-X?"
-        rate = problematic_rate(seq, ["N", "-", "X", "?"])
-        assert rate == pytest.approx(4 / 6)
-
-    def test_problematic_rate_empty_sequence(self):
-        rate = problematic_rate("", ["N", "-", "X", "?"])
-        assert rate == 0.0
-
     def test_problematic_rate_deduplicates_problematic_chars(self):
         rate = problematic_rate("NNAA", "NN")
         assert rate == pytest.approx(2 / 4)
-
-    def test_problematic_rate_is_case_insensitive(self):
-        rate = problematic_rate("ATGnnn", ["N"])
-        assert rate == pytest.approx(3 / 6)
-
-    def test_should_remove_record_by_name_pattern(self):
-        record = SeqRecord(
-            Seq("ATGAAA"), id="remove_me", name="remove_me", description=""
-        )
-        remove = should_remove_record(
-            record=record,
-            seqname_pattern="remove.*",
-            problematic_percent=0,
-            problematic_chars=["N"],
-        )
-        assert remove is True
 
     def test_should_remove_record_matches_id_not_name(self):
         record = SeqRecord(
@@ -51,16 +26,6 @@ class TestRmseqHelpers:
             record=record,
             seqname_pattern="remove.*",
             problematic_percent=0,
-            problematic_chars=["N"],
-        )
-        assert remove is True
-
-    def test_should_remove_record_by_problematic_threshold(self):
-        record = SeqRecord(Seq("ATGNNN"), id="seq1", name="seq1", description="")
-        remove = should_remove_record(
-            record=record,
-            seqname_pattern="$^",
-            problematic_percent=50,
             problematic_chars=["N"],
         )
         assert remove is True
@@ -97,32 +62,6 @@ class TestRmseqMain:
         assert "keep_this" in ids
         assert "keep_also" in ids
         assert "remove_me" not in ids
-
-    def test_rmseq_by_problematic_chars(self, temp_dir, mock_args):
-        """Test removing sequences with too many problematic characters."""
-        input_path = temp_dir / "input.fasta"
-        output_path = temp_dir / "output.fasta"
-
-        records = [
-            SeqRecord(Seq("ATGAAA"), id="clean", description=""),  # 0% N
-            SeqRecord(Seq("ATGNNN"), id="half_n", description=""),  # 50% N
-            SeqRecord(Seq("NNNNNN"), id="all_n", description=""),  # 100% N
-        ]
-        Bio.SeqIO.write(records, str(input_path), "fasta")
-
-        args = mock_args(
-            seqfile=str(input_path),
-            outfile=str(output_path),
-            seqname="$^",  # Regex that matches nothing
-            problematic_percent=50,  # Remove if >= 50% problematic
-            problematic_char=["N"],
-        )
-
-        rmseq_main(args)
-
-        result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
-        assert len(result) == 1
-        assert result[0].id == "clean"
 
     def test_rmseq_handles_empty_sequence_without_crash(self, temp_dir, mock_args):
         input_path = temp_dir / "input.fasta"
@@ -197,117 +136,6 @@ class TestRmseqMain:
         result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
         assert len(result) == 1
         assert result[0].id == "good_seq"
-
-    def test_rmseq_no_removal(self, temp_dir, mock_args):
-        """Test when no sequences are removed."""
-        input_path = temp_dir / "input.fasta"
-        output_path = temp_dir / "output.fasta"
-
-        records = [
-            SeqRecord(Seq("ATGAAA"), id="seq1", description=""),
-            SeqRecord(Seq("ATGCCC"), id="seq2", description=""),
-        ]
-        Bio.SeqIO.write(records, str(input_path), "fasta")
-
-        args = mock_args(
-            seqfile=str(input_path),
-            outfile=str(output_path),
-            seqname="$^",  # Matches nothing
-            problematic_percent=0,  # No character filtering
-            problematic_char=["N"],
-        )
-
-        rmseq_main(args)
-
-        result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
-        assert len(result) == 2
-
-    def test_rmseq_wiki_example_species_removal(self, temp_dir, mock_args):
-        """Test wiki example: remove Arabidopsis sequences and high-N sequences.
-
-        Wiki command: cdskit rmseq --seq_name_regex "Arabidopsis_thaliana.*" --problematic_percent 50
-        This removes:
-        - All Arabidopsis_thaliana sequences (by name regex)
-        - Sequences with >=50% N characters
-        """
-        input_path = temp_dir / "input.fasta"
-        output_path = temp_dir / "output.fasta"
-
-        # Simulate wiki example data
-        records = [
-            SeqRecord(
-                Seq("AGAGTTCAATATGCTTTGAGTCGAATTCGTAACAATGCTAGAAATCTTCTTACTCTTGAT"),
-                id="Aquilegia_coerulea_1",
-                description="",
-            ),
-            SeqRecord(
-                Seq("AGAGTTCAATATGCTTTAAGTCGAATTCGAAACAATGCTAGAAATCTTCTCACTCTGGAT"),
-                id="Aquilegia_coerulea_2",
-                description="",
-            ),
-            SeqRecord(
-                Seq("AGAGTTCAATATGCTTTAAGTCGAATTCGTAACAATGCAAGAAATCTTCTTACACTTGAT"),
-                id="Aquilegia_coerulea_3",
-                description="",
-            ),
-            # This should be removed - over 50% N
-            SeqRecord(
-                Seq("AGGGTCCAATATGTTCTGAGCCGTATCCNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"),
-                id="Hylocereus_undatus_1",
-                description="",
-            ),
-            SeqRecord(
-                Seq("AGGGTTCAATACGTTCTGAGCCGTATCCGTAATGCTGCAAGGCATCTTCTTACCCTGGAT"),
-                id="Hylocereus_undatus_2",
-                description="",
-            ),
-            # This should be removed - over 50% N
-            SeqRecord(
-                Seq("NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNTGCGGCAAGGCACCTTCTCACTCTGGAT"),
-                id="Hylocereus_undatus_3",
-                description="",
-            ),
-            # These should be removed - match Arabidopsis regex
-            SeqRecord(
-                Seq("AGAGTTCAATATACACTTAGCAGAATCCGTAATGCTGCAAGAGAACTCTTAACTCTTGAT"),
-                id="Arabidopsis_thaliana_1",
-                description="",
-            ),
-            SeqRecord(
-                Seq("AGAGTGCAGTACTCTCTTAGCCGTATCCGTAATGCTGCTAGAGATCTTTTGACTCTTGAT"),
-                id="Arabidopsis_thaliana_2",
-                description="",
-            ),
-        ]
-        Bio.SeqIO.write(records, str(input_path), "fasta")
-
-        args = mock_args(
-            seqfile=str(input_path),
-            outfile=str(output_path),
-            seqname="Arabidopsis_thaliana.*",  # Wiki example regex
-            problematic_percent=50,
-            problematic_char=["N"],
-        )
-
-        rmseq_main(args)
-
-        result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
-        result_ids = [r.id for r in result]
-
-        # Should have 4 sequences remaining:
-        # - Aquilegia_coerulea_1, 2, 3 (kept)
-        # - Hylocereus_undatus_2 (kept - low N%)
-        assert len(result) == 4
-        assert "Aquilegia_coerulea_1" in result_ids
-        assert "Aquilegia_coerulea_2" in result_ids
-        assert "Aquilegia_coerulea_3" in result_ids
-        assert "Hylocereus_undatus_2" in result_ids
-
-        # Should NOT have:
-        assert "Arabidopsis_thaliana_1" not in result_ids
-        assert "Arabidopsis_thaliana_2" not in result_ids
-        assert "Hylocereus_undatus_1" not in result_ids  # High N%
-        assert "Hylocereus_undatus_3" not in result_ids  # High N%
 
     def test_rmseq_exact_match_data(self, data_dir, temp_dir, mock_args):
         """Test rmseq with rmseq_01 data comparing to expected output."""

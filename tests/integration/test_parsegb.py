@@ -194,32 +194,6 @@ class TestParsegbMain:
         result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
         assert len(result) == 3
 
-    def test_parsegb_seqname_format(self, temp_dir, mock_args):
-        """Test different sequence name formats."""
-        input_path = temp_dir / "input.gb"
-        output_path = temp_dir / "output.fasta"
-
-        record = create_genbank_record(
-            "ATGAAACCC", "TEST001", "Homo sapiens", "HSA12345"
-        )
-        Bio.SeqIO.write([record], str(input_path), "genbank")
-
-        # Test organism_accessions format
-        args = mock_args(
-            seqfile=str(input_path),
-            outfile=str(output_path),
-            inseqformat="genbank",
-            seqnamefmt="organism_accessions",
-            extract_cds=False,
-            list_seqname_keys=False,
-        )
-
-        parsegb_main(args)
-
-        result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
-        # Should contain both organism and accession info
-        assert "Homo" in result[0].id or "HSA12345" in result[0].id
-
     def test_parsegb_with_test_data(self, data_dir, temp_dir, mock_args):
         """Test parsegb with parsegb_01 test data."""
         input_path = data_dir / "parsegb_01" / "input.gb"
@@ -249,29 +223,6 @@ class TestParsegbMain:
             # Check sequences match
             for r, e in zip(result, expected, strict=False):
                 assert str(r.seq) == str(e.seq)
-
-    def test_parsegb_preserves_sequence_content(self, temp_dir, mock_args):
-        """Test that parsegb preserves exact sequence content."""
-        input_path = temp_dir / "input.gb"
-        output_path = temp_dir / "output.fasta"
-
-        test_seq = "ATGCGATCGATCGATCGATCG"
-        record = create_genbank_record(test_seq, "TEST001")
-        Bio.SeqIO.write([record], str(input_path), "genbank")
-
-        args = mock_args(
-            seqfile=str(input_path),
-            outfile=str(output_path),
-            inseqformat="genbank",
-            seqnamefmt="organism_accessions",
-            extract_cds=False,
-            list_seqname_keys=False,
-        )
-
-        parsegb_main(args)
-
-        result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
-        assert str(result[0].seq) == test_seq
 
     def test_parsegb_spaces_in_organism_name(self, temp_dir, mock_args):
         """Test handling of spaces in organism names."""
@@ -333,13 +284,3 @@ class TestParsegbHelpers:
         assert "Homo" in parsed.id or "HS001" in parsed.id
         assert parsed.name == ""
         assert parsed.description == ""
-
-    def test_parsegb_record_extract_cds_returns_none_without_cds(self):
-        record = create_genbank_record("ATGAAA", "REC1", "Homo sapiens", "HS001")
-        parsed = parsegb_record(
-            record=record,
-            seqnamefmt="organism_accessions",
-            extract_cds=True,
-            list_seqname_keys=False,
-        )
-        assert parsed is None

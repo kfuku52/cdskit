@@ -5,9 +5,6 @@ import pytest
 
 from cdskit.localize_learn import LOCALIZATION_CLASSES
 from cdskit.targetp_stack import (
-    TARGETP_STACK_MTP_SPECIALIST_DEFAULTS,
-    build_ltp_ctp_specialist_feature_matrix,
-    build_parser,
     evaluate_foldwise_classwise_multi_blend,
     evaluate_foldwise_classwise_multi_blend_sp_override,
     evaluate_foldwise_classwise_blend_ltp_ctp_override,
@@ -19,26 +16,6 @@ from cdskit.targetp_stack import (
 
 
 pytest.importorskip("sklearn")
-
-
-def test_targetp_stack_parser_exposes_mtp_threshold_grid_defaults():
-    parser = build_parser()
-    args = parser.parse_args(["--base_oof_npzs", "base.npz"])
-
-    assert args.post_blend_sp_max_iter == 350
-    assert args.post_blend_sp_random_states == "2,13,31"
-    assert args.post_blend_mtp_model_kind == "extra_trees"
-    assert args.post_blend_mtp_n_estimators == 300
-    assert args.post_blend_mtp_score_min == pytest.approx(
-        TARGETP_STACK_MTP_SPECIALIST_DEFAULTS["mtp_score_min"]
-    )
-    assert args.post_blend_mtp_score_max == pytest.approx(
-        TARGETP_STACK_MTP_SPECIALIST_DEFAULTS["mtp_score_max"]
-    )
-    assert (
-        args.post_blend_mtp_score_steps
-        == TARGETP_STACK_MTP_SPECIALIST_DEFAULTS["mtp_score_steps"]
-    )
 
 
 def _write_targetp_fixture(path):
@@ -122,17 +99,6 @@ def test_stack_feature_matrix_combines_base_probabilities_and_sequence_features(
     assert with_sequence.shape[0] == len(rows)
     assert without_sequence.shape == (len(rows), len(LOCALIZATION_CLASSES) + 3)
     assert with_sequence.shape[1] > without_sequence.shape[1]
-
-
-def test_ltp_ctp_specialist_features_extend_base_features(temp_dir):
-    training_tsv = temp_dir / "targetp.tsv"
-    rows = _write_targetp_fixture(training_tsv)
-
-    specialist_features = build_ltp_ctp_specialist_feature_matrix(rows=rows)
-
-    assert specialist_features.shape[0] == len(rows)
-    assert specialist_features.shape[1] > 0
-    assert np.all(np.isfinite(specialist_features))
 
 
 def test_targetp_stack_oof_is_foldwise_and_normalized(temp_dir):

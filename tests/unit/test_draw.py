@@ -7,11 +7,9 @@ from Bio.SeqRecord import SeqRecord
 from cdskit.draw import (
     build_svg,
     draw_main,
-    fmt_num,
     nonnegative_int_arg,
     positive_int_arg,
     summarize_draw,
-    truncate_label,
 )
 
 
@@ -106,12 +104,3 @@ def test_draw_main_writes_atomic_svg_output(tmp_path, write_fasta):
 def test_draw_integer_argument_validation(worker, value, message):
     with pytest.raises(ValueError, match=message):
         worker("--value", value, 1)
-
-
-def test_draw_formatting_helpers_cover_edge_cases():
-    assert fmt_num(3) == "3"
-    assert fmt_num(3.0) == "3"
-    assert fmt_num(3.125) == "3.12"
-    assert truncate_label("abcdef", 6) == "abcdef"
-    assert truncate_label("abcdef", 3) == "abc"
-    assert truncate_label("abcdefgh", 6) == "abc..."

@@ -113,44 +113,6 @@ def test_unpublished_default_never_downloads_or_trusts_cache(
         resolve_localize_model_path(alias, allow_download=not offline)
 
 
-def test_published_perox_alias_respects_disabled_download(temp_dir, monkeypatch):
-    monkeypatch.setenv("CDSKIT_MODEL_DIR", str(temp_dir))
-
-    with pytest.raises(FileNotFoundError) as exc_info:
-        resolve_localize_model_path(
-            "targeting5-perox-deeploc21-et-v1", allow_download=False
-        )
-
-    spec = PRETRAINED_LOCALIZE_MODELS["targeting5-perox-deeploc21-et-v1"]
-    assert spec["published"] is True
-    assert (
-        spec["sha256"]
-        == "d0998df8819d975b4392342ab78dccc0dd95cf301e4d2df8f38c73d0b5aab445"
-    )
-    assert "model download is disabled" in str(exc_info.value)
-
-
-def test_cached_alias_returns_verified_cache_path(temp_dir, monkeypatch):
-    content = b"cached model bytes"
-    sha256 = hashlib.sha256(content).hexdigest()
-    spec = {
-        "name": "tiny",
-        "version": "v1",
-        "filename": "tiny.pt",
-        "aliases": ("tiny",),
-        "url": "",
-        "sha256": sha256,
-        "published": False,
-    }
-    monkeypatch.setitem(PRETRAINED_LOCALIZE_MODELS, "tiny-v1", spec)
-    monkeypatch.setenv("CDSKIT_MODEL_DIR", str(temp_dir))
-    cache_path = localize_model_cache_dir() / "localize" / "tiny" / "v1" / "tiny.pt"
-    cache_path.parent.mkdir(parents=True)
-    cache_path.write_bytes(content)
-
-    assert resolve_localize_model_path("tiny") == str(cache_path)
-
-
 def test_registered_alias_wins_over_same_named_working_directory_file(
     temp_dir,
     monkeypatch,

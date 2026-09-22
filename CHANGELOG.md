@@ -6,6 +6,18 @@ replacement to standard error.
 
 ## Unreleased
 
+## 0.31.4 — 2026-09-22
+
+### Tests
+
+- Remove redundant helper, parser-default, import-only and repeated command
+  tests across the unit, integration and ML suites.
+- Consolidate sequence statistics, split outputs and classifier fitting checks;
+  assert exact sequence content in retained gapjust and hammer tests.
+- Remove unused fixtures while retaining data-safety, genetic-code, model
+  compatibility and evaluation-boundary regressions. See the
+  [test review](docs/test-pruning-2026-09-22.md) for the decisions.
+
 ## 0.31.3 — 2026-09-22
 
 ### Fixed

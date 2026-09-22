@@ -8,7 +8,7 @@ import Bio.SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
-from cdskit.aggregate import aggregate_main, aggregate_name, select_aggregate_record
+from cdskit.aggregate import aggregate_main, aggregate_name
 
 
 class TestAggregateHelpers:
@@ -19,75 +19,9 @@ class TestAggregateHelpers:
         expressions = [r"^prefix_", r"_suffix", r"\.[0-9]+$"]
         assert aggregate_name(name, expressions) == "gene"
 
-    def test_select_aggregate_record_longest_mode(self):
-        rec_short = SeqRecord(Seq("ATG"), id="short", name="short", description="")
-        rec_long = SeqRecord(Seq("ATGAAA"), id="long", name="long", description="")
-        selected = select_aggregate_record(rec_short, rec_long, mode="longest")
-        assert selected is rec_long
-
 
 class TestAggregateMain:
     """Tests for aggregate_main function."""
-
-    def test_aggregate_by_suffix(self, temp_dir, mock_args):
-        """Test aggregating sequences by removing suffix."""
-        input_path = temp_dir / "input.fasta"
-        output_path = temp_dir / "output.fasta"
-
-        # gene_A.1 and gene_A.2 should aggregate to gene_A
-        records = [
-            SeqRecord(
-                Seq("ATGAAA"), id="gene_A.1", name="gene_A.1", description=""
-            ),  # 6 nt
-            SeqRecord(
-                Seq("ATGAAACCC"), id="gene_A.2", name="gene_A.2", description=""
-            ),  # 9 nt - longer
-            SeqRecord(Seq("ATGCCC"), id="gene_B.1", name="gene_B.1", description=""),
-        ]
-        Bio.SeqIO.write(records, str(input_path), "fasta")
-
-        args = mock_args(
-            seqfile=str(input_path),
-            outfile=str(output_path),
-            expression=[r"\.[0-9]+$"],  # Remove .N suffix
-            mode="longest",
-        )
-
-        aggregate_main(args)
-
-        result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
-        # Should have 2 sequences: gene_A (longest) and gene_B
-        assert len(result) == 2
-        # Find gene_A entry - should be the longer one
-        gene_a = next(r for r in result if "gene_A" in r.id)
-        assert len(gene_a.seq) == 9
-
-    def test_aggregate_keep_longest(self, temp_dir, mock_args):
-        """Test that longest sequence is kept for each group."""
-        input_path = temp_dir / "input.fasta"
-        output_path = temp_dir / "output.fasta"
-
-        records = [
-            SeqRecord(Seq("ATG"), id="seq_1", name="seq_1", description=""),  # 3 nt
-            SeqRecord(Seq("ATGAAA"), id="seq_2", name="seq_2", description=""),  # 6 nt
-            SeqRecord(
-                Seq("ATGAAACCC"), id="seq_3", name="seq_3", description=""
-            ),  # 9 nt - longest
-        ]
-        Bio.SeqIO.write(records, str(input_path), "fasta")
-
-        args = mock_args(
-            seqfile=str(input_path),
-            outfile=str(output_path),
-            expression=[r"_[0-9]+$"],  # All become "seq"
-            mode="longest",
-        )
-
-        aggregate_main(args)
-
-        result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
-        assert len(result) == 1
-        assert len(result[0].seq) == 9
 
     def test_aggregate_no_matches(self, temp_dir, mock_args):
         """Test when regex doesn't match any sequence names."""

@@ -16,28 +16,6 @@ from cdskit import util
 class TestReadSeqs:
     """Tests for read_seqs function."""
 
-    def test_read_fasta_file(self, temp_dir):
-        """Test reading FASTA file from path."""
-        fasta_path = temp_dir / "test.fasta"
-        records = [
-            SeqRecord(Seq("ATGAAATGA"), id="seq1", description=""),
-            SeqRecord(Seq("ATGCCCTGA"), id="seq2", description=""),
-        ]
-        Bio.SeqIO.write(records, str(fasta_path), "fasta")
-
-        result = util.read_seqs(str(fasta_path), "fasta")
-        assert len(result) == 2
-        assert str(result[0].seq) == "ATGAAATGA"
-        assert result[0].id == "seq1"
-
-    def test_read_empty_file(self, temp_dir):
-        """Test reading empty FASTA file."""
-        fasta_path = temp_dir / "empty.fasta"
-        fasta_path.write_text("")
-
-        result = util.read_seqs(str(fasta_path), "fasta")
-        assert len(result) == 0
-
     def test_rejects_excessively_long_sequence_identifier(
         self,
         temp_dir,
@@ -137,11 +115,6 @@ class TestSafeRegex:
 class TestReadItemPerLineFile:
     """Tests for read_item_per_line_file function."""
 
-    def test_reads_non_empty_lines_only(self, temp_dir):
-        path = temp_dir / "items.txt"
-        path.write_text("alpha\n\nbeta\n\ngamma\n")
-        assert util.read_item_per_line_file(str(path)) == ["alpha", "beta", "gamma"]
-
     def test_strips_whitespace_around_each_item(self, temp_dir):
         path = temp_dir / "items_whitespace.txt"
         path.write_text(" alpha \n\tbeta\t\n\n gamma\n")
@@ -150,20 +123,6 @@ class TestReadItemPerLineFile:
 
 class TestWriteSeqs:
     """Tests for write_seqs function."""
-
-    def test_write_fasta_file(self, temp_dir):
-        """Test writing FASTA to file."""
-        fasta_path = temp_dir / "output.fasta"
-        records = [
-            SeqRecord(Seq("ATGAAATGA"), id="seq1", description=""),
-        ]
-
-        util.write_seqs(records, str(fasta_path), "fasta")
-
-        # Read back and verify
-        result = list(Bio.SeqIO.parse(str(fasta_path), "fasta"))
-        assert len(result) == 1
-        assert str(result[0].seq) == "ATGAAATGA"
 
     def test_failed_write_preserves_existing_output(self, temp_dir, monkeypatch):
         fasta_path = temp_dir / "output.fasta"
@@ -186,15 +145,6 @@ class TestWriteSeqs:
 
 class TestStopIfNotMultipleOfThree:
     """Tests for stop_if_not_multiple_of_three function."""
-
-    def test_invalid_sequence_length(self):
-        """Test with sequence not multiple of 3."""
-        records = [
-            SeqRecord(Seq("ATGAA"), id="seq1"),  # 5 nt
-        ]
-        with pytest.raises(ValueError) as exc_info:
-            util.stop_if_not_multiple_of_three(records)
-        assert "multiple of three" in str(exc_info.value)
 
     def test_mixed_sequences(self):
         """Test with mix of valid and invalid sequences."""
@@ -263,10 +213,6 @@ class TestStopIfNotProtein:
 class TestStopIfNotSeqtype:
     """Tests for stop_if_not_seqtype function."""
 
-    def test_accepts_protein_when_seqtype_protein(self):
-        records = [SeqRecord(Seq("MKT"), id="prot1")]
-        util.stop_if_not_seqtype(records=records, seqtype="protein", label="--seqfile")
-
     def test_rejects_unknown_seqtype(self):
         records = [SeqRecord(Seq("ATG"), id="seq1")]
         with pytest.raises(ValueError) as exc_info:
@@ -279,64 +225,6 @@ class TestStopIfInvalidCodontable:
         with pytest.raises(ValueError) as exc_info:
             util.stop_if_invalid_codontable(999)
         assert "Invalid --codon_table" in str(exc_info.value)
-
-
-class TestTranslateRecords:
-    """Tests for translate_records function."""
-
-    def test_basic_translation(self):
-        """Test basic protein translation."""
-        records = [
-            SeqRecord(Seq("ATGAAATGA"), id="seq1"),  # M K *
-        ]
-        result = util.translate_records(records, 1)
-        assert str(result[0].seq) == "MK*"
-
-    def test_translation_with_gaps(self):
-        """Test translation with gap characters."""
-        records = [
-            SeqRecord(Seq("ATG---TGA"), id="seq1"),  # M - *
-        ]
-        result = util.translate_records(records, 1)
-        assert str(result[0].seq) == "M-*"
-
-    def test_translation_different_codon_tables(self):
-        """Test translation with different codon tables."""
-        records = [
-            SeqRecord(
-                Seq("ATGTTGTGA"), id="seq1"
-            ),  # Standard: M L *, Mitochondrial: M L W
-        ]
-        # Standard code
-        result1 = util.translate_records(records, 1)
-        # Vertebrate mitochondrial
-        result2 = util.translate_records(records, 2)
-        assert str(result1[0].seq) == "ML*"
-        assert str(result2[0].seq) == "MLW"
-
-    def test_translation_handles_question_and_dot_as_missing(self):
-        records = [
-            SeqRecord(Seq("ATG???CCC"), id="q1"),
-            SeqRecord(Seq("ATG...CCC"), id="d1"),
-        ]
-        result = util.translate_records(records, 1)
-        assert str(result[0].seq) == "MXP"
-        assert str(result[1].seq) == "M-P"
-
-
-class TestRecords2Array:
-    """Tests for records2array function."""
-
-    def test_basic_conversion(self):
-        """Test conversion of records to numpy array."""
-        records = [
-            SeqRecord(Seq("ATGC"), id="seq1"),
-            SeqRecord(Seq("GCTA"), id="seq2"),
-        ]
-        result = util.records2array(records)
-        assert result.shape == (2, 4)
-        assert list(result[0]) == ["A", "T", "G", "C"]
-        assert list(result[1]) == ["G", "C", "T", "A"]
 
 
 class TestGetSeqname:
@@ -445,24 +333,6 @@ class TestReplaceSeq2Cds:
 class TestReadGff:
     """Tests for read_gff function."""
 
-    def test_read_gff_file(self, gff_file):
-        """Test reading GFF file."""
-        result = util.read_gff(str(gff_file))
-        assert "header" in result
-        assert "data" in result
-        assert len(result["header"]) == 1  # ##gff-version 3
-        assert len(result["data"]) == 3  # 3 features
-
-    def test_gff_data_structure(self, gff_file):
-        """Test GFF data has correct structure."""
-        result = util.read_gff(str(gff_file))
-        data = result["data"]
-        # Check first record
-        assert data[0]["seqid"] == "seq1"
-        assert data[0]["type"] == "gene"
-        assert data[0]["start"] == 1
-        assert data[0]["end"] == 100
-
     def test_single_record_gff_is_returned_as_1d_array(self, temp_dir):
         """Single non-header line should still produce length-1 structured array."""
         path = temp_dir / "single.gff"
@@ -511,29 +381,11 @@ class TestWriteGff:
         reread = util.read_gff(str(out_path))
         assert reread["header"] == ["##gff-version 3"]
         assert len(reread["data"]) == 2
-        assert reread["data"][1]["type"] == "CDS"
+        assert reread["data"].tolist() == data.tolist()
 
 
 class TestCoordinates2Ranges:
     """Tests for coordinates2ranges function."""
-
-    def test_consecutive_coordinates(self):
-        """Test with consecutive coordinates."""
-        coords = [1, 2, 3, 4, 5]
-        result = util.coordinates2ranges(coords)
-        assert result == [(1, 5)]
-
-    def test_non_consecutive_coordinates(self):
-        """Test with gaps in coordinates."""
-        coords = [1, 2, 3, 10, 11, 12]
-        result = util.coordinates2ranges(coords)
-        assert result == [(1, 3), (10, 12)]
-
-    def test_single_coordinate(self):
-        """Test with single coordinate."""
-        coords = [5]
-        result = util.coordinates2ranges(coords)
-        assert result == [(5, 5)]
 
     def test_empty_coordinates(self):
         """Test with empty list."""

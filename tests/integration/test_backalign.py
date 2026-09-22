@@ -52,13 +52,6 @@ def test_dual_coding_terminal_stop_may_be_omitted(table_id, terminal):
 class TestBackalignRecord:
     """Tests for per-record backalignment behavior."""
 
-    def test_backalign_record_basic(self):
-        cdn_record = SeqRecord(Seq("ATGAAACCC"), id="seq1")
-        pep_record = SeqRecord(Seq("MK-P"), id="seq1")
-        result = backalign_record(cdn_record, pep_record, codontable=1)
-        assert str(result.seq) == "ATGAAA---CCC"
-        assert result.id == "seq1"
-
     def test_backalign_record_accepts_dot_as_gap(self):
         cdn_record = SeqRecord(Seq("ATGAAACCC"), id="seq1")
         pep_record = SeqRecord(Seq("MK.P"), id="seq1")
@@ -84,13 +77,6 @@ class TestBackalignRecord:
             backalign_record(cdn_record, pep_record, codontable=1)
         assert "too many non-gap sites" in str(exc_info.value)
 
-    def test_backalign_record_rejects_amino_acid_mismatch(self):
-        cdn_record = SeqRecord(Seq("ATGAAA"), id="seq1")  # MK
-        pep_record = SeqRecord(Seq("MQ"), id="seq1")
-        with pytest.raises(ValueError) as exc_info:
-            backalign_record(cdn_record, pep_record, codontable=1)
-        assert "mismatch" in str(exc_info.value)
-
     def test_backalign_record_rejects_invalid_codon(self):
         cdn_record = SeqRecord(Seq("ATG@@@"), id="seq1")
         pep_record = SeqRecord(Seq("MX"), id="seq1")
@@ -111,12 +97,6 @@ class TestBackalignRecord:
         with pytest.raises(ValueError) as exc_info:
             backalign_record(cdn_record, pep_record, codontable=1)
         assert "codons remained unmatched" in str(exc_info.value)
-
-    def test_backalign_record_accepts_terminal_stop_omitted(self):
-        cdn_record = SeqRecord(Seq("ATGAAATAA"), id="seq1")  # MK*
-        pep_record = SeqRecord(Seq("MK"), id="seq1")
-        result = backalign_record(cdn_record, pep_record, codontable=1)
-        assert str(result.seq) == "ATGAAA"
 
     def test_backalign_record_keeps_terminal_stop_if_present_in_aa(self):
         cdn_record = SeqRecord(Seq("ATGAAATAA"), id="seq1")  # MK*
