@@ -6,6 +6,15 @@ replacement to standard error.
 
 ## Unreleased
 
+## 0.31.7 — 2026-09-22
+
+### Fixed
+
+- Make `validate --report -` emit only the rectangular TSV report, suppressing
+  the human-readable summary. Named reports and default summary output retain
+  their existing behavior. Add a CLI regression test for report content and
+  update the command help and guide.
+
 ## 0.31.6 — 2026-09-22
 
 ### Documentation

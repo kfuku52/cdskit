@@ -144,3 +144,30 @@ class TestValidateMain:
         validate_main(args)
         captured = capsys.readouterr()
         assert "num_sequences\t0" in captured.out
+
+
+def test_validate_stdout_report_is_one_table(tmp_path, capsys):
+    from cdskit.cli import main
+
+    source = tmp_path / "input.fasta"
+    source.write_text(">a description\nATGGCNTAA\n>b\nATG---NNN\n")
+    report = tmp_path / "report.tsv"
+    command = ["validate", "--seq_file", str(source)]
+    assert main([*command, "--report", str(report)]) == 0
+    assert capsys.readouterr().out.startswith("Validation summary\n")
+
+    assert main([*command, "--report", "-"]) == 0
+    captured = capsys.readouterr()
+    assert captured.out == report.read_text()
+    assert "Validation summary" not in captured.err
+    # Parse the complete stdout, including its header, as a rectangular report.
+    stdout_report = tmp_path / "stdout.tsv"
+    stdout_report.write_text(captured.out)
+    rows, fields = read_tsv(str(stdout_report), return_fieldnames=True)
+    assert fields == ["schema_version", "section", "metric", "value", "ids"]
+    metrics = {
+        row["metric"]: row["value"] for row in rows if row["section"] == "summary"
+    }
+    assert metrics["num_sequences"] == "2"
+    assert metrics["ambiguous_codon_rate"] == "0.4"
+    assert metrics["num_sequences_with_issues"] == "2"

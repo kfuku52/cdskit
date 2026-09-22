@@ -23,7 +23,8 @@ cdskit validate --seq_file alignment.fasta --codon_table 1 --report validate.jso
 
 - `--codon_table INT`: NCBI codon table ID used for internal stop checks.
 - `--report PATH`: Optional output report path (`.json` or tab-separated text).
-  No report file is produced unless this option is specified.
+  No report file is produced unless this option is specified. Use `--report -`
+  to write only the TSV report to standard output (CDSKIT >=0.31.7).
 
 ## TSV report format
 
@@ -33,12 +34,13 @@ arrays for each category of affected sequence IDs.
 
 ## Notes
 
-- Validation output is printed to standard output. Successful reporting exits
+- Without `--report -`, the human-readable summary is printed to standard
+  output, including when saving a report to a named file. Successful reporting exits
   with status 0 even when QC issues are found; inspect the report fields to
   decide whether an alignment meets your criteria.
-- Known issue: `--report -` currently appends TSV to the human-readable
-  summary, violating the single-table stream convention. Until this is fixed,
-  use a named `.tsv` or `.json` report file for machine-readable results.
+- `--report -` suppresses the human-readable summary so stdout contains one
+  rectangular TSV. Runtime logs remain on stderr. In versions through 0.31.6,
+  this option mixed the summary and TSV; use a named report file on those versions.
 - `ambiguous_codon_rate` is a 0–1 ratio: ambiguous complete codons divided by
   evaluable complete codons (excluding codons with `-`, `?`, or `.`). A zero
   denominator reports 0. `gap_only_ids` also includes all-N/all-X sequences,

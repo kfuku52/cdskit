@@ -344,6 +344,7 @@ def validate_main(args):
         codontable=args.codontable,
         threads=getattr(args, "threads", 1),
     )
-    print_validate_summary(summary=summary)
     report_path = getattr(args, "report", "")
+    if report_path != "-":
+        print_validate_summary(summary=summary)
     write_validate_report(report_path=report_path, summary=summary)

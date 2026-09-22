@@ -1942,7 +1942,7 @@ p_validate.add_argument(
     type=str,
     required=False,
     action="store",
-    help='default=%(default)s: Optional report output path. If PATH ends with ".json", JSON is written; otherwise tab-separated TSV is written.',
+    help='default=%(default)s: Optional report output path. If PATH ends with ".json", JSON is written; otherwise tab-separated TSV is written. Use "-" for TSV-only stdout (suppresses the summary).',
 )
 p_validate.set_defaults(handler=command_validate)
 
