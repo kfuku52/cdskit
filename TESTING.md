@@ -2,7 +2,7 @@
 
 The committed `uv.lock` is shared by local checks and GitHub Actions. Install
 [uv](https://docs.astral.sh/uv/getting-started/installation/) and use the same
-entry point as CI:
+entry point as CI from the repository root (Python 3.10+ to launch it):
 
 ```bash
 python scripts/check.py quick
@@ -58,6 +58,59 @@ For repeated runs without synchronization, use the selected environment directly
 On Windows, its interpreter is `.venvs/core-3.12/Scripts/python.exe`.
 Use `-x` to stop on the first failure; pytest does not provide a built-in file
 watcher.
+
+## Choose checks by change
+
+Start with the affected test selection, then run the relevant complete profile
+before delivery. These are local checks; CI supplies its declared platform matrix.
+
+| Change | Minimum affected verification |
+| --- | --- |
+| One sequence command | `quick -- -k COMMAND -x`; then `core` for CLI subprocess coverage |
+| Shared codon semantics | `quick -- -k codon`; then `core`, since many commands share the helpers |
+| CLI dispatch, sequence/TSV I/O, output paths | `core` (includes command and output-safety regressions) |
+| Localization decisions or model loading | Relevant unit/integration tests plus `ml`; use `coverage` for changes spanning backends |
+| Python implementation | Add `quality` to the affected behavior checks |
+| Packaging or version | `build` for a fresh installed-wheel smoke check |
+| Docs or examples | Compare help and execute affected examples per [documentation maintenance](docs/documentation.md); no text-matching tests |
+| Check scripts or test organization | Exercise the affected profiles; `coverage` if test coverage changes |
+
+The table uses profile names as shorthand for `python scripts/check.py PROFILE`.
+`-k` matches test names and paths; inspect the collected selection and do not
+count zero selected tests or optional-dependency skips as successful coverage.
+For a particular test file, use the environment directly as above; the wrapper
+already supplies suite paths, so appending another path does not narrow them.
+
+## Setup cost, network access and outputs
+
+- Every profile first runs `uv sync --locked`. An uncached setup can download
+  Python and packages. `quick`/`core` need only core/test packages; `quality`,
+  `ml`, `coverage` and `all` use the full environment, including large ML packages.
+  Prefer an existing matching profile for repeated checks; do not rebuild or
+  upgrade another task's environment to obtain it.
+- `quick` excludes ML and subprocess tests, **not** the `slow` marker. For a
+  deliberately smaller iteration use `python scripts/check.py quick -- -m
+  "not ml and not subprocess and not slow"`; this is not the complete core suite.
+- The test suites use small fixtures and local/mocked models and services.
+  Published model downloads, ESM backbone downloads, accession retrieval against
+  live services and full pipeline training are separate integration/experimental
+  work. Check the relevant guide and required data/resources before running them;
+  do not launch the default `localize` prediction as a lightweight smoke test.
+- `all` calls the external vulnerability service through `pip-audit`. `build`
+  installs a fresh wheel and dependencies into a temporary environment, which
+  can also require network access. An unavailable service is a blocked check,
+  not a reason to suppress errors or relax the check.
+- Tests use pytest temporary directories; wheel outputs are temporary and removed
+  on completion. Coverage writes ignored `.coverage*` and `coverage.json` in the
+  repository root; do not run competing coverage jobs there. Compiler and tool
+  caches are also local generated files, not source changes.
+
+Success means exit status zero, the intended tests actually passing, and no
+unexpected skips. Core profiles can skip the optional PyYAML pipeline-config
+cases; use the full profile when that configuration changes. CUDA-only cases
+can skip on CPU hosts; report this separately from CPU ML coverage. For missing
+tools/packages, report the failed command and missing prerequisite. Static inspection or a reduced selection is not a pass
+for an unexecuted profile.
 
 ## Quality and compatibility
 

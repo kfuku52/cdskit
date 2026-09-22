@@ -6,6 +6,15 @@ replacement to standard error.
 
 ## Unreleased
 
+## 0.31.5 — 2026-09-22
+
+### Development
+
+- Add repository-specific agent guidance and a change-to-check map using the
+  existing locked validation profiles.
+- Clarify setup costs, network checks, generated outputs and scientific contract
+  references; add a reusable CLI example verification skill tested on `pad`.
+
 ## 0.31.4 — 2026-09-22
 
 ### Tests
