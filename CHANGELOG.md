@@ -6,6 +6,16 @@ replacement to standard error.
 
 ## Unreleased
 
+## 0.31.9 — 2026-09-22
+
+### Fixed
+
+- Match filesystem path resolution in output collision checks: resolve symlinks
+  before parent components and preserve literal `~` directory names. This prevents
+  input files from being overwritten through alternate path spellings and rejects
+  duplicate new output destinations before staging. Keep explicit home expansion
+  for localization model paths. Add CLI and transactional-output regressions.
+
 ## 0.31.8 — 2026-09-22
 
 ### Maintenance

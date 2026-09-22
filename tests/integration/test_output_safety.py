@@ -1,4 +1,5 @@
 import json
+import os
 
 import pytest
 
@@ -8,6 +9,38 @@ from cdskit.command_paths import COMMAND_PATHS
 
 def test_all_public_commands_declare_their_file_roles():
     assert set(COMMAND_PATHS) == set(subparsers.choices)
+
+
+@pytest.mark.parametrize("alias_is_input", [False, True])
+@pytest.mark.parametrize("alias_kind", ["literal_tilde", "symlink_parent"])
+def test_input_alias_cannot_bypass_collision_check(
+    tmp_path, monkeypatch, capsys, alias_is_input, alias_kind
+):
+    monkeypatch.chdir(tmp_path)
+    if alias_kind == "literal_tilde":
+        directory = tmp_path / "~"
+        directory.mkdir()
+        alias = "~/input.fa"
+    else:
+        if os.name == "nt":
+            pytest.skip("Windows resolves parent components before directory symlinks")
+        directory = tmp_path / "actual"
+        child = directory / "child"
+        child.mkdir(parents=True)
+        try:
+            (tmp_path / "link").symlink_to(child, target_is_directory=True)
+        except OSError:
+            pytest.skip("Directory symlinks are unavailable")
+        alias = "link/../input.fa"
+    source = directory / "input.fa"
+    contents = ">sequence\nATGAAA\n"
+    source.write_text(contents)
+    input_path, output_path = (alias, str(source))
+    if not alias_is_input:
+        input_path, output_path = output_path, input_path
+    assert main(["translate", "--seq_file", input_path, "--out_file", output_path]) == 1
+    assert "Input and output paths" in capsys.readouterr().err
+    assert source.read_text() == contents
 
 
 @pytest.mark.parametrize("command", ["gapjust", "intersection"])
@@ -163,6 +196,16 @@ def test_resolved_model_alias_is_protected_before_loading(
     )
     assert "Input and output paths" in capsys.readouterr().err
     assert model.read_bytes() == b"existing model"
+
+
+def test_expanded_model_path_is_protected(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    model = tmp_path / "model.json"
+    model.write_text("existing model")
+    assert main(["localize", "--model", "~/model.json", "--report", str(model)]) == 1
+    assert "Input and output paths" in capsys.readouterr().err
+    assert model.read_text() == "existing model"
 
 
 @pytest.mark.parametrize(

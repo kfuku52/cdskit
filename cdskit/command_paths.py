@@ -78,6 +78,9 @@ def command_paths(args: Namespace) -> tuple[list[str], list[str]]:
         model_path = Path(str(args.model)).expanduser()
         if not model_path.exists() and not model_path.is_symlink():
             inputs = [args.seqfile]
+        else:
+            # Model loading explicitly expands '~', unlike ordinary file I/O.
+            inputs = [args.seqfile, str(model_path)]
     outputs = [getattr(args, name, None) for name in spec.outputs]
     if args.command in ("gapjust", "intersection") and args.ingff is not None:
         outputs.append(args.outgff)

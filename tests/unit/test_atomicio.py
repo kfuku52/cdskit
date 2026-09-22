@@ -8,6 +8,46 @@ import pytest
 from cdskit import atomicio
 
 
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="Windows resolves parent components before directory symlinks",
+)
+def test_duplicate_new_outputs_through_symlink_parent_are_rejected(tmp_path):
+    directory = tmp_path / "actual"
+    child = directory / "child"
+    child.mkdir(parents=True)
+    link = tmp_path / "link"
+    try:
+        link.symlink_to(child, target_is_directory=True)
+    except OSError:
+        pytest.skip("Directory symlinks are unavailable")
+    output = directory / "new.txt"
+    with (
+        pytest.raises(ValueError, match="Output paths should be different"),
+        atomicio.atomic_output_paths([output, link / ".." / "new.txt"]),
+    ):
+        pytest.fail("Aliased outputs must be rejected before staging")
+    assert not output.exists()
+    assert list(directory.iterdir()) == [child]
+
+
+def test_literal_tilde_does_not_collide_with_home(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    literal = tmp_path / "~"
+    literal.mkdir()
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    source = home / "input.txt"
+    source.write_text("source")
+    atomicio.validate_distinct_paths(inputs=[source], outputs=["~/input.txt"])
+    with atomicio.atomic_text_writer("~/input.txt") as handle:
+        handle.write("output")
+    assert source.read_text() == "source"
+    assert (literal / "input.txt").read_text() == "output"
+
+
 @pytest.mark.parametrize("error_type", [KeyboardInterrupt])
 @pytest.mark.parametrize("phase", ["backup", "install"])
 @pytest.mark.parametrize("after_replace", [False, True])

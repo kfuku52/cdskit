@@ -20,9 +20,9 @@ _ACTIVE_STAGED_PATHS: set[str] = set()
 def normalized_path(path: Pathish) -> str:
     """Return a normalized absolute path suitable for collision checks."""
 
-    return os.path.normcase(
-        os.path.realpath(os.path.abspath(os.path.expanduser(os.fspath(path))))
-    )
+    # Match open()/Path exactly: a quoted '~' is a literal directory, and '..'
+    # must be resolved after preceding symlinks, not collapsed by abspath first.
+    return os.path.normcase(os.path.realpath(os.fspath(path)))
 
 
 def _same_path(first: str, second: str) -> bool:
