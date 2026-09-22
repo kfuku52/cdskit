@@ -6,6 +6,14 @@ replacement to standard error.
 
 ## Unreleased
 
+## 0.31.8 — 2026-09-22
+
+### Maintenance
+
+- Use a standard context manager for TSV output cleanup, preserving atomic
+  file replacement and leaving standard output open. Add regression coverage
+  for interrupted row generation, destination preservation and stdout ownership.
+
 ## 0.31.7 — 2026-09-22
 
 ### Fixed

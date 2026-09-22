@@ -5,6 +5,7 @@ import json
 import os
 import sys
 from collections.abc import Iterable, Mapping
+from contextlib import nullcontext
 from typing import Any, TypeAlias
 
 from cdskit.atomicio import atomic_text_writer
@@ -101,17 +102,16 @@ def write_tsv(
         path=path,
         required_columns=None,
     )
-    if path == "-":
-        out_context = None
-        out = sys.stdout
-    else:
-        out_context = atomic_text_writer(
+    out_context = (
+        nullcontext(sys.stdout)
+        if path == "-"
+        else atomic_text_writer(
             path,
             encoding=TSV_ENCODING,
             newline="",
         )
-        out = out_context.__enter__()
-    try:
+    )
+    with out_context as out:
         writer = csv.DictWriter(
             out,
             fieldnames=fieldnames,
@@ -140,9 +140,6 @@ def write_tsv(
                     )
                 )
             writer.writerow({name: json_cell(row.get(name, "")) for name in fieldnames})
-    finally:
-        if out_context is not None:
-            out_context.__exit__(*sys.exc_info())
 
 
 def write_sectioned_tsv(

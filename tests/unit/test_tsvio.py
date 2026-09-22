@@ -1,4 +1,5 @@
 import csv
+import io
 
 import pytest
 
@@ -68,6 +69,51 @@ def test_write_tsv_rejects_non_mapping_rows(tmp_path):
             rows=[["A", "MAAA"]],
             fieldnames=["accession", "sequence"],
         )
+
+
+@pytest.mark.parametrize("existing", [False, True])
+@pytest.mark.parametrize("error_type", [RuntimeError, KeyboardInterrupt])
+def test_write_tsv_preserves_destination_when_rows_fail(tmp_path, existing, error_type):
+    path = tmp_path / "report.tsv"
+    if existing:
+        path.write_bytes(b"original report\n")
+    failure = error_type("row generation failed")
+
+    def rows():
+        yield {"accession": "A"}
+        raise failure
+
+    with pytest.raises(error_type) as exc_info:
+        write_tsv(path, rows(), ["accession"])
+
+    assert exc_info.value is failure
+    if existing:
+        assert path.read_bytes() == b"original report\n"
+    else:
+        assert not path.exists()
+    assert list(tmp_path.iterdir()) == ([path] if existing else [])
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_write_tsv_leaves_stdout_open(monkeypatch, fail):
+    output = io.StringIO()
+    monkeypatch.setattr("sys.stdout", output)
+    failure = RuntimeError("row generation failed")
+
+    def rows():
+        yield {"accession": "α", "kept": True}
+        if fail:
+            raise failure
+
+    if fail:
+        with pytest.raises(RuntimeError) as exc_info:
+            write_tsv("-", rows(), ["accession", "kept"])
+        assert exc_info.value is failure
+    else:
+        write_tsv("-", rows(), ["accession", "kept"])
+
+    assert not output.closed
+    assert output.getvalue() == "accession\tkept\nα\tyes\n"
 
 
 def test_write_sectioned_tsv_adds_schema_version_and_section(tmp_path):
