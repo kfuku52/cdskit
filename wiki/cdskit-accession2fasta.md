@@ -16,11 +16,15 @@ E-utilities. Put one accession on each line of the input text file.
   first CDS is exported, not every CDS in a genomic record.
 - `--seq_name_format STR` selects underscore-separated metadata fields for
   output IDs. Use `--list_seq_name_keys yes` to inspect available fields.
+- `--strict yes|no` defaults to `yes`: missing, duplicate, or unexpected retrieved
+  accessions stop the command before output is written. `no` accepts the returned
+  records with a warning. Repeated requests and versionless accession aliases
+  are supported. This check precedes the optional CDS extraction filter.
 - `--out_file -` writes FASTA to standard output; this is the default.
 
-Retrieval depends on NCBI availability. The command reports accessions that
-could not be retrieved, so check standard error before treating the output as
-complete.
+Retrieval depends on NCBI availability. In strict mode, a retrieval mismatch
+returns a nonzero exit status and preserves an existing output file. Missing CDS
+features are still reported and omitted when `--extract_cds yes` is selected.
 
 ## Example
 

@@ -1,3 +1,16 @@
+from cdskit.localize_probabilities import (
+    LOCALIZATION_CLASSES as LOCALIZATION_CLASSES,
+    validate_probability_values,
+    softmax as softmax,
+    _sanitize_probability as _sanitize_probability,
+    normalize_class_probabilities as normalize_class_probabilities,
+    normalize_localization_probability_matrix as normalize_localization_probability_matrix,
+    normalize_organism_group as normalize_organism_group,
+    apply_organism_group_constraints as apply_organism_group_constraints,
+    apply_temperature_scaling as apply_temperature_scaling,
+    _predict_class_with_thresholds as _predict_class_with_thresholds,
+    postprocess_localization_probabilities as postprocess_localization_probabilities,
+)
 from contextlib import contextmanager
 from typing import Any
 from importlib.metadata import PackageNotFoundError, version as package_version
@@ -33,7 +46,6 @@ from cdskit.localize_decision import (
     single_decision,
 )
 
-LOCALIZATION_CLASSES = ("noTP", "SP", "mTP", "cTP", "lTP")
 TP_STAGE_CLASSES = ("SP", "mTP", "cTP", "lTP")
 CTP_LTP_STAGE_CLASSES = ("cTP", "lTP")
 SUBCELLULAR_LOCALIZATION_CLASSES = (
@@ -251,159 +263,6 @@ PEROX_FEATURE_NAMES = (
         for aa in PEROX_AA_ORDER
     ]
 )
-
-
-def softmax(logits):
-    logits = np.asarray(logits, dtype=np.float64)
-    if logits.size == 0:
-        return logits
-    max_logit = float(np.max(logits))
-    shifted = logits - max_logit
-    exp_vals = np.exp(shifted)
-    denom = float(np.sum(exp_vals))
-    if denom <= 0:
-        return np.zeros_like(exp_vals)
-    return exp_vals / denom
-
-
-def _sanitize_probability(value):
-    try:
-        out = float(value)
-    except Exception:
-        return 0.0
-    if (not np.isfinite(out)) or (out < 0.0):
-        return 0.0
-    return out
-
-
-def normalize_class_probabilities(class_probs):
-    out_probs = {class_name: 0.0 for class_name in LOCALIZATION_CLASSES}
-    if isinstance(class_probs, dict):
-        for class_name in LOCALIZATION_CLASSES:
-            out_probs[class_name] = _sanitize_probability(
-                class_probs.get(class_name, 0.0)
-            )
-    total = float(sum(out_probs.values()))
-    if total <= 0.0:
-        out_probs["noTP"] = 1.0
-        return out_probs
-    for class_name in LOCALIZATION_CLASSES:
-        out_probs[class_name] = out_probs[class_name] / total
-    return out_probs
-
-
-def normalize_localization_probability_matrix(probability_matrix, organism_group=""):
-    """Normalize localization rows with the same fallbacks as scalar inference."""
-    probabilities = np.asarray(probability_matrix, dtype=np.float64).copy()
-    if probabilities.ndim != 2 or probabilities.shape[1] != len(LOCALIZATION_CLASSES):
-        raise ValueError(
-            "Localization probability matrix should have {} columns.".format(
-                len(LOCALIZATION_CLASSES)
-            )
-        )
-    probabilities = np.clip(
-        np.nan_to_num(probabilities, nan=0.0, posinf=0.0, neginf=0.0),
-        a_min=0.0,
-        a_max=None,
-    )
-    if normalize_organism_group(organism_group) == "non_plant":
-        probabilities[:, LOCALIZATION_CLASSES.index("cTP")] = 0.0
-        probabilities[:, LOCALIZATION_CLASSES.index("lTP")] = 0.0
-    totals = np.sum(probabilities, axis=1, keepdims=True)
-    nonempty = totals[:, 0] > 0.0
-    probabilities[nonempty] /= totals[nonempty]
-    probabilities[~nonempty, :] = 0.0
-    probabilities[~nonempty, LOCALIZATION_CLASSES.index("noTP")] = 1.0
-    return probabilities
-
-
-def normalize_organism_group(value):
-    txt = str(value or "").strip().lower()
-    txt = re.sub(r"[\s\-]+", "_", txt)
-    mapping = {
-        "": "",
-        "unknown": "",
-        "auto": "",
-        "plant": "plant",
-        "plants": "plant",
-        "viridiplantae": "plant",
-        "nonplant": "non_plant",
-        "non_plant": "non_plant",
-        "non_plants": "non_plant",
-        "other": "non_plant",
-        "metazoa": "non_plant",
-        "fungi": "non_plant",
-        "animal": "non_plant",
-        "animals": "non_plant",
-    }
-    if txt in mapping:
-        return mapping[txt]
-    raise ValueError("Unsupported organism_group: {}".format(value))
-
-
-def apply_organism_group_constraints(class_probs, organism_group=""):
-    group = normalize_organism_group(organism_group)
-    probs = normalize_class_probabilities(class_probs=class_probs)
-    if group == "non_plant":
-        probs["cTP"] = 0.0
-        probs["lTP"] = 0.0
-        probs = normalize_class_probabilities(class_probs=probs)
-    return probs
-
-
-def apply_temperature_scaling(class_probs, temperature):
-    probs = normalize_class_probabilities(class_probs=class_probs)
-    try:
-        temp = float(temperature)
-    except Exception:
-        temp = 1.0
-    if (not np.isfinite(temp)) or (temp <= 0.0) or (abs(temp - 1.0) < 1.0e-12):
-        return probs
-    vec = np.asarray(
-        [probs[class_name] for class_name in LOCALIZATION_CLASSES], dtype=np.float64
-    )
-    vec = np.clip(vec, 1.0e-12, 1.0)
-    logits = np.log(vec) / temp
-    scaled = softmax(logits)
-    return {
-        LOCALIZATION_CLASSES[i]: float(scaled[i])
-        for i in range(len(LOCALIZATION_CLASSES))
-    }
-
-
-def _predict_class_with_thresholds(class_probs, class_thresholds):
-    probs = normalize_class_probabilities(class_probs=class_probs)
-    scores = list()
-    for class_name in LOCALIZATION_CLASSES:
-        threshold = 1.0
-        if isinstance(class_thresholds, dict):
-            threshold = class_thresholds.get(class_name, 1.0)
-        try:
-            threshold = float(threshold)
-        except Exception:
-            threshold = 1.0
-        if (not np.isfinite(threshold)) or (threshold <= 0.0):
-            threshold = 1.0
-        scores.append(float(probs[class_name]) / threshold)
-    pred_idx = int(np.argmax(np.asarray(scores, dtype=np.float64)))
-    return LOCALIZATION_CLASSES[pred_idx], probs
-
-
-def postprocess_localization_probabilities(class_probs, localization_model):
-    probs = normalize_class_probabilities(class_probs=class_probs)
-    calibration = localization_model.get("probability_calibration", {})
-    if isinstance(calibration, dict):
-        method = str(calibration.get("method", "")).strip().lower()
-        if method == "temperature":
-            probs = apply_temperature_scaling(
-                class_probs=probs,
-                temperature=calibration.get("temperature", 1.0),
-            )
-    pred_class, probs = _predict_class_with_thresholds(
-        class_probs=probs,
-        class_thresholds=localization_model.get("class_thresholds", None),
-    )
-    return pred_class, probs
 
 
 def fraction_in_set(seq, chars):
@@ -900,6 +759,7 @@ def predict_nearest_centroid(feature_vec, model):
     sq_dist = np.sum(diff * diff, axis=1)
     logits = (-0.5 * sq_dist) + log_priors
     probs = softmax(logits)
+    validate_scores(probs.reshape(1, -1), class_order, 1)
     pred_index = int(np.argmax(probs))
     pred_label = class_order[pred_index]
     out_probs = {class_order[i]: float(probs[i]) for i in range(len(class_order))}
@@ -1222,17 +1082,8 @@ def predict_multilabel_localization(aa_seq, model, kingdom=""):
 
 
 def _clamp_probability(value):
-    try:
-        out = float(value)
-    except Exception:
-        return 0.0
-    if not np.isfinite(out):
-        return 0.0
-    if out < 0.0:
-        return 0.0
-    if out > 1.0:
-        return 1.0
-    return out
+    # Compatibility name; invalid scores are rejected rather than clamped.
+    return float(validate_probability_values([value])[0])
 
 
 def _perox_feature_vector_for_model(
@@ -1375,16 +1226,8 @@ def predict_perox_batch(
                 )
                 return np.full((num_rows,), value, dtype=np.float64)
             raise ValueError("Could not find positive class in perox_model classifier.")
-        return np.clip(
-            np.nan_to_num(
-                proba[:, int(positive_col)],
-                nan=0.0,
-                posinf=0.0,
-                neginf=0.0,
-            ),
-            0.0,
-            1.0,
-        )
+        validate_scores(proba, classes, num_rows)
+        return proba[:, int(positive_col)]
 
     if aa_sequences is not None and feature_schema_changed():
         feature_matrix = np.asarray(
@@ -1407,6 +1250,7 @@ def predict_perox_batch(
     probabilities = np.exp(logits)
     probabilities /= np.sum(probabilities, axis=1, keepdims=True)
     class_order = list(perox_model["class_order"])
+    validate_scores(probabilities, class_order, num_rows)
     yes_col = class_order.index("yes") if "yes" in class_order else -1
     return (
         probabilities[:, yes_col]

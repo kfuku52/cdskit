@@ -6,6 +6,29 @@ replacement to standard error.
 
 ## Unreleased
 
+## 0.31.3 — 2026-09-22
+
+### Fixed
+
+- Reject invalid numerical localization and peroxisome scores instead of silently
+  converting failed calculations into successful predictions.
+- Reject multiple outputs sharing stdout and multiple inputs sharing stdin.
+- Validate accession retrieval IDs regardless of response count; fail before
+  writing on missing, duplicate or unexpected records. `--strict no` explicitly
+  retains partial-result behavior with a warning.
+- Reconcile intersection GFF region directives with retained sequence bounds.
+- Preserve existing POSIX output permissions during atomic replacement; keep
+  newly created files private.
+- Reject stale or malformed OOF cache arrays before resumed evaluation.
+
+### Maintenance
+
+- Separate localization probability handling, OOF artifact persistence and stack
+  sequence features while preserving existing helper import locations.
+- Extend platform CI selection to localization I/O and OOF cache changes.
+- Add numerical-failure, stream-collision, retrieval, GFF, permission, cache and
+  trained-model round-trip regression coverage.
+
 ## 0.31.2 — 2026-09-17
 
 ### Tests

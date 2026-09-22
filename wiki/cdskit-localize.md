@@ -265,6 +265,13 @@ Published artifacts retain their historical defaults; new staged pipeline models
 default to safe inference with `ensure_one_label=False`. Scores remain unverified
 as calibrated biological probabilities.
 
+## Invalid numerical predictions
+
+Every localization backend rejects non-finite or out-of-range probability
+scores. Numerical failures return an error instead of a confident `noTP` result;
+an existing report file remains unchanged. Valid class restrictions retain their
+established behavior, and the model file format is unchanged.
+
 ## References
 
 Cite the method or resource actually used, in addition to the CDSKIT version and

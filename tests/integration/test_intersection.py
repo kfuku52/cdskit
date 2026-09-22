@@ -723,3 +723,39 @@ chr3\tsource\tgene\t1\t12\t.\t+\t.\tID=gene2
         out2 = list(Bio.SeqIO.parse(str(output2_path), "fasta"))
         assert [r.id for r in out1] == ["protA"]
         assert [r.id for r in out2] == ["protA"]
+
+
+def test_intersection_reconciles_regions_with_output_fasta(tmp_path):
+    from cdskit.cli import main
+    from cdskit.util import read_gff
+    from cdskit.gapjust_gff import validate_gff_bounds
+
+    source = tmp_path / "input.fa"
+    source.write_text(">s\nATGAAA\n>empty\n")
+    gff = tmp_path / "input.gff"
+    gff.write_text(
+        "##gff-version 3\n##sequence-region s 1 99\n"
+        "##sequence-region removed 1 12\n##sequence-region empty 1 3\n"
+        "s\t.\tgene\t1\t99\t.\t+\t.\tID=g\n"
+        "empty\t.\tgene\t1\t3\t.\t+\t.\tID=e\n"
+    )
+    output = tmp_path / "output.gff"
+    assert (
+        main(
+            [
+                "intersection",
+                "--seq_file",
+                str(source),
+                "--in_gff",
+                str(gff),
+                "--out_file",
+                str(tmp_path / "output.fa"),
+                "--out_gff",
+                str(output),
+            ]
+        )
+        == 0
+    )
+    result = read_gff(output)
+    assert result["header"] == ["##gff-version 3", "##sequence-region s 1 6"]
+    validate_gff_bounds(result, {"s": 6, "empty": 0})

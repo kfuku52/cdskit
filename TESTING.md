@@ -82,7 +82,8 @@ the script does not install or resolve a second set of packages.
 
 GitHub Actions always runs the Linux Python boundaries and full CPU ML/quality/
 package validation. Changes to core I/O, CLI, dependencies, tests or workflow
-infrastructure also run macOS and Windows coverage. Pure ML implementation,
+infrastructure also run macOS and Windows coverage. Localization download, model I/O, pipeline and OOF-cache changes also require
+platform coverage. Pure ML computation changes,
 tests restricted to `tests/ml`, or
 documentation paths alone do not require those platform jobs. A version bump in
 `cdskit/__init__.py` does trigger core/platform coverage, including when bundled

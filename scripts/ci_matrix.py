@@ -10,7 +10,20 @@ import subprocess
 
 
 def platform_coverage_required(paths: list[str]) -> bool:
+    platform_io = {
+        "cdskit/localize_models.py",
+        "cdskit/localize_runtime.py",
+        "cdskit/localize_pipeline.py",
+        "cdskit/localize_pipeline_config.py",
+        "cdskit/localize_frozen_evaluation.py",
+        "cdskit/localize_model.py",
+        "cdskit/localize.py",
+        "cdskit/localize_learn.py",
+        "cdskit/targetp_oof_cache.py",
+    }
     for path in paths:
+        if path in platform_io:
+            return True
         if path.startswith("tests/ml/"):
             continue
         if path in {"pyproject.toml", "uv.lock", "MANIFEST.in"} or path.startswith(

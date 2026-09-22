@@ -11,6 +11,7 @@ import json
 
 import numpy as np
 
+from cdskit.localize_probabilities import validate_scores as validate_scores
 from cdskit.localize_runtime import current_prediction_runtime
 
 
@@ -49,23 +50,6 @@ def taxonomy_allowed(labels):
     taxon = current_prediction_runtime().taxonomy_id
     forbidden = {"chloroplast"} if taxon == "9606" else set()
     return np.asarray([name not in forbidden for name in labels], dtype=bool)
-
-
-def validate_scores(probability, labels, rows=None):
-    probability = np.asarray(probability)
-    if (
-        probability.ndim != 2
-        or probability.shape[1] != len(labels)
-        or (rows is not None and probability.shape[0] != rows)
-    ):
-        raise ValueError(
-            "Localization score dimensions differ from sequences or labels."
-        )
-    if not np.isfinite(probability).all() or np.any(
-        (probability < 0) | (probability > 1)
-    ):
-        raise ValueError("Localization scores must be finite values in [0, 1].")
-    return probability
 
 
 def threshold_decisions(probability, thresholds, labels, ensure_one_label=True):

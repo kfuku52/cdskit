@@ -96,6 +96,9 @@ cdskit pad --seq_file input.fasta | cdskit mask | cdskit translate | \
   cdskit aggregate --expression ':.*' > output.faa
 ```
 
+Only one output per command may use standard output. When writing a report to
+`--report -`, send the sequence output to a file.
+
 Run `cdskit COMMAND --help` for options and defaults. Commands with parallel work
 expose `--threads`: the default is `1`, and `0` detects CPUs up to the configured
 safety limit (64 by default). Small workloads can still run serially. See

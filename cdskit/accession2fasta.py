@@ -2,6 +2,7 @@ from Bio import Entrez
 from Bio import SeqIO
 
 import sys
+from collections import Counter
 import time
 from functools import partial
 
@@ -22,19 +23,40 @@ def accession_batch_ranges(num_accession, batch_size):
         yield start, end
 
 
+def record_accession_aliases(record):
+    head = str(record.id).strip().split()[0]
+    aliases = set()
+    for token in [head, *head.split("|"), *record.annotations.get("accessions", [])]:
+        token = str(token)
+        if not token:
+            continue
+        aliases.add(token)
+        # Unversioned requests may match a versioned record, never the reverse.
+        base, dot, version = token.rpartition(".")
+        if dot and version.isdigit():
+            aliases.add(base)
+    return aliases
+
+
+def accession_retrieval_issues(accessions, seq_records):
+    requested = set(accessions)
+    matched: Counter[str] = Counter()
+    unexpected = []
+    for record in seq_records:
+        matches = requested.intersection(record_accession_aliases(record))
+        matched.update(matches)
+        if not matches:
+            unexpected.append(str(record.id))
+    return {
+        "missing": sorted(requested - matched.keys()),
+        "duplicate": sorted(key for key, count in matched.items() if count > 1),
+        "unexpected": sorted(unexpected),
+    }
+
+
 def find_missing_accessions(accessions, seq_records):
-    matched_accessions = set()
-    for seq_record in seq_records:
-        record_head = str(seq_record.id).strip().split()[0]
-        for token in [record_head, *record_head.split("|")]:
-            matched_accessions.add(token)
-            prefix = token
-            while "." in prefix:
-                prefix = prefix.rsplit(".", 1)[0]
-                matched_accessions.add(prefix)
-    return [
-        accession for accession in accessions if accession not in matched_accessions
-    ]
+    missing = set(accession_retrieval_issues(accessions, seq_records)["missing"])
+    return [accession for accession in accessions if accession in missing]
 
 
 def accession_matches_record_id(accession, record_id):
@@ -64,7 +86,7 @@ def prepare_accession_record(
     return record
 
 
-def accession2seq_record(accessions, database, batch_size=1000):
+def accession2seq_record(accessions, database, batch_size=1000, strict=True):
     num_accession = len(accessions)
     start_time = time.time()
     seq_records = []
@@ -89,11 +111,16 @@ def accession2seq_record(accessions, database, batch_size=1000):
                 close_fn()
     sys.stderr.write("Number of input accessions: {:,}\n".format(num_accession))
     sys.stderr.write("Number of retrieved records: {:,}\n".format(len(seq_records)))
-    if num_accession != len(seq_records):
-        missing_ids = find_missing_accessions(accessions, seq_records)
-        sys.stderr.write(
-            "Accessions failed to retrieve: {}\n".format(" ".join(missing_ids))
+    issues = accession_retrieval_issues(accessions, seq_records)
+    if any(issues.values()):
+        message = "Accession retrieval mismatch: " + "; ".join(
+            f"{kind}={','.join(ids)}" for kind, ids in issues.items() if ids
         )
+        if strict:
+            raise ValueError(
+                message + ". Use --strict no only to accept incomplete retrieval."
+            )
+        sys.stderr.write("WARNING: " + message + "\n")
     elapsed_time = int(time.time() - start_time)
     sys.stderr.write(
         "Elapsed_time for sequence record retrieval: {:,} [sec]\n".format(elapsed_time)
@@ -114,7 +141,9 @@ def accession2fasta_main(args):
         # Keep deterministic key listing order in stderr.
         threads = 1
     accessions = read_item_per_line_file(file=accession_file)
-    records = accession2seq_record(accessions, args.ncbi_database)
+    records = accession2seq_record(
+        accessions, args.ncbi_database, strict=getattr(args, "strict", True)
+    )
     stop_if_not_dna(records=records, label="retrieved records")
     worker = partial(
         prepare_accession_record,

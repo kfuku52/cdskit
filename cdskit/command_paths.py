@@ -96,6 +96,10 @@ def command_paths(args: Namespace) -> tuple[list[str], list[str]]:
                 build_degeneracy_output_path(prefix, fold, args.outseqformat)
                 for fold in sorted(set(args.fold))
             )
+    if sum(path == "-" for path in outputs) > 1:
+        raise ValueError("Only one output may use standard output.")
+    if sum(path == "-" for path in inputs) > 1:
+        raise ValueError("Only one input may use standard input.")
     return (
         [str(path) for path in inputs if path not in (None, "", "-")],
         [str(path) for path in outputs if path not in (None, "", "-")],

@@ -31,3 +31,14 @@ def test_scheduled_and_manual_runs_never_lose_platform_coverage():
     for event in ["schedule", "workflow_dispatch"]:
         assert len(core_matrix(event, [])) == 9
     assert len(core_matrix("pull_request", ["uv.lock"])) == 4
+
+
+def test_localization_io_changes_keep_platform_coverage():
+    for path in (
+        "cdskit/localize_models.py",
+        "cdskit/localize_pipeline.py",
+        "cdskit/localize_model.py",
+        "cdskit/targetp_oof_cache.py",
+    ):
+        assert len(core_matrix("push", [path])) == 9
+        assert len(core_matrix("pull_request", [path])) == 4

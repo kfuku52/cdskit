@@ -99,6 +99,16 @@ def validate_output_paths(paths: Iterable[Pathish]) -> None:
                 break
 
 
+def _preserve_output_mode(temporary: Path, destination: Path) -> None:
+    """Keep existing POSIX permissions; new outputs retain private mkstemp mode.
+
+    Ownership and ACLs are not copied. A replaced symlink uses its target's mode,
+    without changing the target. Dangling symlinks are treated as new outputs.
+    """
+    if os.name != "nt" and destination.exists():
+        temporary.chmod(stat.S_IMODE(destination.stat().st_mode))
+
+
 @contextmanager
 def atomic_output_path(path: Pathish) -> Iterator[str]:
     """Yield a same-directory temporary path and atomically replace *path*."""
@@ -123,6 +133,7 @@ def atomic_output_path(path: Pathish) -> Iterator[str]:
         with temporary.open("rb+") as handle:
             os.fsync(handle.fileno())
         validate_output_paths([destination])
+        _preserve_output_mode(temporary, destination)
         os.replace(temporary, destination)
     finally:
         if temporary.exists():
@@ -162,6 +173,10 @@ def atomic_output_paths(paths: Iterable[Pathish]) -> Iterator[list[str]]:
         committed = 0
         try:
             validate_output_paths(destinations)
+            for temporary_path, destination in zip(
+                temporary_paths, destinations, strict=True
+            ):
+                _preserve_output_mode(temporary_path, destination)
             for destination in destinations:
                 if destination.exists() or destination.is_symlink():
                     fd, backup_name = tempfile.mkstemp(

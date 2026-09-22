@@ -161,3 +161,11 @@ default crossover is 16,000,000 input residues, configurable with
 - Boolean options accept `yes/no`, `true/false`, `on/off`, and `1/0`.
 - Legacy model compatibility and offline cache setup are documented in
   [the prediction guide](https://github.com/kfuku52/cdskit/wiki/cdskit-localize#model-safety-and-offline-use).
+
+## Output file permissions
+
+Atomic replacement preserves an existing file's POSIX permission bits. Newly
+created outputs are private (`0600`); explicitly change their permissions when
+sharing them. File ownership and ACLs are not copied. Windows retains its native
+permission behavior. Multiple outputs are staged before replacement and rolled
+back if a commit fails.

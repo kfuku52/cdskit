@@ -266,6 +266,13 @@ p_accession2fasta.add_argument(
     action="store",
     help="default=%(default)s: Listing the keys (and values) available for --seq_name_format.",
 )
+p_accession2fasta.add_argument(
+    "--strict",
+    metavar="yes|no",
+    default=True,
+    type=strtobool,
+    help="default=%(default)s: Reject missing, duplicate or unexpected retrieved accessions before writing. Use no to accept partial results with a warning.",
+)
 p_accession2fasta.set_defaults(handler=command_accession2fasta)
 
 

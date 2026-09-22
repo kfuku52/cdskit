@@ -145,7 +145,7 @@ class TestAccession2FastaMain:
         monkeypatch.setattr(
             accession_module,
             "accession2seq_record",
-            lambda accessions, database: make_records(),
+            lambda accessions, database, **kwargs: make_records(),
         )
 
         args_single = mock_args(
@@ -197,3 +197,63 @@ class TestAccession2FastaMain:
         with pytest.raises(ValueError) as exc_info:
             accession2fasta_main(args)
         assert "--accession_file is required" in str(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    "returned", [["ACC1.1"], ["ACC1.1", "ACC1.1"], ["ACC1.1", "OTHER.1"]]
+)
+@pytest.mark.parametrize("strict", [True, False])
+def test_incomplete_retrieval_is_explicit_and_preserves_output(
+    tmp_path, monkeypatch, capsys, returned, strict
+):
+    from io import StringIO
+    from Bio import SeqIO
+    from cdskit.cli import main
+
+    source, output = tmp_path / "ids.txt", tmp_path / "output.fa"
+    source.write_text("ACC1\nACC2\n")
+    output.write_text("original")
+    records = [
+        SeqRecord(
+            Seq("ATGAAA"),
+            id=acc,
+            annotations={"molecule_type": "DNA", "accessions": [acc.split(".")[0]]},
+        )
+        for acc in returned
+    ]
+    response = StringIO()
+    SeqIO.write(records, response, "genbank")
+    monkeypatch.setattr(
+        accession_module.Entrez,
+        "efetch",
+        lambda **kwargs: StringIO(response.getvalue()),
+    )
+    result = main(
+        [
+            "accession2fasta",
+            "--accession_file",
+            str(source),
+            "--out_file",
+            str(output),
+            "--extract_cds",
+            "no",
+            "--strict",
+            "yes" if strict else "no",
+        ]
+    )
+    assert result == (1 if strict else 0)
+    assert "missing=ACC2" in capsys.readouterr().err
+    if strict:
+        assert output.read_text() == "original"
+    else:
+        assert len(list(SeqIO.parse(output, "fasta"))) == len(returned)
+
+
+def test_accession_aliases_keep_explicit_versions_and_request_duplicates():
+    from cdskit.accession2fasta import accession_retrieval_issues
+
+    record = SeqRecord(Seq("ATG"), id="gi|1|ref|ACC1.2|")
+    assert not any(
+        accession_retrieval_issues(["ACC1", "ACC1", "ACC1.2"], [record]).values()
+    )
+    assert accession_retrieval_issues(["ACC1.1"], [record])["missing"] == ["ACC1.1"]

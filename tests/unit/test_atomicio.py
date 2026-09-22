@@ -135,3 +135,44 @@ def test_input_directory_case_alias_cannot_contain_an_output(tmp_path):
     with pytest.raises(ValueError, match="Input and output paths"):
         atomicio.validate_distinct_paths(inputs=[source], outputs=[alias / "new"])
     assert list(source.iterdir()) == []
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+@pytest.mark.parametrize("multiple", [False, True])
+def test_atomic_replacement_preserves_existing_mode(tmp_path, multiple):
+    destination = tmp_path / "shared.txt"
+    destination.write_text("old")
+    destination.chmod(0o640)
+    if multiple:
+        with atomicio.atomic_output_paths([destination]) as paths:
+            Path(paths[0]).write_text("replacement")
+    else:
+        with atomicio.atomic_text_writer(destination) as output:
+            output.write("replacement")
+    assert destination.read_text() == "replacement"
+    assert destination.stat().st_mode & 0o777 == 0o640
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+def test_atomic_permission_failure_preserves_outputs(tmp_path, monkeypatch):
+    first, second = tmp_path / "a", tmp_path / "b"
+    for path in (first, second):
+        path.write_text("old")
+        path.chmod(0o644)
+    chmod = Path.chmod
+
+    def fail_second(path, mode, *args, **kwargs):
+        if path.name.startswith(".b."):
+            raise OSError("permission update failed")
+        return chmod(path, mode, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "chmod", fail_second)
+    with pytest.raises(OSError, match="permission update failed"):
+        with atomicio.atomic_output_paths([first, second]) as paths:
+            for path in paths:
+                Path(path).write_text("new")
+    assert all(
+        path.read_text() == "old" and path.stat().st_mode & 0o777 == 0o644
+        for path in (first, second)
+    )
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["a", "b"]

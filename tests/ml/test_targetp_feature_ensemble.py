@@ -250,3 +250,43 @@ def test_build_targetp_feature_blend_runtime_model_extracts_source_base():
         == "targetp_feature_ensemble_v1"
     )
     assert model["localization_model"]["base_models"][1]["model_type"] == "esm_head_v1"
+
+
+def test_trained_feature_blend_roundtrip_preserves_scalar_and_batch_predictions(
+    tmp_path,
+):
+    from cdskit.localize_batch import predict_localization_batch
+    from cdskit.localize_model import save_localize_model, load_localize_model
+    from cdskit.targetp_pair_blend import build_targetp_pair_blend_runtime_model
+
+    training = tmp_path / "training.tsv"
+    rows = _write_targetp_fixture(training)
+    models = [
+        fit_targetp_feature_runtime_model(
+            str(training), model_kind=kind, n_estimators=3, random_state=3
+        )
+        for kind in ("extra_trees", "binary_extra_trees")
+    ]
+    model = build_targetp_pair_blend_runtime_model(
+        models[0], models[1], alpha_by_class=0.35
+    )
+    sequences = [row["sequence"] for row in rows[:5]]
+    groups = [row["organism_group"] for row in rows[:5]]
+    before = predict_localization_batch(sequences, model, groups)
+    path = tmp_path / "trained.pt"
+    save_localize_model(model, str(path))
+    # These locally trained sklearn estimators intentionally use legacy pickle.
+    with pytest.warns(RuntimeWarning, match="trusted legacy"):
+        loaded = load_localize_model(str(path), allow_unsafe=True)
+    after = predict_localization_batch(sequences, loaded, groups)
+    for seq, group, original, restored in zip(
+        sequences, groups, before, after, strict=True
+    ):
+        scalar = predict_localization_and_peroxisome(seq, loaded, group)
+        for actual in (restored, scalar):
+            assert actual["predicted_class"] == original["predicted_class"]
+            np.testing.assert_allclose(
+                list(actual["class_probabilities"].values()),
+                list(original["class_probabilities"].values()),
+                atol=1e-12,
+            )

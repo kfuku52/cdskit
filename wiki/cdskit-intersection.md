@@ -121,6 +121,14 @@ seq2	cdskit	CDS	1	3	.	+	0	ID=gene2-mRNA1-cds1;Parent=gene2-mRNA1
 seq2	cdskit	CDS	5	10	.	+	2	ID=gene2-mRNA1-cds2;Parent=gene2-mRNA1
 ```
 
+## GFF region directives
+
+Output `##sequence-region` directives are filtered to the retained FASTA records.
+With coordinate repair enabled, directive intervals are intersected with the
+sequence bounds, empty intervals are omitted, and both directives and features
+are checked against the output sequences before writing. With repair disabled,
+bounds of retained directives are preserved.
+
 ## Citation
 
 No separate method paper is designated for this utility. Report the CDSKIT

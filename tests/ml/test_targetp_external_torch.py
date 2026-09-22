@@ -179,3 +179,60 @@ def test_fit_external_augmented_torch_runtime_model_requires_all_calibration_cla
             calibration_fraction=0.5,
             device="cpu",
         )
+
+
+def test_external_training_exports_reloadable_predictions(tmp_path):
+    import numpy as np
+    import torch
+    from cdskit.tsvio import write_tsv
+    from cdskit.localize_model import load_localize_model, save_localize_model
+    from cdskit.localize_batch import predict_localization_batch
+
+    sequences = ["MGGGGGAA", "MKLLLLAA", "MARRRRAA", "MASTSTAA", "MRRSTSTA"]
+    rows = []
+    for class_name, sequence in zip(LOCALIZATION_CLASSES, sequences, strict=True):
+        for i in range(5):
+            row = _row(class_name, i)
+            row["sequence"] = sequence + "A" * i
+            rows.append(row)
+    train, external = tmp_path / "target.tsv", tmp_path / "external.tsv"
+    fields = list(rows[0])
+    write_tsv(train, [r for r in rows if r["accession"].endswith("0")], fields)
+    write_tsv(external, [r for r in rows if not r["accession"].endswith("0")], fields)
+    payload = tmp_path / "training.pt"
+    previous_threads = torch.get_num_threads()
+    try:
+        torch.set_num_threads(1)
+        result = external_torch.fit_external_augmented_torch_runtime_model(
+            str(train),
+            "",
+            external_tsv=str(external),
+            calibration_fraction=0.5,
+            seq_len=16,
+            hidden_rnn=2,
+            n_filters=2,
+            hidden_fc=4,
+            n_attention=4,
+            attention_size=2,
+            epochs=1,
+            batch_size=16,
+            device="cpu",
+            torch_payload_out=str(payload),
+            initializer="pytorch",
+        )
+        before = predict_localization_batch(sequences, result["model"])
+        exported = tmp_path / "model.pt"
+        save_localize_model(result["model"], str(exported))
+        after = predict_localization_batch(
+            sequences, load_localize_model(str(exported))
+        )
+    finally:
+        torch.set_num_threads(previous_threads)
+    assert payload.exists()
+    assert result["report"]["num_external_calibration_rows"] == 10
+    for original, loaded in zip(before, after, strict=True):
+        values = list(loaded["class_probabilities"].values())
+        assert np.isfinite(values).all()
+        np.testing.assert_allclose(sum(values), 1.0)
+        assert loaded["predicted_class"] == original["predicted_class"]
+        assert loaded["class_probabilities"] == original["class_probabilities"]

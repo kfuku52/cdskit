@@ -163,3 +163,52 @@ def test_resolved_model_alias_is_protected_before_loading(
     )
     assert "Input and output paths" in capsys.readouterr().err
     assert model.read_bytes() == b"existing model"
+
+
+@pytest.mark.parametrize(
+    "command", ["filter", "trimcodon", "maxalign", "pad", "longestorf"]
+)
+def test_sequence_and_report_cannot_share_stdout(tmp_path, capsys, command):
+    source = tmp_path / "input.fa"
+    source.write_text(">s\nATGAAA\n")
+    assert (
+        main([command, "--seq_file", str(source), "--out_file", "-", "--report", "-"])
+        == 1
+    )
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "standard output" in captured.err
+
+
+@pytest.mark.parametrize("command", ["intersection", "gapjust"])
+def test_sequence_and_gff_cannot_share_stdout(tmp_path, capsys, command):
+    source = tmp_path / "input.fa"
+    source.write_text(">s\nATGAAA\n")
+    gff = tmp_path / "input.gff"
+    gff.write_text("s\t.\tgene\t1\t6\t.\t+\t.\tID=g\n")
+    assert (
+        main(
+            [command, "--seq_file", str(source), "--in_gff", str(gff), "--out_gff", "-"]
+        )
+        == 1
+    )
+    assert capsys.readouterr().out == ""
+
+
+def test_intersection_rejects_consuming_stdin_twice(tmp_path, capsys):
+    assert (
+        main(
+            [
+                "intersection",
+                "--seq_file",
+                "-",
+                "--seq_file_2",
+                "-",
+                "--out_file_2",
+                str(tmp_path / "other.fa"),
+            ]
+        )
+        == 1
+    )
+    assert "standard input" in capsys.readouterr().err
+    assert not (tmp_path / "other.fa").exists()

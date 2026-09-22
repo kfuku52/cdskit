@@ -1,5 +1,15 @@
+from cdskit.targetp_oof_cache import (
+    _save_oof_npz as _save_oof_npz,
+    _load_oof_npz as _load_oof_npz,
+    _safe_cache_name as _safe_cache_name,
+    _oof_fold_cache_path as _oof_fold_cache_path,
+    _content_fingerprint as _content_fingerprint,
+    _training_file_cache_key as _training_file_cache_key,
+    _oof_fold_cache_key as _oof_fold_cache_key,
+    _save_oof_fold_npz as _save_oof_fold_npz,
+    _load_oof_fold_npz as _load_oof_fold_npz,
+)
 from contextlib import contextmanager
-import hashlib
 import json
 import os
 import sys
@@ -9,7 +19,6 @@ from cdskit.localize_schema import CURRENT_FEATURE_SCHEMA, model_feature_schema
 
 import numpy as np
 
-from cdskit import __version__
 from cdskit.localize_model import (
     _targetp_sp_scan_features as _targetp_sp_scan_features,
     _targetp_ctp_ltp_sequence_features as _targetp_ctp_ltp_sequence_features,
@@ -221,192 +230,6 @@ def _optimize_class_thresholds(prob_matrix, true_idx, class_names, grid):
                 best_metrics = best_local_metrics
                 improved = True
     return thresholds, best_metrics
-
-
-def _save_oof_npz(path, prob_matrix, true_idx, class_names, cache_key=""):
-    out_dir = os.path.dirname(path)
-    if out_dir != "":
-        os.makedirs(out_dir, exist_ok=True)
-    from cdskit.atomicio import atomic_output_path
-
-    with atomic_output_path(path) as temporary:
-        with open(temporary, "wb") as out:
-            np.savez_compressed(
-                out,
-                prob_matrix=np.asarray(prob_matrix, dtype=np.float64),
-                true_idx=np.asarray(true_idx, dtype=np.int64),
-                class_names=np.asarray(class_names),
-                cache_key=str(cache_key),
-            )
-
-
-def _load_oof_npz(path, fallback_true_idx=None, cache_key=""):
-    with np.load(path, allow_pickle=False) as data:
-        prob_matrix = np.asarray(data["prob_matrix"], dtype=np.float64)
-        if "true_idx" in data.files:
-            true_idx = np.asarray(data["true_idx"], dtype=np.int64)
-        elif fallback_true_idx is not None:
-            true_idx = np.asarray(fallback_true_idx, dtype=np.int64)
-        else:
-            raise KeyError(
-                "true_idx is not a file in the archive and no fallback_true_idx was provided."
-            )
-        class_names = [str(v) for v in data["class_names"].tolist()]
-        if cache_key:
-            if "cache_key" not in data.files:
-                raise ValueError(
-                    "OOF cache has no provenance metadata: {}".format(path)
-                )
-            loaded_key = str(np.asarray(data["cache_key"]).tolist())
-            if loaded_key != str(cache_key):
-                raise ValueError(
-                    "OOF cache provenance does not match current run: {}".format(path)
-                )
-    if not np.isfinite(prob_matrix).all():
-        raise ValueError(
-            "OOF probability matrix contains non-finite values: {}".format(path)
-        )
-    return prob_matrix, true_idx, class_names
-
-
-def _safe_cache_name(value):
-    text = str(value or "").strip()
-    if text == "":
-        text = "fold"
-    out = list()
-    for ch in text:
-        if ch.isalnum() or ch in ["-", "_", "."]:
-            out.append(ch)
-        else:
-            out.append("_")
-    return "".join(out)
-
-
-def _oof_fold_cache_path(cache_dir, model_arch, fold_label):
-    return os.path.join(
-        str(cache_dir),
-        "{}_{}.npz".format(_safe_cache_name(model_arch), _safe_cache_name(fold_label)),
-    )
-
-
-def _content_fingerprint(values):
-    digest = hashlib.sha256()
-
-    def update_part(part):
-        digest.update(len(part).to_bytes(8, byteorder="big", signed=False))
-        digest.update(part)
-
-    for value in values:
-        if isinstance(value, np.ndarray):
-            array = np.ascontiguousarray(value)
-            update_part(str(array.dtype).encode("utf-8"))
-            update_part(str(array.shape).encode("utf-8"))
-            update_part(array.tobytes())
-        else:
-            update_part(json.dumps(value, sort_keys=True, default=str).encode("utf-8"))
-    return digest.hexdigest()
-
-
-def _training_file_cache_key(
-    path, model_arch, localize_strategy, dl_train_params, cv_seed
-):
-    digest = hashlib.sha256()
-    with open(path, "rb") as inp:
-        for chunk in iter(lambda: inp.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return _content_fingerprint(
-        [
-            __version__,
-            digest.hexdigest(),
-            model_arch,
-            localize_strategy,
-            dict(sorted(dict(dl_train_params).items())),
-            int(cv_seed),
-        ]
-    )
-
-
-def _oof_fold_cache_key(
-    model_arch,
-    localize_strategy,
-    dl_train_params,
-    x,
-    aa_sequences,
-    class_labels,
-    perox_labels,
-    fold_ids,
-    cv_seed,
-):
-    payload = {
-        "cdskit_version": __version__,
-        "model_arch": str(model_arch),
-        "localize_strategy": str(localize_strategy),
-        "dl_train_params": dict(sorted(dict(dl_train_params).items())),
-        "cv_seed": int(cv_seed),
-        "training_content_sha256": _content_fingerprint(
-            [
-                np.asarray(x),
-                list(aa_sequences),
-                list(class_labels),
-                list(perox_labels),
-                None if fold_ids is None else list(fold_ids),
-            ]
-        ),
-    }
-    return json.dumps(payload, sort_keys=True, default=str)
-
-
-def _save_oof_fold_npz(
-    path, row_index, prob_matrix, true_idx, class_names, fold_label, cache_key=""
-):
-    out_dir = os.path.dirname(path)
-    if out_dir != "":
-        os.makedirs(out_dir, exist_ok=True)
-    from cdskit.atomicio import atomic_output_path
-
-    with atomic_output_path(path) as temporary:
-        with open(temporary, "wb") as out:
-            np.savez_compressed(
-                out,
-                row_index=np.asarray(row_index, dtype=np.int64),
-                prob_matrix=np.asarray(prob_matrix, dtype=np.float64),
-                true_idx=np.asarray(true_idx, dtype=np.int64),
-                class_names=np.asarray(list(class_names)),
-                fold_label=str(fold_label),
-                cache_key=str(cache_key),
-            )
-
-
-def _load_oof_fold_npz(path, class_names, cache_key=""):
-    with np.load(path, allow_pickle=False) as data:
-        loaded_names = [str(v) for v in np.asarray(data["class_names"]).tolist()]
-        if loaded_names != list(class_names):
-            raise ValueError(
-                "Class names in OOF fold cache do not match LOCALIZATION_CLASSES."
-            )
-        if str(cache_key or "") != "":
-            if "cache_key" not in data.files:
-                raise ValueError(
-                    "OOF fold cache has no cache_key metadata: {}".format(path)
-                )
-            loaded_key = str(np.asarray(data["cache_key"]).tolist())
-            if loaded_key != str(cache_key):
-                raise ValueError(
-                    "OOF fold cache parameters do not match current run: {}".format(
-                        path
-                    )
-                )
-        row_index = np.asarray(data["row_index"], dtype=np.int64)
-        prob_matrix = np.asarray(data["prob_matrix"], dtype=np.float64)
-        true_idx = np.asarray(data["true_idx"], dtype=np.int64)
-    if (
-        prob_matrix.shape[0] != row_index.shape[0]
-        or true_idx.shape[0] != row_index.shape[0]
-    ):
-        raise ValueError("Row count mismatch in OOF fold cache: {}".format(path))
-    if not np.isfinite(prob_matrix).all():
-        raise ValueError("OOF fold cache contains non-finite values: {}".format(path))
-    return row_index, prob_matrix, true_idx
 
 
 def _read_true_idx_from_training_tsv(training_tsv, class_names):

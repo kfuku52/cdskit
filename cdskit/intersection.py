@@ -134,6 +134,31 @@ def intersect_two_fasta_inputs(original_records1, args, threads=1):
         )
 
 
+def intersect_sequence_regions(headers, sequence_lengths, fix_bounds):
+    """Keep region directives aligned with the retained FASTA records."""
+    result = []
+    for line in headers:
+        fields = line.split()
+        if not fields or fields[0] != "##sequence-region":
+            result.append(line)
+            continue
+        if len(fields) != 4:
+            raise ValueError("Invalid ##sequence-region directive.")
+        seqid = fields[1]
+        if seqid not in sequence_lengths:
+            continue
+        start, end = int(fields[2]), int(fields[3])
+        length = sequence_lengths[seqid]
+        if fix_bounds:
+            start, end = max(1, start), min(length, end)
+            if start > end:
+                continue
+            result.append(f"##sequence-region {seqid} {start} {end}")
+        else:
+            result.append(line)
+    return result
+
+
 def intersect_fasta_with_gff(original_records1, args, threads=1):
     stop_if_duplicate_sequence_ids(records=original_records1, label="--seq_file")
     original_records1_names = [rec.id for rec in original_records1]
@@ -146,11 +171,20 @@ def intersect_fasta_with_gff(original_records1, args, threads=1):
     mask = np.isin(original_gff["data"]["seqid"], list(intersection_names))
     filtered_data = original_gff["data"][mask]
 
+    seqid_to_seq_len = {rec.id: len(rec.seq) for rec in intersection_records1}
     if args.fix_outrange_gff_records:
-        seqid_to_seq_len = {rec.id: len(rec.seq) for rec in intersection_records1}
         filtered_data = fix_out_of_range_gff_records(filtered_data, seqid_to_seq_len)
 
-    intersection_gff = {"header": original_gff["header"], "data": filtered_data}
+    intersection_gff = {
+        "header": intersect_sequence_regions(
+            original_gff["header"], seqid_to_seq_len, args.fix_outrange_gff_records
+        ),
+        "data": filtered_data,
+    }
+    if args.fix_outrange_gff_records:
+        from cdskit.gapjust_gff import validate_gff_bounds
+
+        validate_gff_bounds(intersection_gff, seqid_to_seq_len)
     output_paths = [path for path in (args.outfile, args.outgff) if path != "-"]
     with atomic_output_paths(output_paths) as staged_paths:
         staged = dict(zip(output_paths, staged_paths, strict=False))
