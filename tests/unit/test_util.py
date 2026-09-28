@@ -244,6 +244,19 @@ class TestGetSeqname:
             util.get_seqname(record, "organism_unknown")
         assert "Invalid --seq_name_format element (unknown)" in str(exc_info.value)
 
+    def test_bracketed_annotation_key_can_contain_underscore(self):
+        record = SeqRecord(Seq("ATG"), id="r3")
+        record.annotations = {"molecule_type": "DNA", "organism": "Homo sapiens"}
+        assert (
+            util.get_seqname(record, "[molecule_type]_organism") == "DNA_Homo_sapiens"
+        )
+
+    @pytest.mark.parametrize("seqnamefmt", ["[molecule_type_organism", ""])
+    def test_rejects_malformed_bracket_syntax(self, seqnamefmt):
+        record = SeqRecord(Seq("ATG"), id="r4")
+        with pytest.raises(ValueError, match="Invalid --seq_name_format syntax"):
+            util.get_seqname(record, seqnamefmt)
+
 
 class TestReplaceSeq2Cds:
     """Tests for replace_seq2cds function."""
@@ -350,6 +363,19 @@ class TestReadGff:
         result = util.read_gff(str(path))
         assert len(result["data"]) == 1
         assert result["data"][0]["attributes"] == long_attr
+
+    def test_group_delimiter_roundtrip_preserves_feature_boundary(self, tmp_path):
+        source = tmp_path / "grouped.gff"
+        output = tmp_path / "roundtrip.gff"
+        content = (
+            "##gff-version 3\n"
+            "seq1\tsrc\tgene\t1\t3\t.\t+\t.\tID=g1\n"
+            "###\n"
+            "seq1\tsrc\tgene\t4\t6\t.\t+\t.\tID=g2\n"
+        )
+        source.write_text(content, encoding="utf-8")
+        util.write_gff(util.read_gff(source), output)
+        assert output.read_text(encoding="utf-8") == content
 
 
 class TestWriteGff:

@@ -13,7 +13,13 @@ from cdskit.localize_learn import (
 )
 from cdskit.tsvio import read_tsv
 from cdskit.cliutil import CdskitArgumentParser, parse_bool
-from cdskit.atomicio import atomic_output_path, atomic_text_writer, atomic_write_json
+from cdskit.atomicio import (
+    atomic_output_path,
+    atomic_output_paths,
+    atomic_text_writer,
+    atomic_write_json,
+    validate_distinct_paths,
+)
 
 TARGETP_SOURCE_COMMIT = "695c7b252298d3ec7a30491c8026e8839d41f678"
 TARGETP_DOWNLOAD_MAX_BYTES = 256 * 1024 * 1024
@@ -73,12 +79,18 @@ def _parse_targetp_fasta(path):
                 continue
             if line.startswith(">"):
                 if accession is not None:
+                    if accession in seq_by_accession:
+                        raise ValueError(
+                            f"Duplicate accession in TargetP FASTA: {accession}"
+                        )
                     seq_by_accession[accession] = "".join(seq_chunks)
                 accession = line[1:].split()[0]
                 seq_chunks = list()
             else:
                 seq_chunks.append(line)
     if accession is not None:
+        if accession in seq_by_accession:
+            raise ValueError(f"Duplicate accession in TargetP FASTA: {accession}")
         seq_by_accession[accession] = "".join(seq_chunks)
     return seq_by_accession
 
@@ -134,9 +146,18 @@ def prepare_targetp_benchmark_tsv(
     out_tsv_path,
     report_json_path="",
 ):
+    destinations = [out_tsv_path, *([report_json_path] if report_json_path else [])]
+    validate_distinct_paths(
+        inputs=[fasta_path, annotation_tab_path, npz_path], outputs=destinations
+    )
     seq_by_accession = _parse_targetp_fasta(path=fasta_path)
     ann_rows = _read_targetp_tab_rows(path=annotation_tab_path)
     ids, folds, orgs, y_types = _read_targetp_npz(path=npz_path)
+    seen_ids = set()
+    for acc in ids:
+        if acc in seen_ids:
+            raise ValueError(f"Duplicate accession in TargetP NPZ: {acc}")
+        seen_ids.add(acc)
 
     fold_by_accession = dict()
     org_by_accession = dict()
@@ -200,9 +221,6 @@ def prepare_targetp_benchmark_tsv(
         fold_counts[fold_id] = fold_counts.get(fold_id, 0) + 1
         organism_counts[org_group] = organism_counts.get(org_group, 0) + 1
 
-    out_dir = os.path.dirname(out_tsv_path)
-    if out_dir != "":
-        os.makedirs(out_dir, exist_ok=True)
     output_fields = [
         "accession",
         "sequence",
@@ -214,12 +232,6 @@ def prepare_targetp_benchmark_tsv(
         "organism_group",
         "cleavage_site",
     ]
-    write_rows_tsv(
-        rows=out_rows,
-        output_path=out_tsv_path,
-        fieldnames=output_fields,
-    )
-
     report = {
         "fasta_path": fasta_path,
         "annotation_tab_path": annotation_tab_path,
@@ -232,11 +244,15 @@ def prepare_targetp_benchmark_tsv(
         "y_type_mismatch_count": int(y_type_mismatch),
         "fields": output_fields,
     }
-    if report_json_path != "":
-        report_dir = os.path.dirname(report_json_path)
-        if report_dir != "":
-            os.makedirs(report_dir, exist_ok=True)
-        atomic_write_json(report_json_path, report, indent=2)
+    with atomic_output_paths(destinations) as staged_paths:
+        staged = dict(zip(destinations, staged_paths, strict=True))
+        write_rows_tsv(
+            rows=out_rows,
+            output_path=staged[out_tsv_path],
+            fieldnames=output_fields,
+        )
+        if report_json_path:
+            atomic_write_json(staged[report_json_path], report, indent=2)
     return report
 
 

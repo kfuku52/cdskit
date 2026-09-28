@@ -10,7 +10,8 @@ to FASTA and constructs sequence IDs from record metadata.
   (`yes` by default). Records without a CDS are reported and omitted. Use `no`
   to export whole record sequences.
 - `--seq_name_format STR` selects underscore-separated metadata fields for
-  output IDs. The default is `organism_accessions`.
+  output IDs. The default is `organism_accessions`. Enclose a field name that
+  contains underscores in brackets, for example `[molecule_type]_organism`.
 - `--list_seq_name_keys yes` prints the available annotation keys and values
   to standard error before conversion.
 - `--in_seq_format` must be `genbank` or `gb`; `genbank` is the default.

@@ -8,7 +8,11 @@ from cdskit.localize_learn import (
 )
 from cdskit.cliutil import CdskitArgumentParser, parse_bool
 from cdskit.tsvio import read_tsv, write_tsv
-from cdskit.atomicio import atomic_write_json
+from cdskit.atomicio import (
+    atomic_output_paths,
+    atomic_write_json,
+    validate_distinct_paths,
+)
 
 LINEAGE_COL_CANDIDATES = (
     "lineage_ids",
@@ -137,20 +141,13 @@ def split_uniprot_eukaryota_tsv(
     if out_prefix == "":
         basename = os.path.basename(input_tsv)
         out_prefix = os.path.splitext(basename)[0]
-    os.makedirs(out_dir, exist_ok=True)
-
-    output_paths = dict()
-    counts_by_dataset = dict()
-    for preset_name, subset_rows in split_rows.items():
-        out_name = "{}_{}.tsv".format(out_prefix, preset_name)
-        out_path = os.path.join(out_dir, out_name)
-        write_rows_tsv(
-            rows=subset_rows,
-            fieldnames=fieldnames,
-            path=out_path,
-        )
-        output_paths[preset_name] = out_path
-        counts_by_dataset[preset_name] = len(subset_rows)
+    output_paths = {
+        preset_name: os.path.join(out_dir, f"{out_prefix}_{preset_name}.tsv")
+        for preset_name in split_rows
+    }
+    counts_by_dataset = {
+        preset_name: len(subset_rows) for preset_name, subset_rows in split_rows.items()
+    }
 
     report = {
         "input_tsv": input_tsv,
@@ -163,8 +160,18 @@ def split_uniprot_eukaryota_tsv(
         "counts_by_dataset": counts_by_dataset,
         "output_paths": output_paths,
     }
-    if report_json != "":
-        atomic_write_json(report_json, report, indent=2)
+    destinations = [*output_paths.values(), *([report_json] if report_json else [])]
+    validate_distinct_paths(inputs=[input_tsv], outputs=destinations)
+    with atomic_output_paths(destinations) as staged_paths:
+        staged = dict(zip(destinations, staged_paths, strict=True))
+        for preset_name, subset_rows in split_rows.items():
+            write_rows_tsv(
+                rows=subset_rows,
+                fieldnames=fieldnames,
+                path=staged[output_paths[preset_name]],
+            )
+        if report_json:
+            atomic_write_json(staged[report_json], report, indent=2)
     return report
 
 

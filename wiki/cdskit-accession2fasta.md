@@ -15,7 +15,9 @@ E-utilities. Put one accession on each line of the input text file.
 - Joined CDS locations and reverse-strand orientation are honored; only the
   first CDS is exported, not every CDS in a genomic record.
 - `--seq_name_format STR` selects underscore-separated metadata fields for
-  output IDs. Use `--list_seq_name_keys yes` to inspect available fields.
+  output IDs. Enclose a field name that contains underscores in brackets, for
+  example `[molecule_type]_organism`. Use `--list_seq_name_keys yes` to inspect
+  available fields.
 - `--strict yes|no` defaults to `yes`: missing, duplicate, or unexpected retrieved
   accessions stop the command before output is written. `no` accepts the returned
   records with a warning. Repeated requests and versionless accession aliases

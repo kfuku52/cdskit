@@ -12,6 +12,36 @@ from Bio.SeqFeature import SeqFeature, FeatureLocation
 from cdskit.parsegb import parsegb_main, parsegb_record
 
 
+def test_parsegb_cli_accepts_bracketed_metadata_key(tmp_path):
+    from cdskit.cli import main
+
+    record = SeqRecord(Seq("ATG"), id="sequence", description="")
+    record.annotations = {
+        "molecule_type": "DNA",
+        "organism": "Homo sapiens",
+        "accessions": ["TEST001"],
+    }
+    source, output = tmp_path / "input.gb", tmp_path / "output.fa"
+    Bio.SeqIO.write([record], source, "genbank")
+    assert (
+        main(
+            [
+                "parsegb",
+                "--seq_file",
+                str(source),
+                "--out_file",
+                str(output),
+                "--extract_cds",
+                "no",
+                "--seq_name_format",
+                "[molecule_type]_organism",
+            ]
+        )
+        == 0
+    )
+    assert [rec.id for rec in Bio.SeqIO.parse(output, "fasta")] == ["DNA_Homo_sapiens"]
+
+
 @pytest.mark.parametrize("strand", [1, -1])
 @pytest.mark.parametrize("joined", [False, True])
 def test_cli_extracted_genbank_roundtrip_has_local_cds_coordinates(

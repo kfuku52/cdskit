@@ -253,8 +253,9 @@ p_accession2fasta.add_argument(
     type=str,
     required=False,
     action="store",
-    help="default=%(default)s: Underline-separated list of output sequence name elements. "
-    "Try --list_seq_name_keys to check available values.",
+    help="default=%(default)s: Underscore-separated annotation keys for output IDs. "
+    "Enclose a key containing underscores in brackets, such as [molecule_type]. "
+    "Use --list_seq_name_keys to check available values.",
 )
 p_accession2fasta.add_argument(
     "--list_seq_name_keys",
@@ -1572,7 +1573,8 @@ p_parsegb.add_argument(
     type=str,
     required=False,
     action="store",
-    help="default=%(default)s: Underline-separated list of sequence name elements. "
+    help="default=%(default)s: Underscore-separated annotation keys for output IDs. "
+    "Enclose a key containing underscores in brackets, such as [molecule_type]. "
     "Use --list_seq_name_keys to browse available values.",
 )
 p_parsegb.add_argument(

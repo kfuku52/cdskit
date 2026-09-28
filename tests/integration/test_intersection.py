@@ -41,6 +41,72 @@ def test_fix_gff_removes_features_on_empty_sequences(
     assert "empty sequence" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize(
+    "retained,expected_attributes",
+    [
+        (("first", "second"), ("ID=first", "ID=second")),
+        (("second",), ("ID=second",)),
+    ],
+)
+def test_intersection_preserves_gff_group_boundaries(
+    tmp_path, write_fasta, mock_args, retained, expected_attributes
+):
+    fasta = write_fasta(tmp_path / "in.fa", [(name, "ATG") for name in retained])
+    source = tmp_path / "in.gff"
+    source.write_text(
+        "##gff-version 3\n"
+        "first\tsrc\tgene\t1\t3\t.\t+\t.\tID=first\n"
+        "###\n"
+        "second\tsrc\tgene\t1\t3\t.\t+\t.\tID=second\n",
+        encoding="utf-8",
+    )
+    output = tmp_path / "out.gff"
+    intersection_main(
+        mock_args(
+            seqfile=str(fasta),
+            seqfile2=None,
+            ingff=str(source),
+            outfile=str(tmp_path / "out.fa"),
+            outgff=str(output),
+            fix_outrange_gff_records=False,
+        )
+    )
+    lines = output.read_text(encoding="utf-8").splitlines()
+    assert tuple(line.split("\t")[-1] for line in lines if "\t" in line) == (
+        expected_attributes
+    )
+    if len(retained) == 2:
+        assert lines[2] == "###"
+    else:
+        assert "###" not in lines
+
+
+def test_intersection_drops_delimiter_for_group_removed_by_coordinate_repair(
+    tmp_path, write_fasta, mock_args
+):
+    fasta = write_fasta(tmp_path / "in.fa", [("empty", ""), ("full", "ATG")])
+    source = tmp_path / "in.gff"
+    source.write_text(
+        "##gff-version 3\n"
+        "empty\tsrc\tgene\t1\t3\t.\t+\t.\tID=empty\n"
+        "###\n"
+        "full\tsrc\tgene\t1\t3\t.\t+\t.\tID=full\n",
+        encoding="utf-8",
+    )
+    output = tmp_path / "out.gff"
+    intersection_main(
+        mock_args(
+            seqfile=str(fasta),
+            seqfile2=None,
+            ingff=str(source),
+            outfile=str(tmp_path / "out.fa"),
+            outgff=str(output),
+            fix_outrange_gff_records=True,
+        )
+    )
+    assert "###" not in output.read_text(encoding="utf-8")
+
+
 class TestIntersectionMain:
     """Tests for intersection_main function."""
 

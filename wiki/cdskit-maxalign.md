@@ -50,6 +50,7 @@ ATGAAACCCGGG
 - `--keep_seq_name_regex REGEX [REGEX ...]`: Never remove matching sequence IDs.
 - `--max_removed INT`: Maximum number of sequences that may be removed.
 - `--report PATH`: Optional JSON or TSV optimization report.
+  Empty input writes an empty sequence output and a zero-count report.
 
 ## TSV report format
 

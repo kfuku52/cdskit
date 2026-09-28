@@ -124,6 +124,8 @@ seq2	cdskit	CDS	5	10	.	+	2	ID=gene2-mRNA1-cds2;Parent=gene2-mRNA1
 ## GFF region directives
 
 Output `##sequence-region` directives are filtered to the retained FASTA records.
+`###` group delimiters stay after retained feature groups; delimiters for groups
+with no retained features are omitted.
 With coordinate repair enabled, directive intervals are intersected with the
 sequence bounds, empty intervals are omitted, and both directives and features
 are checked against the output sequences before writing. With repair disabled,

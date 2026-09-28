@@ -6,6 +6,20 @@ replacement to standard error.
 
 ## Unreleased
 
+## 0.31.10 — 2026-09-28
+
+### Fixed
+
+- Reject input/output path collisions in UniProt preset splitting and TargetP
+  benchmark preparation; reject duplicate TargetP FASTA and NPZ accessions.
+- Preserve GFF3 `###` feature-group delimiters through GFF output and
+  intersection, including filtered feature groups.
+- Commit related UniProt split, TargetP benchmark and external-evaluation outputs
+  together so a failed run leaves previous results intact.
+- Write requested `maxalign` reports for empty alignments, support bracketed
+  GenBank annotation keys containing underscores in sequence names, and reject
+  nonfinite external-evaluation threshold grids before producing output.
+
 ## 0.31.9 — 2026-09-22
 
 ### Fixed

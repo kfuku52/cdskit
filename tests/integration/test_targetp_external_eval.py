@@ -1,9 +1,12 @@
 import csv
+import json
+import math
 from types import SimpleNamespace
 
 import pytest
 
 from cdskit.targetp_external_eval import (
+    _parse_threshold_grid,
     build_deeploc_hpa_broad_rows,
     build_deeploc_sorting_rows,
     build_uniprot_holdout_rows,
@@ -12,8 +15,108 @@ from cdskit.targetp_external_eval import (
     filter_rows_by_mmseqs_similarity,
     load_fixed_uniprot_holdout_rows,
     load_targetp_exclusion_keys,
+    run_external_evaluation,
     stratified_sample_rows,
 )
+
+
+@pytest.mark.parametrize("value", ["nan", "inf", "-inf"])
+def test_threshold_grid_rejects_nonfinite_values(value):
+    with pytest.raises(ValueError, match="must be finite"):
+        _parse_threshold_grid(value)
+    with pytest.raises(ValueError, match="must be finite"):
+        evaluate_prediction_threshold_calibration([], threshold_grid=[float(value)])
+
+
+def test_external_evaluation_rejects_nonfinite_grid_before_outputs(tmp_path):
+    output = tmp_path / "out"
+    with pytest.raises(ValueError, match="must be finite"):
+        run_external_evaluation(
+            model_path="model.pt",
+            targetp_tsv="targetp.tsv",
+            deeploc_dir="deeploc",
+            uniprot_tsv="uniprot.tsv",
+            out_dir=str(output),
+            threshold_grid=[math.nan],
+        )
+    assert not output.exists()
+
+
+def test_external_evaluation_rolls_back_prediction_on_later_failure(
+    tmp_path, monkeypatch
+):
+    import cdskit.targetp_external_eval as external_eval
+
+    output = tmp_path / "out"
+    output.mkdir()
+    first_prediction = output / "deeploc_sorting_predictions.tsv"
+    first_prediction.write_text("previous result\n", encoding="utf-8")
+    monkeypatch.setattr(
+        external_eval,
+        "load_targetp_exclusion_keys",
+        lambda targetp_tsv: {"rows": [], "accessions": set(), "sequences": set()},
+    )
+    monkeypatch.setattr(
+        external_eval,
+        "build_deeploc_sorting_rows",
+        lambda **kwargs: ([], {}),
+    )
+    monkeypatch.setattr(external_eval, "predict_rows", lambda **kwargs: [])
+
+    def fail_later(**kwargs):
+        raise OSError("simulated later dataset failure")
+
+    monkeypatch.setattr(external_eval, "build_deeploc_hpa_broad_rows", fail_later)
+    with pytest.raises(OSError, match="simulated later dataset failure"):
+        run_external_evaluation(
+            model_path="model.pt",
+            targetp_tsv="targetp.tsv",
+            deeploc_dir="deeploc",
+            uniprot_tsv="uniprot.tsv",
+            out_dir=str(output),
+        )
+    assert first_prediction.read_text(encoding="utf-8") == "previous result\n"
+    assert sorted(path.name for path in output.iterdir()) == [first_prediction.name]
+
+
+def test_external_evaluation_commits_complete_result_set(tmp_path, monkeypatch):
+    import cdskit.targetp_external_eval as external_eval
+
+    monkeypatch.setattr(
+        external_eval,
+        "load_targetp_exclusion_keys",
+        lambda targetp_tsv: {"rows": [], "accessions": set(), "sequences": set()},
+    )
+    monkeypatch.setattr(
+        external_eval, "build_deeploc_sorting_rows", lambda **kwargs: ([], {})
+    )
+    monkeypatch.setattr(
+        external_eval, "build_deeploc_hpa_broad_rows", lambda **kwargs: ([], {})
+    )
+    monkeypatch.setattr(
+        external_eval, "build_uniprot_holdout_rows", lambda **kwargs: ([], {})
+    )
+    monkeypatch.setattr(external_eval, "predict_rows", lambda **kwargs: [])
+    monkeypatch.setattr(
+        external_eval,
+        "filter_rows_by_mmseqs_similarity",
+        lambda **kwargs: ([], {"status": "empty"}),
+    )
+    output = tmp_path / "out"
+    result = run_external_evaluation(
+        model_path="model.pt",
+        targetp_tsv="targetp.tsv",
+        deeploc_dir="deeploc",
+        uniprot_tsv="uniprot.tsv",
+        out_dir=str(output),
+        threshold_calibration=False,
+    )
+    assert len(list(output.iterdir())) == 6
+    saved = json.loads((output / "targetp_external_eval.json").read_text())
+    assert saved == result
+    assert saved["deeploc_sorting"]["predictions_tsv"] == str(
+        output / "deeploc_sorting_predictions.tsv"
+    )
 
 
 def _write_tsv(path, fieldnames, rows):

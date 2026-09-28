@@ -4,6 +4,7 @@ from collections import Counter
 
 from cdskit.atomicio import atomic_output_paths
 from cdskit.util import (
+    filter_gff_group_boundaries,
     read_gff,
     read_seqs,
     resolve_threads,
@@ -33,7 +34,8 @@ def filter_records_by_names(records, names, threads=1):
     return [record for record in records if record.id in names]
 
 
-def fix_out_of_range_gff_records(filtered_data, seqid_to_seq_len):
+def fix_out_of_range_gff_records(filtered_data, seqid_to_seq_len, return_indices=False):
+    retained_indices = np.arange(len(filtered_data))
     seq_lengths = np.array(
         [seqid_to_seq_len[s] for s in filtered_data["seqid"]], dtype=int
     )
@@ -47,6 +49,7 @@ def fix_out_of_range_gff_records(filtered_data, seqid_to_seq_len):
             )
         )
         filtered_data = filtered_data[has_bases]
+        retained_indices = retained_indices[has_bases]
         seq_lengths = seq_lengths[has_bases]
     is_gff_entry_start_in_range = filtered_data["start"] <= seq_lengths
     if np.any(~is_gff_entry_start_in_range):
@@ -100,6 +103,9 @@ def fix_out_of_range_gff_records(filtered_data, seqid_to_seq_len):
             )
         )
         filtered_data = filtered_data[~is_gff_entry_invalid_range]
+        retained_indices = retained_indices[~is_gff_entry_invalid_range]
+    if return_indices:
+        return filtered_data, retained_indices
     return filtered_data
 
 
@@ -170,16 +176,23 @@ def intersect_fasta_with_gff(original_records1, args, threads=1):
     )
     mask = np.isin(original_gff["data"]["seqid"], list(intersection_names))
     filtered_data = original_gff["data"][mask]
+    retained_indices = np.flatnonzero(mask)
 
     seqid_to_seq_len = {rec.id: len(rec.seq) for rec in intersection_records1}
     if args.fix_outrange_gff_records:
-        filtered_data = fix_out_of_range_gff_records(filtered_data, seqid_to_seq_len)
+        filtered_data, repaired_indices = fix_out_of_range_gff_records(
+            filtered_data, seqid_to_seq_len, return_indices=True
+        )
+        retained_indices = retained_indices[repaired_indices]
 
     intersection_gff = {
         "header": intersect_sequence_regions(
             original_gff["header"], seqid_to_seq_len, args.fix_outrange_gff_records
         ),
         "data": filtered_data,
+        "group_boundaries": filter_gff_group_boundaries(
+            original_gff["group_boundaries"], retained_indices
+        ),
     }
     if args.fix_outrange_gff_records:
         from cdskit.gapjust_gff import validate_gff_bounds

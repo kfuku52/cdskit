@@ -789,11 +789,35 @@ def maxalign_main(args):
     original_records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
     stop_if_not_dna(records=original_records, label="--seq_file")
     if len(original_records) == 0:
-        write_seqs(
-            records=original_records,
-            outfile=args.outfile,
-            outseqformat=args.outseqformat,
-        )
+        output_paths = [
+            path for path in (args.outfile, report_path) if path not in ("", "-")
+        ]
+        with atomic_output_paths(output_paths) as staged_paths:
+            staged = dict(zip(output_paths, staged_paths, strict=True))
+            write_seqs(
+                records=original_records,
+                outfile=staged.get(args.outfile, args.outfile),
+                outseqformat=args.outseqformat,
+            )
+            if report_path:
+                write_report(
+                    report_path=staged.get(report_path, report_path),
+                    report_data={
+                        "mode": mode,
+                        "num_input_sequences": 0,
+                        "num_kept_sequences": 0,
+                        "num_removed_sequences": 0,
+                        "initial_complete_codon_sites": 0,
+                        "final_complete_codon_sites": 0,
+                        "initial_area": 0,
+                        "final_area": 0,
+                        "area_delta": 0,
+                        "forced_keep_ids": [],
+                        "kept_ids": [],
+                        "removed_ids": [],
+                        "steps": [],
+                    },
+                )
         return
     stop_if_not_aligned(records=original_records)
     stop_if_not_multiple_of_three(records=original_records)

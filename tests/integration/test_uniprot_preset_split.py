@@ -1,5 +1,8 @@
 import csv
 
+import pytest
+
+import cdskit.uniprot_preset_split as splitter
 from cdskit.uniprot_preset_split import (
     classify_lineage_ids,
     parse_taxon_ids,
@@ -110,3 +113,57 @@ def test_split_uniprot_eukaryota_tsv_outputs_expected_counts(temp_dir):
         with open(out_path, "r", encoding="utf-8") as inp:
             subset = list(csv.DictReader(inp, delimiter="\t"))
         assert len(subset) == report["counts_by_dataset"][preset_name]
+
+
+def test_split_rejects_input_output_collision_without_changing_source(tmp_path):
+    source = tmp_path / "demo_viridiplantae.tsv"
+    content = "accession\tlineage_ids\nVIR1\t2759,33090\nMET1\t2759,33208\n"
+    source.write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Input and output paths"):
+        split_uniprot_eukaryota_tsv(source, tmp_path, out_prefix="demo")
+
+    assert source.read_text(encoding="utf-8") == content
+    assert not (tmp_path / "demo_metazoa.tsv").exists()
+
+
+def test_split_rolls_back_all_outputs_when_later_write_fails(tmp_path, monkeypatch):
+    source = tmp_path / "source.tsv"
+    source.write_text(
+        "accession\tlineage_ids\nVIR1\t2759,33090\nMET1\t2759,33208\n",
+        encoding="utf-8",
+    )
+    destinations = [
+        tmp_path / f"demo_{name}.tsv"
+        for name in (
+            "viridiplantae",
+            "metazoa",
+            "fungi",
+            "non_viridiplantae_euk",
+            "protist_core",
+        )
+    ]
+    report = tmp_path / "report.json"
+    for destination in [*destinations, report]:
+        destination.write_text("previous result\n", encoding="utf-8")
+
+    original_write = splitter.write_rows_tsv
+    calls = 0
+
+    def fail_on_third_write(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 3:
+            raise OSError("simulated output failure")
+        original_write(*args, **kwargs)
+
+    monkeypatch.setattr(splitter, "write_rows_tsv", fail_on_third_write)
+    with pytest.raises(OSError, match="simulated output failure"):
+        splitter.split_uniprot_eukaryota_tsv(
+            source, tmp_path, out_prefix="demo", report_json=report
+        )
+
+    assert all(
+        destination.read_text(encoding="utf-8") == "previous result\n"
+        for destination in [*destinations, report]
+    )

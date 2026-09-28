@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+from bisect import bisect_left
+from collections import Counter
 from copy import deepcopy
 import re
 import sys
@@ -513,7 +515,10 @@ def read_item_per_line_file(file: Any) -> list[str]:
 
 
 def get_seqname(record: SeqRecord, seqnamefmt: str) -> str:
-    name_items = seqnamefmt.split("_")
+    tokens = re.findall(r"\[[^\[\]]+\]|[^_\[\]]+", seqnamefmt)
+    if not tokens or "_".join(tokens) != seqnamefmt:
+        raise ValueError("Invalid --seq_name_format syntax.")
+    name_items = [token[1:-1] if token.startswith("[") else token for token in tokens]
     seqname = ""
     for name_item in name_items:
         if name_item not in record.annotations:
@@ -626,8 +631,9 @@ def replace_seq2cds(record: SeqRecord) -> SeqRecord | None:
 def read_gff(gff_file: Any) -> dict[str, Any]:
     import numpy as np
 
-    header_lines = []
-    rows = []
+    header_lines: list[str] = []
+    group_boundaries: list[int] = []
+    rows: list[tuple[Any, ...]] = []
     max_widths = [1] * len(GFF_COLUMNS)
     with open(gff_file, "r", encoding="utf-8") as f:
         for line_number, line in enumerate(f, start=1):
@@ -636,6 +642,8 @@ def read_gff(gff_file: Any) -> dict[str, Any]:
                 continue
             if line.startswith("#"):
                 header_lines.append(line)
+                if line == "###":
+                    group_boundaries.append(len(rows))
             else:
                 fields = [field.strip() for field in line.split("\t")]
                 if len(fields) != len(GFF_COLUMNS):
@@ -678,14 +686,43 @@ def read_gff(gff_file: Any) -> dict[str, Any]:
             len(np.unique(data["seqid"]))
         )
     )
-    return {"header": header_lines, "data": data}
+    return {
+        "header": header_lines,
+        "data": data,
+        "group_boundaries": group_boundaries,
+    }
+
+
+def filter_gff_group_boundaries(
+    group_boundaries: Sequence[int], retained_indices: Iterable[int]
+) -> list[int]:
+    """Keep delimiters only after groups with retained feature rows."""
+
+    retained = sorted(int(index) for index in retained_indices)
+    result = []
+    previous_count = 0
+    for boundary in group_boundaries:
+        current_count = bisect_left(retained, boundary)
+        if current_count > previous_count:
+            result.append(current_count)
+        previous_count = current_count
+    return result
 
 
 def write_gff(gff: dict[str, Any], outfile: Any) -> None:
     import numpy as np
 
+    group_boundaries = gff.get("group_boundaries")
+    headers = (
+        [line for line in gff["header"] if line != "###"]
+        if group_boundaries is not None
+        else gff["header"]
+    )
     sys.stderr.write(
-        "Number of output GFF header lines: {:,}\n".format(len(gff["header"]))
+        "Number of output GFF header lines: {:,}\n".format(
+            len(headers)
+            + (len(group_boundaries) if group_boundaries is not None else 0)
+        )
     )
     sys.stderr.write("Number of output GFF records: {:,}\n".format(len(gff["data"])))
     sys.stderr.write(
@@ -695,10 +732,13 @@ def write_gff(gff: dict[str, Any], outfile: Any) -> None:
     )
     context = nullcontext(sys.stdout) if outfile == "-" else atomic_text_writer(outfile)
     with context as f:
-        if gff["header"]:
-            f.write("\n".join(gff["header"]) + "\n")
-        for row in gff["data"]:
+        if headers:
+            f.write("\n".join(headers) + "\n")
+        boundaries = Counter(group_boundaries or [])
+        for index, row in enumerate(gff["data"]):
+            f.write("###\n" * boundaries[index])
             f.write("\t".join(map(str, row)) + "\n")
+        f.write("###\n" * boundaries[len(gff["data"])])
 
 
 def coordinates2ranges(gff_coordinates: Sequence[int]) -> list[tuple[int, int]]:

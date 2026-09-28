@@ -24,6 +24,39 @@ from cdskit.gapjust_gff import (
 from cdskit.util import GFF_DTYPE, read_gff
 
 
+def test_gapjust_keeps_gff_group_delimiters_between_features(tmp_path):
+    source = tmp_path / "in.fa"
+    source.write_text(">s\nATGAAA\n", encoding="utf-8")
+    annotation_path = tmp_path / "in.gff"
+    annotation_path.write_text(
+        "##gff-version 3\n"
+        "s\tsrc\tgene\t1\t3\t.\t+\t.\tID=g1\n"
+        "###\n"
+        "s\tsrc\tgene\t4\t6\t.\t+\t.\tID=g2\n",
+        encoding="utf-8",
+    )
+    output = tmp_path / "out.gff"
+    assert (
+        cli_main(
+            [
+                "gapjust",
+                "--seq_file",
+                str(source),
+                "--in_gff",
+                str(annotation_path),
+                "--out_file",
+                str(tmp_path / "out.fa"),
+                "--out_gff",
+                str(output),
+            ]
+        )
+        == 0
+    )
+    assert output.read_text(encoding="utf-8") == annotation_path.read_text(
+        encoding="utf-8"
+    )
+
+
 def annotation(rows, header=None):
     return {"data": np.array(rows, dtype=GFF_DTYPE), "header": header or []}
 

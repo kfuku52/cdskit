@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import random
 import shutil
@@ -24,7 +25,12 @@ from cdskit.targetp_labeling import strict_uniprot_targetp_label
 from cdskit.uniprot_preset_split import classify_lineage_ids, parse_taxon_ids
 from cdskit.cliutil import CdskitArgumentParser, parse_bool, resolve_threads
 from cdskit.tsvio import read_tsv as _read_tsv, write_tsv as _write_tsv
-from cdskit.atomicio import atomic_text_writer, atomic_write_json
+from cdskit.atomicio import (
+    atomic_output_paths,
+    atomic_text_writer,
+    atomic_write_json,
+    validate_distinct_paths,
+)
 
 
 DEFAULT_CLASS_THRESHOLD_GRID = [
@@ -567,6 +573,15 @@ def _stratified_fold_indices(true_idx, n_folds=5, seed=1):
     return [np.asarray(sorted(fold), dtype=np.int64) for fold in folds if len(fold) > 0]
 
 
+def _validated_threshold_grid(values):
+    grid = [float(value) for value in values]
+    if not grid:
+        raise ValueError("--threshold_grid should contain at least one value.")
+    if not all(math.isfinite(value) for value in grid):
+        raise ValueError("--threshold_grid values must be finite.")
+    return sorted(set(grid))
+
+
 def evaluate_prediction_threshold_calibration(
     rows,
     threshold_grid=None,
@@ -575,10 +590,8 @@ def evaluate_prediction_threshold_calibration(
     class_names=LOCALIZATION_CLASSES,
 ):
     class_names = list(class_names)
-    threshold_grid = (
-        list(DEFAULT_CLASS_THRESHOLD_GRID)
-        if threshold_grid is None
-        else sorted(set([float(value) for value in threshold_grid]))
+    threshold_grid = _validated_threshold_grid(
+        DEFAULT_CLASS_THRESHOLD_GRID if threshold_grid is None else threshold_grid
     )
     prob_matrix = _prob_matrix_from_prediction_rows(rows=rows, class_names=class_names)
     true_idx = _true_indices_from_prediction_rows(rows=rows, class_names=class_names)
@@ -811,6 +824,70 @@ def run_external_evaluation(
     threshold_grid=None,
     strict_targetp_organism_labels=False,
 ):
+    if threshold_calibration:
+        threshold_grid = _validated_threshold_grid(
+            DEFAULT_CLASS_THRESHOLD_GRID if threshold_grid is None else threshold_grid
+        )
+    names = (
+        "deeploc_sorting_predictions.tsv",
+        "deeploc_hpa_broad_predictions.tsv",
+        "uniprot_targetp_holdout.tsv",
+        "uniprot_targetp_holdout_predictions.tsv",
+        "targetp_external_eval.json",
+        "targetp_external_eval.md",
+    )
+    destinations = [os.path.join(out_dir, name) for name in names]
+    inputs = [
+        model_path,
+        targetp_tsv,
+        os.path.join(deeploc_dir, "deeploc21_sorting_signals.tsv"),
+        os.path.join(deeploc_dir, "deeploc21_hpa_test.tsv"),
+        uniprot_tsv,
+        fixed_uniprot_holdout_tsv,
+    ]
+    validate_distinct_paths(inputs=inputs, outputs=destinations)
+    with atomic_output_paths(destinations) as staged_paths:
+        staged_outputs = dict(zip(destinations, staged_paths, strict=True))
+        return _run_external_evaluation(
+            model_path=model_path,
+            targetp_tsv=targetp_tsv,
+            deeploc_dir=deeploc_dir,
+            uniprot_tsv=uniprot_tsv,
+            out_dir=out_dir,
+            fixed_uniprot_holdout_tsv=fixed_uniprot_holdout_tsv,
+            max_uniprot_per_class=max_uniprot_per_class,
+            use_mmseqs=use_mmseqs,
+            mmseqs_min_seq_id=mmseqs_min_seq_id,
+            mmseqs_min_coverage=mmseqs_min_coverage,
+            seed=seed,
+            threads=threads,
+            threshold_calibration=threshold_calibration,
+            threshold_cv_folds=threshold_cv_folds,
+            threshold_grid=threshold_grid,
+            strict_targetp_organism_labels=strict_targetp_organism_labels,
+            staged_outputs=staged_outputs,
+        )
+
+
+def _run_external_evaluation(
+    model_path,
+    targetp_tsv,
+    deeploc_dir,
+    uniprot_tsv,
+    out_dir,
+    fixed_uniprot_holdout_tsv,
+    max_uniprot_per_class,
+    use_mmseqs,
+    mmseqs_min_seq_id,
+    mmseqs_min_coverage,
+    seed,
+    threads,
+    threshold_calibration,
+    threshold_cv_folds,
+    threshold_grid,
+    strict_targetp_organism_labels,
+    staged_outputs,
+):
     os.makedirs(out_dir, exist_ok=True)
     targetp_keys = load_targetp_exclusion_keys(targetp_tsv=targetp_tsv)
     result = {
@@ -832,7 +909,7 @@ def run_external_evaluation(
     sorting_pred = predict_rows(rows=sorting_rows, model_path=model_path)
     sorting_path = os.path.join(out_dir, "deeploc_sorting_predictions.tsv")
     write_tsv(
-        path=sorting_path,
+        path=staged_outputs[sorting_path],
         rows=sorting_pred,
         fieldnames=[
             "source",
@@ -868,7 +945,7 @@ def run_external_evaluation(
     hpa_pred = predict_rows(rows=hpa_rows, model_path=model_path)
     hpa_path = os.path.join(out_dir, "deeploc_hpa_broad_predictions.tsv")
     write_tsv(
-        path=hpa_path,
+        path=staged_outputs[hpa_path],
         rows=hpa_pred,
         fieldnames=[
             "source",
@@ -933,7 +1010,7 @@ def run_external_evaluation(
         )
     holdout_path = os.path.join(out_dir, "uniprot_targetp_holdout.tsv")
     write_tsv(
-        path=holdout_path,
+        path=staged_outputs[holdout_path],
         rows=filtered,
         fieldnames=[
             "source",
@@ -948,7 +1025,7 @@ def run_external_evaluation(
     uniprot_pred = predict_rows(rows=filtered, model_path=model_path)
     uniprot_pred_path = os.path.join(out_dir, "uniprot_targetp_holdout_predictions.tsv")
     write_tsv(
-        path=uniprot_pred_path,
+        path=staged_outputs[uniprot_pred_path],
         rows=uniprot_pred,
         fieldnames=[
             "source",
@@ -1007,8 +1084,8 @@ def run_external_evaluation(
     out_md = os.path.join(out_dir, "targetp_external_eval.md")
     result["out_json"] = out_json
     result["out_md"] = out_md
-    atomic_write_json(out_json, result, indent=2, sort_keys=True)
-    with atomic_text_writer(out_md, encoding="utf-8") as out:
+    atomic_write_json(staged_outputs[out_json], result, indent=2, sort_keys=True)
+    with atomic_text_writer(staged_outputs[out_md], encoding="utf-8") as out:
         out.write(render_markdown(result=result))
     return result
 
@@ -1062,9 +1139,7 @@ def _to_bool_yes_no(value):
 
 def _parse_threshold_grid(value):
     out = [float(part.strip()) for part in str(value).split(",") if part.strip() != ""]
-    if len(out) == 0:
-        raise ValueError("--threshold_grid should contain at least one value.")
-    return sorted(set(out))
+    return _validated_threshold_grid(out)
 
 
 def main(argv=None):

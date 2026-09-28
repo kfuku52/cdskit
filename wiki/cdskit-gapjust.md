@@ -49,7 +49,8 @@ FASTA IDs must be unique when GFF is supplied, and every GFF seqid must have a
 matching FASTA record. Feature bounds and `##sequence-region` bounds are checked
 against FASTA lengths. Sequence-region directives are updated, including terminal
 gap deletions; edits crossing a directive boundary or deleting its entire region
-are rejected. Other headers and feature attributes are preserved.
+are rejected. Other headers, `###` group boundaries and feature attributes are
+preserved.
 
 Input Parent cycles, unresolved references, unknown CDS strand/phase, and ordinary
 spliced-CDS phase inconsistencies are reported without repairing them. Phase

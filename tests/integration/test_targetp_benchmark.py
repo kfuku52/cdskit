@@ -3,6 +3,7 @@ import csv
 import numpy as np
 import pytest
 
+import cdskit.targetp_benchmark as benchmark
 from cdskit.targetp_benchmark import (
     TARGETP_TABLE1_REFERENCE,
     _read_targetp_npz,
@@ -16,6 +17,60 @@ from cdskit.targetp_benchmark import (
 def _write_text(path, text):
     with open(path, "w", encoding="utf-8") as out:
         out.write(text)
+
+
+def _small_targetp_sources(tmp_path, fasta_text=">A\nMAAA\n", ids=("A",)):
+    fasta, tab, npz = (
+        tmp_path / "targetp.fasta",
+        tmp_path / "annotation.tab",
+        tmp_path / "folds.npz",
+    )
+    fasta.write_text(fasta_text, encoding="utf-8")
+    tab.write_text("A\tSP\t0\n", encoding="utf-8")
+    np.savez(
+        npz,
+        ids=np.asarray(ids),
+        fold=np.arange(len(ids), dtype=np.int32),
+        org=np.ones(len(ids), dtype=np.int32),
+        y_type=np.ones(len(ids), dtype=np.int32),
+    )
+    return fasta, tab, npz
+
+
+def test_prepare_targetp_rejects_input_output_collision(tmp_path):
+    fasta, tab, npz = _small_targetp_sources(tmp_path)
+    original = tab.read_bytes()
+    with pytest.raises(ValueError, match="Input and output paths"):
+        prepare_targetp_benchmark_tsv(fasta, tab, npz, tab)
+    assert tab.read_bytes() == original
+
+
+@pytest.mark.parametrize(
+    "fasta_text,ids,source",
+    [(">A\nMAAA\n>A\nMBBB\n", ("A",), "FASTA"), (">A\nMAAA\n", ("A", "A"), "NPZ")],
+)
+def test_prepare_targetp_rejects_duplicate_accessions(
+    tmp_path, fasta_text, ids, source
+):
+    fasta, tab, npz = _small_targetp_sources(tmp_path, fasta_text, ids)
+    output = tmp_path / "benchmark.tsv"
+    with pytest.raises(ValueError, match=f"Duplicate accession in TargetP {source}"):
+        prepare_targetp_benchmark_tsv(fasta, tab, npz, output)
+    assert not output.exists()
+
+
+def test_prepare_targetp_rolls_back_tsv_when_report_fails(tmp_path, monkeypatch):
+    fasta, tab, npz = _small_targetp_sources(tmp_path)
+    output = tmp_path / "benchmark.tsv"
+    output.write_text("previous result\n", encoding="utf-8")
+
+    def fail_report(*args, **kwargs):
+        raise OSError("simulated report failure")
+
+    monkeypatch.setattr(benchmark, "atomic_write_json", fail_report)
+    with pytest.raises(OSError, match="simulated report failure"):
+        prepare_targetp_benchmark_tsv(fasta, tab, npz, output, tmp_path / "report.json")
+    assert output.read_text(encoding="utf-8") == "previous result\n"
 
 
 def test_prepare_targetp_benchmark_tsv_from_small_fixture(temp_dir):

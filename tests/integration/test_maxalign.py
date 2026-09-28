@@ -149,6 +149,35 @@ class TestMaxalignMain:
         result = list(Bio.SeqIO.parse(str(output_path), "fasta"))
         assert len(result) == 0
 
+    @pytest.mark.parametrize("suffix", ["json", "tsv"])
+    def test_maxalign_empty_input_writes_requested_report(
+        self, tmp_path, mock_args, suffix
+    ):
+        source, output = tmp_path / "empty.fa", tmp_path / "out.fa"
+        report = tmp_path / f"report.{suffix}"
+        source.write_text("", encoding="utf-8")
+        maxalign_main(
+            mock_args(
+                seqfile=str(source),
+                outfile=str(output),
+                report=str(report),
+                mode="auto",
+                max_exact_sequences=16,
+                missing_char="-?.",
+            )
+        )
+        assert output.read_text(encoding="utf-8") == ""
+        if suffix == "json":
+            data = json.loads(report.read_text(encoding="utf-8"))
+            assert data["num_input_sequences"] == 0
+            assert data["steps"] == []
+        else:
+            rows = read_tsv(report, required_columns=["section", "metric", "value"])
+            assert any(
+                row["metric"] == "num_input_sequences" and row["value"] == "0"
+                for row in rows
+            )
+
     def test_maxalign_auto_mode_uses_exact_when_within_limit(
         self, temp_dir, mock_args, capsys
     ):
