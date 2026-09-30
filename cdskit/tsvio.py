@@ -112,14 +112,8 @@ def write_tsv(
         )
     )
     with out_context as out:
-        writer = csv.DictWriter(
-            out,
-            fieldnames=fieldnames,
-            delimiter="\t",
-            lineterminator=TSV_LINE_TERMINATOR,
-            extrasaction="raise",
-        )
-        writer.writeheader()
+        writer = csv.writer(out, delimiter="\t", lineterminator=TSV_LINE_TERMINATOR)
+        writer.writerow(fieldnames)
         expected = set(fieldnames)
         for row_number, row in enumerate(rows, start=1):
             if not isinstance(row, Mapping):
@@ -139,7 +133,9 @@ def write_tsv(
                         ", ".join(unexpected),
                     )
                 )
-            writer.writerow({name: json_cell(row.get(name, "")) for name in fieldnames})
+            # Mapping and extra-column checks have already run above. Avoid a
+            # second mapping allocation and DictWriter's duplicate key checks.
+            writer.writerow([json_cell(row.get(name, "")) for name in fieldnames])
 
 
 def write_sectioned_tsv(

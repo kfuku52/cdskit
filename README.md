@@ -63,6 +63,7 @@ See [Wiki](https://github.com/kfuku52/cdskit/wiki) for detailed descriptions.
 - [`backtrim`](https://github.com/kfuku52/cdskit/wiki/cdskit-backtrim): Projecting retained protein columns onto CDS (explicit positions or strict mapping available)
 - [`codonstats`](https://github.com/kfuku52/cdskit/wiki/cdskit-codonstats): Printing codon-aware per-sequence and aggregate codon-usage statistics
 - [`degeneracy`](https://github.com/kfuku52/cdskit/wiki/cdskit-degeneracy): Extracting aligned 0/2/3/4-fold degenerate nucleotide positions
+- [`dnds`](https://github.com/kfuku52/cdskit/wiki/cdskit-dnds): Batched pairwise YN00 dN/dS estimation from aligned CDS pairs
 - [`filter`](https://github.com/kfuku52/cdskit/wiki/cdskit-filter): Filtering CDS by sequence-level quality rules
 - [`gapjust`](https://github.com/kfuku52/cdskit/wiki/cdskit-gapjust): Adjusting consecutive Ns to the fixed length
 - [`hammer`](https://github.com/kfuku52/cdskit/wiki/cdskit-hammer): Removing less-occupied codon columns from a gappy alignment

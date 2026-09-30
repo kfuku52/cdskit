@@ -58,6 +58,7 @@ COMMAND_PATHS.update(
         "printseq": CommandPaths(outputs=()),
         "stats": CommandPaths(),
         "codonstats": CommandPaths(outputs=()),
+        "dnds": CommandPaths(inputs=("pairs_file",)),
         # These commands generate filenames from a prefix, not --out_file itself.
         "split": CommandPaths(outputs=()),
         "degeneracy": CommandPaths(outputs=("report",)),

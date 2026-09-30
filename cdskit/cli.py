@@ -194,6 +194,31 @@ def strtobool(val):
     return parse_bool(val)
 
 
+command_dnds = lazy_command(
+    command="dnds", module_name="cdskit.dnds", function_name="dnds_main"
+)
+p_dnds = subparsers.add_parser(
+    "dnds",
+    help="Batched YN00 synonymous/nonsynonymous distances from aligned CDS pairs.",
+    parents=[p_version, p_codon, p_threads],
+)
+p_dnds.add_argument(
+    "--pairs_file",
+    required=True,
+    metavar="PATH",
+    help="Headered TSV with pair_id, sequence_1, sequence_2; each row is an independent codon alignment.",
+)
+p_dnds.add_argument(
+    "-o",
+    "--out_file",
+    dest="outfile",
+    default="-",
+    metavar="PATH",
+    help="Output TSV; '-' writes standard output. Saturated dS is NA, never zero.",
+)
+p_dnds.set_defaults(handler=command_dnds)
+
+
 command_accession2fasta = lazy_command(
     command="accession2fasta",
     module_name="cdskit.accession2fasta",

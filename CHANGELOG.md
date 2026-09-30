@@ -6,6 +6,35 @@ replacement to standard error.
 
 ## Unreleased
 
+## 0.32.0 — 2026-09-30
+
+### Added
+
+- Add `cdskit dnds` and a native NumPy pairwise Yang--Nielsen (2000) API for
+  equal-weighted sense paths, pair-specific F3x4 frequencies and kappa.
+  Headered TSV reports audit retained codons, correction models, saturation
+  and missing estimates; no PAML executable is required.
+- Add repeatable API, fresh-process CLI and PAML comparison benchmarks with
+  input/source hashes, output fingerprints, timing samples and runtime metadata.
+
+### Performance
+
+- Batch ASCII-codon encoding, symmetric kappa-class projection and result-column
+  conversion, and size parallel batches to amortize worker overhead. Preserve
+  floating-point arithmetic, input order and report values. Parallel dense
+  arrays can be up to four times the serial per-worker batch size.
+- Reduce shared TSV writer overhead while preserving serialization, mapping
+  validation and atomic output behavior.
+
+### Fixed
+
+- Identify definite ambiguous internal stops (for example, `TAR`) instead of
+  treating them as deletable uncertainty. Preserve ordinary dual-coding semantics.
+- Protect direct dN/dS handlers and benchmark reports from input/output aliases;
+  reject malformed benchmark TSV/DNA and normalize RNA before paired deletion.
+- Keep nonfinite PAML references as JSON missing values and report incomplete
+  comparison coverage explicitly.
+
 ## 0.31.10 — 2026-09-28
 
 ### Fixed

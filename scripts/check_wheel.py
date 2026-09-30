@@ -74,6 +74,30 @@ def main() -> None:
             raise RuntimeError(
                 "Installed CLI returned unexpected alignment statistics."
             )
+        pairs = root / "pairs.tsv"
+        sequence = "GCTGCCGGTTTTATGACG" * 20
+        pairs.write_text(
+            "pair_id\tsequence_1\tsequence_2\n"
+            f"same\t{sequence}\t{sequence}\n"
+            f"internal\t{sequence}TARGCT\t{sequence}AAAGCT\n"
+            "missing\tNNN\tNNN\n",
+            encoding="utf-8",
+        )
+        dnds = run([cli, "dnds", "--pairs_file", str(pairs)], capture_output=True)
+        distances = list(csv.DictReader(StringIO(dnds.stdout), delimiter="\t"))
+        if (
+            len(distances) != 3
+            or distances[0]["pair_id"] != "same"
+            or distances[0]["dS"] != "0.0"
+            or distances[0]["dN"] != "0.0"
+            or distances[0]["method"] != "YN00_weighting0_F3x4"
+            or distances[0]["schema_version"] != "2"
+            or distances[1]["status"] != "internal_stop"
+            or distances[1]["dS"] != ""
+            or distances[2]["status"] != "no_aligned_sense_codons"
+            or distances[2]["dS"] != ""
+        ):
+            raise RuntimeError("Installed CLI returned unexpected dN/dS output.")
         plot = root / "smoke.svg"
         run(
             [
@@ -91,7 +115,7 @@ def main() -> None:
             raise RuntimeError("Installed CLI did not create an SVG plot.")
         run([uv, "pip", "check", "--python", python])
     print(
-        "Fresh installed-wheel import, CLI, padding, alignment statistics and SVG checks passed."
+        "Fresh installed-wheel import, CLI, padding, alignment statistics, dN/dS and SVG checks passed."
     )
 
 

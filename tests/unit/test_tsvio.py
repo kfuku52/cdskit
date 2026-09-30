@@ -1,10 +1,12 @@
 import csv
 import io
+from types import MappingProxyType
 
 import pytest
 
 from cdskit.tsvio import (
     TSV_REPORT_SCHEMA_VERSION,
+    json_cell,
     read_tsv,
     write_sectioned_tsv,
     write_tsv,
@@ -47,6 +49,33 @@ def test_write_tsv_is_utf8_lf_and_rectangular(tmp_path):
             ["accession", "sequence", "kept"],
             ["α", "MAAA", "yes"],
         ]
+
+
+def test_write_tsv_matches_dictwriter_bytes_for_all_supported_cells(tmp_path):
+    fields = ["text", "float", "boolean", "json", "none", "missing"]
+    rows = [
+        {
+            "text": 'α\t"quoted"\r\nnext',
+            "float": 1.2345678901234567,
+            "boolean": True,
+            "json": {"x": [1, "β"]},
+            "none": None,
+        },
+        MappingProxyType(
+            {"text": "", "float": 0.0, "boolean": False, "json": ("a", "b")}
+        ),
+    ]
+    reference = io.StringIO(newline="")
+    writer = csv.DictWriter(
+        reference, fieldnames=fields, delimiter="\t", lineterminator="\n"
+    )
+    writer.writeheader()
+    writer.writerows(
+        {key: json_cell(row.get(key, "")) for key in fields} for row in rows
+    )
+    output = tmp_path / "report.tsv"
+    write_tsv(output, iter(rows), fields)
+    assert output.read_bytes() == reference.getvalue().encode("utf-8")
 
 
 def test_write_tsv_rejects_unexpected_columns(tmp_path):

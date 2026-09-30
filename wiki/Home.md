@@ -53,6 +53,8 @@ Third-party software and source datasets retain their own license terms.
 
 - [`degeneracy`](https://github.com/kfuku52/cdskit/wiki/cdskit-degeneracy): Extracting aligned 0/2/3/4-fold degenerate nucleotide positions
 
+- [`dnds`](https://github.com/kfuku52/cdskit/wiki/cdskit-dnds): Batched pairwise YN00 dN/dS estimation from aligned CDS pairs
+
 - [`filter`](https://github.com/kfuku52/cdskit/wiki/cdskit-filter): Filtering CDS by sequence-level clean-codon fraction and quality rules
 
 - [`gapjust`](https://github.com/kfuku52/cdskit/wiki/cdskit-gapjust): Adjusting consecutive Ns to the fixed length
