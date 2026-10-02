@@ -1,5 +1,13 @@
 # Trusted localization model portability
 
+Remote `esm_head_v1` encoders require an immutable, full 40-character commit SHA
+in `--esm_model_revision` and in saved model artifacts. Branch names, tags and
+abbreviated revisions are rejected before loading an encoder. The default
+pinned revision is unchanged; local encoder directories do not require a SHA.
+For an existing artifact containing a mutable reference, recover the original
+training encoder SHA before re-exporting it. Resolving the current branch does
+not establish which weights were used for training.
+
 The `targeting5-perox-deeploc21-et-v1` v1 artifact contains Cython loss globals
 under the short module name `_loss`. The trusted-pickle reader resolves its
 four known binomial/multinomial class and reconstruction names to

@@ -6,6 +6,24 @@ replacement to standard error.
 
 ## Unreleased
 
+## 0.32.1 — 2026-10-02
+
+### Fixed
+
+- Send `localize-learn --report -` and `degeneracy --report -` to standard
+  output without creating or replacing a file named `-`; retain transactional
+  writes for named outputs.
+- Dispatch nested two-stage TargetP blend models in single-sequence prediction,
+  preserving organism context and matching batch predictions.
+- Require immutable 40-character commit SHAs for remote ESM head training and
+  inference, including saved artifacts. Local encoders and the default pinned
+  revision retain their existing behavior.
+
+### Security
+
+- Update locked urllib3 from 2.7.0 to 2.8.0 to fix CVE-2026-97687,
+  CVE-2026-97688 and CVE-2026-97689 in development and audit dependencies.
+
 ## 0.32.0 — 2026-09-30
 
 ### Added

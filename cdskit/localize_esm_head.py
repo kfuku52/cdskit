@@ -7,6 +7,18 @@ from cdskit.localize_runtime import offline_requested
 DEFAULT_ESM_MODEL_REVISION = "c731040fcd8d73dceaa04b0a8e6329b345b0f5df"
 
 
+def validate_remote_esm_revision(revision):
+    revision = str(revision or "").strip()
+    if len(revision) != 40 or any(
+        char not in "0123456789abcdef" for char in revision.lower()
+    ):
+        raise ValueError(
+            "Remote ESM revision must be an immutable 40-character commit SHA "
+            "(--esm_model_revision); branch names and tags are not supported."
+        )
+    return revision
+
+
 def require_transformers():
     try:
         import torch
@@ -137,6 +149,13 @@ def fit_esm_head_classifier(
     model_revision=DEFAULT_ESM_MODEL_REVISION,
     embedding_cache=None,
 ):
+    model_source, local_files_only, source_type = _resolve_model_source(
+        model_name=model_name,
+        model_local_dir=model_local_dir,
+    )
+    revision = (
+        None if source_type == "local" else validate_remote_esm_revision(model_revision)
+    )
     torch, nn, AutoTokenizer, AutoModel = require_transformers()
     np.random.seed(int(seed))
     torch.manual_seed(int(seed))
@@ -157,13 +176,6 @@ def fit_esm_head_classifier(
         raise ValueError("--esm_max_len should be >= 4.")
 
     resolved_device = resolve_torch_device(device_text=device)
-    model_source, local_files_only, source_type = _resolve_model_source(
-        model_name=model_name,
-        model_local_dir=model_local_dir,
-    )
-    revision = None if source_type == "local" else str(model_revision or "").strip()
-    if source_type != "local" and revision == "":
-        raise ValueError("--esm_model_revision is required for a remote ESM model.")
     common_kwargs: dict[str, object] = {
         "local_files_only": bool(local_files_only or offline_requested()),
         "trust_remote_code": False,
@@ -274,8 +286,6 @@ def _get_runtime_esm_encoder_and_head(localization_model, device_text="cpu"):
 
     resolved_device = resolve_torch_device(device_text=device_text)
     cache_key = str(resolved_device)
-    if cache_key in cache:
-        return cache[cache_key], resolved_device
 
     model_name = str(localization_model.get("model_name", ""))
     model_revision = str(localization_model.get("model_revision", "")).strip()
@@ -296,7 +306,10 @@ def _get_runtime_esm_encoder_and_head(localization_model, device_text="cpu"):
             raise ValueError(
                 "Remote ESM model revision is missing from the model artifact."
             )
+        model_revision = validate_remote_esm_revision(model_revision)
         common_kwargs["revision"] = model_revision
+    if cache_key in cache:
+        return cache[cache_key], resolved_device
     tokenizer = AutoTokenizer.from_pretrained(
         str(model_source),
         **common_kwargs,

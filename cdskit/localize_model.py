@@ -1304,6 +1304,23 @@ def _predict_localization_from_model(
 ):
     if feature_schema_changed():
         feature_vec = extract_localize_features(aa_seq)[0]
+    strategy = str(localization_model.get("strategy", "single_stage")).strip().lower()
+    if strategy == "two_stage":
+        return predict_two_stage_localization(
+            aa_seq,
+            feature_vec,
+            localization_model,
+            model_type,
+            organism_group=organism_group,
+        )
+    if strategy == "two_stage_ctp_ltp":
+        return predict_two_stage_ctp_ltp_localization(
+            aa_seq,
+            feature_vec,
+            localization_model,
+            model_type,
+            organism_group=organism_group,
+        )
     if str(localization_model.get("mode", "")).strip().lower() == "constant":
         return _predict_constant_localization(localization_model=localization_model)
     if model_type == "nearest_centroid_v1":
@@ -1353,7 +1370,9 @@ def _predict_localization_from_model(
     raise ValueError("Unsupported model_type: {}".format(model_type))
 
 
-def predict_two_stage_localization(aa_seq, feature_vec, localization_model, model_type):
+def predict_two_stage_localization(
+    aa_seq, feature_vec, localization_model, model_type, organism_group=""
+):
     stage1_model = localization_model.get("stage1_model", {})
     stage2_model = localization_model.get("stage2_model", {})
     if (not isinstance(stage1_model, dict)) or (not isinstance(stage2_model, dict)):
@@ -1364,12 +1383,14 @@ def predict_two_stage_localization(aa_seq, feature_vec, localization_model, mode
         feature_vec=feature_vec,
         localization_model=stage1_model,
         model_type=model_type,
+        organism_group=organism_group,
     )
     _, stage2_probs = _predict_localization_from_model(
         aa_seq=aa_seq,
         feature_vec=feature_vec,
         localization_model=stage2_model,
         model_type=model_type,
+        organism_group=organism_group,
     )
 
     out_probs = {class_name: 0.0 for class_name in LOCALIZATION_CLASSES}
@@ -2913,12 +2934,14 @@ def predict_two_stage_ctp_ltp_localization(
     localization_model,
     model_type,
     return_details=False,
+    organism_group="",
 ):
     _, base_probs = predict_two_stage_localization(
         aa_seq=aa_seq,
         feature_vec=feature_vec,
         localization_model=localization_model,
         model_type=model_type,
+        organism_group=organism_group,
     )
     stage3_model = localization_model.get("stage3_model", None)
     if not isinstance(stage3_model, dict):
@@ -2971,6 +2994,7 @@ def predict_two_stage_ctp_ltp_localization(
         feature_vec=feature_vec,
         localization_model=stage3_model,
         model_type=model_type,
+        organism_group=organism_group,
     )
     stage3_probs = _normalize_ctp_ltp_probs(stage3_probs=stage3_probs)
     out_probs, details = compose_two_stage_ctp_ltp_probabilities(
@@ -3030,6 +3054,7 @@ def predict_localization_and_peroxisome(aa_seq, model, organism_group=""):
             feature_vec=feats,
             localization_model=localization_model,
             model_type=model_type,
+            organism_group=organism_group,
         )
     elif localization_strategy == "two_stage_ctp_ltp":
         _, class_probs, strategy_details = predict_two_stage_ctp_ltp_localization(
@@ -3038,6 +3063,7 @@ def predict_localization_and_peroxisome(aa_seq, model, organism_group=""):
             localization_model=localization_model,
             model_type=model_type,
             return_details=True,
+            organism_group=organism_group,
         )
     else:
         _, class_probs = _predict_localization_from_model(

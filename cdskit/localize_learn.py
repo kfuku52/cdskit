@@ -1491,6 +1491,8 @@ def _validate_deep_learning_options(
     dl_aux_ctp_ltp_weight,
     esm_pooling,
     esm_max_len,
+    esm_model_revision,
+    esm_model_local_dir,
 ):
     finite_values = {
         "--dl_dropout": dl_dropout,
@@ -1535,8 +1537,13 @@ def _validate_deep_learning_options(
 
         require_torch()
     if model_arch == "esm_head":
-        from cdskit.localize_esm_head import require_transformers
+        from cdskit.localize_esm_head import (
+            require_transformers,
+            validate_remote_esm_revision,
+        )
 
+        if not esm_model_local_dir:
+            validate_remote_esm_revision(esm_model_revision)
         require_transformers()
     if cv_folds < 0:
         raise ValueError("--cv_folds should be >= 0.")
@@ -1773,6 +1780,8 @@ def localize_learn_main(args):
         dl_aux_ctp_ltp_weight=dl_aux_ctp_ltp_weight,
         esm_pooling=esm_pooling,
         esm_max_len=esm_max_len,
+        esm_model_revision=esm_model_revision,
+        esm_model_local_dir=esm_model_local_dir,
     )
 
     rows, source = _load_training_rows(args=args, cv_fold_col=cv_fold_col)
@@ -2311,7 +2320,7 @@ def localize_learn_main(args):
         }
     )
 
-    outputs = [args.model_out] + ([args.report] if args.report else [])
+    outputs = [args.model_out] + ([args.report] if args.report not in ("", "-") else [])
     with atomic_output_paths(outputs) as staged_outputs:
         staged = dict(zip(outputs, staged_outputs, strict=False))
         save_localize_model(model=model, path=staged[args.model_out])
@@ -2321,6 +2330,6 @@ def localize_learn_main(args):
             else:
                 write_rows_tsv(
                     rows=report_rows,
-                    output_path=staged[args.report],
+                    output_path=staged.get(args.report, args.report),
                     fieldnames=["metric", "value"],
                 )

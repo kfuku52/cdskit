@@ -1236,7 +1236,7 @@ p_localize_learn.add_argument(
     metavar="COMMIT",
     default="c731040fcd8d73dceaa04b0a8e6329b345b0f5df",
     type=str,
-    help="Pinned Hugging Face commit used by --model_arch esm_head.",
+    help="Immutable 40-character Hugging Face commit SHA used by --model_arch esm_head.",
 )
 p_localize_learn.add_argument(
     "--esm_model_local_dir",

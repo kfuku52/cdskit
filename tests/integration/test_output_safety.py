@@ -1,3 +1,5 @@
+import csv
+import io
 import json
 import os
 
@@ -73,6 +75,51 @@ def test_gff_stdout_does_not_overwrite_literal_dash(
     )
     assert capsys.readouterr().out == contents
     assert dash.read_text() == "keep this file"
+
+
+@pytest.mark.parametrize("command", ["degeneracy", "localize-learn"])
+def test_report_stdout_does_not_overwrite_literal_dash(
+    tmp_path, monkeypatch, capsys, command
+):
+    monkeypatch.chdir(tmp_path)
+    dash = tmp_path / "-"
+    dash.write_text("keep this file")
+    if command == "degeneracy":
+        source = tmp_path / "input.fa"
+        source.write_text(">a\nATGGCT\n>b\nATGGCC\n")
+        arguments = ["--seq_file", str(source), "--prefix", "sites"]
+        metric, value = "num_sequences", "2"
+    else:
+        source = tmp_path / "train.tsv"
+        source.write_text(
+            "sequence\tlocalization\tperoxisome\n"
+            "MKKLAAA\tnoTP\tno\nMSSSSS\tSP\tno\nMLLLLL\tmTP\tno\n"
+            "MRRRRR\tcTP\tno\nMTTTTT\tlTP\tno\n"
+        )
+        arguments = [
+            "--training_tsv",
+            str(source),
+            "--seq_type",
+            "protein",
+            "--model_out",
+            "model.json",
+        ]
+        metric, value = "num_used_rows", "5"
+    assert main([command, *arguments, "--report", "-"]) == 0
+    output = capsys.readouterr().out
+    rows = list(csv.DictReader(io.StringIO(output), delimiter="\t"))
+    assert {row["metric"]: row["value"] for row in rows}[metric] == value
+    assert output.startswith("metric\tvalue\n")
+    assert dash.read_text() == "keep this file"
+    if command == "degeneracy":
+        assert (
+            tmp_path / "sites_4fold_positions.fasta"
+        ).read_text() == ">a\nT\n>b\nC\n"
+    else:
+        assert (
+            json.loads((tmp_path / "model.json").read_text())["model_type"]
+            == "nearest_centroid_v1"
+        )
 
 
 @pytest.mark.parametrize(

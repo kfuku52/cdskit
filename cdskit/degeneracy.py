@@ -141,12 +141,12 @@ def degeneracy_main(args):
         )
         for fold in selected_folds
     ]
-    outputs = sequence_outputs + ([args.report] if args.report else [])
+    outputs = sequence_outputs + ([args.report] if args.report not in ("", "-") else [])
     validate_distinct_paths(inputs=[args.seqfile], outputs=outputs)
     with atomic_output_paths(outputs) as staged_outputs:
         staged = dict(zip(outputs, staged_outputs, strict=False))
         write_degeneracy_report(
-            report_path=staged.get(args.report, ""),
+            report_path=staged.get(args.report, args.report),
             summary=summary,
         )
         for fold, outfile in zip(selected_folds, sequence_outputs, strict=False):

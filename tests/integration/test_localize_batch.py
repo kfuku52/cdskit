@@ -13,6 +13,7 @@ from cdskit.localize_runtime import (
     prediction_runtime,
     current_prediction_runtime,
 )
+from cdskit.targetp_blend import build_targetp_pair_blend_runtime_model
 
 
 @pytest.mark.parametrize("strategy", ["single_stage", "two_stage", "two_stage_ctp_ltp"])
@@ -60,6 +61,34 @@ def test_prediction_runtime_is_restored_after_failure():
         with prediction_runtime(PredictionRuntime(device="mps", offline=True)):
             predict_localization_batch(["MAAA"], {}, [])
     assert current_prediction_runtime() is previous
+
+
+@pytest.mark.parametrize("strategy", ["two_stage", "two_stage_ctp_ltp"])
+def test_blend_single_and_batch_predictions_match_for_staged_base_models(strategy):
+    sequences = ["MAAAAAA", "MSSSSSS", "MRRRRRR", "MKKKKKK", "MTTTTTT"]
+    features = np.asarray([extract_localize_features(seq)[0] for seq in sequences])
+    base = {
+        "model_type": "nearest_centroid_v1",
+        "localization_model": fit_localization_model(
+            features,
+            sequences,
+            list(LOCALIZATION_CLASSES),
+            "nearest_centroid",
+            {},
+            localize_strategy=strategy,
+        ),
+        "perox_model": {"mode": "constant", "yes_probability": 0.25},
+    }
+    model = build_targetp_pair_blend_runtime_model(base, base, alpha_by_class=0.5)
+    for group in ["plant", "animal", "fungi", ""]:
+        batch = predict_localization_batch(sequences, model, [group] * len(sequences))
+        for sequence, result in zip(sequences, batch, strict=True):
+            single = predict_localization_and_peroxisome(sequence, model, group)
+            assert single["predicted_class"] == result["predicted_class"]
+            assert single["class_probabilities"] == pytest.approx(
+                result["class_probabilities"], abs=1e-12
+            )
+            assert single["perox_probability_yes"] == result["perox_probability_yes"]
 
 
 @pytest.mark.parametrize("strategy", ["two_stage", "two_stage_ctp_ltp"])

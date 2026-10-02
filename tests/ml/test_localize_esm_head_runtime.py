@@ -104,10 +104,10 @@ def test_fit_predict_and_cache_esm_head_without_network(fake_transformers):
         seed=7,
         use_class_weight=True,
         device="cpu",
-        model_revision="0123456789abcdef",
+        model_revision="0123456789abcdef0123456789abcdef01234567",
     )
 
-    assert model["model_revision"] == "0123456789abcdef"
+    assert model["model_revision"] == "0123456789abcdef0123456789abcdef01234567"
     assert model["model_source_type"] == "huggingface"
     assert model["head_in_dim"] == 4
     assert set(model["head_state_dict"]) == {"weight", "bias"}
@@ -116,11 +116,14 @@ def test_fit_predict_and_cache_esm_head_without_network(fake_transformers):
         {
             "local_files_only": False,
             "trust_remote_code": False,
-            "revision": "0123456789abcdef",
+            "revision": "0123456789abcdef0123456789abcdef01234567",
         },
     )
     assert model_factory.calls[0][1]["use_safetensors"] is True
-    assert model_factory.calls[0][1]["revision"] == "0123456789abcdef"
+    assert (
+        model_factory.calls[0][1]["revision"]
+        == "0123456789abcdef0123456789abcdef01234567"
+    )
 
     model["_runtime_offline"] = True
     probabilities = esm_head.predict_esm_head_batch(
@@ -236,9 +239,27 @@ def _fit_fake_model(**overrides):
         seed=7,
         use_class_weight=True,
         device="cpu",
-        model_revision="0123456789abcdef",
+        model_revision="0123456789abcdef0123456789abcdef01234567",
     )
     return esm_head.fit_esm_head_classifier(**{**options, **overrides})
+
+
+@pytest.mark.parametrize("revision", ["main", "v1.0", "0123456", "g" * 40])
+def test_remote_esm_revision_must_be_immutable_before_loading(
+    fake_transformers, revision
+):
+    tokenizer, encoder = fake_transformers
+    with pytest.raises(ValueError, match="40-character commit SHA"):
+        _fit_fake_model(model_revision=revision)
+    assert not tokenizer.calls and not encoder.calls
+
+    pinned = _fit_fake_model(model_revision=esm_head.DEFAULT_ESM_MODEL_REVISION)
+    tokenizer.calls.clear()
+    encoder.calls.clear()
+    pinned["model_revision"] = revision
+    with pytest.raises(ValueError, match="40-character commit SHA"):
+        esm_head.predict_esm_head_batch(["MAAA"], pinned, device="cpu")
+    assert not tokenizer.calls and not encoder.calls
 
 
 def test_frozen_embeddings_are_reused_without_sharing_heads(
@@ -274,11 +295,11 @@ def test_frozen_embeddings_are_reused_without_sharing_heads(
     assert sum(calls) == 8
     _fit_fake_model(embedding_cache=cache, pooling="cls")
     assert sum(calls) == 12
-    _fit_fake_model(embedding_cache=cache, model_revision="different")
+    _fit_fake_model(embedding_cache=cache, model_revision="f" * 40)
     assert sum(calls) == 16
 
 
-@pytest.mark.parametrize("nested", ["single", "two_stage_ctp_ltp"])
+@pytest.mark.parametrize("nested", ["single", "two_stage_ctp_ltp", "blend"])
 def test_cli_offline_applies_to_every_nested_encoder(
     fake_transformers, monkeypatch, tmp_path, nested
 ):
@@ -341,7 +362,7 @@ def test_cli_offline_applies_to_every_nested_encoder(
             report=str(tmp_path / "report.tsv"),
         )
     )
-    expected_calls = {"single": 1, "two_stage_ctp_ltp": 3}[nested]
+    expected_calls = {"single": 1, "two_stage_ctp_ltp": 3, "blend": 2}[nested]
     assert len(encoder.calls) == expected_calls
     assert all(
         kwargs["local_files_only"] for _, kwargs in tokenizer.calls + encoder.calls
@@ -379,7 +400,7 @@ def test_cross_validation_batches_predictions_on_requested_device(
         dict(
             esm_model_name="fake/esm",
             esm_model_local_dir="",
-            esm_model_revision="fixed",
+            esm_model_revision=esm_head.DEFAULT_ESM_MODEL_REVISION,
             esm_max_len=12,
             esm_pooling="mean",
             epochs=2,
