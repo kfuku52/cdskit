@@ -4,6 +4,7 @@ Pytest configuration and fixtures for CDSKIT tests.
 
 import csv
 from collections.abc import Iterable, Mapping
+import importlib
 from pathlib import Path
 
 import pytest
@@ -15,6 +16,38 @@ from Bio.SeqRecord import SeqRecord
 
 # Path to immutable, repository-owned test fixtures.
 DATA_DIR = Path(__file__).parent / "fixtures"
+
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--require-ml",
+        action="store_true",
+        help="Fail before collection if any full-profile dependency cannot import.",
+    )
+
+
+def pytest_sessionstart(session):
+    config = session.config
+    # xdist's controller runs no tests; each worker checks its own imports.
+    if config.getoption("--require-ml") and not config.pluginmanager.hasplugin(
+        "dsession"
+    ):
+        # Do not let importorskip silently reduce full checks to core coverage.
+        # Reuse these imports during collection and execution in this process.
+        try:
+            for module in (
+                "numpy",
+                "Bio",
+                "matplotlib",
+                "torch",
+                "sklearn",
+                "transformers",
+            ):
+                importlib.import_module(module)
+        except ImportError as exc:
+            raise pytest.UsageError(
+                f"Full tests require {module} to import: {exc}"
+            ) from exc
 
 
 @pytest.fixture

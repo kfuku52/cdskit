@@ -1,5 +1,6 @@
 """Offline end-to-end exercise of the public teacher/student stages."""
 
+from functools import partial
 import json
 import shutil
 import subprocess
@@ -14,7 +15,16 @@ from cdskit.localize_pipeline_stages import read_teacher_predictions
 
 
 @pytest.fixture
-def pipeline_config(tmp_path):
+def pipeline_config(tmp_path, monkeypatch):
+    from cdskit import localize_pipeline_stages as stages
+
+    # Pipeline tests need real metrics and report wiring, not 1,000 samples
+    # for a confidence interval over the two synthetic test rows.
+    monkeypatch.setattr(
+        stages,
+        "paired_cluster_bootstrap",
+        partial(stages.paired_cluster_bootstrap, iterations=12),
+    )
     transformers = pytest.importorskip("transformers")
     pytest.importorskip("torch")
     encoder = tmp_path / "encoder"
@@ -82,6 +92,7 @@ def pipeline_config(tmp_path):
     return path
 
 
+@pytest.mark.subprocess
 def test_pipeline_roundtrip_resume_and_cpu_export(
     pipeline_config, tmp_path, monkeypatch
 ):

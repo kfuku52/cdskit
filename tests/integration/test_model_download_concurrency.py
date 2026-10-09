@@ -102,7 +102,11 @@ def download_server():
             self.respond(True)
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    # A shorter shutdown poll avoids a half-second teardown for each tiny
+    # transfer. The transfer delay and worker synchronization remain intact.
+    thread = threading.Thread(
+        target=server.serve_forever, kwargs={"poll_interval": 0.02}, daemon=True
+    )
     thread.start()
     try:
         yield state, f"http://127.0.0.1:{server.server_port}"

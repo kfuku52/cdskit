@@ -20,7 +20,9 @@ environments; they do not replace an existing `.venv` or remove another check's
 dependencies. Subprocesses and executable script wrappers also inherit the
 selected environment, rather than resolving Python from the caller's `PATH`.
 Full checks install the test, coverage, quality, build, security
-and ML dependencies, and explicitly check ML imports before running pytest.
+and ML dependencies. Test profiles require ML imports before collection in the
+pytest process; missing dependencies fail rather than silently skipping ML tests.
+The standalone `quality` profile checks imports in a separate process.
 The [uv cache key](https://docs.astral.sh/uv/concepts/cache/#dynamic-metadata)
 includes `cdskit/__init__.py` so version changes also refresh installed metadata.
 
@@ -40,6 +42,10 @@ the GitHub URL shown in the README because CDSKIT is not published on PyPI.
 `quick` runs unit and integration tests without ML or subprocess tests.
 `core` also exercises subprocess entry points. Both compile every package and
 script module under the selected Python version.
+`ml` runs ML tests without subprocess tests. Concurrent model downloads, the
+pipeline CLI/export roundtrip and executable MMseqs wrappers remain in
+`coverage` and `all`, including CI. To include them in a focused ML run, use
+`python scripts/check.py ml -- -m ml`.
 
 Pass focused pytest options after `--`:
 
@@ -70,6 +76,7 @@ before delivery. These are local checks; CI supplies its declared platform matri
 | Shared codon semantics | `quick -- -k codon`; then `core`, since many commands share the helpers |
 | CLI dispatch, sequence/TSV I/O, output paths | `core` (includes command and output-safety regressions) |
 | Localization decisions or model loading | Relevant unit/integration tests plus `ml`; use `coverage` for changes spanning backends |
+| Localization pipeline CLI/export, concurrent downloads or external executable wrappers | `coverage` (includes ML subprocess tests) |
 | Python implementation | Add `quality` to the affected behavior checks |
 | Packaging or version | `build` for a fresh installed-wheel smoke check |
 | Docs or examples | Compare help and execute affected examples per [documentation maintenance](docs/documentation.md); no text-matching tests |
@@ -193,3 +200,7 @@ Use `slow`, `subprocess`, and `serial` when their execution requires it.
 Prefer pytest's `tmp_path` and the shared record/FASTA/TSV fixtures. Missing tracked
 fixtures are failures, not reasons to skip. Keep assertions in-process except
 when checking installed entry points or executable wrappers.
+For synthetic pipeline and frozen-evaluation I/O tests, use a small number of
+real bootstrap resamples; exercise grouping and interval calculations in their
+focused tests. Production statistical defaults and experiment settings are not
+test-speed controls.

@@ -1,4 +1,5 @@
 import csv
+from functools import partial
 import json
 
 import numpy as np
@@ -9,6 +10,13 @@ from cdskit import localize_frozen_evaluation as frozen
 
 @pytest.fixture
 def inputs(tmp_path, monkeypatch):
+    # These tests check evaluation I/O, abstention and rollback, not interval
+    # precision. Keep real resampling; boundary tests exercise it separately.
+    monkeypatch.setattr(
+        frozen,
+        "paired_cluster_bootstrap",
+        partial(frozen.paired_cluster_bootstrap, iterations=12),
+    )
     data = tmp_path / "data.tsv"
     rows = []
     for i, (split, sequence, positive) in enumerate(

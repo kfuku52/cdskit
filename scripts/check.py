@@ -75,8 +75,9 @@ def main(argv: list[str] | None = None) -> int:
     # use this profile too, regardless of the caller's active environment.
     env["PATH"] = str(bindir) + os.pathsep + env.get("PATH", "")
     env["VIRTUAL_ENV"] = str(environment)
-    if profile == "full":
-        # Never let importorskip silently turn the full check into core-only.
+    if args.check == "quality":
+        # Test profiles check imports in pytest itself, avoiding a second load
+        # of the ML frameworks in a separate interpreter.
         run(
             [
                 python,
@@ -96,6 +97,8 @@ def main(argv: list[str] | None = None) -> int:
             run([python, "-m", *command], env)
     if args.check in {"quick", "core", "ml", "coverage", "all"}:
         test = [python, "-m", "pytest", "-q"]
+        if profile == "full":
+            test += ["--require-ml"]
         if args.check in {"quick", "core"}:
             run([python, "-m", "compileall", "-q", "cdskit", "scripts"], env)
             test += [
@@ -105,7 +108,7 @@ def main(argv: list[str] | None = None) -> int:
                 "not ml and not subprocess" if args.check == "quick" else "not ml",
             ]
         elif args.check == "ml":
-            test += ["-m", "ml"]
+            test += ["-m", "ml and not subprocess"]
         else:
             test += [
                 "-n",

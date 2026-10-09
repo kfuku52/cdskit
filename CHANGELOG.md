@@ -6,6 +6,18 @@ replacement to standard error.
 
 ## Unreleased
 
+## 0.32.2 — 2026-10-09
+
+### Development
+
+- Keep ML subprocess tests in full coverage/CI checks while excluding them
+  from the focused `ml` profile; `ml -- -m ml` includes them explicitly.
+- Check ML dependencies in the pytest process, reusing imports during testing
+  and leaving the parallel-test controller free of unused ML frameworks.
+- Reduce bootstrap resampling in synthetic pipeline and frozen-evaluation I/O
+  tests, and shorten local download-server shutdown polling. Preserve all
+  test cases, production statistical defaults and full-suite coverage.
+
 ## 0.32.1 — 2026-10-02
 
 ### Fixed

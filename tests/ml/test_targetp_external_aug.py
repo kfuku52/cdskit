@@ -148,6 +148,7 @@ def test_build_external_augmented_rows_filters_overlaps_and_conflicts(temp_dir):
     assert report["mmseqs_similarity_filter"]["status"] == "disabled"
 
 
+@pytest.mark.subprocess
 def test_build_external_augmented_rows_can_filter_mmseqs_similarity(
     temp_dir, monkeypatch
 ):
