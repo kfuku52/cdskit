@@ -3,7 +3,10 @@ import sys
 from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
 from functools import partial
+from numbers import Integral
 from typing import Any
+
+import numpy as np
 
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
@@ -173,6 +176,39 @@ def build_variable_subset_masks(variable_indices):
     return subset_masks
 
 
+def _complete_subset_counts(subset_variable_masks, required_mask, support_counts):
+    """Sum superset support once, using at most 8 MiB of dense count storage."""
+    size = len(subset_variable_masks)
+    if size > (1 << 20) or any(
+        not isinstance(count, Integral) for count in support_counts.values()
+    ):
+        return None
+    # Preserve Python integer arithmetic for unusually large direct-API counts.
+    if (
+        sum(abs(int(count)) for count in support_counts.values())
+        > np.iinfo(np.int64).max
+    ):
+        return None
+    variable_bits = [
+        subset_variable_masks[1 << i] for i in range(size.bit_length() - 1)
+    ]
+    counts = np.zeros(size, dtype=np.int64)
+    for support_mask, site_count in support_counts.items():
+        if support_mask & required_mask != required_mask:
+            continue
+        compact_mask = sum(
+            1 << i for i, bit in enumerate(variable_bits) if support_mask & bit
+        )
+        counts[compact_mask] += int(site_count)
+    # After each step, the lower half includes support from the upper half.
+    # The final entry for S counts every site whose support contains S.
+    for i in range(len(variable_bits)):
+        stride = 1 << i
+        blocks = counts.reshape(-1, stride * 2)
+        blocks[:, :stride] += blocks[:, stride:]
+    return counts
+
+
 def evaluate_exact_subset_range(
     subset_start,
     subset_end,
@@ -183,7 +219,12 @@ def evaluate_exact_subset_range(
     max_removed,
     total_sequences,
     num_sequences,
+    complete_counts=None,
 ):
+    if complete_counts is None:
+        complete_counts = _complete_subset_counts(
+            subset_variable_masks, required_mask, support_counts
+        )
     best = None
     for subset_mask in range(subset_start, subset_end):
         num_kept = required_count + popcount(subset_mask)
@@ -193,9 +234,10 @@ def evaluate_exact_subset_range(
         if (max_removed is not None) and (num_removed > max_removed):
             continue
         kept_mask = required_mask | subset_variable_masks[subset_mask]
-        complete_codon_columns = count_complete_columns_with_support(
-            support_counts=support_counts,
-            kept_mask=kept_mask,
+        complete_codon_columns = (
+            int(complete_counts[subset_mask])
+            if complete_counts is not None
+            else count_complete_columns_with_support(support_counts, kept_mask)
         )
         area = num_kept * complete_codon_columns
         if best is None:
@@ -307,12 +349,19 @@ def solve_exact(
     )
     required_mask = indices_to_bitmask(required_indices)
     required_count = len(required_indices)
+    complete_counts = _complete_subset_counts(
+        subset_variable_masks, required_mask, support_counts
+    )
     threads = resolve_threads(threads=threads)
     # Exact-search workers need enough subsets to amortize process startup and
     # shared-data serialization. More than eight workers oversubscribes the
     # common search sizes without improving throughput.
     useful_workers = max(1, max_mask // 65_536)
     threads = min(threads, useful_workers, 8)
+    if complete_counts is not None:
+        # The count transform already removes the costly per-candidate scan;
+        # process startup and serializing dense counts cost more than this loop.
+        threads = 1
     if (threads <= 1) or (max_mask <= 1):
         return evaluate_exact_subset_range(
             subset_start=0,
@@ -324,6 +373,7 @@ def solve_exact(
             max_removed=max_removed,
             total_sequences=total_sequences,
             num_sequences=num_sequences,
+            complete_counts=complete_counts,
         )
 
     chunk_size = max(1, max_mask // (threads * 8))

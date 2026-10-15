@@ -629,16 +629,20 @@ class TestMaxalignHelpers:
         assert greedy["area"] == 2
 
     def test_solve_exact_process_fallback_to_threads(self, monkeypatch):
-        matrix = [
-            [True, True] * 50 for _ in range(13)
-        ]  # 13 variable seqs => 8192 subsets
+        matrix = [[True, True] * 50 for _ in range(17)]
+        attempted = []
 
         class FailingProcessPool:
             def __init__(self, *args, **kwargs):
+                attempted.append(True)
                 raise PermissionError("no process pool")
 
         monkeypatch.setattr("cdskit.maxalign.ProcessPoolExecutor", FailingProcessPool)
+        monkeypatch.setattr(
+            "cdskit.maxalign._complete_subset_counts", lambda *args: None
+        )
         result = solve_exact(matrix, threads=4)
+        assert attempted
         assert result is not None
         assert result["num_kept"] >= 1
 

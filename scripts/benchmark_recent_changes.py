@@ -1,4 +1,4 @@
-"""Compare time, peak RSS and outputs in fresh processes across source snapshots.
+"""Compare elapsed/CPU time, RSS and outputs across fresh source-snapshot processes.
 
 Example:
   python scripts/benchmark_recent_changes.py --source old=/tmp/old \
@@ -32,6 +32,10 @@ CASES = (
     "longestorf_ambiguous",
     "backtrim",
     "gapjust_gff",
+    "degeneracy",
+    "maxalign_exact",
+    "maxalign_dense",
+    "tsv_header",
     "targetp_features",
     "targetp_features_legacy",
     "cnn_predict",
@@ -196,6 +200,45 @@ def build_case(name, root, model_path):
             "gaps": 10_000,
             "gff_features": 10_000,
         }
+    elif name == "degeneracy":
+        from cdskit.degeneracy import classify_alignment_columns
+
+        codons = [*sense, "---", "NNN", "TAA", "TAR", "GCN", "atg"]
+        records = [
+            SeqRecord(Seq("".join(rng.choices(codons, k=10_000))), id=str(i))
+            for i in range(100)
+        ]
+
+        def run():
+            return classify_alignment_columns(records, 1)
+
+        workload = {"records": 100, "codons_per_record": 10_000, "code": 1}
+    elif name in ("maxalign_exact", "maxalign_dense"):
+        from collections import Counter
+        from cdskit.maxalign import solve_exact
+
+        num_sequences = 17 if name == "maxalign_exact" else 16
+        sites = 80 if name == "maxalign_exact" else 4000
+        support = Counter(rng.getrandbits(num_sequences) for _ in range(sites))
+
+        def run():
+            return solve_exact(
+                None, support_counts=support, num_sequences=num_sequences, threads=1
+            )
+
+        workload = {"sequences": num_sequences, "sites": sites, "threads": 1}
+    elif name == "tsv_header":
+        from cdskit.tsvio import validate_fieldnames
+
+        columns = ["feature_{}".format(i) for i in range(2000)]
+
+        def run():
+            return [
+                validate_fieldnames(columns, "benchmark.tsv", columns[-10:])
+                for _ in range(10)
+            ]
+
+        workload = {"columns": 2000, "validations": 10, "required_columns": 10}
     elif name in ("targetp_features", "targetp_features_legacy"):
         import cdskit
         from cdskit.localize_model import extract_targetp_feature_ensemble_features
@@ -322,9 +365,12 @@ def worker(args):
             expected = output_fingerprint(common(warmed))
             del warmed
             samples = []
+            cpu_samples = []
             for _ in range(args.repeats):
                 started = time.perf_counter()
+                cpu_started = time.process_time()
                 result = run()
+                cpu_samples.append(time.process_time() - cpu_started)
                 samples.append(time.perf_counter() - started)
                 if output_fingerprint(common(result)) != expected:
                     raise RuntimeError("Output changed across repetitions.")
@@ -335,6 +381,8 @@ def worker(args):
                     workload=workload,
                     samples_seconds=samples,
                     median_seconds=statistics.median(samples),
+                    samples_process_cpu_seconds=cpu_samples,
+                    median_process_cpu_seconds=statistics.median(cpu_samples),
                     warmup_runs=1,
                     peak_rss_bytes=peak_rss_bytes(),
                     output_sha256=expected,

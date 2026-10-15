@@ -1,5 +1,9 @@
 import copy
 import sys
+from functools import lru_cache
+from itertools import product
+
+import numpy as np
 
 from cdskit.codonutil import degeneracy_fold_by_position
 from cdskit.split import resolve_output_prefix
@@ -24,41 +28,47 @@ def build_degeneracy_output_path(prefix, fold, outseqformat):
     return f"{prefix}_{fold}fold_positions.{outseqformat}"
 
 
+_BASE_CODES = bytes(
+    "ACGTacgt".index(chr(i)) % 4 if chr(i) in "ACGTacgt" else 4 for i in range(256)
+)
+
+
+@lru_cache(maxsize=64)
+def _fold_lookup(codontable):
+    # The fifth base code covers ambiguity, gaps and invalid characters.
+    lookup = np.full((125, 3), -1, dtype=np.int8)
+    for codes in product(range(4), repeat=3):
+        codon = "".join("ACGT"[code] for code in codes)
+        folds = degeneracy_fold_by_position(codon, codontable)
+        if folds is not None:
+            lookup[codes[0] * 25 + codes[1] * 5 + codes[2]] = folds
+    lookup.flags.writeable = False
+    return lookup
+
+
 def classify_alignment_columns(records, codontable):
-    assignments: list[int | None] = []
-    counts_by_fold = {0: 0, 2: 0, 3: 0, 4: 0}
-    num_conflict_sites = 0
-    num_unassigned_sites = 0
-    seq_strings = [str(record.seq) for record in records]
-    for codon_start in range(0, len(records[0]), 3):
-        fold_values_by_position: list[list[int]] = [[], [], []]
-        for seq_str in seq_strings:
-            folds = degeneracy_fold_by_position(
-                codon=seq_str[codon_start : codon_start + 3],
-                codontable=codontable,
-            )
-            if folds is None:
-                continue
-            for pos in range(3):
-                fold_values_by_position[pos].append(folds[pos])
-        for pos in range(3):
-            values = fold_values_by_position[pos]
-            if len(values) == 0:
-                assignments.append(None)
-                num_unassigned_sites += 1
-                continue
-            if len(set(values)) != 1:
-                assignments.append(None)
-                num_conflict_sites += 1
-                continue
-            fold = values[0]
-            assignments.append(fold)
-            counts_by_fold[fold] += 1
+    length = len(records[0])
+    minimum = np.full(length, 5, dtype=np.int8)
+    maximum = np.full(length, -1, dtype=np.int8)
+    lookup = _fold_lookup(codontable)
+    for record in records:
+        encoded = str(record.seq).encode("ascii").translate(_BASE_CODES)
+        codons = np.frombuffer(encoded, dtype=np.uint8).reshape(-1, 3)
+        indices = codons[:, 0] * 25 + codons[:, 1] * 5 + codons[:, 2]
+        folds = lookup[indices].reshape(-1)
+        np.maximum(maximum, folds, out=maximum)
+        np.minimum(minimum, np.where(folds < 0, 5, folds), out=minimum)
+    assigned = minimum == maximum
+    assignments = np.full(length, None, dtype=object)
+    assignments[assigned] = minimum[assigned]
     return {
-        "assignments": assignments,
-        "counts_by_fold": counts_by_fold,
-        "num_conflict_sites": num_conflict_sites,
-        "num_unassigned_sites": num_unassigned_sites,
+        "assignments": assignments.tolist(),
+        "counts_by_fold": {
+            fold: int(np.count_nonzero(assigned & (minimum == fold)))
+            for fold in (0, 2, 3, 4)
+        },
+        "num_conflict_sites": int(np.count_nonzero((maximum >= 0) & ~assigned)),
+        "num_unassigned_sites": int(np.count_nonzero(maximum < 0)),
     }
 
 

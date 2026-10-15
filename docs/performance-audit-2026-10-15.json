@@ -1,0 +1,388 @@
+{
+  "audit": {
+    "baseline_git_commit": "df5834ee983a5f69949b3815b87e5d9b15fa6c07",
+    "current_version": "0.32.3",
+    "driver_sha256": "befbfa21eef96e46462ee8d48aefb82cf932adc9717626fd88dafa520afc90d6",
+    "notes": [
+      "Retained optimization workloads only; discarded TargetP experiment is described in the Markdown report.",
+      "Elapsed times have substantial host-load noise; compare process CPU time.",
+      "The extracted baseline has no Git metadata; its fixed commit is recorded above."
+    ],
+    "runtime_source_sha256": {
+      "baseline": {
+        "cdskit/degeneracy.py": "1c232f232b32317a0f7f61cb0d65d59dc3702eca3965f9f5df1be6d580c0210a",
+        "cdskit/maxalign.py": "f87467845f138b757f4a8039d32cc41ab0501abf9aa5660c7bfce3712b666741",
+        "cdskit/tsvio.py": "d8b2b1ac785b7407c4532e5e7fbf6100b114c74bdfa50035ab2065eba33aef6b"
+      },
+      "current": {
+        "cdskit/degeneracy.py": "b76fca5c67a12ee3cb09f40860a591b9c6769dac1801c76268d3408bcfceb538",
+        "cdskit/maxalign.py": "2153325e2e2166fe3c9e605c30b4a5d07e186c3dc8cfec8cb7d384ec5bbd1b3e",
+        "cdskit/tsvio.py": "56a13bbf668d8a4fcb2af354d5a30d61a04d27b7d54f05fdb96376b53ef20be1"
+      }
+    }
+  },
+  "repeats": 5,
+  "results": {
+    "baseline": {
+      "degeneracy": {
+        "environment": {
+          "cdskit_version": "0.32.2",
+          "cpu_count": 12,
+          "created_utc": "2026-10-15T05:41:54.447606+00:00",
+          "dependencies": {
+            "biopython": "1.88",
+            "matplotlib": "3.11.1",
+            "numpy": "2.5.2"
+          },
+          "git_commit": null,
+          "git_dirty": null,
+          "implementation": "CPython",
+          "machine": "arm64",
+          "processor": "Apple M2 Max",
+          "python": "3.12.14",
+          "runner_image": null,
+          "system": "Darwin"
+        },
+        "median_process_cpu_seconds": 0.32070600000000005,
+        "median_seconds": 3.042136208037846,
+        "output_sha256": "04d243f798e76d492a76cf86f3dd6f5ab2dab69cbe3ba09174adc3c1eb742da0",
+        "peak_rss_bytes": 53985280,
+        "samples_process_cpu_seconds": [
+          0.32955900000000005,
+          0.32070600000000005,
+          0.331097,
+          0.2960100000000001,
+          0.3042159999999998
+        ],
+        "samples_seconds": [
+          3.593109207926318,
+          3.042136208037846,
+          3.611997041036375,
+          2.4974719579331577,
+          2.56128250004258
+        ],
+        "warmup_runs": 1,
+        "workload": {
+          "code": 1,
+          "codons_per_record": 10000,
+          "records": 100
+        }
+      },
+      "maxalign_dense": {
+        "environment": {
+          "cdskit_version": "0.32.2",
+          "cpu_count": 12,
+          "created_utc": "2026-10-15T05:45:40.953852+00:00",
+          "dependencies": {
+            "biopython": "1.88",
+            "matplotlib": "3.11.1",
+            "numpy": "2.5.2"
+          },
+          "git_commit": null,
+          "git_dirty": null,
+          "implementation": "CPython",
+          "machine": "arm64",
+          "processor": "Apple M2 Max",
+          "python": "3.12.14",
+          "runner_image": null,
+          "system": "Darwin"
+        },
+        "median_process_cpu_seconds": 7.268149999999999,
+        "median_seconds": 24.843485457939096,
+        "output_sha256": "e38b2da73d0e44d437519f46ab8bd316876151339e19d8a644acf1be34379460",
+        "peak_rss_bytes": 50282496,
+        "samples_process_cpu_seconds": [
+          7.313661,
+          7.4441500000000005,
+          7.164952000000003,
+          7.067492000000001,
+          7.268149999999999
+        ],
+        "samples_seconds": [
+          45.091025625006296,
+          26.796450041001663,
+          21.41820887499489,
+          24.25238708301913,
+          24.843485457939096
+        ],
+        "warmup_runs": 1,
+        "workload": {
+          "sequences": 16,
+          "sites": 4000,
+          "threads": 1
+        }
+      },
+      "maxalign_exact": {
+        "environment": {
+          "cdskit_version": "0.32.2",
+          "cpu_count": 12,
+          "created_utc": "2026-10-15T05:42:23.385501+00:00",
+          "dependencies": {
+            "biopython": "1.88",
+            "matplotlib": "3.11.1",
+            "numpy": "2.5.2"
+          },
+          "git_commit": null,
+          "git_dirty": null,
+          "implementation": "CPython",
+          "machine": "arm64",
+          "processor": "Apple M2 Max",
+          "python": "3.12.14",
+          "runner_image": null,
+          "system": "Darwin"
+        },
+        "median_process_cpu_seconds": 0.3637360000000003,
+        "median_seconds": 3.2875402090139687,
+        "output_sha256": "70b8455db3fd751c40dba578e531253f2154b1ce68a6a843f8100bdf2fbb3dfb",
+        "peak_rss_bytes": 53428224,
+        "samples_process_cpu_seconds": [
+          0.376788,
+          0.358294,
+          0.35303300000000015,
+          0.38263099999999994,
+          0.3637360000000003
+        ],
+        "samples_seconds": [
+          4.3470729580149055,
+          3.2875402090139687,
+          2.837125207995996,
+          2.8226304589770734,
+          3.345187791972421
+        ],
+        "warmup_runs": 1,
+        "workload": {
+          "sequences": 17,
+          "sites": 80,
+          "threads": 1
+        }
+      },
+      "tsv_header": {
+        "environment": {
+          "cdskit_version": "0.32.2",
+          "cpu_count": 12,
+          "created_utc": "2026-10-15T05:45:48.148958+00:00",
+          "dependencies": {
+            "biopython": "1.88",
+            "matplotlib": "3.11.1",
+            "numpy": "2.5.2"
+          },
+          "git_commit": null,
+          "git_dirty": null,
+          "implementation": "CPython",
+          "machine": "arm64",
+          "processor": "Apple M2 Max",
+          "python": "3.12.14",
+          "runner_image": null,
+          "system": "Darwin"
+        },
+        "median_process_cpu_seconds": 0.293272,
+        "median_seconds": 0.8246107909362763,
+        "output_sha256": "cba7e5a0f5d195c38e6fb4b2c5b1a15e3747251c20884f251e85672be5256fd7",
+        "peak_rss_bytes": 40321024,
+        "samples_process_cpu_seconds": [
+          0.283729,
+          0.293272,
+          0.29087699999999983,
+          0.31091400000000013,
+          0.3018310000000002
+        ],
+        "samples_seconds": [
+          0.9226119999075308,
+          0.8246107909362763,
+          0.7663106250111014,
+          0.9689572090283036,
+          0.6861089169979095
+        ],
+        "warmup_runs": 1,
+        "workload": {
+          "columns": 2000,
+          "required_columns": 10,
+          "validations": 10
+        }
+      }
+    },
+    "current": {
+      "degeneracy": {
+        "environment": {
+          "cdskit_version": "0.32.3",
+          "cpu_count": 12,
+          "created_utc": "2026-10-15T05:41:59.236846+00:00",
+          "dependencies": {
+            "biopython": "1.88",
+            "matplotlib": "3.11.1",
+            "numpy": "2.5.2"
+          },
+          "git_commit": "df5834ee983a5f69949b3815b87e5d9b15fa6c07",
+          "git_dirty": true,
+          "implementation": "CPython",
+          "machine": "arm64",
+          "processor": "Apple M2 Max",
+          "python": "3.12.14",
+          "runner_image": null,
+          "system": "Darwin"
+        },
+        "median_process_cpu_seconds": 0.014880000000000004,
+        "median_seconds": 0.13119508302770555,
+        "output_sha256": "04d243f798e76d492a76cf86f3dd6f5ab2dab69cbe3ba09174adc3c1eb742da0",
+        "peak_rss_bytes": 51773440,
+        "samples_process_cpu_seconds": [
+          0.020589000000000024,
+          0.01872299999999999,
+          0.014880000000000004,
+          0.012808000000000042,
+          0.014819000000000027
+        ],
+        "samples_seconds": [
+          0.33059454103931785,
+          0.256376083008945,
+          0.05694712488912046,
+          0.012811166932806373,
+          0.13119508302770555
+        ],
+        "warmup_runs": 1,
+        "workload": {
+          "code": 1,
+          "codons_per_record": 10000,
+          "records": 100
+        }
+      },
+      "maxalign_dense": {
+        "environment": {
+          "cdskit_version": "0.32.3",
+          "cpu_count": 12,
+          "created_utc": "2026-10-15T05:50:34.242585+00:00",
+          "dependencies": {
+            "biopython": "1.88",
+            "matplotlib": "3.11.1",
+            "numpy": "2.5.2"
+          },
+          "git_commit": "df5834ee983a5f69949b3815b87e5d9b15fa6c07",
+          "git_dirty": true,
+          "implementation": "CPython",
+          "machine": "arm64",
+          "processor": "Apple M2 Max",
+          "python": "3.12.14",
+          "runner_image": null,
+          "system": "Darwin"
+        },
+        "median_process_cpu_seconds": 0.028242000000000045,
+        "median_seconds": 0.03042616695165634,
+        "output_sha256": "e38b2da73d0e44d437519f46ab8bd316876151339e19d8a644acf1be34379460",
+        "peak_rss_bytes": 52068352,
+        "samples_process_cpu_seconds": [
+          0.02928,
+          0.037618999999999986,
+          0.028242000000000045,
+          0.021769999999999956,
+          0.023619
+        ],
+        "samples_seconds": [
+          0.031290207989513874,
+          0.03951166698243469,
+          0.03042616695165634,
+          0.021772375097498298,
+          0.02588491700589657
+        ],
+        "warmup_runs": 1,
+        "workload": {
+          "sequences": 16,
+          "sites": 4000,
+          "threads": 1
+        }
+      },
+      "maxalign_exact": {
+        "environment": {
+          "cdskit_version": "0.32.3",
+          "cpu_count": 12,
+          "created_utc": "2026-10-15T05:50:33.703713+00:00",
+          "dependencies": {
+            "biopython": "1.88",
+            "matplotlib": "3.11.1",
+            "numpy": "2.5.2"
+          },
+          "git_commit": "df5834ee983a5f69949b3815b87e5d9b15fa6c07",
+          "git_dirty": true,
+          "implementation": "CPython",
+          "machine": "arm64",
+          "processor": "Apple M2 Max",
+          "python": "3.12.14",
+          "runner_image": null,
+          "system": "Darwin"
+        },
+        "median_process_cpu_seconds": 0.03853800000000002,
+        "median_seconds": 0.04000370798166841,
+        "output_sha256": "70b8455db3fd751c40dba578e531253f2154b1ce68a6a843f8100bdf2fbb3dfb",
+        "peak_rss_bytes": 54919168,
+        "samples_process_cpu_seconds": [
+          0.03853800000000002,
+          0.036632,
+          0.039383,
+          0.03889100000000001,
+          0.033620999999999956
+        ],
+        "samples_seconds": [
+          0.04000370798166841,
+          0.03907237504608929,
+          0.040711916983127594,
+          0.04051375004928559,
+          0.034244665992446244
+        ],
+        "warmup_runs": 1,
+        "workload": {
+          "sequences": 17,
+          "sites": 80,
+          "threads": 1
+        }
+      },
+      "tsv_header": {
+        "environment": {
+          "cdskit_version": "0.32.3",
+          "cpu_count": 12,
+          "created_utc": "2026-10-15T05:45:42.716680+00:00",
+          "dependencies": {
+            "biopython": "1.88",
+            "matplotlib": "3.11.1",
+            "numpy": "2.5.2"
+          },
+          "git_commit": "df5834ee983a5f69949b3815b87e5d9b15fa6c07",
+          "git_dirty": true,
+          "implementation": "CPython",
+          "machine": "arm64",
+          "processor": "Apple M2 Max",
+          "python": "3.12.14",
+          "runner_image": null,
+          "system": "Darwin"
+        },
+        "median_process_cpu_seconds": 0.0015310000000000046,
+        "median_seconds": 0.0015318330843001604,
+        "output_sha256": "cba7e5a0f5d195c38e6fb4b2c5b1a15e3747251c20884f251e85672be5256fd7",
+        "peak_rss_bytes": 40288256,
+        "samples_process_cpu_seconds": [
+          0.0015479999999999938,
+          0.0015310000000000046,
+          0.0015219999999999956,
+          0.0015089999999999826,
+          0.003160999999999997
+        ],
+        "samples_seconds": [
+          0.0015502499882131815,
+          0.0015318330843001604,
+          0.001523875049315393,
+          0.00151012500282377,
+          0.006199042079970241
+        ],
+        "warmup_runs": 1,
+        "workload": {
+          "columns": 2000,
+          "required_columns": 10,
+          "validations": 10
+        }
+      }
+    }
+  },
+  "schema_version": 1,
+  "sources": {
+    "baseline": "/private/tmp/cdskit-efficiency-20261015/baseline-source",
+    "current": "/Users/kf/repos/cdskit"
+  }
+}

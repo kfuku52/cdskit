@@ -4,6 +4,7 @@ import csv
 import json
 import os
 import sys
+from collections import Counter
 from collections.abc import Iterable, Mapping
 from contextlib import nullcontext
 from typing import Any, TypeAlias
@@ -38,13 +39,14 @@ def validate_fieldnames(
                 path,
             )
         )
-    duplicates = sorted({name for name in fieldnames if fieldnames.count(name) > 1})
+    counts = Counter(fieldnames)
+    duplicates = sorted(name for name, count in counts.items() if count > 1)
     if duplicates:
         raise ValueError(
             "TSV has duplicate columns in {}: {}".format(path, ", ".join(duplicates))
         )
     required = _column_list(required_columns)
-    missing = [name for name in required if name not in fieldnames]
+    missing = [name for name in required if name not in counts]
     if missing:
         raise ValueError(
             "Missing required columns in {}: {}".format(path, ", ".join(missing))

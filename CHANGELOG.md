@@ -6,6 +6,23 @@ replacement to standard error.
 
 ## Unreleased
 
+## 0.32.3 — 2026-10-15
+
+### Performance
+
+- Precompute complete-column counts for MaxAlign exact searches with up to
+  20 variable sequences, using at most 8 MiB for the count table. Preserve
+  protected sequences, removal limits, tie handling and large integer counts.
+- Vectorize alignment degeneracy classification with genetic-code-specific
+  lookups and per-column reductions, retaining missing, stop and conflict rules.
+- Validate TSV header uniqueness and required columns in linear time.
+
+### Development
+
+- Add independent alignment equivalence tests and reproducible sparse/dense
+  MaxAlign, mixed-codon degeneracy and wide-TSV benchmark workloads. See the
+  [performance audit](docs/performance-audit-2026-10-15.md) for measurements.
+
 ## 0.32.2 — 2026-10-09
 
 ### Development
