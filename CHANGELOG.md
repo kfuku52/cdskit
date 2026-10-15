@@ -6,6 +6,32 @@ replacement to standard error.
 
 ## Unreleased
 
+## 0.32.4 — 2026-10-15
+
+### Performance
+
+- Aggregate cluster-level F1 sufficient statistics before bootstrap resampling,
+  preserving draws, seeds, unknown labels, intervals and custom metric callbacks.
+- Share sparse codon lookup arrays across trimming and visualization, and count
+  alignment site states in bounded NumPy blocks. Preserve genetic-code semantics.
+- Count problematic sequence symbols with native string operations and validate
+  ordinary localization probability rows in one array operation.
+- Stream named FASTA/tab masking output transactionally, and hash provenance rows
+  incrementally. Skip backtrim provenance hashes when no report is requested and
+  reuse partition hashes within model wrapping.
+- Select duplicate backtrim column matches with ordered indices and abbreviate
+  diagnostic candidate lists above 20 entries without changing selected sites.
+- Cache frozen PLM residue features in a bounded 256 MiB LRU per encoder and batch
+  equal-length missing windows. Preserve encoder identities, overlap order, model
+  artifacts and scientific training settings. Runtime encoder configuration can
+  disable memory caching or restrict window batches.
+
+### Development
+
+- Add equivalence, cache-ownership, eviction and late-input rollback regressions,
+  plus fresh-process benchmarks using real code and a tiny local ESM checkpoint.
+  See [measurements and validation](docs/performance-implementation-2026-10-15.md).
+
 ## 0.32.3 — 2026-10-15
 
 ### Performance

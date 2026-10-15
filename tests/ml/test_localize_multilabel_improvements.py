@@ -478,3 +478,53 @@ def test_plm_weighted_loss_uses_training_frequency_and_cap():
     y[:, 2] = 1
     loss = _training_loss(torch, torch.nn, "weighted_bce", y, "cpu")
     np.testing.assert_allclose(loss.pos_weight.numpy(), [10, np.sqrt(321 / 80), 1])
+
+
+def test_residue_memory_cache_is_bounded_and_cannot_be_poisoned(tiny_esm):
+    from cdskit.localize_multilabel_plm import ResidueEncoder
+
+    encoder = ResidueEncoder(
+        {
+            "model_name": str(tiny_esm),
+            "window": 8,
+            "overlap": 3,
+            "memory_cache_bytes": 1400,
+        }
+    )
+    expected = encoder.encode("MACDEFGHI")
+    expected_copy = expected.copy()
+    expected[:] = -99
+    np.testing.assert_array_equal(encoder.encode("macdefghi"), expected_copy)
+    encoder.encode("MLLLL")
+    assert encoder._memory_cache.size_bytes <= 1400
+    assert encoder._memory_cache.get(encoder._cache_identity, "MACDEFGHI") is None
+    calls = []
+    encoder.model.register_forward_hook(lambda *args: calls.append(1))
+    encoder.encode("MACDEFGHI")
+    assert calls  # Eviction recomputes instead of serving stale/fitted features.
+
+
+def test_residue_window_batching_matches_scalar_without_new_forward_on_hits(tiny_esm):
+    from cdskit.localize_multilabel_plm import ResidueEncoder
+
+    config = {"model_name": str(tiny_esm), "window": 8, "overlap": 3}
+    sequences = ["MACDEFGHILMN", "MLLLKAAQQRS", "MACDEFGHILMN", "MYYYY"]
+    scalar = ResidueEncoder({**config, "memory_cache_bytes": 0, "window_batch_size": 1})
+    scalar._load()
+    scalar_calls = []
+    scalar.model.register_forward_hook(lambda *args: scalar_calls.append(1))
+    expected = [scalar.encode(sequence) for sequence in sequences]
+    encoder = ResidueEncoder(config)
+    encoder._load()
+    calls = []
+    encoder.model.register_forward_hook(lambda *args: calls.append(1))
+    values = encoder.encode_many(sequences, batch_size=4)
+    assert len(calls) < len(scalar_calls)
+    for value, reference in zip(values, expected, strict=True):
+        np.testing.assert_allclose(value, reference, rtol=1e-6, atol=1e-6)
+    forwards = len(calls)
+    for value, reference in zip(encoder.encode_many(sequences), values, strict=True):
+        np.testing.assert_array_equal(value, reference)
+    assert len(calls) == forwards
+    values[0][:] = 0
+    assert values[2].any()  # Duplicate inputs own independent result buffers.

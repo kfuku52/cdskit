@@ -347,7 +347,7 @@ def build_case(name, root, model_path):
     return run, common, workload
 
 
-def worker(args):
+def worker(args, build_case_fn=build_case):
     sys.path.insert(0, str(args.root.resolve()))
     import cdskit
     from cdskit.benchmarking import (
@@ -359,7 +359,7 @@ def worker(args):
     if Path(cdskit.__file__).resolve().parent.parent != args.root.resolve():
         raise RuntimeError("Wrong source snapshot imported.")
     with tempfile.TemporaryDirectory(prefix="cdskit-bench-case-") as temporary:
-        run, common, workload = build_case(args.case, Path(temporary), args.model)
+        run, common, workload = build_case_fn(args.case, Path(temporary), args.model)
         with open(os.devnull, "w") as quiet, contextlib.redirect_stderr(quiet):
             warmed = run()
             expected = output_fingerprint(common(warmed))
@@ -393,8 +393,8 @@ def worker(args):
         )
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+def main(*, cases=CASES, build_case_fn=build_case, script_path=None, description=None):
+    parser = argparse.ArgumentParser(description=description or __doc__)
     parser.add_argument(
         "--source", action="append", default=[], help="NAME=SOURCE_ROOT"
     )
@@ -407,15 +407,15 @@ def main():
         ),
     )
     parser.add_argument("--repeats", type=int, default=5)
-    parser.add_argument("--cases", nargs="+", choices=CASES, default=list(CASES))
-    parser.add_argument("--case", choices=CASES)
+    parser.add_argument("--cases", nargs="+", choices=cases, default=list(cases))
+    parser.add_argument("--case", choices=cases)
     parser.add_argument("--root", type=Path)
     args = parser.parse_args()
     if args.repeats < 1:
         parser.error("repeats must be positive")
     args.model = args.model.resolve()
     if args.case:
-        worker(args)
+        worker(args, build_case_fn)
         return
     if not args.source or not args.output:
         parser.error("source and output are required")
@@ -445,7 +445,7 @@ def main():
         for name, root in order:
             command = [
                 sys.executable,
-                str(Path(__file__).resolve()),
+                str(Path(script_path or __file__).resolve()),
                 "--case",
                 case,
                 "--root",

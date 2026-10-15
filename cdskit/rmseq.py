@@ -40,7 +40,17 @@ def problematic_rate(seq, problematic_chars):
     )
     if len(normalized_chars) == 0:
         return 0.0
-    num_problematic_char = sum(1 for ch in str(seq).upper() if ch in normalized_chars)
+    sequence = str(seq).upper()
+    if len(normalized_chars) > 32:
+        # Counting once per symbol is useful for the small biological alphabet;
+        # preserve linear work for direct callers with large Unicode sets.
+        num_problematic_char = sum(ch in normalized_chars for ch in sequence)
+    else:
+        num_problematic_char = sum(
+            sequence.count(ch)
+            for ch in normalized_chars
+            if isinstance(ch, str) and len(ch) == 1
+        )
     return num_problematic_char / seq_len
 
 

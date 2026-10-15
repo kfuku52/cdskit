@@ -2,6 +2,10 @@ import copy
 import math
 import sys
 
+import numpy as np
+
+from cdskit.codonarray import codon_features
+
 from cdskit.codonutil import (
     CODON_SEMANTICS_VERSION,
     CODON_AMBIGUOUS,
@@ -68,6 +72,35 @@ def summarize_codon_site(seq_strings, codon_site, codontable):
         "possible_stop_codons": possible_stop,
         "context_dependent_codons": context_dependent,
     }
+
+
+def summarize_codon_sites(seq_strings, codontable):
+    """Collect site counts a row at a time without an alignment-sized matrix."""
+    num_sites = len(seq_strings[0]) // 3 if seq_strings else 0
+    totals = np.zeros((num_sites, 6), dtype=np.int64)
+    for sequence in seq_strings:
+        values = codon_features(sequence, codontable)
+        if values is None or len(sequence) != num_sites * 3:
+            return [
+                summarize_codon_site(seq_strings, site, codontable)
+                for site in range(num_sites)
+            ]
+        totals += values[0]
+    fields = (
+        "clean_codons",
+        "missing_codons",
+        "ambiguous_codons",
+        "stop_codons",
+        "possible_stop_codons",
+        "context_dependent_codons",
+    )
+    return [
+        {
+            "codon_site_1based": site + 1,
+            **dict(zip(fields, map(int, counts), strict=True)),
+        }
+        for site, counts in enumerate(totals)
+    ]
 
 
 def choose_kept_codon_sites(site_summaries, num_sequences, min_clean_fraction):
@@ -170,15 +203,7 @@ def trimcodon_main(args):
         name="--min_clean_fraction", value=args.min_clean_fraction
     )
     seq_strings = [str(record.seq) for record in records]
-    num_sites = len(seq_strings[0]) // 3 if seq_strings else 0
-    site_summaries = [
-        summarize_codon_site(
-            seq_strings=seq_strings,
-            codon_site=codon_site,
-            codontable=args.codontable,
-        )
-        for codon_site in range(num_sites)
-    ]
+    site_summaries = summarize_codon_sites(seq_strings, args.codontable)
     kept_sites = choose_kept_codon_sites(
         site_summaries=site_summaries,
         num_sequences=len(records),

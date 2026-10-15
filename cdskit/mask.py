@@ -5,11 +5,16 @@ from functools import partial
 
 import Bio.Data.CodonTable
 import Bio.Seq
+import Bio.SeqIO
+import sys
+
+from cdskit.atomicio import atomic_output_path
 import numpy as np
 
 from cdskit.translate import translate_sequence_codes
 
 from cdskit.util import (
+    iter_seq_chunks,
     parallel_map_ordered,
     read_seqs,
     resolve_threads,
@@ -142,11 +147,7 @@ def mask_payloads_process_parallel(
         return list(executor.map(worker, payloads, chunksize=chunk_size))
 
 
-def mask_main(args):
-    records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
-    stop_if_not_dna(records=records, label="--seq_file")
-    stop_if_invalid_codontable(args.codontable)
-    stop_if_not_multiple_of_three(records)
+def _mask_records(records, args, threads):
     mask_triplet = args.maskchar * 3
     mask_ambiguous = (
         args.ambiguouscodon
@@ -158,7 +159,6 @@ def mask_main(args):
         if isinstance(args.stopcodon, bool)
         else str(args.stopcodon).strip().lower() in ["yes", "true", "1"]
     )
-    threads = resolve_threads(getattr(args, "threads", 1))
     masked_seqs = None
     if should_use_process_pool(records=records, threads=threads):
         try:
@@ -188,4 +188,35 @@ def mask_main(args):
     for record, masked_seq in zip(records, masked_seqs, strict=False):
         if str(record.seq) != masked_seq:
             record.seq = Bio.Seq.Seq(masked_seq)
-    write_seqs(records=records, outfile=args.outfile, outseqformat=args.outseqformat)
+    return records
+
+
+def mask_main(args):
+    stop_if_invalid_codontable(args.codontable)
+    threads = resolve_threads(getattr(args, "threads", 1))
+    if args.outfile != "-" and str(args.outseqformat).lower() in {
+        "fasta",
+        "fasta-2line",
+        "tab",
+    }:
+        count = 0
+        with atomic_output_path(args.outfile) as temporary:
+            with open(temporary, "w", encoding="utf-8") as handle:
+                for records in iter_seq_chunks(
+                    args.seqfile, args.inseqformat, max_chunk_residues=8_000_000
+                ):
+                    stop_if_not_dna(records=records, label="--seq_file")
+                    stop_if_not_multiple_of_three(records)
+                    count += Bio.SeqIO.write(
+                        _mask_records(records, args, threads), handle, args.outseqformat
+                    )
+        sys.stderr.write("Number of output sequences: {:,}\n".format(count))
+        return
+    records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
+    stop_if_not_dna(records=records, label="--seq_file")
+    stop_if_not_multiple_of_three(records)
+    write_seqs(
+        records=_mask_records(records, args, threads),
+        outfile=args.outfile,
+        outseqformat=args.outseqformat,
+    )

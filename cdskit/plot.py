@@ -19,6 +19,7 @@ from matplotlib.patches import Patch, PathPatch, Rectangle
 from matplotlib.textpath import TextPath
 from matplotlib.transforms import Affine2D
 
+from cdskit.codonarray import codon_features
 from cdskit.codonutil import (
     analyze_codon,
     codon_has_missing,
@@ -28,7 +29,8 @@ from cdskit.codonutil import (
 from cdskit.draw import classify_codon, summarize_draw
 from cdskit.trimcodon import (
     choose_kept_codon_sites,
-    summarize_codon_site,
+    summarize_codon_site as summarize_codon_site,
+    summarize_codon_sites,
     validate_fraction,
 )
 from cdskit.atomicio import atomic_output_path, atomic_text_writer
@@ -195,6 +197,10 @@ def _build_state_matrix(records, codontable):
     matrix = np.zeros((len(records), num_sites), dtype=int)
     for row_idx, record in enumerate(records):
         seq = str(record.seq)
+        values = codon_features(seq, codontable)
+        if values is not None and len(seq) == num_sites * 3:
+            matrix[row_idx] = values[1]
+            continue
         for site_idx in range(num_sites):
             codon = seq[site_idx * 3 : site_idx * 3 + 3]
             matrix[row_idx, site_idx] = STATE_TO_INT[
@@ -1325,18 +1331,7 @@ def plot_main(args):
         return payload
 
     seq_strings = [str(record.seq) for record in records]
-    site_summaries = (
-        [
-            summarize_codon_site(
-                seq_strings=seq_strings,
-                codon_site=codon_site,
-                codontable=args.codontable,
-            )
-            for codon_site in range(len(seq_strings[0]) // 3)
-        ]
-        if len(records) > 0
-        else []
-    )
+    site_summaries = summarize_codon_sites(seq_strings, args.codontable)
     kept_sites = choose_kept_codon_sites(
         site_summaries=site_summaries,
         num_sequences=len(records),

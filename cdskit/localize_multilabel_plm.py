@@ -15,6 +15,7 @@ from cdskit.localize_decision import guard_multilabel_inputs, threshold_decision
 
 import numpy as np
 
+from cdskit.esm_embeddings import ESMEmbeddingCache
 from cdskit.localize_labels import masked_bce, require_observed
 
 from cdskit.localize_bilstm import require_torch, resolve_torch_device
@@ -135,6 +136,13 @@ class ResidueEncoder:
             "overlap": overlap,
             "format": "esm_residues_v1",
         }
+        self._cache_identity = json.dumps(self.identity, sort_keys=True)
+        self._memory_cache = ESMEmbeddingCache(
+            int(config.get("memory_cache_bytes", 256 * 1024 * 1024))
+        )
+        self._window_batch_size = int(config.get("window_batch_size", 8))
+        if self._window_batch_size < 1:
+            raise ValueError("PLM window_batch_size must be positive.")
 
     def _load(self):
         if self.model is not None:
@@ -171,60 +179,125 @@ class ResidueEncoder:
         ):
             raise ValueError("PLM window exceeds model positional capacity.")
 
-    def encode(self, sequence):
-        sequence = str(sequence).upper()
-        if not sequence:
-            raise ValueError("PLM requires nonempty protein sequences.")
-        key = hashlib.sha256(
-            (json.dumps(self.identity, sort_keys=True) + "\n" + sequence).encode()
-        ).hexdigest()
+    def _cache_path(self, sequence):
         cache_dir = str(self.config.get("cache_dir", "")).strip()
-        path = Path(cache_dir) / (key + ".npy") if cache_dir else None
-        if path is not None and path.exists():
-            value = np.load(path, allow_pickle=False)
-            if (
-                value.ndim != 2
-                or value.shape[0] != len(sequence)
-                or not np.isfinite(value).all()
-            ):
-                raise ValueError("Invalid residue embedding cache: {}".format(path))
-            return value
+        if not cache_dir:
+            return None
+        key = hashlib.sha256(
+            (self._cache_identity + "\n" + sequence).encode()
+        ).hexdigest()
+        return Path(cache_dir) / (key + ".npy")
+
+    def encode(self, sequence):
+        return self.encode_many([sequence], batch_size=1)[0]
+
+    def encode_many(self, sequences, batch_size=8):
+        """Encode distinct misses in length buckets; reuse frozen features only.
+
+        Equal-length windows need no padding. The caller's batch size, a maximum
+        of eight windows by default, and an 8192-token budget bound each forward.
+        Overlap contributions are still accumulated in original window order.
+        """
+        sequences = [str(sequence).upper() for sequence in sequences]
+        if any(not sequence for sequence in sequences):
+            raise ValueError("PLM requires nonempty protein sequences.")
+        if batch_size < 1:
+            raise ValueError("PLM embedding batch_size must be positive.")
+        values = {}
+        missing = []
+        for sequence in dict.fromkeys(sequences):
+            cached = self._memory_cache.get(self._cache_identity, sequence)
+            if cached is not None:
+                values[sequence] = cached
+                continue
+            path = self._cache_path(sequence)
+            if path is not None and path.exists():
+                value = np.load(path, allow_pickle=False)
+                if (
+                    value.ndim != 2
+                    or value.shape[0] != len(sequence)
+                    or not np.isfinite(value).all()
+                ):
+                    raise ValueError("Invalid residue embedding cache: {}".format(path))
+                self._memory_cache.put(self._cache_identity, sequence, value)
+                values[sequence] = value
+            else:
+                missing.append(sequence)
+        if missing:
+            values.update(self._encode_missing(missing, batch_size))
+        # Independent writable results preserve encode's public ownership contract.
+        return [values[sequence].copy() for sequence in sequences]
+
+    def _encode_missing(self, sequences, batch_size):
         self._load()
         torch, _ = require_torch()
-        summed = np.zeros(
-            (len(sequence), self.model.config.hidden_size), dtype=np.float32
-        )
-        counts = np.zeros((len(sequence), 1), dtype=np.float32)
-        with torch.no_grad():
+        summed = {
+            sequence: np.zeros(
+                (len(sequence), self.model.config.hidden_size), dtype=np.float32
+            )
+            for sequence in sequences
+        }
+        counts = {
+            sequence: np.zeros((len(sequence), 1), dtype=np.float32)
+            for sequence in sequences
+        }
+        windows: dict[int, list[tuple[str, int, str]]] = {}
+        for sequence in sequences:
             for start in range(0, len(sequence), self.window - self.overlap):
                 part = sequence[start : start + self.window]
-                tokens = self.tokenizer(
-                    part, return_tensors="pt", return_special_tokens_mask=True
-                )
-                special = tokens.pop("special_tokens_mask")[0].bool()
-                if int((~special).sum()) != len(part):
-                    raise ValueError(
-                        "Tokenizer must produce exactly one token per amino acid."
-                    )
-                tokens = {k: v.to(self.device) for k, v in tokens.items()}
-                hidden = (
-                    self.model(**tokens).last_hidden_state[0].cpu()[~special].numpy()
-                )
-                summed[start : start + len(part)] += hidden
-                counts[start : start + len(part)] += 1
+                windows.setdefault(len(part), []).append((sequence, start, part))
                 if start + len(part) == len(sequence):
                     break
-        value = summed / counts
-        if path is not None:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            with atomic_output_path(str(path)) as temporary:
-                with open(temporary, "wb") as stream:
-                    np.save(stream, value, allow_pickle=False)
-        return value
+        # Within each sequence all full windows precede its one shorter tail;
+        # process longer buckets first to retain the scalar addition order.
+        with torch.no_grad():
+            for length in sorted(windows, reverse=True):
+                bucket = windows[length]
+                limit = min(
+                    batch_size, self._window_batch_size, max(1, 8192 // (length + 2))
+                )
+                for offset in range(0, len(bucket), limit):
+                    batch = bucket[offset : offset + limit]
+                    parts = [part for _, _, part in batch]
+                    tokens = self.tokenizer(
+                        parts if len(parts) > 1 else parts[0],
+                        return_tensors="pt",
+                        return_special_tokens_mask=True,
+                    )
+                    special = tokens.pop("special_tokens_mask").bool()
+                    if not torch.all((~special).sum(1) == length):
+                        raise ValueError(
+                            "Tokenizer must produce exactly one token per amino acid."
+                        )
+                    tokens = {
+                        key: value.to(self.device) for key, value in tokens.items()
+                    }
+                    hidden = self.model(**tokens).last_hidden_state.cpu()
+                    for i, (sequence, start, _part) in enumerate(batch):
+                        summed[sequence][start : start + length] += hidden[i][
+                            ~special[i]
+                        ].numpy()
+                        counts[sequence][start : start + length] += 1
+        values = {}
+        for sequence in sequences:
+            value = summed[sequence] / counts[sequence]
+            path = self._cache_path(sequence)
+            if path is not None:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                with atomic_output_path(str(path)) as temporary:
+                    with open(temporary, "wb") as stream:
+                        np.save(stream, value, allow_pickle=False)
+            self._memory_cache.put(self._cache_identity, sequence, value)
+            values[sequence] = value
+        return values
 
 
 def _batch(encoder, sequences, torch, device):
-    values = [encoder.encode(seq) for seq in sequences]
+    values = (
+        encoder.encode_many(sequences, batch_size=len(sequences))
+        if hasattr(encoder, "encode_many")
+        else [encoder.encode(seq) for seq in sequences]
+    )
     length = max(len(value) for value in values)
     shape = (len(values), length, values[0].shape[1])
     cuda = torch.device(device).type == "cuda"

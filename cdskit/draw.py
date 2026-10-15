@@ -11,7 +11,8 @@ from cdskit.codonutil import (
 from cdskit.atomicio import atomic_text_writer
 from cdskit.trimcodon import (
     choose_kept_codon_sites,
-    summarize_codon_site,
+    summarize_codon_site as summarize_codon_site,
+    summarize_codon_sites,
     validate_fraction,
 )
 from cdskit.util import (
@@ -126,13 +127,7 @@ def summarize_draw(records, codontable, min_clean_fraction):
             "evaluable_total": 0,
         }
 
-    num_sites = len(seq_strings[0]) // 3
-    site_summaries = [
-        summarize_codon_site(
-            seq_strings=seq_strings, codon_site=codon_site, codontable=codontable
-        )
-        for codon_site in range(num_sites)
-    ]
+    site_summaries = summarize_codon_sites(seq_strings, codontable)
     kept_sites = choose_kept_codon_sites(
         site_summaries=site_summaries,
         num_sequences=len(records),

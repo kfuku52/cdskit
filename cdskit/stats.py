@@ -2,6 +2,8 @@ from collections import Counter
 from contextlib import redirect_stdout
 from pathlib import Path
 
+import numpy as np
+
 from cdskit.atomicio import atomic_text_writer
 from cdskit.tsvio import write_tsv
 
@@ -113,10 +115,24 @@ def summarize_alignment(records, seq_type, name="-"):
             gc = sum(local_counts[base] for base in "GCS")
             at_fractions[record.id] = round(at / (at + gc), 3) if at + gc else 0
     variable = informative = 0
-    for column in zip(*sequences, strict=True):
-        states = Counter(base for base in column if base in STATES[seq_type])
-        variable += len(states) > 1
-        informative += sum(count >= 2 for count in states.values()) >= 2
+    # Bound the temporary matrix, including for alignments with many taxa.
+    block_width = max(1, min(4096, 1_000_000 // len(sequences)))
+    for start in range(0, length, block_width):
+        width = min(block_width, length - start)
+        block = np.frombuffer(
+            "".join(sequence[start : start + width] for sequence in sequences).encode(
+                "ascii"
+            ),
+            dtype=np.uint8,
+        ).reshape(len(sequences), width)
+        present = np.zeros(width, dtype=np.uint8)
+        repeated = np.zeros(width, dtype=np.uint8)
+        for state in STATES[seq_type]:
+            counts_by_site = np.count_nonzero(block == ord(state), axis=0)
+            present += counts_by_site > 0
+            repeated += counts_by_site >= 2
+        variable += int(np.count_nonzero(present > 1))
+        informative += int(np.count_nonzero(repeated >= 2))
     cells = len(records) * length
     missing = sum(counts[base] for base in MISSING[seq_type])
     row = dict(

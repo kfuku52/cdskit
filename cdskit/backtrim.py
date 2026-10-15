@@ -1,12 +1,11 @@
+from bisect import bisect_right
 from collections import defaultdict
 from collections import deque
 import sys
-import hashlib
-import json
-from pathlib import Path
 from typing import Any
 
 from cdskit import __version__
+from cdskit.provenance import file_digest, json_rows_digest
 from functools import partial
 
 from Bio.Seq import Seq
@@ -85,6 +84,43 @@ def build_column_index(seq_strings):
     return col_index
 
 
+class _ColumnMatches:
+    """Ordered candidates with logarithmic selection and bounded diagnostics."""
+
+    def __init__(self, positions):
+        self.positions = tuple(positions)
+        self.removed = set()
+        self.first = 0
+        self.last = len(self.positions) - 1
+        self.multiple_reported = False
+
+    def __len__(self):
+        return len(self.positions) - len(self.removed)
+
+    def remove(self, site):
+        self.removed.add(site)
+        while self.first <= self.last and self.positions[self.first] in self.removed:
+            self.first += 1
+        while self.last >= self.first and self.positions[self.last] in self.removed:
+            self.last -= 1
+
+    def after(self, site):
+        # All previously removed choices are <= the global last-kept site.
+        index = bisect_right(self.positions, site)
+        return self.positions[index] if index < len(self.positions) else None
+
+    def describe(self):
+        if len(self) <= 20:
+            return ",".join(
+                str(site)
+                for site in self.positions[self.first : self.last + 1]
+                if site not in self.removed
+            )
+        return "{},...,{}; {} candidates".format(
+            self.positions[self.first], self.positions[self.last], len(self)
+        )
+
+
 def find_kept_aa_sites(tcdn_strings, pep_strings):
     # Alignment case and the two accepted gap symbols do not change a site.
     tcdn_strings = [seq.upper().replace(".", "-") for seq in tcdn_strings]
@@ -93,7 +129,7 @@ def find_kept_aa_sites(tcdn_strings, pep_strings):
     multiple_matches: set[int] = set()
     last_kept_site = -1
     remaining_site_count = len(tcdn_strings[0])
-    tcdn_col_index = build_column_index(tcdn_strings)
+    tcdn_col_index: dict[str, Any] = build_column_index(tcdn_strings)
 
     for pi, pep_col_chars in enumerate(zip(*pep_strings, strict=False)):
         if remaining_site_count == 0:
@@ -107,7 +143,11 @@ def find_kept_aa_sites(tcdn_strings, pep_strings):
             sys.stderr.write(txt.format(pi))
             continue
         if len(same_sites) == 1:
-            kept_site = same_sites.popleft()
+            kept_site = (
+                same_sites[0]
+                if isinstance(same_sites, deque)
+                else same_sites.positions[same_sites.first]
+            )
             if kept_site <= last_kept_site:
                 txt = "The codon site {} would violate codon order at trimmed protein site {}. "
                 txt += "The site will be excluded from the output.\n"
@@ -120,27 +160,28 @@ def find_kept_aa_sites(tcdn_strings, pep_strings):
             del tcdn_col_index[key]
             continue
 
-        all_same_sites = tuple(same_sites)
-        multiple_matches.update(all_same_sites)
+        if isinstance(same_sites, deque):
+            same_sites = _ColumnMatches(same_sites)
+            tcdn_col_index[key] = same_sites
+        if not same_sites.multiple_reported:
+            multiple_matches.update(same_sites.positions)
+            same_sites.multiple_reported = True
+        candidate_description = same_sites.describe()
         # Prefer the first candidate after the previously selected codon site
         # so codon order follows the trimmed amino acid alignment.
-        kept_site = None
-        for candidate_site in same_sites:
-            if candidate_site > last_kept_site:
-                kept_site = candidate_site
-                break
+        kept_site = same_sites.after(last_kept_site)
         if kept_site is None:
             txt = (
                 "The trimmed protein site {} has multiple matches to codon sites({}), "
             )
             txt += "but none preserve codon order. The site will be excluded from the output. "
-            txt = txt.format(pi, ",".join([str(ss) for ss in all_same_sites]))
+            txt = txt.format(pi, candidate_description)
             txt += "Site pattern: {}\n".format(key)
             sys.stderr.write(txt)
             continue
 
         txt = "The trimmed protein site {} has multiple matches to codon sites({}). Reporting codon site {}. "
-        txt = txt.format(pi, ",".join([str(ss) for ss in all_same_sites]), kept_site)
+        txt = txt.format(pi, candidate_description, kept_site)
         txt += "Site pattern: {}\n".format(key)
         sys.stderr.write(txt)
         same_sites.remove(kept_site)
@@ -223,8 +264,7 @@ def trim_codon_record_with_ranges(record, nucleotide_ranges):
 
 def _record_digest(records):
     # Canonical record content also works for stdin and preserves row order/case.
-    payload = [[record.id, str(record.seq)] for record in records]
-    return hashlib.sha256(json.dumps(payload, ensure_ascii=True).encode()).hexdigest()
+    return json_rows_digest([record.id, str(record.seq)] for record in records)
 
 
 def select_kept_sites(args, source, target, report):
@@ -319,16 +359,15 @@ def _backtrim_main(args, report):
     pep_records = reorder_aa_records_by_cds_ids(
         cdn_records=cdn_records, pep_records=pep_records
     )
-    report.update(
-        codontable=args.codontable,
-        source_records_sha256=_record_digest(cdn_records),
-        trimmed_records_sha256=_record_digest(pep_records),
-    )
+    report["codontable"] = args.codontable
+    if getattr(args, "mapping_report", None):
+        report.update(
+            source_records_sha256=_record_digest(cdn_records),
+            trimmed_records_sha256=_record_digest(pep_records),
+        )
     kept_path = getattr(args, "kept_sites", None)
-    if kept_path:
-        report["kept_sites_sha256"] = hashlib.sha256(
-            Path(kept_path).read_bytes()
-        ).hexdigest()
+    if kept_path and getattr(args, "mapping_report", None):
+        report["kept_sites_sha256"] = file_digest(kept_path)
     translate_worker = partial(
         translate_record_to_aa_string, codontable=args.codontable
     )

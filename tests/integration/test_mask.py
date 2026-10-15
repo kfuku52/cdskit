@@ -216,3 +216,46 @@ class TestMaskMain:
         assert result["seq1"] == "ATGNNNAAA"  # TGA masked
         assert result["seq2"] == "ATGNNNAAA"  # NNN already masked
         assert result["seq3"] == "ATGAAACCC"  # No change
+
+
+@pytest.mark.parametrize("bad", ["ATZ", "AT"])
+def test_streamed_mask_rolls_back_on_late_invalid_input(tmp_path, mock_args, bad):
+    source, output = tmp_path / "input.fa", tmp_path / "output.fa"
+    source.write_text(
+        "".join(f">row{i}\nATGA-G\n" for i in range(1000)) + f">invalid\n{bad}\n"
+    )
+    output.write_text("existing output\n")
+    args = mock_args(
+        seqfile=str(source),
+        outfile=str(output),
+        codontable=1,
+        maskchar="N",
+        ambiguouscodon=True,
+        stopcodon=True,
+    )
+    with pytest.raises(ValueError):
+        mask_main(args)
+    assert output.read_text() == "existing output\n"
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["input.fa", "output.fa"]
+
+
+@pytest.mark.parametrize("outformat", ["fasta", "fasta-2line", "tab"])
+def test_streamed_mask_matches_buffered_stdout(tmp_path, mock_args, capsys, outformat):
+    source, output = tmp_path / "input.fa", tmp_path / "output.fa"
+    source.write_text(
+        "".join(f">row{i} description\natgA-GTAR---\n" for i in range(1003))
+    )
+    args = mock_args(
+        seqfile=str(source),
+        outfile=str(output),
+        outseqformat=outformat,
+        codontable=1,
+        maskchar="N",
+        ambiguouscodon=True,
+        stopcodon=True,
+    )
+    mask_main(args)
+    capsys.readouterr()
+    args.outfile = "-"
+    mask_main(args)
+    assert output.read_text() == capsys.readouterr().out

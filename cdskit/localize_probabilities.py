@@ -59,10 +59,18 @@ def _sanitize_probability(value):
 def normalize_class_probabilities(class_probs):
     out_probs = {class_name: 0.0 for class_name in LOCALIZATION_CLASSES}
     if isinstance(class_probs, dict):
-        for class_name in LOCALIZATION_CLASSES:
-            out_probs[class_name] = _sanitize_probability(
-                class_probs.get(class_name, 0.0)
-            )
+        values = [class_probs.get(name, 0.0) for name in LOCALIZATION_CLASSES]
+        # Keep the scalar conversion/error contract for array-like and custom
+        # values, while validating ordinary numeric scores in one NumPy call.
+        if all(
+            type(value) in (int, float, bool)
+            or isinstance(value, (np.floating, np.integer, np.bool_))
+            for value in values
+        ):
+            normalized = validate_probability_values(values).tolist()
+        else:
+            normalized = [_sanitize_probability(value) for value in values]
+        out_probs = dict(zip(LOCALIZATION_CLASSES, normalized, strict=True))
     total = float(sum(out_probs.values()))
     if total <= 0.0:
         out_probs["noTP"] = 1.0

@@ -56,6 +56,7 @@ def predict(model, rows, device="cpu", batch_size=8, thresholds=True):
 
 
 def wrap_model(head, config, partitions, kind):
+    identity = partition_identity(partitions)
     head["ensure_one_label"] = config["ensure_one_label"]
     head["feature_schema"] = CURRENT_FEATURE_SCHEMA
     head["decision_policy"] = config["decision_policy"]
@@ -74,12 +75,12 @@ def wrap_model(head, config, partitions, kind):
             if config["schema_version"] == 2
             else "dataset",
             "seqtype": "protein",
-            "partition_identity": partition_identity(partitions),
+            "partition_identity": identity,
             "labels": config["labels"],
             "num_training_rows": len(partitions["train"]),
             "num_validation_rows": len(partitions["validation"]),
-            "training_data_sha256": dataset_digest(partitions["train"]),
-            "validation_data_sha256": dataset_digest(partitions["validation"]),
+            "training_data_sha256": identity["train"],
+            "validation_data_sha256": identity["validation"],
             "threshold_source": "validation_partition",
         },
     }

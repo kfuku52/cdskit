@@ -1,11 +1,9 @@
 """Partition audits and probability metrics shared by localization experiments."""
 
-import hashlib
-import json
-
 import numpy as np
 
 from cdskit.localize_labels import observed_targets
+from cdskit.provenance import json_rows_digest
 
 
 def normalize_partition_id(value):
@@ -82,8 +80,9 @@ def assert_disjoint(train_rows, test_rows):
 
 def dataset_digest(rows):
     # Retain row order: out-of-fold probabilities are aligned to this exact table.
-    payload = [{key: row[key] for key in sorted(row)} for row in rows]
-    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+    return json_rows_digest(
+        ({key: row[key] for key in sorted(row)} for row in rows), sort_keys=True
+    )
 
 
 def assert_model_partitions(model, train_rows, validation_rows):
@@ -223,23 +222,84 @@ def stratified_metrics(
     return result
 
 
+def _f1_from_counts(counts):
+    def f1(tp, fp, fn):
+        precision = float(tp) / float(tp + fp) if tp + fp else 0.0
+        recall = float(tp) / float(tp + fn) if tp + fn else 0.0
+        return (
+            (2.0 * precision * recall) / (precision + recall)
+            if precision + recall
+            else 0.0
+        )
+
+    supported = [
+        f1(int(tp), int(fp), int(fn)) for tp, fp, fn, observed in counts if observed
+    ]
+    tp, fp, fn, observed = (int(value) for value in counts.sum(axis=0))
+    return {
+        "macro_f1": float(np.mean(supported)) if supported else None,
+        "micro_f1": f1(tp, fp, fn) if observed else None,
+    }
+
+
+def _bootstrap_draws(
+    target, predictions, clusters, labels, metric_fn, iterations, seed
+):
+    # Only the established metric has these sufficient statistics. Arbitrary
+    # callbacks retain their original row-level inputs and invocation count.
+    from cdskit.deeploc_benchmark import compute_multilabel_metrics
+
+    counts = None
+    if (
+        metric_fn is compute_multilabel_metrics
+        and target.dtype.kind in "biuf"
+        and np.isin(target[~np.isnan(target)], [0, 1]).all()
+        and len(labels) > 0
+        and len(set(labels)) == len(labels)
+    ):
+        truth, observed = observed_targets(target)
+        cells = np.stack(
+            [
+                np.stack(
+                    [
+                        (truth == 1) & (prediction == 1) & observed,
+                        (truth == 0) & (prediction == 1) & observed,
+                        (truth == 1) & (prediction == 0) & observed,
+                        observed,
+                    ],
+                    axis=-1,
+                )
+                for prediction in predictions
+            ],
+            axis=1,
+        )
+        counts = np.stack([cells[ids].sum(axis=0) for ids in clusters])
+    rng = np.random.default_rng(seed)
+    for _ in range(iterations):
+        draw = rng.integers(len(clusters), size=len(clusters))
+        if counts is not None:
+            yield [_f1_from_counts(value) for value in counts[draw].sum(axis=0)]
+        else:
+            ids = np.concatenate([clusters[i] for i in draw])
+            yield [
+                metric_fn(target[ids], prediction[ids], labels)
+                for prediction in predictions
+            ]
+
+
 def cluster_bootstrap(
     target, prediction, groups, labels, metric_fn, iterations=200, seed=1
 ):
     target, predictions, members = _bootstrap_inputs(
         target, [prediction], groups, labels, iterations
     )
-    prediction = predictions[0]
     if len(members) < 2:
         return {"status": "insufficient_clusters"}
     clusters = list(members.values())
-    rng = np.random.default_rng(seed)
     samples: dict[str, list[float]] = {"macro_f1": [], "micro_f1": []}
-    for _ in range(iterations):
-        ids = np.concatenate(
-            [clusters[i] for i in rng.integers(len(clusters), size=len(clusters))]
-        )
-        metrics = metric_fn(target[ids], prediction[ids], labels)
+    for (metrics,) in _bootstrap_draws(
+        target, predictions, clusters, labels, metric_fn, iterations, seed
+    ):
         for key in samples:
             if metrics[key] is not None:
                 samples[key].append(metrics[key])
@@ -296,16 +356,10 @@ def paired_cluster_bootstrap(
     if len(members) < 2:
         return {"status": "insufficient_clusters", "cluster_count": len(members)}
     clusters = list(members.values())
-    rng = np.random.default_rng(seed)
     samples: dict[str, list[float]] = {"macro_f1": [], "micro_f1": []}
-    for _ in range(iterations):
-        ids = np.concatenate(
-            [clusters[i] for i in rng.integers(len(clusters), size=len(clusters))]
-        )
-        a, b = [
-            metric_fn(target[ids], prediction[ids], labels)
-            for prediction in predictions
-        ]
+    for a, b in _bootstrap_draws(
+        target, predictions, clusters, labels, metric_fn, iterations, seed
+    ):
         for key in samples:
             if a[key] is not None and b[key] is not None:
                 samples[key].append(float(b[key] - a[key]))
