@@ -458,7 +458,7 @@ def _estimate_batch(pairs: list[tuple[str, str]], code: int) -> list[dict[str, A
         syn_rates = rates * geometry["synonymous"]
         non_rates = rates * ~geometry["synonymous"]
         raw_sites = [
-            np.einsum("bsc,bc->bs", hist, rate.sum(axis=2))
+            np.matmul(hist, rate.sum(axis=2)[..., None])[..., 0]
             for rate in (syn_rates, non_rates)
         ]
         with np.errstate(divide="ignore", invalid="ignore"):
@@ -466,8 +466,11 @@ def _estimate_batch(pairs: list[tuple[str, str]], code: int) -> list[dict[str, A
             sites = [(raw * scaling).mean(axis=1) for raw in raw_sites]
             site_freqs = []
             for rate in (syn_rates, non_rates):
-                per_codon = np.einsum("bcj,cjk->bck", rate, geometry["source_bases"])
-                frequency = np.einsum("bsc,bck->bsk", hist, per_codon)
+                # Batch over codons while projecting each one's source bases.
+                per_codon = np.matmul(
+                    rate.transpose(1, 0, 2), geometry["source_bases"]
+                ).transpose(1, 0, 2)
+                frequency = np.matmul(hist, per_codon)
                 site_freqs.append(
                     (frequency / frequency.sum(axis=2, keepdims=True)).mean(axis=1)
                 )
