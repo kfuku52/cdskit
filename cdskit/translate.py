@@ -62,7 +62,7 @@ def _get_translation_kernel(codontable):
         encode_table[ord(character)] = code
         encode_table[ord(character.lower())] = code
     scalar_translator = get_scalar_translator(codontable)
-    translator = {
+    translator: dict = {
         "alphabet_size": alphabet_size,
         "encode_table": bytes(encode_table),
         # Zero cannot be a translated amino acid: it marks an unseen triplet.
@@ -148,13 +148,12 @@ def translate_sequence_codes(seq_str, codontable, to_stop=False):
         + codons[:, 2]
     )
     amino_acids = translator["aa_lut"][indices]
-    if "scalar_translator" in translator:
+    if "scalar_translator" in translator and not amino_acids.all():
         unknown = indices[amino_acids == 0]
-        if len(unknown):
-            _fill_translation_entries(
-                translator, translator["scalar_translator"], np.unique(unknown)
-            )
-            amino_acids = translator["aa_lut"][indices]
+        _fill_translation_entries(
+            translator, translator["scalar_translator"], np.unique(unknown)
+        )
+        amino_acids = translator["aa_lut"][indices]
     limit = len(indices)
     if to_stop:
         stop_indices = np.flatnonzero(amino_acids == ord("*"))
