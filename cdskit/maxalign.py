@@ -26,6 +26,9 @@ from cdskit.tsvio import json_cell, write_sectioned_tsv
 
 
 DEFAULT_MISSING_CHARS = "-?."
+_EXACT_SUBSET_BLOCK_SIZE = 32_768
+_BYTE_POPCOUNTS = np.array([value.bit_count() for value in range(256)], dtype=np.uint8)
+_BYTE_POPCOUNTS.flags.writeable = False
 
 
 def popcount(mask):
@@ -209,6 +212,126 @@ def _complete_subset_counts(subset_variable_masks, required_mask, support_counts
     return counts
 
 
+def _dense_subset_range_supported(
+    subset_start,
+    subset_end,
+    subset_variable_masks,
+    required_mask,
+    required_count,
+    max_removed,
+    total_sequences,
+    num_sequences,
+    complete_counts,
+):
+    # Unusual direct-API inputs retain their scalar arithmetic and errors.
+    if (
+        type(subset_variable_masks) is not list
+        or type(complete_counts) is not np.ndarray
+    ):
+        return False
+    size = len(subset_variable_masks)
+    if not (
+        type(subset_start) is int
+        and type(subset_end) is int
+        and 0 <= subset_start < subset_end <= size
+        and subset_end - subset_start >= 1024
+        and size <= 1 << 20
+        and size & (size - 1) == 0
+        and complete_counts.dtype == np.dtype(np.int64)
+        and complete_counts.shape == (size,)
+        and type(required_mask) is int
+        and type(required_count) is int
+        and required_count >= 0
+        and type(total_sequences) is int
+        and type(num_sequences) is int
+        and num_sequences >= 0
+        and (max_removed is None or type(max_removed) is int)
+    ):
+        return False
+    return all(type(mask) is int for mask in subset_variable_masks)
+
+
+def _evaluate_dense_subset_range(
+    subset_start,
+    subset_end,
+    subset_variable_masks,
+    required_mask,
+    required_count,
+    max_removed,
+    total_sequences,
+    num_sequences,
+    complete_counts,
+):
+    """Evaluate dense counts with bounded temporaries, or request scalar handling."""
+    if not _dense_subset_range_supported(
+        subset_start,
+        subset_end,
+        subset_variable_masks,
+        required_mask,
+        required_count,
+        max_removed,
+        total_sequences,
+        num_sequences,
+        complete_counts,
+    ):
+        return NotImplemented
+    max_kept = required_count + len(subset_variable_masks).bit_length() - 1
+    maximum = int(np.iinfo(np.int64).max)
+    # Check in Python before either adding required_count or multiplying areas.
+    largest_count = max(
+        abs(int(complete_counts.min())), abs(int(complete_counts.max()))
+    )
+    if max_kept > maximum or largest_count > maximum // max_kept:
+        return NotImplemented
+    minimum_kept = (
+        max(1, total_sequences - max_removed) if max_removed is not None else 1
+    )
+    if minimum_kept > max_kept:
+        return None
+    best = None
+    for start in range(subset_start, subset_end, _EXACT_SUBSET_BLOCK_SIZE):
+        end = min(start + _EXACT_SUBSET_BLOCK_SIZE, subset_end)
+        masks = np.arange(start, end, dtype=np.uint32)
+        # Byte counts sum independently of byte order, using NumPy 1.23 APIs.
+        kept = _BYTE_POPCOUNTS[masks.view(np.uint8).reshape(-1, 4)].sum(
+            axis=1, dtype=np.int64
+        )
+        kept += required_count
+        valid = kept >= minimum_kept
+        if not valid.any():
+            continue
+        area = complete_counts[start:end] * kept
+        area[~valid] = np.iinfo(np.int64).min
+        best_area = int(area.max())
+        tied = valid & (area == best_area)
+        best_kept = int(kept[tied].max())
+        if best is not None and (best_area, best_kept) < (
+            best["area"],
+            best["num_kept"],
+        ):
+            continue
+        finalists = np.flatnonzero(tied & (kept == best_kept)) + start
+        kept_indices, selected = min(
+            (
+                mask_to_indices(
+                    required_mask | subset_variable_masks[int(i)], num_sequences
+                ),
+                int(i),
+            )
+            for i in finalists
+        )
+        candidate = dict(
+            area=best_area,
+            num_kept=best_kept,
+            complete_codon_columns=int(complete_counts[selected]),
+            kept_indices=kept_indices,
+            steps=[],
+        )
+        if is_better_solution(candidate, best):
+            best = candidate
+    return best
+
+
 def evaluate_exact_subset_range(
     subset_start,
     subset_end,
@@ -225,6 +348,19 @@ def evaluate_exact_subset_range(
         complete_counts = _complete_subset_counts(
             subset_variable_masks, required_mask, support_counts
         )
+    dense_best = _evaluate_dense_subset_range(
+        subset_start,
+        subset_end,
+        subset_variable_masks,
+        required_mask,
+        required_count,
+        max_removed,
+        total_sequences,
+        num_sequences,
+        complete_counts,
+    )
+    if dense_best is not NotImplemented:
+        return dense_best
     best = None
     for subset_mask in range(subset_start, subset_end):
         num_kept = required_count + popcount(subset_mask)
