@@ -6,6 +6,37 @@ replacement to standard error.
 
 ## Unreleased
 
+## 0.32.5 — 2026-10-22
+
+### Performance
+
+- Initialize translation lookups for concrete codons first and resolve ambiguous
+  triplets on demand. Preserve the complete, mutable public lookup dictionary.
+- Use fixed byte lookups for hammer's gap and amino-acid occupancy checks.
+- Aggregate long-record codon statistics in bounded blocks, retaining short-record
+  scalar handling, genetic-code semantics and codon-usage insertion order.
+- Evaluate dense MaxAlign exact-search candidates and long-sequence ORF positions
+  in bounded arrays. Preserve removal constraints, tie handling and literal scans
+  for short sequences or few start/stop patterns.
+- Use batched matrix multiplication for dN/dS contractions. Float64 estimates can
+  differ in their last digits; report schemas, correction decisions and NA values
+  remain unchanged. Independent PAML tolerances remain unchanged.
+- Use PyTorch inference mode inside BiLSTM prediction, preserving model artifacts,
+  predictions and training behavior.
+
+### Development
+
+- Add independent equivalence and boundary regressions, NumPy 1.23 compatibility
+  checks and fresh-process benchmarks. See the
+  [measurements and validation](docs/performance-implementation-2026-10-22.md).
+
+### Security
+
+- Refresh the locked certifi certificate bundle and use Pillow 13 on Python
+  3.11+, addressing advisories found by the dependency audit. Python 3.10 retains
+  Pillow 12.3 because upstream Pillow 13 requires Python 3.11; this legacy
+  resolution is not covered by the clean Python 3.12 dependency audit.
+
 ## 0.32.4 — 2026-10-15
 
 ### Performance
