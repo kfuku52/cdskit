@@ -691,7 +691,7 @@ def predict_bilstm_attention_batch(
                     np.newaxis, :
                 ]
     probs = list()
-    with torch.no_grad():
+    with torch.inference_mode():
         for start in range(0, x.shape[0], int(batch_size)):
             batch_x = x[start : start + int(batch_size), :]
             xb = torch.as_tensor(
