@@ -16,6 +16,8 @@ from cdskit.util import (
     stop_if_not_multiple_of_three,
 )
 
+_HISTOGRAM_MIN_CODONS = 256
+
 
 def gc_percent(gc_count, total_count):
     if total_count == 0:
@@ -23,8 +25,7 @@ def gc_percent(gc_count, total_count):
     return (gc_count / total_count) * 100
 
 
-def summarize_record(record, codontable):
-    seq_str = str(record.seq)
+def _summarize_record_scalar(record, codontable, seq_str):
     codons_total = len(seq_str) // 3
     codons_missing = 0
     codons_ambiguous = 0
@@ -77,6 +78,38 @@ def summarize_record(record, codontable):
         "gc1": gc_percent(gc_counts[0], gc_denoms[0]),
         "gc2": gc_percent(gc_counts[1], gc_denoms[1]),
         "gc3": gc_percent(gc_counts[2], gc_denoms[2]),
+        "usage": usage,
+    }
+
+
+def summarize_record(record, codontable):
+    seq_str = str(record.seq)
+    if len(seq_str) >= _HISTOGRAM_MIN_CODONS * 3:
+        from cdskit.codonarray import codon_histogram
+
+        histogram = codon_histogram(seq_str, codontable)
+        if histogram is not None:
+            return _summarize_histogram(record.id, seq_str, histogram)
+    return _summarize_record_scalar(record, codontable, seq_str)
+
+
+def _summarize_histogram(seq_id, sequence, histogram):
+    totals, gc_counts, gc_denoms, usage = histogram
+    return {
+        "seq_id": seq_id,
+        "nt_length": len(sequence),
+        "codons_total": len(sequence) // 3,
+        "codons_complete": len(sequence) // 3 - int(totals[1]),
+        "codons_missing": int(totals[1]),
+        "codons_ambiguous": int(totals[2]),
+        "codons_stop": int(totals[3]),
+        "codons_possible_stop": int(totals[4]),
+        "codons_context_dependent": int(totals[5]),
+        "codon_semantics_version": CODON_SEMANTICS_VERSION,
+        "gc_all": gc_percent(int(gc_counts.sum()), int(gc_denoms.sum())),
+        "gc1": gc_percent(int(gc_counts[0]), int(gc_denoms[0])),
+        "gc2": gc_percent(int(gc_counts[1]), int(gc_denoms[1])),
+        "gc3": gc_percent(int(gc_counts[2]), int(gc_denoms[2])),
         "usage": usage,
     }
 
