@@ -22,11 +22,38 @@ from cdskit.util import (
 )
 
 _CODON_TRANSLATOR_CACHE: dict = {}
+_TRANSLATION_KERNEL_CACHE: dict = {}
 _TRANSLATION_ALPHABET = "ACGTRYSWKMBDHVNX-?."
 
 
-def get_codon_translator(codontable):
-    cached = _CODON_TRANSLATOR_CACHE.get(codontable)
+def _fill_translation_entries(translator, scalar_translator, indices):
+    size = translator["alphabet_size"]
+    for index in indices:
+        index = int(index)
+        first, rest = divmod(index, size * size)
+        second, third = divmod(rest, size)
+        codon = (
+            _TRANSLATION_ALPHABET[first]
+            + _TRANSLATION_ALPHABET[second]
+            + _TRANSLATION_ALPHABET[third]
+        )
+        if all(ch in "-." for ch in codon):
+            aa = "-"
+        elif any(ch in "-?." for ch in codon):
+            aa = "X"
+        else:
+            try:
+                aa = translate_single_codon(codon, scalar_translator)
+            except Exception as exc:
+                translator["errors_by_index"][index] = str(exc)
+                translator["error_lut"][index] = True
+                aa = "X"
+        # Publish the initialized entry after its error metadata is complete.
+        translator["aa_lut"][index] = ord(aa)
+
+
+def _get_translation_kernel(codontable):
+    cached = _TRANSLATION_KERNEL_CACHE.get(codontable)
     if cached is not None:
         return cached
     alphabet_size = len(_TRANSLATION_ALPHABET)
@@ -34,37 +61,46 @@ def get_codon_translator(codontable):
     for code, character in enumerate(_TRANSLATION_ALPHABET):
         encode_table[ord(character)] = code
         encode_table[ord(character.lower())] = code
-    aa_lut = np.empty(alphabet_size**3, dtype=np.uint8)
-    error_lut = np.zeros(alphabet_size**3, dtype=bool)
-    errors_by_index = {}
     scalar_translator = get_scalar_translator(codontable)
-    for first_code, first in enumerate(_TRANSLATION_ALPHABET):
-        for second_code, second in enumerate(_TRANSLATION_ALPHABET):
-            for third_code, third in enumerate(_TRANSLATION_ALPHABET):
-                codon = first + second + third
-                index = (
-                    first_code * alphabet_size * alphabet_size
-                    + second_code * alphabet_size
-                    + third_code
-                )
-                if all(ch in "-." for ch in codon):
-                    aa = "-"
-                elif any(ch in "-?." for ch in codon):
-                    aa = "X"
-                else:
-                    try:
-                        aa = translate_single_codon(codon, scalar_translator)
-                    except Exception as exc:
-                        errors_by_index[index] = str(exc)
-                        error_lut[index] = True
-                        aa = "X"
-                aa_lut[index] = ord(aa)
     translator = {
         "alphabet_size": alphabet_size,
         "encode_table": bytes(encode_table),
-        "aa_lut": aa_lut,
-        "error_lut": error_lut,
-        "errors_by_index": errors_by_index,
+        # Zero cannot be a translated amino acid: it marks an unseen triplet.
+        "aa_lut": np.zeros(alphabet_size**3, dtype=np.uint8),
+        "error_lut": np.zeros(alphabet_size**3, dtype=bool),
+        "errors_by_index": {},
+        "scalar_translator": scalar_translator,
+    }
+    concrete_indices = [
+        first * alphabet_size**2 + second * alphabet_size + third
+        for first in range(4)
+        for second in range(4)
+        for third in range(4)
+    ]
+    _fill_translation_entries(translator, scalar_translator, concrete_indices)
+    translator["concrete_lut"] = translator["aa_lut"][concrete_indices]
+    _TRANSLATION_KERNEL_CACHE[codontable] = translator
+    return translator
+
+
+def get_codon_translator(codontable):
+    """Keep the public, fully populated lookup dictionary for direct callers."""
+    cached = _CODON_TRANSLATOR_CACHE.get(codontable)
+    if cached is not None:
+        return cached
+    kernel = _get_translation_kernel(codontable)
+    _fill_translation_entries(
+        kernel, kernel["scalar_translator"], np.flatnonzero(kernel["aa_lut"] == 0)
+    )
+    translator = {
+        key: kernel[key]
+        for key in (
+            "alphabet_size",
+            "encode_table",
+            "aa_lut",
+            "error_lut",
+            "errors_by_index",
+        )
     }
     _CODON_TRANSLATOR_CACHE[codontable] = translator
     return translator
@@ -72,7 +108,10 @@ def get_codon_translator(codontable):
 
 def translate_sequence_codes(seq_str, codontable, to_stop=False):
     """Translate complete codons to an ASCII uint8 array without string assembly."""
-    translator = get_codon_translator(codontable=codontable)
+    # Explicit public lookup callers retain their eager table and mutations.
+    translator = _CODON_TRANSLATOR_CACHE.get(codontable)
+    if translator is None:
+        translator = _get_translation_kernel(codontable)
     if len(seq_str) == 0:
         return np.empty(0, dtype=np.uint8)
     if len(seq_str) % 3 != 0:
@@ -84,10 +123,24 @@ def translate_sequence_codes(seq_str, codontable, to_stop=False):
     except UnicodeEncodeError:
         encoded = b"\xff"
     codes = np.frombuffer(encoded, dtype=np.uint8)
-    if np.any(codes == 255):
+    maximum = int(codes.max())
+    if maximum == 255:
         translated = translate_sequence_scalar(seq_str, codontable, to_stop)
         return np.frombuffer(translated.encode("ascii"), dtype=np.uint8)
-    codons = codes.reshape(-1, 3).astype(np.int32, copy=False)
+    codons = codes.reshape(-1, 3)
+    if maximum < 4 and "concrete_lut" in translator:
+        # Four-base indices fit in uint8; no ambiguity/error scan is needed.
+        indices = codons[:, 0] * 16 + codons[:, 1] * 4 + codons[:, 2]
+        amino_acids = translator["concrete_lut"][indices]
+        if to_stop:
+            stop_indices = np.flatnonzero(amino_acids == ord("*"))
+            if len(stop_indices):
+                return amino_acids[: int(stop_indices[0])]
+        return amino_acids
+    # Public callers can customize the lookup metadata; keep their historical
+    # index arithmetic. The private fixed 19-letter alphabet fits in uint16.
+    index_dtype = np.uint16 if "scalar_translator" in translator else np.int32
+    codons = codons.astype(index_dtype, copy=False)
     alphabet_size = translator["alphabet_size"]
     indices = (
         codons[:, 0] * alphabet_size * alphabet_size
@@ -95,6 +148,13 @@ def translate_sequence_codes(seq_str, codontable, to_stop=False):
         + codons[:, 2]
     )
     amino_acids = translator["aa_lut"][indices]
+    if "scalar_translator" in translator:
+        unknown = indices[amino_acids == 0]
+        if len(unknown):
+            _fill_translation_entries(
+                translator, translator["scalar_translator"], np.unique(unknown)
+            )
+            amino_acids = translator["aa_lut"][indices]
     limit = len(indices)
     if to_stop:
         stop_indices = np.flatnonzero(amino_acids == ord("*"))
