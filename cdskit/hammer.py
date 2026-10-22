@@ -21,6 +21,10 @@ GAP_ONLY_CHARS_BYTES = np.array(
     [ch.encode("ascii") for ch in sorted(GAP_ONLY_CHARS)], dtype="S1"
 )
 AA_MISSING_CODES = np.array([ord("-"), ord("?"), ord("X"), ord("*")], dtype=np.uint8)
+_GAP_TRANSLATION = bytes(int(chr(code) in GAP_ONLY_CHARS) for code in range(256))
+_AA_NON_MISSING = np.ones(256, dtype=bool)
+_AA_NON_MISSING[AA_MISSING_CODES] = False
+_AA_NON_MISSING.flags.writeable = False
 
 
 def codon_is_gap_like(codon):
@@ -57,9 +61,11 @@ def build_codon_gap_like_matrix(records):
         return np.zeros((num_records, 0), dtype=bool)
 
     seq_bytes = "".join([str(record.seq) for record in records]).encode("ascii")
-    nt_matrix = np.frombuffer(seq_bytes, dtype="S1").reshape(num_records, seq_len)
+    nt_matrix = np.frombuffer(
+        seq_bytes.translate(_GAP_TRANSLATION), dtype=bool
+    ).reshape(num_records, seq_len)
     codon_matrix = nt_matrix.reshape(num_records, seq_len // 3, 3)
-    return np.isin(codon_matrix, GAP_ONLY_CHARS_BYTES).all(axis=2)
+    return codon_matrix.all(axis=2)
 
 
 def build_non_missing_site(records, codontable, threads):
@@ -74,7 +80,7 @@ def build_non_missing_site(records, codontable, threads):
         seq_str="".join(str(record.seq) for record in records),
         codontable=codontable,
     ).reshape(num_records, seq_len // 3)
-    return (~np.isin(amino_acids, AA_MISSING_CODES)).sum(axis=0)
+    return _AA_NON_MISSING[amino_acids].sum(axis=0)
 
 
 def select_codon_site_indices(
