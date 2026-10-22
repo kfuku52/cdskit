@@ -3,11 +3,12 @@ from array import array
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import asdict, dataclass
 from bisect import bisect_right
-from functools import partial
+from functools import lru_cache, partial
 
 import Bio.Data.CodonTable
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
+import numpy as np
 
 from cdskit.atomicio import atomic_output_paths
 from cdskit.codonreport import validate_codon_output_paths, write_codon_report
@@ -25,6 +26,10 @@ from cdskit.util import (
 
 _CODON_TABLE_CACHE: dict = {}
 _CODON_SCAN_CACHE: dict = {}
+# Below these bounds, repeated C str.find calls avoid NumPy's setup cost.
+_POSITION_SCAN_MIN_LENGTH = 16384
+_POSITION_SCAN_MIN_PATTERNS = 8
+_POSITION_SCAN_BLOCK_SIZE = 65536
 _REVCOMP_TABLE = str.maketrans(
     "ACGTRYMKWSBDHVN",
     "TGCAYRKMWSVHDBN",
@@ -164,7 +169,70 @@ def build_candidate_from_fields(candidate_fields, sort_key):
     )
 
 
+@lru_cache(maxsize=128)
+def _position_scan_lookup(start_codons, stop_codons):
+    alphabet = "ACGTRYSWKMBDHVNX"
+    values = {base: index + 1 for index, base in enumerate(alphabet)}
+    encode = np.zeros(256, dtype=np.uint16)
+    for base, value in values.items():
+        encode[ord(base)] = value
+    lookup = np.zeros(1 << 15, dtype=np.uint8)
+    for patterns, flag in (
+        (start_codons, 1),
+        (definite_stop_patterns(frozenset(stop_codons)), 2),
+    ):
+        for codon in patterns:
+            key = (values[codon[0]] << 10) | (values[codon[1]] << 5) | values[codon[2]]
+            lookup[key] |= flag
+    return encode, lookup
+
+
+def _collect_start_stop_positions_blocked(strand_seq, start_codons, stop_codons):
+    start_positions: list[list[int]] = [[], [], []]
+    stop_positions: list[list[int]] = [[], [], []]
+    encode, lookup = _position_scan_lookup(start_codons, stop_codons)
+    for left in range(0, len(strand_seq) - 2, _POSITION_SCAN_BLOCK_SIZE):
+        # Include the two following bases, but classify each triplet start only
+        # once. Replacing each non-ASCII character preserves Python offsets.
+        data = strand_seq[left : left + _POSITION_SCAN_BLOCK_SIZE + 2].encode(
+            "ascii", "replace"
+        )
+        bases = encode[np.frombuffer(data, dtype=np.uint8)]
+        keys = (bases[:-2] << 10) | (bases[1:-1] << 5) | bases[2:]
+        flags = lookup[keys]
+        for frame in range(3):
+            offset = (frame - left) % 3
+            frame_flags = flags[offset::3]
+            start_positions[frame].extend(
+                (np.flatnonzero(frame_flags & 1) * 3 + left + offset).tolist()
+            )
+            stop_positions[frame].extend(
+                (np.flatnonzero(frame_flags & 2) * 3 + left + offset).tolist()
+            )
+    return start_positions, stop_positions
+
+
+def _has_block_scan_patterns(start_codons, stop_codons):
+    for starts, stops in tuple(_CODON_SCAN_CACHE.values()):
+        if start_codons is starts and stop_codons is stops:
+            return (
+                len(starts) + len(definite_stop_patterns(frozenset(stops)))
+                >= _POSITION_SCAN_MIN_PATTERNS
+            )
+    return False
+
+
 def collect_start_stop_positions_by_frame(strand_seq, start_codons, stop_codons):
+    if (
+        type(strand_seq) is str
+        and len(strand_seq) >= _POSITION_SCAN_MIN_LENGTH
+        and _has_block_scan_patterns(start_codons, stop_codons)
+    ):
+        # Only canonical table patterns use the LUT. External patterns retain
+        # literal find semantics, including duplicates and non-triplet starts.
+        return _collect_start_stop_positions_blocked(
+            strand_seq, start_codons, stop_codons
+        )
     start_positions: list[list[int]] = [[], [], []]
     stop_positions: list[list[int]] = [[], [], []]
     seq_find = strand_seq.find
