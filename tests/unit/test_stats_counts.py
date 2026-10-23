@@ -49,6 +49,7 @@ def test_record_stats_accepts_all_ascii_characters(length):
         b"GCN-nAcg",
         Seq("GCN-nAcg"),
     ],
+    ids=["unicode_short", "unicode_long", "surrogate", "bytes", "bio_seq"],
 )
 def test_record_stats_preserves_non_ascii_and_string_conversion(sequence):
     assert record_stats(SimpleNamespace(seq=sequence)) == reference_counts(sequence)

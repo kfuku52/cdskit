@@ -6,6 +6,14 @@ replacement to standard error.
 
 ## Unreleased
 
+## 0.32.7 — 2026-10-23
+
+### Development
+
+- Keep performance regression tests portable to Windows: compare split outputs
+  against a real reference file with native newline handling, and use bounded
+  Unicode test IDs. Retain all inputs, exact byte comparisons and platform checks.
+
 ## 0.32.6 — 2026-10-23
 
 ### Performance

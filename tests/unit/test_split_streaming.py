@@ -1,6 +1,5 @@
 """Bounded codon-position copies and multi-output compatibility."""
 
-import io
 import weakref
 
 import Bio.SeqIO
@@ -110,12 +109,12 @@ def test_main_output_bytes_match_public_split_for_sequence_and_alignment_formats
     for position, path in enumerate(
         split.build_split_output_paths(prefix, outseqformat)
     ):
-        expected = io.StringIO()
+        expected = tmp_path / f"expected_{position}.{outseqformat}"
         Bio.SeqIO.write(
             [result[position] for result in public_results], expected, outseqformat
         )
         with open(path, "rb") as actual:
-            assert actual.read() == expected.getvalue().encode()
+            assert actual.read() == expected.read_bytes()
     captured = capsys.readouterr()
     assert captured.out == ""
     assert captured.err == (
