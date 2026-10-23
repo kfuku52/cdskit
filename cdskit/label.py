@@ -51,6 +51,13 @@ def uniquify_label_ids(records, clip_len=0):
     name_counts = Counter([record.id for record in records])
     reserved = {record.id for record in records if name_counts[record.id] == 1}
     suffix_counts: dict[str, int] = {}
+    collision_suffix_counts: dict[tuple[str, int], int] = {}
+    share_collisions = (
+        type(clip_len) is int
+        and bool(clip_len)
+        and len(name_counts) - len(reserved) > 1
+        and all(type(record.id) is str for record in records)
+    )
     for record in records:
         if name_counts[record.id] > 1:
             nonunique_count += 1
@@ -72,6 +79,15 @@ def uniquify_label_ids(records, clip_len=0):
                 candidate = base + suffix
                 if candidate not in reserved:
                     break
+                if share_collisions:
+                    # Originals can share a clipped prefix. Every suffix up to
+                    # this point in the same width was already reserved.
+                    namespace = (base, len(suffix))
+                    suffix_counts[original] = max(
+                        suffix_counts[original],
+                        collision_suffix_counts.get(namespace, 0),
+                    )
+                    collision_suffix_counts[namespace] = suffix_counts[original]
             record.id = candidate
             record.description = ""
             reserved.add(candidate)

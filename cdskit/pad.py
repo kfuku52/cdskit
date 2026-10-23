@@ -1,10 +1,11 @@
 #!/usr/bin/env python
 
 from concurrent.futures import ProcessPoolExecutor
-from functools import partial
+from functools import lru_cache, partial
 
 import Bio.Seq
 import Bio.SeqIO
+import numpy as np
 import sys
 
 from cdskit.atomicio import atomic_output_paths
@@ -26,6 +27,10 @@ from cdskit.util import (
     write_seqs,
 )
 
+# Keep C string scans for short inputs; blocks are a multiple of the frame size.
+_STOP_SCAN_MIN_LENGTH = 4096
+_STOP_SCAN_BLOCK_SIZE = 65535
+
 
 def get_stop_codons(codon_table):
     table = get_codon_table_components(codon_table)
@@ -36,12 +41,45 @@ def get_stop_codon_scan_list(codon_table):
     return definite_stop_patterns(frozenset(get_stop_codons(codon_table)))
 
 
+@lru_cache(maxsize=128)
+def _stop_scan_lookup(stops):
+    translation = bytearray(256)
+    for value, base in enumerate("ACGTRYSWKMBDHVNX", 1):
+        translation[ord(base)] = value
+    lookup = np.zeros(1 << 15, dtype=np.uint8)
+    for codon in stops:
+        first, second, third = (translation[ord(base)] for base in codon)
+        lookup[(first << 10) | (second << 5) | third] = 1
+    return bytes(translation), lookup
+
+
+def _count_internal_stops_blocked(sequence, stops):
+    translation, lookup = _stop_scan_lookup(stops)
+    # A complete physical terminal codon is exempt; partial tails exempt none.
+    stop = ((len(sequence) - 1) // 3) * 3
+    count = 0
+    for left in range(0, stop, _STOP_SCAN_BLOCK_SIZE):
+        data = sequence[left : min(left + _STOP_SCAN_BLOCK_SIZE, stop)]
+        encoded = data.encode("ascii", "replace").translate(translation)
+        bases = np.frombuffer(encoded, dtype=np.uint8)
+        keys = bases[0::3].astype(np.uint16)
+        keys <<= 10
+        middle = bases[1::3].astype(np.uint16)
+        middle <<= 5
+        keys |= middle
+        keys |= bases[2::3]
+        count += int(np.count_nonzero(lookup[keys]))
+    return count
+
+
 def count_internal_stop_codons(seq, codon_table):
     sequence = str(seq).upper()
     stops = get_stop_codon_scan_list(codon_table)
     limit = len(sequence) - 3
     if not stops or limit <= 0:
         return 0
+    if type(sequence) is str and len(sequence) >= _STOP_SCAN_MIN_LENGTH:
+        return _count_internal_stops_blocked(sequence, stops)
     count = 0
     for codon in stops:
         pos = sequence.find(codon)

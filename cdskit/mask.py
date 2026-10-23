@@ -89,9 +89,15 @@ def get_mask_decision_cache(codontable, mask_ambiguous, mask_stop):
 def mask_sequence_string(nucseq, codontable, mask_triplet, mask_ambiguous, mask_stop):
     if len(nucseq) == 0:
         return nucseq
-    sequence = np.frombuffer(nucseq.encode("ascii"), dtype="S1").reshape(-1, 3)
-    gap_positions = (sequence == b"-") | (sequence == b".")
-    should_mask = np.any(gap_positions, axis=1) & ~np.all(gap_positions, axis=1)
+    encoded = nucseq.encode("ascii")
+    sequence = np.frombuffer(encoded, dtype=np.uint8).reshape(-1, 3)
+    gap_positions = (sequence == ord("-")) | (sequence == ord("."))
+    # A triplet has some but not all gap bases exactly when adjacent gap flags
+    # differ. Comparing its three positions avoids row-wise reductions.
+    should_mask = (gap_positions[:, 0] != gap_positions[:, 1]) | (
+        gap_positions[:, 1] != gap_positions[:, 2]
+    )
+    del gap_positions
     if mask_ambiguous or mask_stop:
         amino_acids = translate_sequence_codes(
             seq_str=nucseq,
@@ -103,7 +109,9 @@ def mask_sequence_string(nucseq, codontable, mask_triplet, mask_ambiguous, mask_
             should_mask |= amino_acids == ord("*")
     if not np.any(should_mask):
         return nucseq
-    output = np.frombuffer(bytearray(nucseq.encode("ascii")), dtype="S1").reshape(-1, 3)
+    # Direct str subclasses retain their second encode call when output changes.
+    output_bytes = encoded if type(nucseq) is str else nucseq.encode("ascii")
+    output = np.frombuffer(bytearray(output_bytes), dtype="S1").reshape(-1, 3)
     output[should_mask, :] = np.frombuffer(mask_triplet.encode("ascii"), dtype="S1")
     return output.tobytes().decode("ascii")
 

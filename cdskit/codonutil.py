@@ -4,6 +4,7 @@ from collections import Counter
 from dataclasses import dataclass
 from functools import lru_cache
 from itertools import product
+import sys
 from typing import Any, Literal, TypeAlias
 
 import Bio.Data.CodonTable
@@ -32,6 +33,9 @@ CODON_AMBIGUOUS = 2
 CODON_STOP = 3
 CODON_SEMANTICS_VERSION = "2"
 CodonContext: TypeAlias = Literal["ordinary", "unknown", "complete_terminal"]
+_SUMMARY_MIN_NT = 6144
+_SUMMARY_COLD_MIN_NT = 3_000_000
+_SUMMARY_BLOCK_NT = 196608
 
 
 @lru_cache(maxsize=8192)
@@ -282,6 +286,21 @@ def ambiguous_codon_counts(seq: str) -> tuple[int, int]:
     return ambiguous, evaluable
 
 
+def _last_evaluable_codon(sequence: str, codontable: CodonTableKey) -> CodonMeaning:
+    """Find the last nonmissing triplet in bounded, already validated DNA."""
+    from cdskit.codonarray import codon_features
+
+    for end in range(len(sequence), 0, -_SUMMARY_BLOCK_NT):
+        start = max(0, end - _SUMMARY_BLOCK_NT)
+        values = codon_features(sequence[start:end], codontable)
+        assert values is not None
+        evaluable = (values[1] != CODON_MISSING).nonzero()[0]
+        if evaluable.size:
+            offset = start + int(evaluable[-1]) * 3
+            return analyze_codon(sequence[offset : offset + 3], codontable)
+    raise AssertionError("The validated sequence has no evaluable codon.")
+
+
 def summarize_codons(
     seq: str,
     codontable: CodonTableKey,
@@ -302,24 +321,45 @@ def summarize_codons(
     # analyzers normalize case after aggregation.
     sequence = seq
     total_codons = len(sequence) // 3
-    frequencies = Counter(
-        sequence[start : start + 3] for start in range(0, total_codons * 3, 3)
-    )
-    counts = [0, 0, 0, 0]
-    ambiguous = possible = context = 0
-    for codon, count in frequencies.items():
-        meaning = analyze_codon(codon, codontable)
-        counts[classify_codon(codon, codontable)] += count
-        ambiguous += count * int(meaning.ambiguous or meaning.invalid)
-        possible += count * int(meaning.possible_stop)
-        context += count * int(meaning.context_dependent)
+    histogram = None
+    if (
+        type(sequence) is str
+        and len(sequence) >= _SUMMARY_MIN_NT
+        and len(sequence) % 3 == 0
+        # Avoid paying NumPy's first import for small direct-library calls.
+        and (len(sequence) >= _SUMMARY_COLD_MIN_NT or "numpy" in sys.modules)
+    ):
+        from cdskit.codonarray import codon_histogram
+
+        histogram = codon_histogram(sequence, codontable)
+    if histogram is None:
+        frequencies = Counter(
+            sequence[start : start + 3] for start in range(0, total_codons * 3, 3)
+        )
+        counts = [0, 0, 0, 0]
+        ambiguous = possible = context = 0
+        for codon, count in frequencies.items():
+            meaning = analyze_codon(codon, codontable)
+            counts[classify_codon(codon, codontable)] += count
+            ambiguous += count * int(meaning.ambiguous or meaning.invalid)
+            possible += count * int(meaning.possible_stop)
+            context += count * int(meaning.context_dependent)
+    else:
+        clean, missing, ambiguous, stop, possible, context = map(int, histogram.counts)
+        counts = [clean, missing, 0, stop]
     terminal = None
     if total_codons and len(sequence) % 3 == 0:
-        for start in range(len(sequence) - 3, -1, -3):
-            meaning = analyze_codon(sequence[start : start + 3], codontable)
-            if terminal_policy == "physical" or not meaning.missing:
-                terminal = meaning
-                break
+        if histogram is not None and terminal_policy == "last_evaluable":
+            if counts[CODON_MISSING] < total_codons:
+                terminal = analyze_codon(sequence[-3:], codontable)
+                if terminal.missing:
+                    terminal = _last_evaluable_codon(sequence, codontable)
+        else:
+            for start in range(len(sequence) - 3, -1, -3):
+                meaning = analyze_codon(sequence[start : start + 3], codontable)
+                if terminal_policy == "physical" or not meaning.missing:
+                    terminal = meaning
+                    break
     internal_count = counts[CODON_STOP] - int(
         terminal is not None and terminal.definite_stop
     )
