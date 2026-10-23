@@ -123,8 +123,10 @@ def backalign_sequence_strings(
     cdn_seq_upper = cdn_seq.upper()
     num_codons = len(cdn_seq_upper) // 3
     translator = get_codon_translator(codontable=codontable)
-    cache = translator["cache"]
+    cache_get = translator["cache"].get
     stop_codons = translator["stop_codons"]
+    # Most CDS inputs are already uppercase; retain their codon slices directly.
+    preserve_case = cdn_seq != cdn_seq_upper
     pep_seq = pep_seq_raw
     pep_seq_upper = pep_seq.upper()
     aligned_codons = [""] * len(pep_seq)
@@ -140,28 +142,26 @@ def backalign_sequence_strings(
             raise ValueError(txt.format(seq_id, i + 1))
 
         codon_start = codon_index * 3
-        codon = cdn_seq[codon_start : codon_start + 3]
         codon_key = cdn_seq_upper[codon_start : codon_start + 3]
-        translated_char = cache.get(codon_key)
+        codon = cdn_seq[codon_start : codon_start + 3] if preserve_case else codon_key
+        translated_char = cache_get(codon_key)
         if translated_char is None:
             try:
                 translated_char = translate_single_codon(codon_key, translator)
             except KeyError:
                 txt = "Invalid codon for {} at aligned position {}: {}"
                 raise ValueError(txt.format(seq_id, i + 1, codon)) from None
-        if (
-            pep_char == "*"
-            and codon_index == num_codons - 1
-            and codon_key in stop_codons
-        ):
-            # A context-dependent code can explicitly mark its final codon as
-            # stop without changing how that codon translates internally.
-            translated_char = "*"
-        if (pep_char not in AA_WILDCARD_CHARS) and (pep_char != translated_char):
-            txt = "Amino acid mismatch for {} at aligned position {}: aa_aln={}, translated={}, codon={}"
-            raise ValueError(
-                txt.format(seq_id, i + 1, pep_seq[i], translated_char, codon)
-            )
+        if pep_char != translated_char and pep_char not in AA_WILDCARD_CHARS:
+            # Dual-coding stops are accepted only at an explicit terminal stop.
+            if not (
+                pep_char == "*"
+                and codon_index == num_codons - 1
+                and codon_key in stop_codons
+            ):
+                txt = "Amino acid mismatch for {} at aligned position {}: aa_aln={}, translated={}, codon={}"
+                raise ValueError(
+                    txt.format(seq_id, i + 1, pep_seq[i], translated_char, codon)
+                )
 
         aligned_codons[i] = codon
         codon_index += 1

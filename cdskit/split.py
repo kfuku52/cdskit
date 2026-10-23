@@ -43,20 +43,20 @@ def build_split_output_paths(prefix, outseqformat):
     )
 
 
+def _write_codon_position(records, position, outfile, outseqformat):
+    """Release this position's record copies before constructing the next."""
+    position_records = []
+    for record in records:
+        position_record = copy.copy(record)
+        replace_record_sequence(position_record, record.seq[position::3])
+        position_records.append(position_record)
+    write_seqs(records=position_records, outfile=outfile, outseqformat=outseqformat)
+
+
 def split_main(args):
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
     stop_if_not_dna(records=records, label="--seq_file")
     stop_if_not_multiple_of_three(records)
-    first_records = list()
-    second_records = list()
-    third_records = list()
-    for record in records:
-        first_record, second_record, third_record = split_record_by_codon_position(
-            record
-        )
-        first_records.append(first_record)
-        second_records.append(second_record)
-        third_records.append(third_record)
     prefix_str = resolve_output_prefix(args)
     first_outfile, second_outfile, third_outfile = build_split_output_paths(
         prefix_str, args.outseqformat
@@ -64,15 +64,8 @@ def split_main(args):
     outputs = (first_outfile, second_outfile, third_outfile)
     validate_distinct_paths(inputs=[args.seqfile], outputs=outputs)
     with atomic_output_paths(outputs) as staged:
-        sys.stderr.write("Writing first codon positions.\n")
-        write_seqs(
-            records=first_records, outfile=staged[0], outseqformat=args.outseqformat
-        )
-        sys.stderr.write("Writing second codon positions.\n")
-        write_seqs(
-            records=second_records, outfile=staged[1], outseqformat=args.outseqformat
-        )
-        sys.stderr.write("Writing third codon positions.\n")
-        write_seqs(
-            records=third_records, outfile=staged[2], outseqformat=args.outseqformat
-        )
+        for position, ordinal in enumerate(("first", "second", "third")):
+            sys.stderr.write(f"Writing {ordinal} codon positions.\n")
+            _write_codon_position(
+                records, position, staged[position], args.outseqformat
+            )

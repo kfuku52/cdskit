@@ -15,6 +15,29 @@ from cdskit.util import (
 )
 
 LOWERCASE_DELETE_TABLE = str.maketrans("", "", "abcdefghijklmnopqrstuvwxyz")
+_LOWERCASE_DELETE_BYTES = b"abcdefghijklmnopqrstuvwxyz"
+
+
+def _long_ascii_record_stats(sequence):
+    # Keep temporary comparisons bounded for chromosome-sized records.
+    array = np.frombuffer(sequence, dtype=np.uint8)
+    masked = guanine = cytosine = unknown = gap = 0
+    for start in range(0, len(array), 65536):
+        block = array[start : start + 65536]
+        upper = block & 223
+        masked += int(np.count_nonzero((block >= 97) & (block <= 122)))
+        guanine += int(np.count_nonzero(upper == 71))
+        cytosine += int(np.count_nonzero(upper == 67))
+        unknown += int(np.count_nonzero(upper == 78))
+        gap += int(np.count_nonzero(block == 45))
+    return {
+        "bp_masked": masked,
+        "bp_all": len(sequence),
+        "bp_G": guanine,
+        "bp_C": cytosine,
+        "bp_N": unknown,
+        "bp_gap": gap,
+    }
 
 
 def num_masked_bp(seq):
@@ -24,6 +47,21 @@ def num_masked_bp(seq):
 
 def record_stats(record):
     seq_str = str(record.seq)
+    if type(seq_str) is str and seq_str.isascii():
+        sequence = seq_str.encode("ascii")
+        # Below this size, byte-string methods avoid NumPy's fixed overhead.
+        if len(sequence) >= 8192:
+            return _long_ascii_record_stats(sequence)
+        upper = sequence.upper()
+        return {
+            "bp_masked": len(sequence)
+            - len(sequence.translate(None, _LOWERCASE_DELETE_BYTES)),
+            "bp_all": len(sequence),
+            "bp_G": upper.count(b"G"),
+            "bp_C": upper.count(b"C"),
+            "bp_N": upper.count(b"N"),
+            "bp_gap": sequence.count(b"-"),
+        }
     seq_upper = seq_str.upper()
     return {
         "bp_masked": num_masked_bp(seq_str),

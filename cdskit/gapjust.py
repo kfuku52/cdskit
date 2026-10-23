@@ -68,19 +68,20 @@ def vectorized_coordinate_update(
             for just in justifications
         )
 
-        def apply_range_aware(coords):
-            original = np.asarray(coords)
-            starts = np.asarray([edit[0] for edit in edits], dtype=np.int64)
-            old_lengths = np.asarray([edit[1] for edit in edits], dtype=np.int64)
-            targets = np.asarray([edit[2] for edit in edits], dtype=np.int64)
-            old_ends = starts + old_lengths - 1
-            deltas = targets - old_lengths
-            prefix_delta = np.concatenate(
-                (
-                    np.zeros((1,), dtype=np.int64),
-                    np.cumsum(deltas, dtype=np.int64),
-                )
+        original_starts = np.asarray(seq_gff_start_coordinates)
+        starts = np.asarray([edit[0] for edit in edits], dtype=np.int64)
+        old_lengths = np.asarray([edit[1] for edit in edits], dtype=np.int64)
+        targets = np.asarray([edit[2] for edit in edits], dtype=np.int64)
+        old_ends = starts + old_lengths - 1
+        deltas = targets - old_lengths
+        prefix_delta = np.concatenate(
+            (
+                np.zeros((1,), dtype=np.int64),
+                np.cumsum(deltas, dtype=np.int64),
             )
+        )
+
+        def apply_range_aware(original):
             completed = np.searchsorted(old_ends, original, side="left")
             updated = original + prefix_delta[completed]
 
@@ -100,8 +101,8 @@ def vectorized_coordinate_update(
             return updated
 
         return (
-            apply_range_aware(seq_gff_start_coordinates),
-            apply_range_aware(seq_gff_end_coordinates),
+            apply_range_aware(original_starts),
+            apply_range_aware(np.asarray(seq_gff_end_coordinates)),
         )
 
     # Accept both legacy dict format and internal compact tuple format.
@@ -117,19 +118,19 @@ def vectorized_coordinate_update(
     # Preserve the legacy tie-break on edit length for edits at the same site.
     legacy_edits.sort()
 
-    def apply_coordinate_shift(coords):
-        if len(legacy_edits) == 0:
-            return coords
-        starts = np.asarray([edit[0] for edit in legacy_edits], dtype=np.int64)
-        deltas = np.asarray([edit[1] for edit in legacy_edits], dtype=np.int64)
-        prefix_delta = np.concatenate(
-            (
-                np.zeros((1,), dtype=np.int64),
-                np.cumsum(deltas, dtype=np.int64),
-            )
+    starts = np.asarray([edit[0] for edit in legacy_edits], dtype=np.int64)
+    deltas = np.asarray([edit[1] for edit in legacy_edits], dtype=np.int64)
+    prefix_delta = np.concatenate(
+        (
+            np.zeros((1,), dtype=np.int64),
+            np.cumsum(deltas, dtype=np.int64),
         )
-        actual_starts = starts + prefix_delta[:-1]
-        if np.any(actual_starts[1:] < actual_starts[:-1]):
+    )
+    actual_starts = starts + prefix_delta[:-1]
+    non_monotonic = np.any(actual_starts[1:] < actual_starts[:-1])
+
+    def apply_coordinate_shift(coords):
+        if non_monotonic:
             updated = np.asarray(coords).copy()
             for actual_start, edit_len in zip(actual_starts, deltas, strict=False):
                 updated[updated > actual_start] += edit_len

@@ -1,3 +1,4 @@
+import re
 import sys
 from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
@@ -27,6 +28,13 @@ GAP_ONLY_CHARS = frozenset("-?.NXnx")
 UNAMBIGUOUS_NT = frozenset("ACGTacgt")
 _DROP_MISSING_CHARS_TABLE = str.maketrans("", "", "".join(sorted(MISSING_CHARS)))
 _AMBIGUOUS_CODON_CLASS_CACHE: dict = {}
+_GAP_ONLY_CHARS_TEXT = "".join(sorted(GAP_ONLY_CHARS))
+_NON_GAP_ONLY_PATTERN = re.compile("[^" + re.escape(_GAP_ONLY_CHARS_TEXT) + "]")
+_AMBIGUOUS_NT_FLAGS = bytes(
+    1 if chr(i) in MISSING_CHARS else 0 if chr(i) in UNAMBIGUOUS_NT else 2
+    for i in range(256)
+)
+_AMBIGUOUS_SCAN_CHUNK_NT = 3 * 262144
 
 
 def chunk_codons(seq):
@@ -40,6 +48,8 @@ def get_stop_codons(codontable):
 
 
 def is_gap_only_sequence(seq):
+    if type(seq) is str:
+        return len(seq) > 0 and _NON_GAP_ONLY_PATTERN.search(seq) is None
     return len(seq) > 0 and all(ch in GAP_ONLY_CHARS for ch in seq)
 
 
@@ -72,10 +82,32 @@ def is_ambiguous_codon(codon):
     return any(ch not in UNAMBIGUOUS_NT for ch in codon)
 
 
+def _sequence_ambiguous_ascii_codon_counts(seq):
+    import numpy as np
+
+    complete_length = len(seq) // 3 * 3
+    ambiguous = 0
+    missing = 0
+    # Keep temporary arrays bounded even for chromosome-sized inputs. Missing
+    # and ambiguity use separate bits, so missing codons remain unevaluable.
+    for start in range(0, complete_length, _AMBIGUOUS_SCAN_CHUNK_NT):
+        end = min(start + _AMBIGUOUS_SCAN_CHUNK_NT, complete_length)
+        flags = np.frombuffer(
+            seq[start:end].encode("ascii").translate(_AMBIGUOUS_NT_FLAGS),
+            dtype=np.uint8,
+        )
+        codon_flags = flags[::3] | flags[1::3] | flags[2::3]
+        ambiguous += int(np.count_nonzero(codon_flags == 2))
+        missing += int(np.count_nonzero(codon_flags & 1))
+    return ambiguous, complete_length // 3 - missing
+
+
 def sequence_ambiguous_codon_counts(seq):
+    seq_len = len(seq)
+    if seq_len >= 384 and type(seq) is str and seq.isascii():
+        return _sequence_ambiguous_ascii_codon_counts(seq)
     ambiguous = 0
     evaluable = 0
-    seq_len = len(seq)
     codon_class_cache = _AMBIGUOUS_CODON_CLASS_CACHE
     for i in range(0, seq_len - 2, 3):
         codon = seq[i : i + 3]

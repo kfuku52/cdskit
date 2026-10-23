@@ -318,22 +318,34 @@ def cluster_bootstrap(
 def reliability_bins(target, probability, bins=10):
     """Descriptive calibration bins over observed labels (not proof of calibration)."""
     target, probability = np.asarray(target), np.asarray(probability)
+    flat_selection = (
+        probability.ndim > 0
+        and target.shape == probability.shape
+        and target.flags.c_contiguous
+        and probability.flags.c_contiguous
+    )
+    if flat_selection:
+        target, probability = target.reshape(-1), probability.reshape(-1)
+    index_limit = probability.size // np.dtype(np.intp).itemsize
     result = []
     for i in range(bins):
         selected = (probability >= i / bins) & (
             (probability < (i + 1) / bins) if i + 1 < bins else (probability <= 1)
         )
+        count = int(selected.sum())
+        if flat_selection and 0 < count <= index_limit:
+            # Sparse bins share one index scan across both gathers. Keep the
+            # index allocation within the size of the original boolean mask.
+            selected = np.flatnonzero(selected)
         result.append(
             {
                 "lower": i / bins,
                 "upper": (i + 1) / bins,
-                "count": int(selected.sum()),
+                "count": count,
                 "mean_probability": float(probability[selected].mean())
-                if selected.any()
+                if count
                 else None,
-                "positive_fraction": float(target[selected].mean())
-                if selected.any()
-                else None,
+                "positive_fraction": float(target[selected].mean()) if count else None,
             }
         )
     return result

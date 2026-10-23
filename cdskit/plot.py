@@ -286,47 +286,39 @@ def _build_msa_summary(records, codontable):
         [seq[codon_idx * 3 : codon_idx * 3 + 3] for codon_idx in range(num_codons)]
         for seq in seq_strings
     ]
-    seq_aas = [
-        [
-            _translate_codon_for_msa(
-                codon=codon,
-                codontable=codontable,
-                forward_table=forward_table,
-                stop_codons=stop_codons,
-            )
-            for codon in row_codons
-        ]
-        for row_codons in seq_codons
-    ]
+    # Resolve each distinct triplet once; rows and site logos share these values.
+    translations = {
+        codon: _translate_codon_for_msa(
+            codon=codon,
+            codontable=codontable,
+            forward_table=forward_table,
+            stop_codons=stop_codons,
+        )
+        for codon in {codon for row in seq_codons for codon in row}
+    }
+    concrete_codons = {
+        codon
+        for codon in translations
+        if len(codon) == 3 and all(ch in "ACGT" for ch in codon)
+    }
+    seq_aas = [[translations[codon] for codon in row] for row in seq_codons]
 
     consensus_codons = list()
     consensus_aas = list()
     aa_logo_frequencies: list[list[tuple[str, float]]] = []
 
     for codon_idx in range(num_codons):
-        codons = [seq[codon_idx * 3 : codon_idx * 3 + 3] for seq in seq_strings]
-        valid_codons = [
-            codon.upper()
-            for codon in codons
-            if (len(codon) == 3)
-            and (not codon_has_missing(codon))
-            and all(ch in "ACGT" for ch in codon.upper())
-        ]
+        codons = [row[codon_idx] for row in seq_codons]
+        valid_codons = [codon for codon in codons if codon in concrete_codons]
 
         if len(valid_codons) > 0:
             codon_counts = Counter(valid_codons)
             consensus_codon = sorted(
                 codon_counts.items(), key=lambda item: (-item[1], item[0])
             )[0][0]
-            aa_counts = Counter(
-                _translate_codon_for_msa(
-                    codon=codon,
-                    codontable=codontable,
-                    forward_table=forward_table,
-                    stop_codons=stop_codons,
-                )
-                for codon in valid_codons
-            )
+            aa_counts: Counter[str] = Counter()
+            for codon, count in codon_counts.items():
+                aa_counts[translations[codon]] += count
         else:
             if len(codons) > 0 and all(
                 (len(codon) == 3) and all(ch in "-?." for ch in codon.upper())

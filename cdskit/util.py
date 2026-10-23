@@ -56,6 +56,16 @@ DNA_ALLOWED_CHARS = frozenset("ACGTRYSWKMBDHVNXacgtryswkmbdhvnx-?.")
 PROTEIN_ALLOWED_CHARS = frozenset(
     "ABCDEFGHIKLMNPQRSTVWXYZJUO*abcdefghiklmnpqrstvwxyzjuo-?."
 )
+_SEQUENCE_ALLOWED_CHARS = DNA_ALLOWED_CHARS | PROTEIN_ALLOWED_CHARS
+_DNA_VALID_PREFIX = re.compile(
+    "[" + re.escape("".join(sorted(DNA_ALLOWED_CHARS))) + "]*"
+)
+_PROTEIN_VALID_PREFIX = re.compile(
+    "[" + re.escape("".join(sorted(PROTEIN_ALLOWED_CHARS))) + "]*"
+)
+_SEQUENCE_VALID_PREFIX = re.compile(
+    "[" + re.escape("".join(sorted(_SEQUENCE_ALLOWED_CHARS))) + "]*"
+)
 DEFAULT_MAX_SEQUENCE_RECORDS = 1_000_000
 DEFAULT_MAX_SEQUENCE_RESIDUES = 1_000_000_000
 DEFAULT_MAX_SEQUENCE_ID_LENGTH = 4096
@@ -374,6 +384,28 @@ def stop_if_not_aligned(records: Sequence[SeqRecord]) -> None:
             raise ValueError(txt)
 
 
+def _invalid_sequence_chars(
+    sequence: str,
+    allowed_chars: frozenset[str],
+    valid_prefix: re.Pattern[str],
+) -> set[str] | None:
+    if type(sequence) is not str:
+        return set(sequence).difference(allowed_chars)
+    # The character classes include zero repetitions, so every string matches.
+    match = valid_prefix.match(sequence)
+    assert match is not None
+    first_invalid = match.end()
+    if first_invalid == len(sequence):
+        return None
+    invalid_chars: set[str] = set()
+    # Skip the valid prefix and bound temporary slices for long invalid records.
+    for start in range(first_invalid, len(sequence), 65536):
+        invalid_chars.update(
+            set(sequence[start : start + 65536]).difference(allowed_chars)
+        )
+    return invalid_chars
+
+
 def stop_if_not_dna(
     records: Sequence[SeqRecord],
     label: str = "--seq_file",
@@ -382,7 +414,9 @@ def stop_if_not_dna(
     invalid_chars = set()
     for record in records:
         seq_str = str(record.seq)
-        record_invalid_chars = set(seq_str).difference(DNA_ALLOWED_CHARS)
+        record_invalid_chars = _invalid_sequence_chars(
+            seq_str, DNA_ALLOWED_CHARS, _DNA_VALID_PREFIX
+        )
         if record_invalid_chars:
             invalid_chars.update(record_invalid_chars)
             invalid_ids.append(str(record.id))
@@ -408,7 +442,9 @@ def stop_if_not_protein(
     invalid_chars = set()
     for record in records:
         seq_str = str(record.seq)
-        record_invalid_chars = set(seq_str).difference(PROTEIN_ALLOWED_CHARS)
+        record_invalid_chars = _invalid_sequence_chars(
+            seq_str, PROTEIN_ALLOWED_CHARS, _PROTEIN_VALID_PREFIX
+        )
         if record_invalid_chars:
             invalid_chars.update(record_invalid_chars)
             invalid_ids.append(str(record.id))
@@ -439,12 +475,13 @@ def stop_if_not_seqtype(
         stop_if_not_protein(records=records, label=label)
         return
     if seqtype_value == "auto":
-        allowed_chars = DNA_ALLOWED_CHARS | PROTEIN_ALLOWED_CHARS
         invalid_ids = list()
         invalid_chars = set()
         for record in records:
             seq_str = str(record.seq)
-            record_invalid_chars = set(seq_str).difference(allowed_chars)
+            record_invalid_chars = _invalid_sequence_chars(
+                seq_str, _SEQUENCE_ALLOWED_CHARS, _SEQUENCE_VALID_PREFIX
+            )
             if record_invalid_chars:
                 invalid_chars.update(record_invalid_chars)
                 invalid_ids.append(str(record.id))

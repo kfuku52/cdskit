@@ -128,6 +128,27 @@ def trim_record_to_codon_sites(record, kept_sites):
     return trimmed
 
 
+def _trim_records_to_codon_sites(records, kept_sites):
+    """Reuse contiguous ranges for the sorted sites selected by the command."""
+    ranges: list[tuple[int, int]] = []
+    for site in kept_sites:
+        start = site * 3
+        end = start + 3
+        if ranges and ranges[-1][1] == start:
+            ranges[-1] = (ranges[-1][0], end)
+        else:
+            ranges.append((start, end))
+    trimmed_records = []
+    for record in records:
+        trimmed = copy.copy(record)
+        seq_str = str(record.seq)
+        replace_record_sequence(
+            trimmed, "".join(seq_str[start:end] for start, end in ranges)
+        )
+        trimmed_records.append(trimmed)
+    return trimmed_records
+
+
 def build_trimcodon_summary(site_summaries, kept_sites, num_sequences, args):
     removed_sites = [
         summary["codon_site_1based"]
@@ -218,10 +239,7 @@ def trimcodon_main(args):
     sys.stderr.write(
         "Removed codon sites: {:,}\n".format(summary["num_removed_codon_sites"])
     )
-    out_records = [
-        trim_record_to_codon_sites(record=record, kept_sites=kept_sites)
-        for record in records
-    ]
+    out_records = _trim_records_to_codon_sites(records, kept_sites)
     outputs = [path for path in (args.outfile, args.report) if path not in ("", "-")]
     with atomic_output_paths(outputs) as temporary_paths:
         staged = dict(zip(outputs, temporary_paths, strict=True))

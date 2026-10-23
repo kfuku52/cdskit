@@ -1,5 +1,7 @@
 """Shared sequence-group splitting and explicit audit provenance."""
 
+from collections import Counter
+
 import numpy as np
 
 from cdskit.localize_evaluation import (
@@ -135,9 +137,20 @@ def stratified_group_ids(labels, groups, n_folds, seed):
     rng.shuffle(keys)
     keys.sort(key=lambda key: len(members[key]), reverse=True)
     result = np.empty(len(labels), dtype=object)
+    # Counting pays off above three classes. String labels use ordinary hash
+    # equality; retain comparisons for objects such as NaN or custom subclasses.
+    count_strings = len(classes) > 3 and all(
+        type(label) in (str, np.str_) for label in labels
+    )
     for key in keys:
         ids = members[key]
-        vector = np.asarray([sum(labels[i] == name for i in ids) for name in classes])
+        if count_strings:
+            label_counts = Counter(labels[i] for i in ids)
+            vector = np.asarray([label_counts[name] for name in classes])
+        else:
+            vector = np.asarray(
+                [sum(labels[i] == name for i in ids) for name in classes]
+            )
         costs = (counts * vector).sum(axis=1)
         fold = min(range(n_folds), key=lambda i: (costs[i], sizes[i]))
         result[ids] = str(fold)
