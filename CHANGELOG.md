@@ -6,6 +6,27 @@ replacement to standard error.
 
 ## Unreleased
 
+## 0.32.6 — 2026-10-23
+
+### Performance
+
+- Reuse trimming ranges, translation summaries and prepared gap coordinates;
+  release each split-position output list before building the next one.
+- Reduce sequence-counting, alphabet-validation, backalignment and legacy
+  ambiguity-scan overhead while preserving diagnostics and unusual input types.
+- Share sparse calibration-bin indices and count string labels once per group,
+  preserving floating-point outputs, fold assignments and random state.
+- Accelerate long codon summaries, partial-gap masking, clipped-label suffix
+  collisions and padding stop scans. Preserve genetic-code and terminal rules,
+  candidate ties, output order, metadata and exception behavior.
+
+### Development
+
+- Add independent equivalence and boundary regressions, reproducible paired and
+  fresh-process benchmarks, and documented small-input and memory tradeoffs. See
+  the [ten-candidate follow-up](docs/performance-followup-2026-10-23.md) and
+  [additional candidate validation](docs/performance-additional-2026-10-23.md).
+
 ## 0.32.5 — 2026-10-22
 
 ### Performance
