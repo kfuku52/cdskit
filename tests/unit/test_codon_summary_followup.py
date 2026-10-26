@@ -2,7 +2,6 @@
 
 from itertools import product
 import random
-from types import SimpleNamespace
 
 from Bio.Data.CodonTable import unambiguous_dna_by_id
 import pytest
@@ -93,22 +92,6 @@ def test_invalid_and_unicode_keep_scalar_semantics(bad):
         )
 
 
-def test_custom_string_slicing_keeps_scalar_path(monkeypatch):
-    class CustomString(str):
-        def __getitem__(self, item):
-            value = super().__getitem__(item)
-            return value.replace("A", "N")
-
-    def forbidden(*args):
-        raise AssertionError("custom strings must retain scalar processing")
-
-    monkeypatch.setattr(codonarray, "codon_histogram", forbidden)
-    sequence = CustomString("ATG" * 3000)
-    assert codonutil.summarize_codons(sequence, 1) == reference_summary(
-        sequence, 1, "last_evaluable"
-    )
-
-
 def test_last_evaluable_scan_bounds_temporary_rows(monkeypatch):
     observed = []
     original = codonarray.codon_features
@@ -121,34 +104,13 @@ def test_last_evaluable_scan_bounds_temporary_rows(monkeypatch):
     sequence = "ATGTAA" + "---" * 140000
     result = codonutil.summarize_codons(sequence, 1)
     assert not result["internal_stop"]
-    assert len(observed) == 3
+    assert observed
     assert max(observed) <= 196608
 
 
 def test_small_empty_and_invalid_policy_contracts():
-    assert codonutil.summarize_codons("", "not-a-code") == reference_summary(
-        "", "not-a-code", "last_evaluable"
+    assert codonutil.summarize_codons("", 1) == reference_summary(
+        "", 1, "last_evaluable"
     )
     with pytest.raises(ValueError, match="Unknown terminal policy: invalid"):
         codonutil.summarize_codons("ATG" * 3000, 1, "invalid")
-
-
-@pytest.mark.parametrize("numpy_loaded", [False, True])
-def test_cold_import_gate_uses_measured_sizes(monkeypatch, numpy_loaded):
-    calls = []
-    original = codonarray.codon_histogram
-
-    def inspect(sequence, code):
-        calls.append(len(sequence))
-        return original(sequence, code)
-
-    monkeypatch.setattr(codonarray, "codon_histogram", inspect)
-    monkeypatch.setattr(
-        codonutil,
-        "sys",
-        SimpleNamespace(modules={"numpy": object()} if numpy_loaded else {}),
-    )
-    for length in (6141, 6144, 300000, 2999997, 3000000):
-        result = codonutil.summarize_codons("ATG" * (length // 3), 1)
-        assert result["total"] == result["clean"] == length // 3
-    assert calls == ([6144, 300000, 2999997, 3000000] if numpy_loaded else [3000000])

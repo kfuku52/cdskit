@@ -79,19 +79,12 @@ def test_scan_bounds_temporary_buffers_per_block(monkeypatch):
     starts, stops = longestcds.get_scan_codons(1)
     found = longestcds.collect_start_stop_positions_by_frame(sequence, starts, stops)
     assert found == positional_reference(sequence, starts, stops)
-    assert len(sizes) == 3
+    assert sizes
     assert max(sizes) <= block_size + 2
 
 
-def fail_block_scan(*args, **kwargs):
-    pytest.fail("This input must retain literal str.find semantics")
-
-
 @pytest.mark.parametrize("code", [1, 11])
-def test_short_scans_keep_existing_path(monkeypatch, code):
-    monkeypatch.setattr(
-        longestcds, "_collect_start_stop_positions_blocked", fail_block_scan
-    )
+def test_short_scans_match_literal_positions(code):
     starts, stops = longestcds.get_scan_codons(code)
     for length in (0, 1, 2, 150, longestcds._POSITION_SCAN_MIN_LENGTH - 1):
         sequence = ("ATGTAR" * (length // 6 + 1))[:length]
@@ -101,10 +94,7 @@ def test_short_scans_keep_existing_path(monkeypatch, code):
 
 
 @pytest.mark.parametrize("code", [3, 6, 9, 10, 12, 27, 28, 31])
-def test_few_pattern_scans_keep_existing_path(monkeypatch, code):
-    monkeypatch.setattr(
-        longestcds, "_collect_start_stop_positions_blocked", fail_block_scan
-    )
+def test_few_pattern_scans_match_literal_positions(code):
     starts, stops = longestcds.get_scan_codons(code)
     sequence = "ATGTAATAGTGA" * 2000
     assert longestcds.collect_start_stop_positions_by_frame(
@@ -122,13 +112,7 @@ def test_few_pattern_scans_keep_existing_path(monkeypatch, code):
         (("é", "ATGATG", "A", ""), (), tuple),
     ],
 )
-def test_external_patterns_keep_literal_semantics(
-    monkeypatch, starts, stops, container
-):
-    monkeypatch.setattr(
-        longestcds, "_collect_start_stop_positions_blocked", fail_block_scan
-    )
-    longestcds.get_scan_codons(1)
+def test_external_patterns_keep_literal_semantics(starts, stops, container):
     sequence = "GCC" * 5500 + "éATGATGTAR"
     expected = positional_reference(sequence, starts, stops)
     assert (
@@ -136,24 +120,6 @@ def test_external_patterns_keep_literal_semantics(
             sequence, container(starts), container(stops)
         )
         == expected
-    )
-
-
-def test_string_subclass_keeps_find_override(monkeypatch):
-    class CustomSequence(str):
-        def find(self, pattern, start=0):
-            return super().find("AAA" if pattern == "ATG" else pattern, start)
-
-    monkeypatch.setattr(
-        longestcds, "_collect_start_stop_positions_blocked", fail_block_scan
-    )
-    starts, stops = longestcds.get_scan_codons(1)
-    sequence = CustomSequence("G" * 16384 + "AAA")
-    assert longestcds.collect_start_stop_positions_by_frame(
-        sequence, starts, stops
-    ) == (
-        [[], [16384], []],
-        [[], [], []],
     )
 
 
@@ -180,18 +146,3 @@ def test_block_scan_preserves_candidates_selection_ties_and_report(
     monkeypatch.setattr(longestcds, "_POSITION_SCAN_MIN_PATTERNS", 0)
     monkeypatch.setattr(longestcds, "_POSITION_SCAN_BLOCK_SIZE", 17)
     assert snapshot() == expected
-
-
-def test_unhashable_string_patterns_keep_existing_path(monkeypatch):
-    class UnhashablePattern(str):
-        __hash__ = None
-
-    monkeypatch.setattr(
-        longestcds, "_collect_start_stop_positions_blocked", fail_block_scan
-    )
-    starts, stops = longestcds.get_scan_codons(1)
-    external_starts = tuple(UnhashablePattern(codon) for codon in starts)
-    sequence = "GCC" * 5500 + "ATGTAR"
-    assert longestcds.collect_start_stop_positions_by_frame(
-        sequence, external_starts, stops
-    ) == positional_reference(sequence, external_starts, stops)

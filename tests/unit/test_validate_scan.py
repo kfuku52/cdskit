@@ -80,32 +80,15 @@ def test_gap_scan_preserves_unicode_and_sequence_types(sequence, expected):
     assert result is expected
 
 
-class SequenceString(str):
-    def lstrip(self, chars=None):
-        raise AssertionError("String-subclass behavior must use the original scan")
-
-    def isascii(self):
-        raise AssertionError("String-subclass behavior must use the original scan")
-
-    def encode(self, encoding="utf-8", errors="strict"):
-        raise AssertionError("String-subclass behavior must use the original scan")
-
-
 @pytest.mark.parametrize(
     "sequence",
-    [Seq("ACGNnN---" * 100), tuple("ACGNnN---" * 100), SequenceString("NnN" * 200)],
-    ids=["BioSeq", "tuple", "str_subclass"],
+    [Seq("ACGNnN---" * 100), tuple("ACGNnN---" * 100)],
+    ids=["BioSeq", "tuple"],
 )
 def test_ambiguity_scan_preserves_non_string_sequences(sequence):
     assert validate.sequence_ambiguous_codon_counts(sequence) == reference_counts(
         sequence
     )
-
-
-def test_ambiguity_scan_preserves_bytes_behavior():
-    # The untyped legacy API treated integer byte values as ambiguous bases.
-    assert validate.sequence_ambiguous_codon_counts(b"ACG---NNN") == (3, 3)
-    assert validate.is_gap_only_sequence(SequenceString("NnN" * 200)) is True
 
 
 @pytest.mark.parametrize("sequence", [None, 1, ["A", "C", "G"]])

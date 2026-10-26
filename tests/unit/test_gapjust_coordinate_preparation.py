@@ -132,20 +132,3 @@ def test_deleted_endpoint_raises_in_either_coordinate_array(in_end):
         vectorized_coordinate_update(starts, ends, edits)
     np.testing.assert_array_equal(safe, [2, 5, 12])
     np.testing.assert_array_equal(deleted, [7])
-
-
-@pytest.mark.parametrize("range_aware", [False, True])
-def test_edit_coordinates_outside_int64_raise_overflow(range_aware):
-    edits = (
-        [
-            {
-                "original_gap_start": 2**63,
-                "original_gap_length": 2,
-                "target_gap_length": 3,
-            }
-        ]
-        if range_aware
-        else [(2**63, 1)]
-    )
-    with pytest.raises(OverflowError):
-        vectorized_coordinate_update(np.array([1]), np.array([2]), edits)

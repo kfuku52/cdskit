@@ -6,6 +6,15 @@ replacement to standard error.
 
 ## Unreleased
 
+## 0.32.8 — 2026-10-26
+
+### Development
+
+- Remove speculative tests for stateful custom types, malformed internal data,
+  incidental exception ordering and fixed execution paths. Retain boundary
+  validation, mutation checks, scientific semantics, output compatibility and
+  resource bounds.
+
 ## 0.32.7 — 2026-10-23
 
 ### Development

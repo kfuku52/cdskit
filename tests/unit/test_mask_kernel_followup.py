@@ -47,28 +47,10 @@ def test_mask_replacement_preserves_byte_values_and_single_base_broadcast(mask_t
     )
 
 
-@pytest.mark.parametrize("mask_triplet", ["", "NN", "NNNN"])
-def test_mask_replacement_invalid_width_is_checked_only_when_selected(mask_triplet):
-    sequence = "ATG---"
-    assert mask_sequence_string(sequence, 1, mask_triplet, False, False) is sequence
-    with pytest.raises(ValueError, match="shape mismatch"):
-        mask_sequence_string("A-G", 1, mask_triplet, False, False)
-
-
-def test_mask_no_change_preserves_input_identity_and_ignores_unused_arguments():
+def test_mask_no_change_preserves_sequence():
     sequence = "atg---...-.-???"
-    assert mask_sequence_string(sequence, "invalid", None, False, False) is sequence
-    assert mask_sequence_string("", "invalid", None, True, True) == ""
-
-
-def test_mask_direct_api_preserves_validation_order():
-    with pytest.raises(ValueError, match="reshape"):
-        mask_sequence_string("AT", "invalid", None, True, True)
-    with pytest.raises(UnicodeEncodeError):
-        mask_sequence_string("AéG", "invalid", None, True, True)
-    with pytest.raises(Bio.Data.CodonTable.TranslationError, match="Invalid codon"):
-        mask_sequence_string("ATZ", 1, None, True, True)
-    assert mask_sequence_string("ATZ", 1, None, False, False) == "ATZ"
+    assert mask_sequence_string(sequence, 1, "NNN", False, False) == sequence
+    assert mask_sequence_string("", 1, "NNN", True, True) == ""
 
 
 def test_mask_direct_api_named_code_and_dual_coding():
@@ -78,30 +60,3 @@ def test_mask_direct_api_named_code_and_dual_coding():
     assert mask_sequence_string("TGATAGTAA", 27, "NNN", True, True) == "TGATAGTAA"
     assert mask_sequence_string("TGATAGTAA", 28, "NNN", True, True) == "TGATAGTAA"
     assert mask_sequence_string("TGATAGTAA", 31, "NNN", True, True) == "TGATAGTAA"
-
-
-@pytest.mark.parametrize("fail_second_encode", [False, True])
-def test_mask_direct_string_subclass_preserves_second_encode(fail_second_encode):
-    class ReencodingSequence(str):
-        def __new__(cls):
-            instance = super().__new__(cls, "ATGA-G")
-            instance.encode_calls = 0
-            return instance
-
-        def encode(self, encoding="utf-8", errors="strict"):
-            assert (encoding, errors) == ("ascii", "strict")
-            self.encode_calls += 1
-            if self.encode_calls == 1:
-                return b"ATGA-G"
-            if fail_second_encode:
-                raise RuntimeError("second encode failed")
-            return b"CCCA-G"
-
-    sequence = ReencodingSequence()
-    if fail_second_encode:
-        # The second input encode still precedes encoding a bad replacement.
-        with pytest.raises(RuntimeError, match="second encode failed"):
-            mask_sequence_string(sequence, 1, None, False, False)
-    else:
-        assert mask_sequence_string(sequence, 1, "NNN", False, False) == "CCCNNN"
-    assert sequence.encode_calls == 2

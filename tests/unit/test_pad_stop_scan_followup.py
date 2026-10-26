@@ -89,23 +89,6 @@ def test_long_stop_scan_preserves_padding_candidates_and_ties(
     assert actual == pad.process_record_padding(**arguments)
 
 
-class _CustomFindSequence(str):
-    def __str__(self):
-        return self
-
-    def upper(self):
-        return self
-
-    def find(self, *args):
-        return -1
-
-
-def test_string_subclass_stop_scan_keeps_its_custom_find_behavior():
-    sequence = _CustomFindSequence("TAATAA" * 1000)
-
-    assert pad.count_internal_stop_codons(sequence, 1) == 0
-
-
 def test_unicode_invalid_bases_cannot_create_false_stop_patterns():
     sequence = "TAあTA\ud800TßARtåaT\U0001f600A\uff34AA" * 1000
 

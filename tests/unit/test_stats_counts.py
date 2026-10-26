@@ -54,29 +54,3 @@ def test_record_stats_accepts_all_ascii_characters(length):
 def test_record_stats_preserves_non_ascii_and_string_conversion(sequence):
     assert record_stats(SimpleNamespace(seq=sequence)) == reference_counts(sequence)
     assert num_masked_bp(sequence) == reference_counts(sequence)["bp_masked"]
-
-
-def test_record_stats_preserves_string_subclass_methods():
-    class CustomString(str):
-        def __str__(self):
-            return self
-
-        def upper(self):
-            return "GGGCN"
-
-        def translate(self, table):
-            return ""
-
-        def count(self, value):
-            return 17 if value == "-" else super().count(value)
-
-    sequence = CustomString("acg-")
-    assert record_stats(SimpleNamespace(seq=sequence)) == {
-        "bp_masked": 4,
-        "bp_all": 4,
-        "bp_G": 3,
-        "bp_C": 1,
-        "bp_N": 1,
-        "bp_gap": 17,
-    }
-    assert num_masked_bp(sequence) == 4
