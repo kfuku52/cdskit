@@ -109,6 +109,24 @@ def version_model(model, default=LEGACY_FEATURE_SCHEMA):
     """Copy schema-bearing containers; never relabel or mutate supplied weights."""
     result = dict(model)
     head = dict(result["localization_model"])
+    model_type = result.get("model_type")
+    adapter_configured = model_type in {
+        "multilabel_plm_v1",
+        "multilabel_plm_lora_v1",
+    } and "lora_rank" in head.get("encoder", {})
+    adapter_present = isinstance(head.get("lora_state_dict"), dict) and bool(
+        head["lora_state_dict"]
+    )
+    if model_type == "multilabel_plm_lora_v1" and not (
+        adapter_configured and adapter_present
+    ):
+        raise ValueError("LoRA model requires its adapter configuration and weights.")
+    if model_type == "multilabel_plm_v1" and (
+        adapter_configured or "lora_state_dict" in head
+    ):
+        raise ValueError(
+            "Adapted PLM weights require model_type multilabel_plm_lora_v1."
+        )
     if head.get("decision_policy", "legacy") not in ("legacy", "safe-v1"):
         raise ValueError("Unsupported localization decision policy.")
     schema = validate_feature_schema(

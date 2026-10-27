@@ -217,6 +217,211 @@ def tiny_esm(tmp_path):
     return path
 
 
+@pytest.mark.parametrize("checkpointing", [False, True])
+@pytest.mark.parametrize("device", ["cpu", "cuda"])
+def test_lora_preserves_initial_embeddings_and_only_updates_adapters(
+    tiny_esm, checkpointing, device
+):
+    import torch
+    from cdskit.localize_multilabel_plm import ResidueEncoder, _batch
+    from cdskit.localize_plm_lora import LoRAResidueEncoder
+
+    if device == "cuda" and not torch.cuda.is_available():
+        pytest.skip("CUDA is unavailable")
+    config = {"model_name": str(tiny_esm), "window": 8, "overlap": 3}
+    sequences = ["MACDEFGHIKLMNPQ", "MCCCC"]
+    frozen = ResidueEncoder(config, device)
+    expected, expected_mask = _batch(frozen, sequences, torch, device)
+    encoder = LoRAResidueEncoder(
+        dict(config, lora_rank=2, lora_alpha=4, lora_checkpointing=checkpointing),
+        device,
+    )
+    rng = torch.random.get_rng_state().clone()
+    cuda_rng = torch.cuda.get_rng_state().clone() if device == "cuda" else None
+    actual, mask = _batch(encoder, sequences, torch, device)
+    assert torch.equal(rng, torch.random.get_rng_state())
+    if cuda_rng is not None:
+        assert torch.equal(cuda_rng, torch.cuda.get_rng_state())
+    torch.testing.assert_close(actual, expected, rtol=1e-5, atol=1e-6)
+    assert torch.equal(mask, expected_mask)
+    base = {
+        name: value.detach().clone()
+        for name, value in encoder.model.named_parameters()
+        if not value.requires_grad
+    }
+    before = encoder.adapter_weights()
+    optimizer = torch.optim.AdamW(encoder.adapter_parameters().values(), lr=0.01)
+    for _ in range(2):
+        optimizer.zero_grad()
+        batch, _ = encoder.tensor_batch(sequences)
+        batch[:, :, 0].square().sum().backward()
+        optimizer.step()
+    after = encoder.adapter_weights()
+    assert any(
+        not torch.equal(before[key], after[key])
+        for key in before
+        if key.endswith("lora_a")
+    )
+    assert any(
+        not torch.equal(before[key], after[key])
+        for key in before
+        if key.endswith("lora_b")
+    )
+    for name, value in encoder.model.named_parameters():
+        if name in base:
+            assert value.grad is None
+            torch.testing.assert_close(value, base[name], rtol=0, atol=0)
+    assert not encoder._memory_cache._entries
+
+
+def test_lora_fitted_checkpoint_roundtrip_and_adapter_validation(tiny_esm, tmp_path):
+    from cdskit.localize_multilabel_plm import (
+        fit_multilabel_plm,
+        predict_multilabel_plm,
+    )
+    from cdskit.localize_model import load_localize_model, save_localize_model
+    from cdskit.localize_plm_lora import LoRAResidueEncoder
+
+    config = {"model_name": str(tiny_esm), "window": 8, "overlap": 2, "lora_rank": 2}
+    head = fit_multilabel_plm(
+        ["MAAAA", "MCCCC", "MDDD", "MEEEE"],
+        [[1, 0], [0, 1], [1, np.nan], [np.nan, 1]],
+        ["nucleus", "cytoplasm"],
+        config,
+        validation_sequences=["MAACC", "MCCDD"],
+        validation_y=[[1, 0], [0, 1]],
+        epochs=2,
+        batch_size=2,
+        device="cpu",
+    )
+    head["ensure_one_label"] = False
+    assert any(
+        value.count_nonzero()
+        for key, value in head["lora_state_dict"].items()
+        if key.endswith("lora_b")
+    )
+    model = {
+        "model_type": "multilabel_plm_lora_v1",
+        "feature_names": [],
+        "perox_model": {"mode": "embedded_multilabel"},
+        "localization_model": head,
+    }
+    expected = predict_multilabel_plm(["MAACC"], head)["prob_matrix"]
+    path = tmp_path / "lora.pt"
+    save_localize_model(model, str(path))
+    with pytest.raises(ValueError, match="require model_type"):
+        save_localize_model(
+            dict(model, model_type="multilabel_plm_v1"), str(tmp_path / "wrong-type.pt")
+        )
+    missing = {
+        **model,
+        "localization_model": {
+            key: value for key, value in head.items() if key != "lora_state_dict"
+        },
+    }
+    with pytest.raises(ValueError, match="configuration and weights"):
+        save_localize_model(missing, str(tmp_path / "missing-adapter.pt"))
+    restored_model = load_localize_model(str(path))
+    restored = restored_model["localization_model"]
+    np.testing.assert_array_equal(
+        expected, predict_multilabel_plm(["MAACC"], restored)["prob_matrix"]
+    )
+    from cdskit.localize_model import predict_multilabel_localization
+    from cdskit.localize import _predict_records_batched_if_supported
+    from Bio.Seq import Seq
+    from Bio.SeqRecord import SeqRecord
+
+    single = predict_multilabel_localization("MAACC", restored_model)
+    assert single["class_probabilities"]["nucleus"] == expected[0, 0]
+    rows = _predict_records_batched_if_supported(
+        [SeqRecord(Seq("MAACC"), id="a")], 1, "protein", restored_model, False
+    )
+    assert rows[0]["p_nucleus"] == expected[0, 0]
+    restored.pop("_runtime_model_cache")
+    restored.pop("lora_state_dict")
+    with pytest.raises(ValueError, match="missing its adapter"):
+        predict_multilabel_plm(["MAACC"], restored)
+    encoder = LoRAResidueEncoder(config)
+    with pytest.raises(ValueError, match="do not match"):
+        encoder.load_adapter({})
+    with pytest.raises(ValueError, match="shared residue cache"):
+        LoRAResidueEncoder(dict(config, cache_dir=str(tmp_path)))
+
+
+def test_lora_mps_initialization_preserves_head_dropout_rng(tiny_esm):
+    import torch
+    from cdskit.localize_plm_lora import LoRAResidueEncoder
+
+    if not torch.backends.mps.is_available():
+        pytest.skip("MPS is unavailable")
+    encoder = LoRAResidueEncoder(
+        {"model_name": str(tiny_esm), "lora_rank": 2, "window": 8, "overlap": 2}, "mps"
+    )
+    before = torch.mps.get_rng_state().clone()
+    encoder._load()
+    assert torch.equal(before, torch.mps.get_rng_state())
+
+
+def test_lora_rejects_bad_checkpoint_on_every_prediction_attempt(tiny_esm):
+    import torch
+    from cdskit.localize_multilabel_plm import _build_head, predict_multilabel_plm
+    from cdskit.localize_plm_lora import LoRAResidueEncoder
+
+    config = {"model_name": str(tiny_esm), "window": 8, "overlap": 2, "lora_rank": 2}
+    encoder = LoRAResidueEncoder(config)
+    state = encoder.adapter_weights()
+    state[next(reversed(state))] = torch.empty(0)
+    head = {
+        "encoder": config,
+        "encoder_identity": encoder.identity,
+        "embedding_dim": 8,
+        "class_order": ["nucleus"],
+        "pooling": "mean",
+        "state_dict": _build_head(torch.nn, 8, 1, "mean").state_dict(),
+        "lora_state_dict": state,
+    }
+    for _ in range(2):
+        with pytest.raises(ValueError, match="Invalid LoRA adapter tensor"):
+            predict_multilabel_plm(["MAAAA"], head)
+
+
+def test_lora_validates_all_weights_before_changing_parameters(tiny_esm):
+    import torch
+    from cdskit.localize_plm_lora import LoRAResidueEncoder
+
+    encoder = LoRAResidueEncoder(
+        {"model_name": str(tiny_esm), "window": 8, "overlap": 2, "lora_rank": 2}
+    )
+    before = encoder.adapter_weights()
+    invalid = {key: torch.zeros_like(value) for key, value in before.items()}
+    invalid[next(reversed(invalid))].fill_(float("nan"))
+    with pytest.raises(ValueError, match="Invalid LoRA adapter tensor"):
+        encoder.load_adapter(invalid)
+    for key, value in encoder.adapter_weights().items():
+        torch.testing.assert_close(value, before[key], rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("overlap", [0, 3, 7])
+@pytest.mark.parametrize("length", [3, 8, 9, 15])
+def test_lora_window_prefix_finalization_preserves_outputs_and_gradients(
+    overlap, length
+):
+    import torch
+    from scripts.benchmark_localize_lora import fixture, padded_reference
+
+    encoder, scale = fixture(torch, 8)
+    encoder.window, encoder.overlap = 8, overlap
+    sequence = "M" + "A" * (length - 1)
+    expected = padded_reference(encoder, sequence, torch)
+    expected.square().mean().backward()
+    expected_gradient = scale.grad.clone()
+    scale.grad = None
+    actual = encoder._sequence_tensor(sequence)
+    actual.square().mean().backward()
+    torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+    torch.testing.assert_close(scale.grad, expected_gradient, rtol=1e-6, atol=1e-7)
+
+
 @pytest.mark.parametrize(
     "pooling,loss,metric",
     [

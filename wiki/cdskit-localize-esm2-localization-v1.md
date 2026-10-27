@@ -64,6 +64,14 @@ they are not a test of the released checkpoint on its own training data.
 Previously examined outer folds make this a development comparison rather than
 an untouched confirmation study.
 
+A [2026-10-27 development audit](https://github.com/kfuku52/cdskit/blob/master/docs/localize-lora-pilot-2026-10-27.md)
+found residual cross-fold homology in that 27,763-row filtered source. Joining
+all-against-all MMseqs hits into connected components and excluding components
+crossing the official folds retains 26,308 proteins; fresh searches across all
+fold pairs pass the specified 30% identity/80% coverage audit. The historical
+scores above have not been rerun under these repaired partitions, and the
+effect on them is unknown. This audit does not change the released weights.
+
 The released checkpoint's independent HPA evaluation used 537 proteins,
 excluding previously used sequences and homologs, with six common labels.
 Observed-annotation agreement was macro-F1 0.6251, micro-F1 0.7095, and macro-AP

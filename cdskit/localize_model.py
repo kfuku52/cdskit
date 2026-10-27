@@ -1040,7 +1040,7 @@ def predict_multilabel_localization(aa_seq, model, kingdom=""):
             localization_model=localization_model,
             apply_thresholds=True,
         )
-    elif model_type == "multilabel_plm_v1":
+    elif model_type in {"multilabel_plm_v1", "multilabel_plm_lora_v1"}:
         from cdskit.localize_multilabel_plm import predict_multilabel_plm
 
         pred = predict_multilabel_plm([aa_seq], localization_model)
@@ -3143,6 +3143,7 @@ def save_localize_model(model, path):
         "esm_head_v1",
         "multilabel_cnn_v1",
         "multilabel_plm_v1",
+        "multilabel_plm_lora_v1",
         "targetp_blend_v1",
         "targetp_feature_ensemble_v1",
         "targetp_torch_v1",
@@ -3245,6 +3246,7 @@ def load_localize_model(path, allow_unsafe=False):
         "multilabel_centroid_v1",
         "multilabel_cnn_v1",
         "multilabel_plm_v1",
+        "multilabel_plm_lora_v1",
     ]
     if model["model_type"] not in allowed_model_types:
         raise ValueError("Unsupported model_type: {}".format(model["model_type"]))

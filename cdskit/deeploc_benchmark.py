@@ -1095,7 +1095,7 @@ def _predict_centroid_sequences(
 @with_model_feature_schema("model")
 def _predict_model_on_rows(model, rows):
     model_type = str(model.get("model_type", ""))
-    if model_type == "multilabel_plm_v1":
+    if model_type in {"multilabel_plm_v1", "multilabel_plm_lora_v1"}:
         from cdskit.localize_multilabel_plm import predict_multilabel_plm
 
         return predict_multilabel_plm(

@@ -6,6 +6,32 @@ replacement to standard error.
 
 ## Unreleased
 
+## 0.33.0 — 2026-10-27
+
+### Added
+
+- Add opt-in ESM query/value LoRA training and safe `multilabel_plm_lora_v1`
+  checkpoints, preserving frozen models and the default localization model.
+- Add matched frozen/LoRA development experiments and a reproducible MMseqs
+  connected-component preparation command that preserves official fold IDs.
+
+### Correctness and validation
+
+- Preserve head and dropout random streams during adapter initialization. Reject
+  shared fitted-embedding caches, incomplete adapter artifacts, and invalid weights
+  before changing parameters; failed encoder loads remain errors on retry.
+- Reject duplicate experiment seeds and existing output directories before fitting.
+- Record the three-seed pilot's inconclusive accuracy result and residual homology
+  in historical development splits. Retain published weights and historical
+  scores, with an explicit qualification in the model card.
+
+### Performance
+
+- Assemble long LoRA residue sequences from finalized window prefixes, preserving
+  overlap order and gradients while avoiding full-protein padding for each window.
+  See the [pilot and implementation validation](docs/localize-lora-pilot-2026-10-27.md)
+  for measured component timings and the peak-memory tradeoff.
+
 ## 0.32.8 — 2026-10-26
 
 ### Development

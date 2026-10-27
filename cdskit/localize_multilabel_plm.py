@@ -293,6 +293,8 @@ class ResidueEncoder:
 
 
 def _batch(encoder, sequences, torch, device):
+    if hasattr(encoder, "tensor_batch"):
+        return encoder.tensor_batch(sequences)
     values = (
         encoder.encode_many(sequences, batch_size=len(sequences))
         if hasattr(encoder, "encode_many")
@@ -358,6 +360,16 @@ def _training_loss(torch, nn, name, y, device):
     return asymmetric
 
 
+def _encoder(config, device, adapter_state=None):
+    if "lora_rank" in config:
+        from cdskit.localize_plm_lora import LoRAResidueEncoder
+
+        return LoRAResidueEncoder(config, device, adapter_state)
+    if adapter_state is not None:
+        raise ValueError("LoRA adapter weights require an adapter configuration.")
+    return ResidueEncoder(config, device)
+
+
 def fit_multilabel_plm(
     sequences,
     y,
@@ -373,6 +385,7 @@ def fit_multilabel_plm(
     patience=3,
     loss="bce",
     selection_metric="bce",
+    progress_callback=None,
 ):
     if validation_sequences and set(str(s).upper() for s in sequences).intersection(
         str(s).upper() for s in validation_sequences
@@ -394,18 +407,27 @@ def fit_multilabel_plm(
         raise ValueError("Unsupported PLM selection_metric.")
     torch.manual_seed(seed)
     resolved = resolve_torch_device(device)
-    encoder = ResidueEncoder(config, resolved)
+    encoder = _encoder(config, resolved)
     dim = encoder.encode(sequences[0]).shape[1]
     head = _build_head(
         nn, dim, len(labels), config.get("pooling", "light_attention")
     ).to(resolved)
-    optimizer = torch.optim.AdamW(
-        head.parameters(), lr=learning_rate, weight_decay=1e-4
-    )
+    parameters = list(head.parameters())
+    groups = [{"params": parameters, "lr": learning_rate}]
+    adapted = hasattr(encoder, "adapter_parameters")
+    if adapted:
+        adapter_parameters = list(encoder.adapter_parameters().values())
+        adapter_lr = config.get("lora_learning_rate", 1e-4)
+        if not np.isfinite(adapter_lr) or adapter_lr <= 0:
+            raise ValueError("lora_learning_rate must be finite and positive.")
+        groups.append({"params": adapter_parameters, "lr": adapter_lr})
+        parameters = parameters + adapter_parameters
+    optimizer = torch.optim.AdamW(groups, weight_decay=1e-4)
     loss_fn = _training_loss(torch, nn, loss, y, resolved)
     rng = np.random.default_rng(seed)
     best, best_state, best_epoch, stale = float("inf"), None, 0, 0
     training_history = []
+    best_adapter = None
     for epoch in range(epochs):
         head.train()
         indices = rng.permutation(len(sequences))
@@ -419,7 +441,7 @@ def fit_multilabel_plm(
                 head(xb, mask), torch.as_tensor(y[ids], device=resolved)
             )
             batch_loss.backward()
-            torch.nn.utils.clip_grad_norm_(head.parameters(), 1.0)
+            torch.nn.utils.clip_grad_norm_(parameters, 1.0)
             optimizer.step()
         head.eval()
         if validation_sequences:
@@ -473,17 +495,21 @@ def fit_multilabel_plm(
                 "validation_macro_ap": validation_ap if validation_sequences else None,
             }
         )
+        if progress_callback is not None:
+            progress_callback(dict(training_history[-1]))
         if score < best:
             best, best_epoch, stale = score, epoch + 1, 0
             best_state = {
                 key: val.detach().cpu().clone()
                 for key, val in head.state_dict().items()
             }
+            if adapted:
+                best_adapter = encoder.adapter_weights()
         else:
             stale += 1
             if stale >= patience:
                 break
-    return {
+    result = {
         "mode": "multilabel_plm",
         "label_contract": "observed_binary_v1",
         "observed_counts": np.isfinite(y).sum(axis=0).tolist(),
@@ -501,6 +527,9 @@ def fit_multilabel_plm(
         "ensure_one_label": True,
         "feature_schema": CURRENT_FEATURE_SCHEMA,
     }
+    if adapted:
+        result["lora_state_dict"] = best_adapter
+    return result
 
 
 @guard_multilabel_inputs("sequences", "model")
@@ -513,7 +542,9 @@ def predict_multilabel_plm(
     resolved = resolve_torch_device(device)
     cache = model.setdefault("_runtime_model_cache", {})
     if resolved not in cache:
-        encoder = ResidueEncoder(model["encoder"], resolved)
+        if "lora_rank" in model["encoder"] and not model.get("lora_state_dict"):
+            raise ValueError("LoRA model is missing its adapter weights.")
+        encoder = _encoder(model["encoder"], resolved, model.get("lora_state_dict"))
         if encoder.identity != model["encoder_identity"]:
             raise ValueError(
                 "PLM encoder contents differ from the trained model identity."

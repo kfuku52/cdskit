@@ -34,7 +34,7 @@ def partition_identity(partitions):
 def predict(model, rows, device="cpu", batch_size=8, thresholds=True):
     sequences = [row["sequence"] for row in rows]
     head = model["localization_model"]
-    if model["model_type"] == "multilabel_plm_v1":
+    if model["model_type"] in {"multilabel_plm_v1", "multilabel_plm_lora_v1"}:
         from cdskit.localize_multilabel_plm import predict_multilabel_plm
 
         return predict_multilabel_plm(

@@ -49,6 +49,7 @@ MULTILABEL_MODEL_TYPES = {
     "multilabel_centroid_v1",
     "multilabel_cnn_v1",
     "multilabel_plm_v1",
+    "multilabel_plm_lora_v1",
 }
 SINGLE_LABEL_BATCH_MODEL_TYPES = {
     "bilstm_attention_v1",
@@ -104,6 +105,7 @@ def _configure_ml_threads(model, threads):
         "targetp_torch_v1",
         "multilabel_cnn_v1",
         "multilabel_plm_v1",
+        "multilabel_plm_lora_v1",
     }:
         return
     try:
@@ -293,7 +295,7 @@ def _predict_multilabel_records_batched(
             [feature_vec for feature_vec, _ in feature_rows],
             dtype=np.float32,
         )
-    if model["model_type"] == "multilabel_plm_v1":
+    if model["model_type"] in {"multilabel_plm_v1", "multilabel_plm_lora_v1"}:
         from cdskit.localize_multilabel_plm import predict_multilabel_plm
 
         pred = predict_multilabel_plm(
@@ -357,6 +359,7 @@ def _predict_records_batched_if_supported(
     if model_type not in SINGLE_LABEL_BATCH_MODEL_TYPES and model_type not in {
         "multilabel_cnn_v1",
         "multilabel_plm_v1",
+        "multilabel_plm_lora_v1",
     }:
         return None
     if len(records) == 0:
@@ -369,7 +372,11 @@ def _predict_records_batched_if_supported(
         )
         for record in records
     ]
-    if model_type in {"multilabel_cnn_v1", "multilabel_plm_v1"}:
+    if model_type in {
+        "multilabel_cnn_v1",
+        "multilabel_plm_v1",
+        "multilabel_plm_lora_v1",
+    }:
         return _predict_multilabel_records_batched(
             records=records,
             aa_sequences=aa_sequences,

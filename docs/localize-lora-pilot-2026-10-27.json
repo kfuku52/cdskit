@@ -1,0 +1,583 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-27",
+  "protocol": {
+    "scope": "Development comparison on previously examined DeepLoc data; not independent biological validation.",
+    "labels": [
+      "nucleus",
+      "cytoplasm",
+      "extracellular",
+      "mitochondrion",
+      "cell_membrane",
+      "endoplasmic_reticulum",
+      "chloroplast",
+      "golgi_apparatus",
+      "lysosome_vacuole",
+      "peroxisome"
+    ],
+    "label_policy": "Original DeepLoc closed-world dataset convention; zeros are not experimentally verified absence.",
+    "partition_audit": {
+      "source_rows": 28303,
+      "cross_fold_cluster_rows_removed": 1995,
+      "length_eligible_rows": 15717,
+      "audit_scope": "Source-digest-verified MMseqs clusters and a fresh cross-partition search.",
+      "cross_partition_homology": [
+        {
+          "partitions": [
+            "test",
+            "validation"
+          ],
+          "status": "ok",
+          "tool": "mmseqs",
+          "min_seq_id": 0.3,
+          "coverage": 0.8,
+          "cov_mode": 0,
+          "hit_query_count": 0
+        },
+        {
+          "partitions": [
+            "test",
+            "train"
+          ],
+          "status": "ok",
+          "tool": "mmseqs",
+          "min_seq_id": 0.3,
+          "coverage": 0.8,
+          "cov_mode": 0,
+          "hit_query_count": 0
+        },
+        {
+          "partitions": [
+            "validation",
+            "train"
+          ],
+          "status": "ok",
+          "tool": "mmseqs",
+          "min_seq_id": 0.3,
+          "coverage": 0.8,
+          "cov_mode": 0,
+          "hit_query_count": 0
+        }
+      ],
+      "partitions": {
+        "test": {
+          "rows": 1024,
+          "sha256": "c970a47dfedb40ff32444bf287eb0ec71479f0129c702b1a09d6ae956fec2d74",
+          "positive_counts": {
+            "nucleus": 303,
+            "cytoplasm": 330,
+            "extracellular": 168,
+            "mitochondrion": 132,
+            "cell_membrane": 132,
+            "endoplasmic_reticulum": 93,
+            "chloroplast": 45,
+            "golgi_apparatus": 63,
+            "lysosome_vacuole": 67,
+            "peroxisome": 17
+          }
+        },
+        "validation": {
+          "rows": 256,
+          "sha256": "8af7e71bdfc48c26f7143e22b1eba31102dd50a1bc195404623caab290efca0d",
+          "positive_counts": {
+            "nucleus": 101,
+            "cytoplasm": 59,
+            "extracellular": 38,
+            "mitochondrion": 42,
+            "cell_membrane": 15,
+            "endoplasmic_reticulum": 12,
+            "chloroplast": 12,
+            "golgi_apparatus": 8,
+            "lysosome_vacuole": 16,
+            "peroxisome": 6
+          }
+        },
+        "train": {
+          "rows": 512,
+          "sha256": "409cf4fb686af7e0ae67f4bd90716e5aeb4864a05ec26b1619ce165cc8f21f99",
+          "positive_counts": {
+            "nucleus": 185,
+            "cytoplasm": 170,
+            "extracellular": 90,
+            "mitochondrion": 51,
+            "cell_membrane": 54,
+            "endoplasmic_reticulum": 45,
+            "chloroplast": 21,
+            "golgi_apparatus": 26,
+            "lysosome_vacuole": 23,
+            "peroxisome": 4
+          }
+        }
+      }
+    },
+    "source_sha256": "cc5f0fdc7b34c4ad964d3a66dd2492e6335e167def261f75e84e3afb4cc135d5",
+    "clusters_sha256": "655edae26d8df6834d8fa377a2c0c1c91b886010e5f52144da5572f58f1b5b7a",
+    "code_sha256": "79e3dfa5846b5a94b03ab2474e9da22f444680cb6b79a7f1a2b6519bb87d9498",
+    "script_sha256": "48ee9bd26c82d8e831ff2a6e1ce40de54b732d658f077a08fdfb7b565c628e60",
+    "environment": {
+      "platform": "Linux-6.11.0-25-generic-x86_64-with-glibc2.39",
+      "python": "3.12.11",
+      "torch": "2.6.0+cu124",
+      "transformers": "5.16.1",
+      "numpy": "2.5.3",
+      "mmseqs": "8cc5ce367b5638c4306c2d7cfc652dd099a4643f"
+    },
+    "selection": "Validation BCE for epochs; validation-only independent F1 thresholds; no forced label.",
+    "adoption_criteria": {
+      "macro_f1_delta": 0.02,
+      "macro_ap_delta_min": 0,
+      "micro_f1_delta_min": -0.005,
+      "requires": "5 folds x 3 seeds, positive paired cluster-bootstrap interval, and a new independent external test."
+    }
+  },
+  "configuration": {
+    "model_name": "facebook/esm2_t33_650M_UR50D",
+    "revision": "08e4846e537177426273712802403f7ba8261b6c",
+    "device": "cuda",
+    "seeds": [
+      1,
+      2,
+      3
+    ],
+    "test_fold": "0",
+    "validation_fold": "4",
+    "subset_seed": 20261027,
+    "train_rows": 512,
+    "validation_rows": 256,
+    "test_rows": 1024,
+    "max_length": 512,
+    "epochs": 6,
+    "batch_size": 2,
+    "window": 1000,
+    "overlap": 128,
+    "rank": 4,
+    "alpha": 8,
+    "adapter_lr": 0.0001
+  },
+  "component_audit": {
+    "status": "ok",
+    "tool": "mmseqs",
+    "method": "Union original groups with all-vs-all MMseqs hits; exclude entire connected components crossing official folds. No model scores used.",
+    "min_seq_id": 0.3,
+    "coverage": 0.8,
+    "cov_mode": 0,
+    "rows": 28303,
+    "cluster_count": 16237,
+    "all_vs_all_hit_rows": 118302,
+    "kept_rows": 26308,
+    "removed_cross_fold_component_rows": 1995,
+    "clean_dataset_sha256": "74c432d6ef33ea78f3a6fd0cc7861fb15ce55fbb449c32d4123e06ab0b9f0fef",
+    "cross_partition_homology": [
+      {
+        "partitions": [
+          "0",
+          "1"
+        ],
+        "status": "ok",
+        "tool": "mmseqs",
+        "min_seq_id": 0.3,
+        "coverage": 0.8,
+        "cov_mode": 0,
+        "hit_query_count": 0
+      },
+      {
+        "partitions": [
+          "0",
+          "2"
+        ],
+        "status": "ok",
+        "tool": "mmseqs",
+        "min_seq_id": 0.3,
+        "coverage": 0.8,
+        "cov_mode": 0,
+        "hit_query_count": 0
+      },
+      {
+        "partitions": [
+          "0",
+          "3"
+        ],
+        "status": "ok",
+        "tool": "mmseqs",
+        "min_seq_id": 0.3,
+        "coverage": 0.8,
+        "cov_mode": 0,
+        "hit_query_count": 0
+      },
+      {
+        "partitions": [
+          "0",
+          "4"
+        ],
+        "status": "ok",
+        "tool": "mmseqs",
+        "min_seq_id": 0.3,
+        "coverage": 0.8,
+        "cov_mode": 0,
+        "hit_query_count": 0
+      },
+      {
+        "partitions": [
+          "1",
+          "2"
+        ],
+        "status": "ok",
+        "tool": "mmseqs",
+        "min_seq_id": 0.3,
+        "coverage": 0.8,
+        "cov_mode": 0,
+        "hit_query_count": 0
+      },
+      {
+        "partitions": [
+          "1",
+          "3"
+        ],
+        "status": "ok",
+        "tool": "mmseqs",
+        "min_seq_id": 0.3,
+        "coverage": 0.8,
+        "cov_mode": 0,
+        "hit_query_count": 0
+      },
+      {
+        "partitions": [
+          "1",
+          "4"
+        ],
+        "status": "ok",
+        "tool": "mmseqs",
+        "min_seq_id": 0.3,
+        "coverage": 0.8,
+        "cov_mode": 0,
+        "hit_query_count": 0
+      },
+      {
+        "partitions": [
+          "2",
+          "3"
+        ],
+        "status": "ok",
+        "tool": "mmseqs",
+        "min_seq_id": 0.3,
+        "coverage": 0.8,
+        "cov_mode": 0,
+        "hit_query_count": 0
+      },
+      {
+        "partitions": [
+          "2",
+          "4"
+        ],
+        "status": "ok",
+        "tool": "mmseqs",
+        "min_seq_id": 0.3,
+        "coverage": 0.8,
+        "cov_mode": 0,
+        "hit_query_count": 0
+      },
+      {
+        "partitions": [
+          "3",
+          "4"
+        ],
+        "status": "ok",
+        "tool": "mmseqs",
+        "min_seq_id": 0.3,
+        "coverage": 0.8,
+        "cov_mode": 0,
+        "hit_query_count": 0
+      }
+    ],
+    "hit_file_sha256": "a5da8837f7c9607f5d449fd47f3185b6d34b88ed47211fb31ad43beacd9037d4"
+  },
+  "selection_impact": {
+    "source_rows": 28303,
+    "retained_rows": 26308,
+    "excluded_rows": 1995,
+    "labels": {
+      "nucleus": {
+        "source_positive": 9720,
+        "retained_positive": 9256,
+        "excluded_positive": 464
+      },
+      "cytoplasm": {
+        "source_positive": 9870,
+        "retained_positive": 9328,
+        "excluded_positive": 542
+      },
+      "extracellular": {
+        "source_positive": 3301,
+        "retained_positive": 3120,
+        "excluded_positive": 181
+      },
+      "mitochondrion": {
+        "source_positive": 2590,
+        "retained_positive": 2407,
+        "excluded_positive": 183
+      },
+      "cell_membrane": {
+        "source_positive": 4187,
+        "retained_positive": 3592,
+        "excluded_positive": 595
+      },
+      "endoplasmic_reticulum": {
+        "source_positive": 2180,
+        "retained_positive": 1984,
+        "excluded_positive": 196
+      },
+      "chloroplast": {
+        "source_positive": 1047,
+        "retained_positive": 985,
+        "excluded_positive": 62
+      },
+      "golgi_apparatus": {
+        "source_positive": 1279,
+        "retained_positive": 1196,
+        "excluded_positive": 83
+      },
+      "lysosome_vacuole": {
+        "source_positive": 1496,
+        "retained_positive": 1319,
+        "excluded_positive": 177
+      },
+      "peroxisome": {
+        "source_positive": 304,
+        "retained_positive": 275,
+        "excluded_positive": 29
+      }
+    },
+    "retained_by_fold": {
+      "4": 5101,
+      "3": 5376,
+      "1": 5058,
+      "0": 5463,
+      "2": 5310
+    }
+  },
+  "results": {
+    "scope": "single-fold short-protein development pilot; three repeated fits",
+    "means": {
+      "frozen": {
+        "macro_f1": 0.5119930840866753,
+        "micro_f1": 0.6299786127672827,
+        "macro_average_precision_observed": 0.5594228866553587,
+        "brier_score": 0.06714482357104619
+      },
+      "lora": {
+        "macro_f1": 0.5148135271705304,
+        "micro_f1": 0.6242448489292908,
+        "macro_average_precision_observed": 0.5626755267338946,
+        "brier_score": 0.06811722119649251
+      }
+    },
+    "standard_deviations_across_fits": {
+      "frozen": {
+        "macro_f1": 0.004112080848718789,
+        "micro_f1": 0.006984907759854024,
+        "macro_average_precision_observed": 0.008892719033902664
+      },
+      "lora": {
+        "macro_f1": 0.007983155423536939,
+        "micro_f1": 0.018161752574991315,
+        "macro_average_precision_observed": 0.0013674848299691698
+      }
+    },
+    "per_seed": [
+      {
+        "seed": 1,
+        "delta": {
+          "macro_f1": 0.010124903201611524,
+          "micro_f1": 0.003831089263869769,
+          "macro_average_precision_observed": 0.00792009648089853
+        },
+        "macro_f1_delta_percentile_95": [
+          -0.002953368822773826,
+          0.022807543820840798
+        ],
+        "micro_f1_delta_percentile_95": [
+          -0.010245316459135276,
+          0.01797663932865714
+        ],
+        "frozen": {
+          "macro_f1": 0.5080309818346789,
+          "micro_f1": 0.6304044630404463,
+          "macro_average_precision_observed": 0.5537044983296413,
+          "brier_score": 0.0677834004163742,
+          "selected_epoch": 2,
+          "adapter_parameters": 0
+        },
+        "lora": {
+          "macro_f1": 0.5181558850362904,
+          "micro_f1": 0.634235552304316,
+          "macro_average_precision_observed": 0.5616245948105398,
+          "brier_score": 0.06785454601049423,
+          "selected_epoch": 2,
+          "adapter_parameters": 675840
+        }
+      },
+      {
+        "seed": 2,
+        "delta": {
+          "macro_f1": -0.0060055283009233795,
+          "micro_f1": -0.01950938927043888,
+          "macro_average_precision_observed": 0.0072844568877730165
+        },
+        "macro_f1_delta_percentile_95": [
+          -0.020300473622873075,
+          0.007982468287710067
+        ],
+        "micro_f1_delta_percentile_95": [
+          -0.032928792219870155,
+          -0.006952630903301822
+        ],
+        "frozen": {
+          "macro_f1": 0.5117079670337988,
+          "micro_f1": 0.6227905227529147,
+          "macro_average_precision_observed": 0.5548959127973043,
+          "brier_score": 0.06813148409128189,
+          "selected_epoch": 2,
+          "adapter_parameters": 0
+        },
+        "lora": {
+          "macro_f1": 0.5057024387328755,
+          "micro_f1": 0.6032811334824758,
+          "macro_average_precision_observed": 0.5621803696850773,
+          "brier_score": 0.0678328350186348,
+          "selected_epoch": 2,
+          "adapter_parameters": 675840
+        }
+      },
+      {
+        "seed": 3,
+        "delta": {
+          "macro_f1": 0.004341954350877475,
+          "micro_f1": -0.0015229915074070899,
+          "macro_average_precision_observed": -0.005446633133063816
+        },
+        "macro_f1_delta_percentile_95": [
+          -0.013288657930979034,
+          0.02212603695579292
+        ],
+        "micro_f1_delta_percentile_95": [
+          -0.015575557299819876,
+          0.014883569035138438
+        ],
+        "frozen": {
+          "macro_f1": 0.516240303391548,
+          "micro_f1": 0.6367408525084873,
+          "macro_average_precision_observed": 0.5696682488391305,
+          "brier_score": 0.06551958620548248,
+          "selected_epoch": 3,
+          "adapter_parameters": 0
+        },
+        "lora": {
+          "macro_f1": 0.5205822577424255,
+          "micro_f1": 0.6352178610010802,
+          "macro_average_precision_observed": 0.5642216157060667,
+          "brier_score": 0.06866428256034851,
+          "selected_epoch": 2,
+          "adapter_parameters": 675840
+        }
+      }
+    ],
+    "independent_metric_max_absolute_error": {
+      "macro_f1": 1.1102230246251565e-16,
+      "micro_f1": 1.1102230246251565e-16,
+      "macro_average_precision_observed": 1.8520026623392027e-09,
+      "brier_score": 5.095797978027505e-09
+    },
+    "verification": [
+      {
+        "model": "frozen_seed1",
+        "model_sha256": "a95e7eb01d1e541b337a48cbf64fbc0498e73b43e16e4bb396a1ae3a0b67e51c",
+        "metrics_match_sklearn": true,
+        "rows": 1024
+      },
+      {
+        "model": "lora_seed1",
+        "model_sha256": "ce23e27da4702a879c90323e519038ca08d5c3fe2393706b0e708cb291a2f87d",
+        "metrics_match_sklearn": true,
+        "rows": 1024
+      },
+      {
+        "model": "frozen_seed2",
+        "model_sha256": "1911e5022b98d00ed62ed7f67ed672bd4e7f280ad96b111c39127a0001b31215",
+        "metrics_match_sklearn": true,
+        "rows": 1024
+      },
+      {
+        "model": "lora_seed2",
+        "model_sha256": "0f21e3f086e8b537b7b0d77cbb4bf8cefa91e9d73edfa756ff461790de3b6878",
+        "metrics_match_sklearn": true,
+        "rows": 1024
+      },
+      {
+        "model": "frozen_seed3",
+        "model_sha256": "062335c05cd1b9376f66d6f6bed7d865a2c9c5b6fd52456c449e011530a574ec",
+        "metrics_match_sklearn": true,
+        "rows": 1024
+      },
+      {
+        "model": "lora_seed3",
+        "model_sha256": "4e3fd2913062c49480ba81508d60e95a57e137e1cdd5a653c4174cafb7def1f0",
+        "metrics_match_sklearn": true,
+        "rows": 1024
+      }
+    ],
+    "per_label_mean_f1": {
+      "frozen": {
+        "nucleus": 0.694116668484973,
+        "cytoplasm": 0.6556055919501915,
+        "extracellular": 0.8696240633649487,
+        "mitochondrion": 0.7152651877686078,
+        "cell_membrane": 0.4905199380581384,
+        "endoplasmic_reticulum": 0.4666212636628873,
+        "chloroplast": 0.8353543857576117,
+        "golgi_apparatus": 0.2402364607170099,
+        "lysosome_vacuole": 0.15258728110238393,
+        "peroxisome": 0.0
+      },
+      "lora": {
+        "nucleus": 0.6862392510845995,
+        "cytoplasm": 0.636763042283267,
+        "extracellular": 0.869001736732507,
+        "mitochondrion": 0.7367987161090609,
+        "cell_membrane": 0.5229141748937406,
+        "endoplasmic_reticulum": 0.4498767753103336,
+        "chloroplast": 0.8403772856660394,
+        "golgi_apparatus": 0.2140000074140801,
+        "lysosome_vacuole": 0.19216428221167559,
+        "peroxisome": 0.0
+      }
+    },
+    "mean_deltas": {
+      "macro_f1": 0.0028204430838550953,
+      "micro_f1": -0.0057337638379919564,
+      "macro_average_precision_observed": 0.0032526400785359844,
+      "brier_score": 0.0009723976254463196
+    },
+    "decision": "Do not promote this LoRA recipe: macro-F1 gain below .02, mean micro-F1 loss exceeds .005, all macro-F1 intervals include zero; full CV and independent external evaluation not performed."
+  },
+  "cpu_portability": {
+    "rows": 4,
+    "max_absolute_cpu_cuda_probability_difference": 1.58846378326416e-05,
+    "predicted_label_agreement": [
+      true,
+      true,
+      true,
+      true
+    ],
+    "decision_status_agreement": [
+      true,
+      true,
+      true,
+      true
+    ],
+    "independent_metric_errors": {
+      "macro_f1": -1.1102230246251565e-16,
+      "micro_f1": 0.0,
+      "macro_ap": -1.8520026623392027e-09
+    }
+  }
+}
