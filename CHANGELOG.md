@@ -6,6 +6,25 @@ replacement to standard error.
 
 ## Unreleased
 
+## 0.33.1 — 2026-10-27
+
+### Security
+
+- Refresh filelock and setuptools after the scheduled dependency audit reported
+  vulnerable locked releases. Require filelock 4.2.1+ on Python 3.11+ and
+  setuptools 84.1+ for builds; the lock selects 4.2.4 and 84.2.1 respectively.
+- Preserve Python 3.10 with filelock 3.20.3, before the affected lock
+  implementations were introduced. The patched 4.2.1+ series requires Python
+  3.11; remove this compatibility ceiling when a patched upstream release
+  supports 3.10 or CDSKIT ends 3.10 support. See the upstream
+  [filelock advisory](https://github.com/tox-dev/filelock/security/advisories/GHSA-v4x8-3wr5-3wq8)
+  and [setuptools advisory](https://github.com/pypa/setuptools/security/advisories/GHSA-xmj3-9gf7-h52w).
+- The additional Python 3.10 Linux dependency audit still reports Pillow 12.3.0
+  advisories. Upstream [Pillow 13.0.0](https://pypi.org/project/pillow/13.0.0/)
+  fixes them but requires Python 3.11; no
+  patched Python 3.10 release is available as of this audit. Python 3.10 runtime
+  compatibility is retained, with this pre-existing dependency limitation.
+
 ## 0.33.0 — 2026-10-27
 
 ### Added

@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=77", "wheel"]
+requires = ["setuptools>=84.1", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -25,7 +25,11 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Bio-Informatics",
 ]
 dependencies = [
-  "filelock>=3.12",
+  # Later 3.x/4.1 releases introduce vulnerable lock implementations, while the
+  # fixed 4.2.1+ releases require Python 3.11. Keep the pre-introduction release
+  # on 3.10 until a patched upstream release supports it or 3.10 support ends.
+  "filelock>=3.20.3,<3.20.4; python_version < '3.11'",
+  "filelock>=4.2.1; python_version >= '3.11'",
   "numpy>=1.23",
   "biopython>=1.80",
   "matplotlib>=3.6",
