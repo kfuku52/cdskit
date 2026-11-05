@@ -308,3 +308,18 @@ def translate_main(args):
     write_seqs(
         records=translated_records, outfile=args.outfile, outseqformat=args.outseqformat
     )
+
+
+def coding_protein(sequence, codontable=1, *, partial=False):
+    """Ordinary translation, removing only a definite terminal '*'.
+
+    This does not infer complete-CDS initiation or contextual termination.
+    """
+    if partial:
+        sequence = sequence[: len(sequence) // 3 * 3]
+    if not sequence or len(sequence) % 3:
+        return None
+    translated = translate_sequence_string(
+        str(sequence), codontable, False
+    ).removesuffix("*")
+    return translated if translated and "*" not in translated else None

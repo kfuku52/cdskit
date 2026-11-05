@@ -176,3 +176,5 @@ Its Methods describe the use of `pad`, `mask`, `backtrim`, and `hammer`.
 CDSKIT code and CDSKIT-trained model weights are MIT-licensed. See
 [LICENSE](LICENSE) for details. Third-party code and source datasets retain their
 own licenses and attribution requirements.
+
+For reusable sequence, GFF/CDS, coordinate and mapping interfaces, see [workflow APIs](wiki/workflow-apis.md).

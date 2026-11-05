@@ -95,13 +95,13 @@ def _alias_map() -> dict[str, ModelSpec]:
 
 
 def is_pretrained_localize_model_alias(model: Any) -> bool:
-    return str(model or "").strip().lower() in _alias_map()
+    return str(model or "").strip().lower() in {*_alias_map(), "latest"}
 
 
 def known_pretrained_localize_models() -> list[str]:
     """Return known pretrained localize aliases."""
 
-    return sorted(_alias_map().keys())
+    return sorted({*_alias_map(), "latest"})
 
 
 def localize_model_cache_dir() -> Path:
@@ -216,6 +216,11 @@ def resolve_localize_model_path(model: Any, allow_download: bool = True) -> str:
     """
 
     model_text = str(model or "").strip()
+    if model_text.lower() == "latest":
+        from cdskit.latest_model import resolve
+
+        return str(resolve(localize_model_cache_dir(), allow_download))
+
     if model_text == "":
         raise ValueError("--model is required.")
 

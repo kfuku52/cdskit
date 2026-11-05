@@ -675,6 +675,8 @@ def read_gff(gff_file: Any) -> dict[str, Any]:
     with open(gff_file, "r", encoding="utf-8") as f:
         for line_number, line in enumerate(f, start=1):
             line = line.strip()
+            if line.startswith("##FASTA"):
+                break
             if not line:
                 continue
             if line.startswith("#"):

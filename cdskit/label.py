@@ -114,12 +114,25 @@ def validate_clip_len(clip_len):
 
 
 def label_main(args):
+    from cdskit.atomicio import validate_distinct_paths
+
+    validate_distinct_paths(
+        [args.seqfile, getattr(args, "mapping_in", "")],
+        [args.outfile, getattr(args, "mapping_out", "")],
+    )
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
     stop_if_not_seqtype(
         records=records,
         seqtype=getattr(args, "seqtype", "auto"),
         label="--seq_file",
     )
+    original_ids = [record.id for record in records]
+    if getattr(args, "mapping_in", ""):
+        from cdskit.label_mapping import read_label_mapping, apply_label_mapping
+
+        records = list(
+            apply_label_mapping(records, read_label_mapping(args.mapping_in))
+        )
     validate_clip_len(args.clip_len)
     if args.replace_chars != "":
         from_chars, to_char = parse_replace_chars(args.replace_chars)
@@ -145,4 +158,33 @@ def label_main(args):
         sys.stderr.write(
             "Non-unique sequence labels:\n{}\n".format("\n".join(nonunique_names))
         )
-    write_seqs(records=records, outfile=args.outfile, outseqformat=args.outseqformat)
+    if getattr(args, "mapping_in", "") or getattr(args, "mapping_out", ""):
+        output_ids = [record.id for record in records]
+        if len(set(output_ids)) != len(output_ids) or any(
+            not label for label in output_ids
+        ):
+            raise ValueError("Mapped sequence labels must be unique and nonempty")
+        if any(
+            character.isspace() for label in output_ids if label for character in label
+        ):
+            raise ValueError("Mapped sequence labels must not contain whitespace")
+    if getattr(args, "mapping_out", ""):
+        from cdskit.atomicio import atomic_output_paths
+        from cdskit.label_mapping import write_label_mapping
+
+        if args.outfile == "-":
+            raise ValueError("--mapping-out requires a file sequence output")
+        mapping = dict(
+            zip(original_ids, [record.id for record in records], strict=True)
+        )
+        if len(mapping) != len(original_ids):
+            raise ValueError("Mapping export requires unique original IDs")
+        with atomic_output_paths([args.outfile, args.mapping_out]) as paths:
+            write_seqs(
+                records=records, outfile=paths[0], outseqformat=args.outseqformat
+            )
+            write_label_mapping(mapping, paths[1])
+    else:
+        write_seqs(
+            records=records, outfile=args.outfile, outseqformat=args.outseqformat
+        )

@@ -6,6 +6,29 @@ replacement to standard error.
 
 ## Unreleased
 
+## 0.34.0 — 2026-11-05
+
+### Added
+
+- Expose reusable strict FASTA, GFF/CDS/UTR geometry, sequence selection,
+  coordinate, protein/junction similarity and alignment-summary APIs.
+- Add reusable label mapping input/output, streaming whole-header rewriting,
+  strict validation profiles and checksum-verified `latest` model selection.
+- Package optional R coordinate helpers for alignment and intron displays.
+
+### Fixed
+
+- Preserve ordinary versus complete-CDS translation for context-dependent codes,
+  stop GFF parsing at embedded FASTA, and reject empty FASTA headers.
+- Reject non-reversible sequence mappings and protect JSON request/output paths;
+  honor custom alignment scoring and explicit coordinate ambiguity policies.
+- Preserve frozen model-cache selections and explicit family/schema constraints.
+
+### Performance
+
+- Stream alignment length summaries and header rewriting without retaining
+  per-record lengths or the complete sequence text.
+
 ## 0.33.1 — 2026-10-27
 
 ### Security

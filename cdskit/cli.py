@@ -672,6 +672,14 @@ p_label.add_argument(
     action="store",
     help="default=%(default)s: Make sequence labels unique by adding suffix (_1, _2, ...).",
 )
+p_label.add_argument(
+    "--mapping-in", default="", help="Apply a frozen old_name/new_name TSV."
+)
+p_label.add_argument(
+    "--mapping-out",
+    default="",
+    help="Export old_name/new_name TSV alongside sequences.",
+)
 p_label.set_defaults(handler=command_label)
 
 
@@ -1970,6 +1978,12 @@ p_validate.add_argument(
     required=False,
     action="store",
     help='default=%(default)s: Optional report output path. If PATH ends with ".json", JSON is written; otherwise tab-separated TSV is written. Use "-" for TSV-only stdout (suppresses the summary).',
+)
+p_validate.add_argument(
+    "--profile",
+    choices=("quality", "dna", "protein", "codon"),
+    default="quality",
+    help="Strict FASTA artifact contract; quality preserves historical reporting.",
 )
 p_validate.set_defaults(handler=command_validate)
 

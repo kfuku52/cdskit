@@ -368,6 +368,16 @@ def print_validate_summary(summary):
 
 
 def validate_main(args):
+    if getattr(args, "profile", "quality") != "quality":
+        from pathlib import Path
+        from cdskit.fasta_contract import validate_fasta, validate_fasta_stream
+
+        if args.seqfile == "-":
+            validate_fasta_stream(sys.stdin, args.profile)
+        else:
+            validate_fasta(Path(args.seqfile), args.profile)
+        return
+
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
     stop_if_not_dna(records=records, label="--seq_file")
     stop_if_invalid_codontable(args.codontable)
