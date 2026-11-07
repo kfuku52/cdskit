@@ -6,6 +6,17 @@ replacement to standard error.
 
 ## Unreleased
 
+## 0.35.0 — 2026-11-08
+
+### Added
+
+- Let `mask --preserve_terminal_stop yes` keep a terminal stop while masking
+  internal stops for downstream translation and localization.
+
+### Performance
+
+- Avoid allocating gap-detection arrays when masking ungapped CDS.
+
 ## 0.34.0 — 2026-11-05
 
 ### Added

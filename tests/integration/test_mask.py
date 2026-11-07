@@ -8,6 +8,8 @@ import Bio.SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
+from cdskit.cli import main as cli_main
+from cdskit.localize_model import detect_perox_signals, translate_inframe_cds_to_aa
 from cdskit.mask import (
     mask_main,
     mask_partial_gap_codons,
@@ -259,3 +261,44 @@ def test_streamed_mask_matches_buffered_stdout(tmp_path, mock_args, capsys, outf
     args.outfile = "-"
     mask_main(args)
     assert output.read_text() == capsys.readouterr().out
+
+
+@pytest.mark.parametrize("threads", ["1", "2"])
+def test_mask_cli_preserves_terminal_stop_for_localize(tmp_path, monkeypatch, threads):
+    monkeypatch.setenv("CDSKIT_PROCESS_PARALLEL_MIN_RESIDUES", "1")
+    source, output = tmp_path / "input.fa", tmp_path / "output.fa"
+    source.write_text(
+        ">localize\nATGTGATCTAAACTTTGA\n"
+        ">aligned\nATGTAGTAR---...\n"
+        ">partial_gap_tail\nATGTGAA--\n"
+    )
+    assert (
+        cli_main(
+            [
+                "mask",
+                "--seq_file",
+                str(source),
+                "--out_file",
+                str(output),
+                "--stop_codon",
+                "yes",
+                "--preserve_terminal_stop",
+                "yes",
+                "--threads",
+                threads,
+            ]
+        )
+        == 0
+    )
+
+    sequences = {
+        record.id: str(record.seq) for record in Bio.SeqIO.parse(output, "fasta")
+    }
+    assert sequences == {
+        "localize": "ATGNNNTCTAAACTTTGA",
+        "aligned": "ATGNNNTAR---...",
+        "partial_gap_tail": "ATGNNNNNN",
+    }
+    protein = translate_inframe_cds_to_aa(sequences["localize"], 1)
+    assert protein == "MXSKL"
+    assert detect_perox_signals(protein)["pts1_skl"]

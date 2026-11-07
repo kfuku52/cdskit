@@ -9,6 +9,7 @@ import Bio.SeqIO
 import sys
 
 from cdskit.atomicio import atomic_output_path
+from cdskit.cliutil import parse_bool
 import numpy as np
 
 from cdskit.translate import translate_sequence_codes
@@ -86,18 +87,30 @@ def get_mask_decision_cache(codontable, mask_ambiguous, mask_stop):
     return cache
 
 
-def mask_sequence_string(nucseq, codontable, mask_triplet, mask_ambiguous, mask_stop):
+def mask_sequence_string(
+    nucseq,
+    codontable,
+    mask_triplet,
+    mask_ambiguous,
+    mask_stop,
+    *,
+    preserve_terminal_stop=False,
+):
     if len(nucseq) == 0:
         return nucseq
     encoded = nucseq.encode("ascii")
     sequence = np.frombuffer(encoded, dtype=np.uint8).reshape(-1, 3)
-    gap_positions = (sequence == ord("-")) | (sequence == ord("."))
-    # A triplet has some but not all gap bases exactly when adjacent gap flags
-    # differ. Comparing its three positions avoids row-wise reductions.
-    should_mask = (gap_positions[:, 0] != gap_positions[:, 1]) | (
-        gap_positions[:, 1] != gap_positions[:, 2]
-    )
-    del gap_positions
+    if b"-" in encoded or b"." in encoded:
+        gap_positions = (sequence == ord("-")) | (sequence == ord("."))
+        # A triplet has a partial gap exactly when adjacent gap flags differ.
+        should_mask = (gap_positions[:, 0] != gap_positions[:, 1]) | (
+            gap_positions[:, 1] != gap_positions[:, 2]
+        )
+        del gap_positions
+    else:
+        if not (mask_ambiguous or mask_stop):
+            return nucseq
+        should_mask = np.zeros(sequence.shape[0], dtype=bool)
     if mask_ambiguous or mask_stop:
         amino_acids = translate_sequence_codes(
             seq_str=nucseq,
@@ -106,7 +119,12 @@ def mask_sequence_string(nucseq, codontable, mask_triplet, mask_ambiguous, mask_
         if mask_ambiguous:
             should_mask |= amino_acids == ord("X")
         if mask_stop:
-            should_mask |= amino_acids == ord("*")
+            stop_positions = amino_acids == ord("*")
+            if preserve_terminal_stop:
+                last_non_gap = len(nucseq.rstrip("-.")) - 1
+                if last_non_gap >= 0:
+                    stop_positions[last_non_gap // 3] = False
+            should_mask |= stop_positions
     if not np.any(should_mask):
         return nucseq
     # Direct str subclasses retain their second encode call when output changes.
@@ -116,7 +134,15 @@ def mask_sequence_string(nucseq, codontable, mask_triplet, mask_ambiguous, mask_
     return output.tobytes().decode("ascii")
 
 
-def mask_record(record, codontable, mask_triplet, mask_ambiguous, mask_stop):
+def mask_record(
+    record,
+    codontable,
+    mask_triplet,
+    mask_ambiguous,
+    mask_stop,
+    *,
+    preserve_terminal_stop=False,
+):
     nucseq = str(record.seq)
     return mask_sequence_string(
         nucseq=nucseq,
@@ -124,10 +150,19 @@ def mask_record(record, codontable, mask_triplet, mask_ambiguous, mask_stop):
         mask_triplet=mask_triplet,
         mask_ambiguous=mask_ambiguous,
         mask_stop=mask_stop,
+        preserve_terminal_stop=preserve_terminal_stop,
     )
 
 
-def mask_payload(payload, codontable, mask_triplet, mask_ambiguous, mask_stop):
+def mask_payload(
+    payload,
+    codontable,
+    mask_triplet,
+    mask_ambiguous,
+    mask_stop,
+    *,
+    preserve_terminal_stop=False,
+):
     seq_id, nucseq = payload
     masked = mask_sequence_string(
         nucseq=nucseq,
@@ -135,12 +170,20 @@ def mask_payload(payload, codontable, mask_triplet, mask_ambiguous, mask_stop):
         mask_triplet=mask_triplet,
         mask_ambiguous=mask_ambiguous,
         mask_stop=mask_stop,
+        preserve_terminal_stop=preserve_terminal_stop,
     )
     return seq_id, masked
 
 
 def mask_payloads_process_parallel(
-    payloads, codontable, mask_triplet, mask_ambiguous, mask_stop, threads
+    payloads,
+    codontable,
+    mask_triplet,
+    mask_ambiguous,
+    mask_stop,
+    threads,
+    *,
+    preserve_terminal_stop=False,
 ):
     worker = partial(
         mask_payload,
@@ -148,6 +191,7 @@ def mask_payloads_process_parallel(
         mask_triplet=mask_triplet,
         mask_ambiguous=mask_ambiguous,
         mask_stop=mask_stop,
+        preserve_terminal_stop=preserve_terminal_stop,
     )
     max_workers = min(threads, len(payloads))
     chunk_size = max(1, len(payloads) // (max_workers * 16))
@@ -167,6 +211,7 @@ def _mask_records(records, args, threads):
         if isinstance(args.stopcodon, bool)
         else str(args.stopcodon).strip().lower() in ["yes", "true", "1"]
     )
+    preserve_terminal_stop = parse_bool(getattr(args, "preserve_terminal_stop", False))
     masked_seqs = None
     if should_use_process_pool(records=records, threads=threads):
         try:
@@ -178,6 +223,7 @@ def _mask_records(records, args, threads):
                 mask_ambiguous=mask_ambiguous,
                 mask_stop=mask_stop,
                 threads=threads,
+                preserve_terminal_stop=preserve_terminal_stop,
             )
             masked_seqs = [masked_seq for _, masked_seq in masked_payloads]
         except (OSError, PermissionError):
@@ -189,6 +235,7 @@ def _mask_records(records, args, threads):
             mask_triplet=mask_triplet,
             mask_ambiguous=mask_ambiguous,
             mask_stop=mask_stop,
+            preserve_terminal_stop=preserve_terminal_stop,
         )
         masked_seqs = parallel_map_ordered(
             items=records, worker=worker, threads=threads

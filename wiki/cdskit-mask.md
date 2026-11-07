@@ -42,6 +42,10 @@ cdskit mask --seq_file input.fasta --out_file output.fasta
 - `--ambiguous_codon yes|no` controls masking of codons that cannot be
   resolved under the selected genetic code (`yes` by default).
 - `--stop_codon yes|no` controls stop-codon masking (`yes` by default).
+- `--preserve_terminal_stop yes|no` keeps a definite stop in the last codon
+  before trailing complete gap codons when stop-codon masking is enabled
+  (`no` by default). This keeps the original protein end for localization
+  while allowing internal stops to be masked.
 - `--codon_table INT` selects the genetic code.
 
 Input must be nucleotide data with every sequence length divisible by three.

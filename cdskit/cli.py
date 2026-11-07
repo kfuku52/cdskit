@@ -1418,6 +1418,14 @@ p_mask.add_argument(
     action="store",
     help="default=%(default)s: Mask stop codons.",
 )
+p_mask.add_argument(
+    "--preserve_terminal_stop",
+    metavar="yes|no",
+    default="no",
+    type=strtobool,
+    help="default=%(default)s: With --stop_codon yes, preserve a definite stop "
+    "in the last codon before any trailing complete gap codons.",
+)
 p_mask.set_defaults(handler=command_mask)
 
 
