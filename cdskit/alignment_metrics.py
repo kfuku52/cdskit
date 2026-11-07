@@ -5,7 +5,7 @@ from collections import Counter
 
 
 def alignment_length_stats(file) -> dict[str, int]:
-    """Return num_site, num_seq, len_max, and len_min for plain-text FASTA.
+    """Return num_site, num_seq, len_max, and len_min for UTF-8 FASTA.
 
     Gapped lengths must match. Only '-' is excluded from ungapped lengths;
     the sequence alphabet is not validated. An empty file returns all zeros.
@@ -32,7 +32,7 @@ def alignment_length_stats(file) -> dict[str, int]:
             maximum = seq_len
 
     try:
-        with open(file) as f:
+        with file.open(encoding="utf-8") as f:
             for line in f:
                 if line.startswith(">"):
                     if has_sequence:

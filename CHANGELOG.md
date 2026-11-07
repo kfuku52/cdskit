@@ -6,6 +6,12 @@ replacement to standard error.
 
 ## Unreleased
 
+## 0.35.1 — 2026-11-08
+
+### Fixed
+
+- Decode alignment FASTA as UTF-8 consistently across operating systems.
+
 ## 0.35.0 — 2026-11-08
 
 ### Added
