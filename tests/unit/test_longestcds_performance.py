@@ -146,3 +146,27 @@ def test_block_scan_preserves_candidates_selection_ties_and_report(
     monkeypatch.setattr(longestcds, "_POSITION_SCAN_MIN_PATTERNS", 0)
     monkeypatch.setattr(longestcds, "_POSITION_SCAN_BLOCK_SIZE", 17)
     assert snapshot() == expected
+
+
+@pytest.mark.parametrize("strand", ["forward", "reverse", "both"])
+@pytest.mark.parametrize("policy", ["table", "atg-only"])
+def test_complete_first_block_choice_preserves_boundary_candidates(
+    monkeypatch, strand, policy
+):
+    inputs = [
+        "C" * 16 + "ATG" + "GCT" * 21 + "TAR" + "ATGATGGCTTAANNNATGGCT",
+        "CCCCCTAACCCCTAGCCCCCC" * 13,
+        "CTAGCTGTAATTCAT" * 11 + "CC",
+    ]
+    expected = [
+        longestcds.choose_best_candidate(seq, 1, strand=strand, start_policy=policy)
+        for seq in inputs
+    ]
+    monkeypatch.setattr(longestcds, "_BEST_BLOCK_SCAN_MIN_LENGTH", 0)
+    monkeypatch.setattr(longestcds, "_POSITION_SCAN_BLOCK_SIZE", 17)
+    monkeypatch.setattr(longestcds, "_has_dense_orf_events", lambda *_: True)
+    actual = [
+        longestcds.choose_best_candidate(seq, 1, strand=strand, start_policy=policy)
+        for seq in inputs
+    ]
+    assert actual == expected

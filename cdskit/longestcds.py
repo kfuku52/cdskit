@@ -35,6 +35,7 @@ _CODON_SCAN_CACHE: dict = {}
 _POSITION_SCAN_MIN_LENGTH = 16384
 _POSITION_SCAN_MIN_PATTERNS = 8
 _POSITION_SCAN_BLOCK_SIZE = 65536
+_BEST_BLOCK_SCAN_MIN_LENGTH = 262_144
 _PARTIAL_SELECTIONS = {"partial-5prime", "partial-3prime", "partial-both"}
 _REVCOMP_TABLE = str.maketrans(
     "ACGTRYMKWSBDHVN",
@@ -113,7 +114,12 @@ def _oriented_slice(sequence, direction, start, end):
 
 def _oriented_sequences(sequence, strand):
     for direction in _orf_directions(strand):
-        yield direction, _oriented_slice(sequence, direction, 0, len(sequence))
+        yield (
+            direction,
+            sequence
+            if direction == "+"
+            else _oriented_slice(sequence, direction, 0, len(sequence)),
+        )
 
 
 def frame_end_index(seq_len, frame_offset):
@@ -224,19 +230,26 @@ def _position_scan_lookup(start_codons, stop_codons):
     return encode, lookup
 
 
-def _collect_start_stop_positions_blocked(strand_seq, start_codons, stop_codons):
-    start_positions: list[list[int]] = [[], [], []]
-    stop_positions: list[list[int]] = [[], [], []]
+def _position_flag_blocks(sequence, direction, start_codons, stop_codons):
     encode, lookup = _position_scan_lookup(start_codons, stop_codons)
-    for left in range(0, len(strand_seq) - 2, _POSITION_SCAN_BLOCK_SIZE):
+    for left in range(0, len(sequence) - 2, _POSITION_SCAN_BLOCK_SIZE):
         # Include the two following bases, but classify each triplet start only
         # once. Replacing each non-ASCII character preserves Python offsets.
-        data = strand_seq[left : left + _POSITION_SCAN_BLOCK_SIZE + 2].encode(
+        right = min(len(sequence), left + _POSITION_SCAN_BLOCK_SIZE + 2)
+        data = _oriented_slice(sequence, direction, left, right).encode(
             "ascii", "replace"
         )
         bases = encode[np.frombuffer(data, dtype=np.uint8)]
         keys = (bases[:-2] << 10) | (bases[1:-1] << 5) | bases[2:]
-        flags = lookup[keys]
+        yield left, lookup[keys]
+
+
+def _collect_start_stop_positions_blocked(strand_seq, start_codons, stop_codons):
+    start_positions: list[list[int]] = [[], [], []]
+    stop_positions: list[list[int]] = [[], [], []]
+    for left, flags in _position_flag_blocks(
+        strand_seq, "+", start_codons, stop_codons
+    ):
         for frame in range(3):
             offset = (frame - left) % 3
             frame_flags = flags[offset::3]
@@ -496,6 +509,147 @@ def _choose_without_stops(sequence, start_codons, strand):
     return best
 
 
+def _has_dense_orf_events(sequence, starts, stops, strand):
+    # Small samples avoid the vector setup for long runs of missing bases or
+    # low-complexity sequence that contain very few start/stop matches.
+    width = 2048
+    middle = len(sequence) // 2
+    samples = (sequence[:width], sequence[middle : middle + width], sequence[-width:])
+    for direction in _orf_directions(strand):
+        motifs = starts + stops
+        if direction == "-":
+            motifs = tuple(codon.translate(_REVCOMP_TABLE)[::-1] for codon in motifs)
+        if sum(sample.count(codon) for sample in samples for codon in motifs) >= 48:
+            return True
+    return False
+
+
+def _best_block_interval(best, direction, length, frame, starts, ends, *, complete):
+    widths = ends - starts
+    if direction == "+":
+        index = int(widths.argmax())
+    else:
+        # The last equally long hit has the smaller original reverse start.
+        index = len(widths) - 1 - int(widths[::-1].argmax())
+    if widths[index] < (6 if complete else 3):
+        return best
+    return update_best_candidate(
+        best[0],
+        best[1],
+        direction,
+        length,
+        frame,
+        int(starts[index]),
+        int(ends[index]),
+        complete,
+        complete,
+        "complete" if complete else "no_start",
+    )
+
+
+def _blockwise_strand_candidates(sequence, direction, starts, stops, best, no_start):
+    length = len(sequence)
+    previous_stop = [-3, -2, -1]
+    pending_start: list[int | None] = [None, None, None]
+    for left, flags in _position_flag_blocks(sequence, direction, starts, stops):
+        for frame in range(3):
+            offset = (frame - left) % 3
+            hits = flags[offset::3]
+            start_positions = np.flatnonzero(hits & 1) * 3 + left + offset
+            stop_positions = np.flatnonzero(hits & 2) * 3 + left + offset
+            if not len(stop_positions):
+                if pending_start[frame] is None and len(start_positions):
+                    pending_start[frame] = int(start_positions[0])
+                continue
+
+            preceding = np.empty_like(stop_positions)
+            preceding[0] = previous_stop[frame]
+            preceding[1:] = stop_positions[:-1]
+            # The earliest start after the preceding stop is the longest
+            # candidate for this stop. An incoming start can span blocks.
+            nearest = np.append(start_positions, length)[
+                start_positions.searchsorted(preceding, side="left")
+            ]
+            incoming = pending_start[frame]
+            if incoming is not None:
+                nearest[0] = incoming
+            best = _best_block_interval(
+                best,
+                direction,
+                length,
+                frame,
+                nearest,
+                stop_positions + 3,
+                complete=True,
+            )
+            if best[1] is None:
+                no_start = _best_block_interval(
+                    no_start,
+                    direction,
+                    length,
+                    frame,
+                    preceding + 3,
+                    stop_positions,
+                    complete=False,
+                )
+            last = int(stop_positions[-1])
+            previous_stop[frame] = last
+            next_start = start_positions.searchsorted(last, side="left")
+            pending_start[frame] = (
+                int(start_positions[next_start])
+                if next_start < len(start_positions)
+                else None
+            )
+
+    for frame, start in enumerate(pending_start):
+        end = frame_end_index(length, frame)
+        if start is not None:
+            best = update_best_candidate(
+                best[0],
+                best[1],
+                direction,
+                length,
+                frame,
+                start,
+                end,
+                True,
+                False,
+                "partial",
+            )
+        elif best[1] is None and end - previous_stop[frame] >= 6:
+            no_start = update_best_candidate(
+                no_start[0],
+                no_start[1],
+                direction,
+                length,
+                frame,
+                previous_stop[frame] + 3,
+                end,
+                False,
+                False,
+                "no_start",
+            )
+    return best, no_start
+
+
+def _choose_blockwise(sequence, starts, stops, strand):
+    best, no_start = (None, None), (None, None)
+    for direction in _orf_directions(strand):
+        best, no_start = _blockwise_strand_candidates(
+            sequence, direction, starts, stops, best, no_start
+        )
+        if best[0] is not None and best[0][:2] == (2, len(sequence)):
+            break
+    key, fields = best if best[1] is not None else no_start
+    if fields is None:
+        return None
+    candidate = build_candidate_from_fields(fields, key)
+    candidate.output_seq = _oriented_slice(
+        sequence, candidate.strand, candidate.start_idx, candidate.end_idx
+    )
+    return candidate
+
+
 def choose_best_candidate(
     seq_str,
     codontable,
@@ -532,6 +686,10 @@ def choose_best_candidate(
     start_codons, stop_codons = _orf_scan_codons(codontable, start_policy)
     if not stop_codons:
         return _choose_without_stops(seq_upper, start_codons, strand)
+    if seq_len >= _BEST_BLOCK_SCAN_MIN_LENGTH and _has_dense_orf_events(
+        seq_upper, start_codons, stop_codons, strand
+    ):
+        return _choose_blockwise(seq_upper, start_codons, stop_codons, strand)
     best_sort_key = None
     best_fields = None
     frame_ends = tuple(frame_end_index(seq_len, offset) for offset in range(3))
