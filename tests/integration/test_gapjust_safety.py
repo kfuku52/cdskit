@@ -111,6 +111,31 @@ def test_skip_entire_run_crossing_multiple_cds_and_parents():
     assert str(record.seq) == "AAANNNNNNNAAANAAA"
 
 
+def test_gap_overlap_sweep_keeps_long_features_and_stable_order():
+    gff = annotation(
+        [cds(1, 200, kind="region", attributes="ID=region")]
+        + [cds(i, i + 7, kind="exon", attributes=f"ID=x{i}") for i in range(4, 180, 6)]
+        + [cds(136, 140, attributes="ID=protected;Parent=t")]
+    )
+    edits = [
+        {"original_gap_start": i, "original_gap_length": 3, "target_gap_length": 5}
+        for i in range(0, 190, 6)
+    ]
+    _, audit = select_gap_edits(gff, {"s": edits}, cds_overlap="skip")
+    rows = sorted(gff["data"], key=lambda row: int(row["start"]))
+    for edit, result in zip(edits, audit, strict=True):
+        start = edit["original_gap_start"]
+        expected = [
+            feature_identity(row)
+            for row in rows
+            if int(row["start"]) <= start + 3 and int(row["end"]) > start
+        ]
+        assert result["features"] == expected
+        assert (result["action"] == "skip") == any(
+            row["type"] == "CDS" for row in expected
+        )
+
+
 @pytest.mark.parametrize("target", [0])
 @pytest.mark.parametrize("bounds", [(6, 7), (1, 2)])
 def test_deleted_non_cds_endpoints_are_never_clamped(target, bounds):

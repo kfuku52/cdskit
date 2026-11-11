@@ -304,6 +304,10 @@ def apply_gap_justifications_to_gff(gff, justifications_by_seq):
     BOTH FASTA and GFF. Legacy coordinate-only edits cannot establish safety.
     """
     justifications_by_seq, _ = select_gap_edits(gff, justifications_by_seq)
+    return _apply_verified_gap_justifications_to_gff(gff, justifications_by_seq)
+
+
+def _apply_verified_gap_justifications_to_gff(gff, justifications_by_seq):
     headers = update_sequence_regions(gff.get("header", []), justifications_by_seq)
     seqid_to_gff_indices = build_seqid_to_gff_indices(gff["data"])
     updated_starts = gff["data"]["start"].copy()
@@ -462,7 +466,7 @@ def gapjust_main(args):
         record.id: plan for record, plan in zip(records, accepted_plans, strict=True)
     }
     if gff is not None:
-        counts = apply_gap_justifications_to_gff(gff, justifications_by_seq)
+        counts = _apply_verified_gap_justifications_to_gff(gff, justifications_by_seq)
         summarize_gff_justifications(*counts)
     for record, plan in zip(records, accepted_plans, strict=True):
         apply_record_gap_edits(record, plan)

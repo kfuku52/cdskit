@@ -1,6 +1,7 @@
 """Conservative annotation checks for scaffold gap edits (not CDS repair)."""
 
 from bisect import bisect_right
+from heapq import heappop, heappush
 from itertools import accumulate, pairwise
 from urllib.parse import unquote
 
@@ -100,6 +101,41 @@ def overlapping_features(index, seqid, start, end):
     return [row for row in rows[left:right] if int(row["end"]) > start]
 
 
+def _gap_edit_overlaps(index, seqid, edits):
+    """Sweep sorted edits once prefix queries would rescan the feature list."""
+    rows, starts, max_ends = index.get(seqid, ((), (), ()))
+    checked = 0
+    active: dict[int, np.void] | None = None
+    expiry: list[tuple[int, int]] = []
+    cursor = 0
+    for edit in edits:
+        length = edit["original_gap_length"]
+        if length == edit["target_gap_length"]:
+            continue
+        start = edit["original_gap_start"]
+        right = bisect_right(starts, start + length)
+        if active is None:
+            left = bisect_right(max_ends, start)
+            checked += right - left
+            if checked <= len(rows):
+                yield edit, [row for row in rows[left:right] if int(row["end"]) > start]
+                continue
+            active = {}
+            cursor = left
+
+        while expiry and expiry[0][0] <= start:
+            _, finished = heappop(expiry)
+            del active[finished]
+        for position in range(cursor, right):
+            row = rows[position]
+            end = int(row["end"])
+            if end > start:
+                active[position] = row
+                heappush(expiry, (end, position))
+        cursor = right
+        yield edit, list(active.values())
+
+
 def select_gap_edits(gff, justifications_by_seq, *, cds_overlap="error"):
     """Return accepted edits and JSON-ready audit entries without mutating inputs."""
     if cds_overlap not in {"error", "skip"}:
@@ -108,13 +144,10 @@ def select_gap_edits(gff, justifications_by_seq, *, cds_overlap="error"):
     accepted, audit = {}, []
     for seqid, edits in justifications_by_seq.items():
         selected = []
-        for edit in validate_edits(edits):
+        for edit, overlaps in _gap_edit_overlaps(index, seqid, validate_edits(edits)):
             start = int(edit["original_gap_start"])
             old = int(edit["original_gap_length"])
             target = int(edit["target_gap_length"])
-            if old == target:
-                continue
-            overlaps = overlapping_features(index, seqid, start, start + old)
             cds = [row for row in overlaps if str(row["type"]) in CDS_TYPES]
             entry = {
                 "seqid": seqid,
