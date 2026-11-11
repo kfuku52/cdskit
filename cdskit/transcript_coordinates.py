@@ -45,12 +45,11 @@ def _utr_low_side(model, side):
 
 
 def coding_boundary(model, side):
-    """Return the unchanged zero-based CDS endpoint for a transcript side."""
-    return (
-        min(b[0] for b in model["cds"])
-        if _utr_low_side(model, side)
-        else max(b[1] for b in model["cds"])
-    )
+    """Return the CDS endpoint, including a verified separate terminal stop."""
+    low = _utr_low_side(model, side)
+    if side == "3" and "annotated_stop_boundary" in model:
+        return model["annotated_stop_boundary"]
+    return min(b[0] for b in model["cds"]) if low else max(b[1] for b in model["cds"])
 
 
 def terminal_utr_blocks(model, side, *, boundary=None):
@@ -87,6 +86,38 @@ def merge_blocks(blocks):
         else:
             result.append([a, b])
     return result
+
+
+def _record_separate_stop(model, rows):
+    """Record a separate stop when it covers the next three exonic bases."""
+    if not rows or model.get("problem"):
+        return
+    annotated = set()
+    for seqid, strand, start_text, end_text in rows:
+        if (seqid, strand) != (model["seqid"], model["strand"]):
+            return
+        try:
+            start, end = int(start_text) - 1, int(end_text)
+        except ValueError:
+            return
+        if not 0 <= start < end:
+            return
+        annotated.add((start, end))
+    if sum(end - start for start, end in annotated) != 3:
+        return
+
+    low = _utr_low_side(model, "3")
+    after_cds = terminal_utr_blocks(model, "3")
+    expected = []
+    remaining = 3
+    for start, end in reversed(after_cds) if low else after_cds:
+        length = min(remaining, end - start)
+        expected.append([end - length, end] if low else [start, start + length])
+        remaining -= length
+        if remaining == 0:
+            break
+    if not remaining and sorted(expected) == merge_blocks(annotated):
+        model["annotated_stop_boundary"] = expected[-1][0 if low else 1]
 
 
 def _coge_terminal_segments(model, rows):
@@ -137,6 +168,7 @@ def read_model_rows(lines, *, strict=True):
     """Read a line iterator without retaining the complete annotation text."""
     models: dict[str, Any] = {}
     children, genes = defaultdict(list), set()
+    stop_rows = defaultdict(list)
     for line in lines:
         line = line.rstrip("\r\n")
         if line == "##FASTA":
@@ -176,6 +208,10 @@ def read_model_rows(lines, *, strict=True):
                 source=f[1],
                 bounds=(int(f[3]) - 1, int(f[4])),
             )
+        elif kind == "stop_codon":
+            owners = attrs.get("Parent", ()) or attrs.get("transcript_id", ())
+            for tid in owners:
+                stop_rows[tid].append((f[0], f[6], f[3], f[4]))
         elif kind in {
             "exon",
             "cds",
@@ -201,6 +237,7 @@ def read_model_rows(lines, *, strict=True):
     # both every parsed feature and every completed model alive until return.
     for tid in list(children):
         rows = children.pop(tid)
+        stops = stop_rows.pop(tid, ())
         if not any(kind == "cds" for kind, _, _ in rows):
             continue
         if tid not in models:
@@ -277,6 +314,7 @@ def read_model_rows(lines, *, strict=True):
             if strict:
                 raise ValueError("UTR is not contained in its transcript exons")
             model["problem"] = "utr_outside_exons"
+        _record_separate_stop(model, stops)
     return {tid: m for tid, m in models.items() if m["cds"]}
 
 

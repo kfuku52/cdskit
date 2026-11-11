@@ -6,6 +6,7 @@ from cdskit.coordinates import pairwise_identity, trimmed_mapping
 from cdskit.fasta_contract import SequenceContractError, validate_fasta_stream
 from cdskit.gff_attributes import parse_gff_attributes
 from cdskit.label_mapping import shorten_labels
+from cdskit.transcript_coordinates import read_models, terminal_utr_blocks
 from cdskit.translate import coding_protein, translate_complete_cds
 from cdskit.util import read_gff
 
@@ -34,6 +35,40 @@ def test_gff_embedded_fasta_and_quoted_attributes(tmp_path):
     )
     assert read_gff(path) is not None
     assert parse_gff_attributes('gene_id "a;b,c";') == {"gene_id": ("a;b,c",)}
+
+
+@pytest.mark.parametrize("strand", ["+", "-"])
+@pytest.mark.parametrize(
+    "stops, expected",
+    [
+        ([(14, 15), (20, 22)], [(22, 30)]),
+        ([(15, 16), (20, 22)], [(14, 15), (20, 30)]),
+        ([(11, 14)], [(14, 15), (20, 30)]),
+    ],
+)
+def test_gtf_utr_boundary_requires_a_complete_adjacent_stop(strand, stops, expected):
+    def coordinates(start, end):
+        return (100 - end, 100 - start) if strand == "-" else (start, end)
+
+    rows = [
+        ("transcript", 10, 30),
+        ("exon", 10, 15),
+        ("exon", 20, 30),
+        ("CDS", 11, 14),
+        *(("stop_codon", a, b) for a, b in stops),
+    ]
+    lines = []
+    for feature, left, right in rows:
+        a, b = coordinates(left, right)
+        lines.append(
+            f'chr1\tsrc\t{feature}\t{a + 1}\t{b}\t.\t{strand}\t0\tgene_id "g"; transcript_id "t";'
+        )
+    model = read_models("\n".join(lines))["t"]
+    assert model["cds"] == [(*coordinates(11, 14), 0)]
+    assert terminal_utr_blocks(model, "3") == sorted(
+        [list(coordinates(a, b)) for a, b in expected]
+    )
+    assert terminal_utr_blocks(model, "5") == [list(coordinates(10, 11))]
 
 
 def test_mapping_exposes_ambiguity_and_legacy_policy():

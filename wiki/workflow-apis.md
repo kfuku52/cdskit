@@ -27,6 +27,10 @@ strand-aware indexed reconstruction and transcript/UTR coordinates are in
 `gff_feature_structure`, `cds_features` and `transcript_coordinates`.
 Embedded `##FASTA` ends feature parsing. Source-model admission and correction
 decisions remain the caller's responsibility.
+When a separate `stop_codon` annotation covers the next three exonic bases
+after the CDS, `transcript_coordinates` starts the 3′ UTR after that stop.
+This also covers a stop split across exons. The source CDS blocks retain
+their annotated coordinates and phases.
 
 `coordinates.trimmed_mapping` reuses the complete subsequence mapping kernel,
 reports ambiguity, and accepts leftmost/unresolved/error policies. Its module
