@@ -717,7 +717,12 @@ def read_gff(gff_file: Any) -> dict[str, Any]:
             )
             for index, name in enumerate(GFF_COLUMNS)
         ]
-        data = np.asarray(rows, dtype=dtype)
+        # Release parsed tuples in order as the fixed-width array fills.
+        row_count = len(rows)
+        rows.reverse()
+        data = np.fromiter(
+            (rows.pop() for _ in range(row_count)), dtype=dtype, count=row_count
+        )
     sys.stderr.write(
         "Number of input GFF header lines: {:,}\n".format(len(header_lines))
     )
