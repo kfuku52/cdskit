@@ -3,6 +3,7 @@ Tests for cdskit trimcodon command.
 """
 
 import json
+import math
 
 import Bio.SeqIO
 import pytest
@@ -15,6 +16,25 @@ from cdskit.trimcodon import trimcodon_main
 
 class TestTrimcodonMain:
     """Tests for trimcodon_main function."""
+
+    @pytest.mark.parametrize("threshold", [1 / 3, math.nextafter(1 / 3, 1)])
+    def test_trimcodon_without_report_matches_site_decisions(
+        self, temp_dir, mock_args, threshold
+    ):
+        source = temp_dir / "input.fa"
+        before, after = temp_dir / "with_report.fa", temp_dir / "without_report.fa"
+        source.write_text(">a\nATGTGAGCTGCN\n>b\nATGTGA---TAR\n>c\nATGNNNTAN?AG\n")
+        for output, report in ((before, str(temp_dir / "sites.json")), (after, "")):
+            trimcodon_main(
+                mock_args(
+                    seqfile=str(source),
+                    outfile=str(output),
+                    codontable=27,
+                    min_clean_fraction=threshold,
+                    report=report,
+                )
+            )
+        assert before.read_bytes() == after.read_bytes()
 
     def test_trimcodon_filters_by_clean_fraction(self, temp_dir, mock_args):
         input_path = temp_dir / "input.fasta"

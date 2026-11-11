@@ -4,7 +4,7 @@ import sys
 
 import numpy as np
 
-from cdskit.codonarray import codon_features
+from cdskit.codonarray import codon_features, codon_states
 
 from cdskit.codonutil import (
     CODON_SEMANTICS_VERSION,
@@ -118,6 +118,18 @@ def choose_kept_codon_sites(site_summaries, num_sequences, min_clean_fraction):
     return kept_sites
 
 
+def _kept_sites_without_report(records, codontable, min_clean_fraction):
+    if not records:
+        return []
+    clean = np.zeros(len(records[0]) // 3, dtype=np.int64)
+    for record in records:
+        states = codon_states(str(record.seq), codontable)
+        # Input has passed aligned DNA and complete-codon validation.
+        assert states is not None
+        clean += states == CODON_CLEAN
+    return np.flatnonzero(clean / len(records) >= min_clean_fraction).tolist()
+
+
 def trim_record_to_codon_sites(record, kept_sites):
     trimmed = copy.copy(record)
     seq_str = str(record.seq)
@@ -223,22 +235,22 @@ def trimcodon_main(args):
     args.min_clean_fraction = validate_fraction(
         name="--min_clean_fraction", value=args.min_clean_fraction
     )
-    seq_strings = [str(record.seq) for record in records]
-    site_summaries = summarize_codon_sites(seq_strings, args.codontable)
-    kept_sites = choose_kept_codon_sites(
-        site_summaries=site_summaries,
-        num_sequences=len(records),
-        min_clean_fraction=args.min_clean_fraction,
-    )
-    summary = build_trimcodon_summary(
-        site_summaries=site_summaries,
-        kept_sites=kept_sites,
-        num_sequences=len(records),
-        args=args,
-    )
-    sys.stderr.write(
-        "Removed codon sites: {:,}\n".format(summary["num_removed_codon_sites"])
-    )
+    summary = None
+    if args.report:
+        seq_strings = [str(record.seq) for record in records]
+        site_summaries = summarize_codon_sites(seq_strings, args.codontable)
+        kept_sites = choose_kept_codon_sites(
+            site_summaries, len(records), args.min_clean_fraction
+        )
+        summary = build_trimcodon_summary(
+            site_summaries, kept_sites, len(records), args
+        )
+    else:
+        kept_sites = _kept_sites_without_report(
+            records, args.codontable, args.min_clean_fraction
+        )
+    num_sites = len(records[0]) // 3 if records else 0
+    sys.stderr.write("Removed codon sites: {:,}\n".format(num_sites - len(kept_sites)))
     out_records = _trim_records_to_codon_sites(records, kept_sites)
     outputs = [path for path in (args.outfile, args.report) if path not in ("", "-")]
     with atomic_output_paths(outputs) as temporary_paths:
@@ -248,6 +260,7 @@ def trimcodon_main(args):
             outfile=staged.get(args.outfile, args.outfile),
             outseqformat=args.outseqformat,
         )
-        write_trimcodon_report(
-            report_path=staged.get(args.report, args.report), summary=summary
-        )
+        if summary is not None:
+            write_trimcodon_report(
+                report_path=staged.get(args.report, args.report), summary=summary
+            )

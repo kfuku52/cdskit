@@ -89,6 +89,15 @@ def codon_features(sequence, codontable):
     return features[indices], states[indices]
 
 
+def codon_states(sequence, codontable):
+    """Return the class codes without materializing per-codon feature arrays."""
+    indices = _triplet_indices(sequence)
+    if indices is None:
+        return None
+    _, states = _resolved_tables(indices, codontable)
+    return states[indices]
+
+
 @lru_cache(maxsize=1)
 def _base_weights():
     indices = np.arange(_SIZE**3, dtype=np.uint16)
