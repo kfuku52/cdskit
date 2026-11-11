@@ -148,6 +148,29 @@ def test_cnn_padding_invariance_and_no_synthetic_join():
     assert DEFAULT_AA_TO_IDX["K"] in windows
 
 
+def test_cnn_batch_encoding_preserves_unicode_mapping_and_padding():
+    from cdskit.localize_multilabel_cnn import (
+        _encode_layout,
+        encode_aa_sequence_termini,
+        encode_aa_sequences_termini,
+    )
+
+    sequences = ["aéx", "xxAAAAaa", ""]
+    mapping = {"A": 27, "É": 299, "X": 51}
+    width = 5
+    expected = np.stack(
+        [encode_aa_sequence_termini(sequence, width, mapping) for sequence in sequences]
+    )
+    np.testing.assert_array_equal(
+        encode_aa_sequences_termini(sequences, width, mapping), expected
+    )
+    windows = _encode_layout(sequences, width, mapping, "windows")
+    assert windows.shape == (3, 3, width)
+    assert windows[0, 0].tolist() == [27, 299, 51, 0, 0]
+    assert not windows[0, 1:].any()
+    assert not windows[2].any()
+
+
 def test_cnn_legacy_load_and_new_roundtrip():
     pytest.importorskip("torch")
     from cdskit.localize_multilabel_cnn import (

@@ -15,37 +15,91 @@ from cdskit.localize_bilstm import (
 )
 
 
+def _termini_text(aa_seq, seq_len):
+    seq = str(aa_seq).upper()
+    if len(seq) > seq_len:
+        left = seq_len // 2
+        right = seq_len - left
+        seq = seq[:left] + seq[-right:]
+    return seq
+
+
+def _aa_byte_lookup(aa_to_idx):
+    if type(aa_to_idx) is not dict:
+        return None
+    unknown = aa_to_idx.get("X", 1)
+    if type(unknown) is not int or not 0 <= unknown < 256:
+        return None
+    lookup = bytearray([unknown]) * 256
+    for character, index in aa_to_idx.items():
+        if type(character) is not str:
+            return None
+        if len(character) != 1 or not character.isascii():
+            continue
+        if type(index) is not int or not 0 <= index < 256:
+            return None
+        lookup[ord(character)] = index
+    return bytes(lookup)
+
+
+def _write_aa_tokens(seq, out, aa_to_idx, lookup=None):
+    max_len = min(len(seq), len(out))
+    if lookup is not None and type(seq) is str and seq.isascii():
+        encoded = seq[:max_len].encode("ascii").translate(lookup)
+        out[:max_len] = np.frombuffer(encoded, dtype=np.uint8)
+        return
+    for i in range(max_len):
+        out[i] = int(aa_to_idx.get(seq[i], aa_to_idx.get("X", 1)))
+
+
 def encode_aa_sequence_termini(aa_seq, seq_len, aa_to_idx=None):
     aa_to_idx = DEFAULT_AA_TO_IDX if aa_to_idx is None else aa_to_idx
     seq_len = int(seq_len)
-    seq = str(aa_seq).upper()
-    if len(seq) > seq_len:
-        left = int(seq_len // 2)
-        right = int(seq_len - left)
-        seq = seq[:left] + seq[-right:]
+    seq = _termini_text(aa_seq, seq_len)
     out = np.zeros((seq_len,), dtype=np.int64)
-    max_len = min(len(seq), seq_len)
-    for i in range(max_len):
-        out[i] = int(aa_to_idx.get(seq[i], aa_to_idx.get("X", 1)))
+    _write_aa_tokens(seq, out, aa_to_idx)
     return out
 
 
 def encode_aa_sequences_termini(aa_sequences, seq_len, aa_to_idx=None):
     aa_to_idx = DEFAULT_AA_TO_IDX if aa_to_idx is None else aa_to_idx
-    encoded = np.zeros((len(aa_sequences), int(seq_len)), dtype=np.int64)
+    width = int(seq_len)
+    encoded = np.zeros((len(aa_sequences), width), dtype=np.int64)
+    lookup = _aa_byte_lookup(aa_to_idx)
     for i, aa_seq in enumerate(aa_sequences):
-        encoded[i, :] = encode_aa_sequence_termini(
-            aa_seq=aa_seq,
-            seq_len=seq_len,
-            aa_to_idx=aa_to_idx,
-        )
+        _write_aa_tokens(_termini_text(aa_seq, width), encoded[i], aa_to_idx, lookup)
     return encoded
+
+
+def _encode_window_batch(sequences, seq_len, aa_to_idx, lookup):
+    stride = max(1, seq_len // 2)
+    windows = [
+        1 + max(0, len(seq) - seq_len + stride - 1) // stride for seq in sequences
+    ]
+    result = np.zeros(
+        (len(sequences), max(windows, default=1), seq_len), dtype=np.int64
+    )
+    for i, (sequence, count) in enumerate(zip(sequences, windows, strict=True)):
+        for j in range(count):
+            start = j * stride
+            part = _termini_text(sequence[start : start + seq_len], seq_len)
+            _write_aa_tokens(part, result[i, j], aa_to_idx, lookup)
+    return result
 
 
 def _encode_layout(sequences, seq_len, aa_to_idx, layout):
     if layout == "legacy":
         return encode_aa_sequences_termini(sequences, seq_len, aa_to_idx)
+    aa_to_idx = DEFAULT_AA_TO_IDX if aa_to_idx is None else aa_to_idx
+    lookup = _aa_byte_lookup(aa_to_idx)
     if layout == "windows":
+        if (
+            type(seq_len) is int
+            and seq_len > 0
+            and type(sequences) in (list, tuple)
+            and all(type(sequence) is str for sequence in sequences)
+        ):
+            return _encode_window_batch(sequences, seq_len, aa_to_idx, lookup)
         parts = []
         for sequence in sequences:
             chunks = []
@@ -73,7 +127,9 @@ def _encode_layout(sequences, seq_len, aa_to_idx, layout):
     for i, sequence in enumerate(sequences):
         sequence = str(sequence).upper()
         for j, part in enumerate((sequence[:width], sequence[-width:])):
-            result[i, j] = encode_aa_sequence_termini(part, width, aa_to_idx)
+            _write_aa_tokens(
+                _termini_text(part, width), result[i, j], aa_to_idx, lookup
+            )
     return result
 
 
