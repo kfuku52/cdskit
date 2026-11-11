@@ -1492,12 +1492,12 @@ p_maxalign = subparsers.add_parser(
 )
 p_maxalign.add_argument(
     "--mode",
-    metavar="auto|exact|greedy",
+    metavar="auto|exact|greedy|branch-and-bound",
     default="auto",
     type=str,
     required=False,
     action="store",
-    choices=["auto", "exact", "greedy"],
+    choices=["auto", "exact", "greedy", "branch-and-bound"],
     help="default=%(default)s: Solver mode for maximizing alignment area.",
 )
 p_maxalign.add_argument(

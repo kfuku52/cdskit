@@ -12,6 +12,8 @@ from Bio.SeqRecord import SeqRecord
 from cdskit.tsvio import read_tsv
 
 from cdskit.maxalign import (
+    _solve_branch_and_bound,
+    indices_to_bitmask,
     maxalign_main,
     parse_missing_chars,
     select_indices_by_patterns,
@@ -20,8 +22,63 @@ from cdskit.maxalign import (
 )
 
 
+def test_branch_search_respects_protection_and_reports_work_exhaustion():
+    active = list(range(5))
+    all_present = indices_to_bitmask(active)
+    counts = {all_present: 2, all_present ^ 1: 9, all_present ^ 2: 4}
+    result = _solve_branch_and_bound(counts, active, [0], 1)
+    expected = solve_exact(
+        None,
+        active,
+        [0],
+        1,
+        len(active),
+        support_counts=counts,
+        num_sequences=len(active),
+    )
+    assert result == expected
+    with pytest.raises(ValueError, match="work limit"):
+        _solve_branch_and_bound(counts, active, [0], 1, work_limit=0)
+
+
 class TestMaxalignMain:
     """Tests for maxalign_main function."""
+
+    def test_branch_and_bound_recovers_jointly_gapped_columns(
+        self, temp_dir, mock_args
+    ):
+        source = temp_dir / "input.fa"
+        output, report = temp_dir / "output.fa", temp_dir / "report.json"
+        records = [
+            SeqRecord(
+                Seq(
+                    "GCT" * 220
+                    + "".join(
+                        ("---" if i in {0, j} else "GCT") * 10 for j in range(1, 10)
+                    )
+                ),
+                id=f"seq{i}",
+                description="",
+            )
+            for i in range(36)
+        ]
+        Bio.SeqIO.write(records, source, "fasta")
+        args = mock_args(
+            seqfile=str(source),
+            outfile=str(output),
+            report=str(report),
+            max_removed=8,
+            mode="branch-and-bound",
+        )
+        maxalign_main(args)
+        result = json.loads(report.read_text())
+        assert result["mode"] == "branch-and-bound"
+        assert result["initial_area"] == 7920 and result["final_area"] == 8120
+        assert result["removed_ids"] == ["seq0", *(f"seq{i}" for i in range(4, 10))]
+        saved = list(Bio.SeqIO.parse(output, "fasta"))
+        assert len(saved) == 29 and all(
+            str(record.seq) == "GCT" * 280 for record in saved
+        )
 
     def test_maxalign_removes_gap_heavy_sequence(self, temp_dir, mock_args):
         """A gap-heavy sequence should be dropped when it reduces codon-area."""

@@ -44,8 +44,8 @@ ATGAAACCCGGG
 
 ## Key options
 
-- `--mode auto|exact|greedy`: Solver mode. `auto` uses exact search for small inputs and greedy search for larger inputs.
-- `--max_exact_sequences INT` sets the sequence limit for exact search. The default is `16` and the accepted range is `1`–`24`.
+- `--mode auto|exact|greedy|branch-and-bound` selects the solver. `auto` uses exact subset search for small inputs and greedy search for larger inputs.
+- `--max_exact_sequences INT` sets the sequence limit for the `exact` solver. The default is `16` and the accepted range is `1`–`24`.
 - `--missing_chars STR`: Characters treated as missing within a codon (default: `-?.`).
 - `--keep_seq_name_regex REGEX [REGEX ...]`: Never remove matching sequence IDs.
 - `--max_removed INT`: Maximum number of sequences that may be removed.
@@ -65,6 +65,20 @@ and each removal step. List-valued `removed_ids` cells are JSON arrays.
 - Output keeps only retained sequences and codon sites that are complete in the retained set.
 - `--mode auto` switches to `greedy` when the number of input sequences exceeds `--max_exact_sequences`.
 - Exact search scales exponentially in the number of unprotected sequences. For 24 unprotected sequences and up to 65,535 codon columns, the subset count table uses at most 32 MiB. Input records and other working memory are additional.
+
+### Exact search with a removal limit
+
+`--mode branch-and-bound` proves the optimum by searching weighted gap
+patterns. It can handle more than 24 sequences when few removals or gap
+patterns are feasible. Use `--max_removed` to restrict the search. For the
+example above, replacing `--mode exact` with `--mode branch-and-bound
+--max_removed 1` produces the same `output.fasta`.
+
+The solver considers retaining or removing a row at each branch. It prunes
+branches whose best possible area falls short of the best solution already
+found. It applies the same protected-row and tie rules as `exact`. The
+search runs in one process and stops with an error if it exceeds its fixed
+work limit, without publishing a result. [Original MaxAlign algorithm](https://services.healthtech.dtu.dk/services/MaxAlign-1.1/4-Algorithm.php)
 
 ## References
 

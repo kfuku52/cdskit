@@ -28,6 +28,7 @@ from cdskit.tsvio import json_cell, write_sectioned_tsv
 
 DEFAULT_MISSING_CHARS = "-?."
 _MAX_EXACT_SEQUENCES = 24
+_BRANCH_SEARCH_WORK_LIMIT = 2_000_000
 _EXACT_SUBSET_BLOCK_SIZE = 32_768
 _BYTE_POPCOUNTS = np.array([value.bit_count() for value in range(256)], dtype=np.uint8)
 _BYTE_POPCOUNTS.flags.writeable = False
@@ -705,6 +706,81 @@ def _greedy_missing_counts(
     return base_counts
 
 
+def _solve_branch_and_bound(
+    support_counts,
+    active_indices,
+    protected_indices,
+    max_removed,
+    *,
+    work_limit=_BRANCH_SEARCH_WORK_LIMIT,
+):
+    """Split positive-weight gap patterns by whether a row is kept or removed."""
+    active = indices_to_bitmask(active_indices)
+    protected = indices_to_bitmask(protected_indices)
+    n = len(active_indices)
+    budget = n - 1 if max_removed is None else min(max_removed, n - 1)
+    initial = count_complete_columns_with_support(support_counts, active)
+    options = _greedy_missing_counts(support_counts, active, protected, budget)
+    best_score, best_mask, best_columns = (initial * n, n), active, initial
+    pending = [(0, initial, options)]
+    work = 0
+    while pending:
+        removed, complete, options = pending.pop()
+        kept = active ^ removed
+        size = n - removed.bit_count()
+        score = (complete * size, size)
+        different = kept ^ best_mask
+        if score > best_score or (
+            score == best_score and kept & (different & -different)
+        ):
+            best_score, best_mask, best_columns = score, kept, complete
+
+        work += len(options) + sum(gaps.bit_count() for gaps in options)
+        if work > work_limit:
+            raise ValueError(
+                "MaxAlign branch-and-bound search reached its work limit. "
+                "Use a smaller --max_removed to restrict the search."
+            )
+        # Any better descendant must remove at least one more row. Even if
+        # every recoverable pattern then completes, its area is at most this.
+        upper = (size - 1) * (complete + sum(options.values()))
+        if (
+            not options
+            or upper < best_score[0]
+            or (upper == best_score[0] and size - 1 < best_score[1])
+        ):
+            continue
+        row_weights: Counter[int] = Counter()
+        for gaps, weight in options.items():
+            while gaps:
+                bit = gaps & -gaps
+                row_weights[bit] += weight
+                gaps ^= bit
+        pivot = max(row_weights, key=row_weights.__getitem__)
+        keep_options: Counter[int] = Counter()
+        remove_options: Counter[int] = Counter()
+        remaining = budget - (n - size) - 1
+        remove_complete = complete
+        for gaps, weight in options.items():
+            if not gaps & pivot:
+                keep_options[gaps] = weight
+            reduced = gaps & ~pivot
+            if not reduced:
+                remove_complete += weight
+            elif reduced.bit_count() <= remaining:
+                remove_options[reduced] += weight
+        pending.append((removed, complete, keep_options))
+        pending.append((removed | pivot, remove_complete, remove_options))
+
+    return dict(
+        kept_indices=[i for i in active_indices if best_mask & (1 << i)],
+        num_kept=best_score[1],
+        area=best_score[0],
+        complete_codon_columns=best_columns,
+        steps=[],
+    )
+
+
 def greedy_missing_set_gap_counts(
     support_counts, active_mask, protected_mask, max_remove_size=None
 ):
@@ -1241,6 +1317,10 @@ def maxalign_main(args):
                 threads=threads,
                 support_counts=support_counts,
                 num_sequences=len(original_records),
+            )
+        elif solver_mode == "branch-and-bound":
+            solution = _solve_branch_and_bound(
+                support_counts, candidate_indices, sorted(keep_set), max_removed
             )
         elif solver_mode == "greedy":
             solution = solve_greedy(
