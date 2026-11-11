@@ -75,11 +75,13 @@ def reorder_aa_records_by_cds_ids(cdn_records, pep_records):
 
 
 def build_column_index(seq_strings):
+    columns = ("".join(column) for column in zip(*seq_strings, strict=False))
+    return _index_columns(columns)
+
+
+def _index_columns(columns):
     col_index: defaultdict[str, deque[int]] = defaultdict(deque)
-    if len(seq_strings) == 0:
-        return col_index
-    for ci, col_chars in enumerate(zip(*seq_strings, strict=False)):
-        key = "".join(col_chars)
+    for ci, key in enumerate(columns):
         col_index[key].append(ci)
     return col_index
 
@@ -125,16 +127,20 @@ def find_kept_aa_sites(tcdn_strings, pep_strings):
     # Alignment case and the two accepted gap symbols do not change a site.
     tcdn_strings = [seq.upper().replace(".", "-") for seq in tcdn_strings]
     pep_strings = [seq.upper().replace(".", "-") for seq in pep_strings]
+    source = ("".join(column) for column in zip(*tcdn_strings, strict=False))
+    target = ("".join(column) for column in zip(*pep_strings, strict=False))
+    return _find_legacy_column_matches(source, target, len(tcdn_strings[0]))
+
+
+def _find_legacy_column_matches(source, target, remaining_site_count):
     kept_aa_sites = []
     multiple_matches: set[int] = set()
     last_kept_site = -1
-    remaining_site_count = len(tcdn_strings[0])
-    tcdn_col_index: dict[str, Any] = build_column_index(tcdn_strings)
+    tcdn_col_index: dict[str, Any] = _index_columns(source)
 
-    for pi, pep_col_chars in enumerate(zip(*pep_strings, strict=False)):
+    for pi, key in enumerate(target):
         if remaining_site_count == 0:
             break
-        key = "".join(pep_col_chars)
         same_sites = tcdn_col_index.get(key)
         if (same_sites is None) or (len(same_sites) == 0):
             txt = "The codon site {} could not be matched to trimmed protein sites. "
@@ -381,7 +387,9 @@ def _backtrim_main(args, report):
     kept_aa_sites = select_kept_sites(args, source, target, report)
     if kept_aa_sites is None:
         kept_aa_sites, multiple_count = (
-            find_kept_aa_sites(tcdn_strings, pep_strings) if cdn_records else ([], 0)
+            _find_legacy_column_matches(source, target, len(source))
+            if cdn_records
+            else ([], 0)
         )
         txt = "{} codon sites matched to {} protein sites. "
         txt += "Trimmed {} codon sites that matched to multiple protein sites.\n"
