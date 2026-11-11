@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 import gzip
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TextIO
 
 DNA_ALPHABET = frozenset("ACGTURYSWKMBDHVN-?.")
 PROTEIN_ALPHABET = frozenset("ABCDEFGHIKLMNPQRSTVWXYZJUO*-?.")
+_DNA_INVALID = re.compile("[^" + re.escape("".join(sorted(DNA_ALPHABET))) + "]")
+_PROTEIN_INVALID = re.compile("[^" + re.escape("".join(sorted(PROTEIN_ALPHABET))) + "]")
 
 
 class SequenceContractError(RuntimeError):
@@ -53,6 +56,8 @@ def validate_fasta_stream(
     if expected not in {"dna", "codon", "protein"}:
         raise SequenceContractError(f"Unsupported FASTA sequence type: {expected}")
     allowed = PROTEIN_ALPHABET if expected == "protein" else DNA_ALPHABET
+    invalid_character = _PROTEIN_INVALID if expected == "protein" else _DNA_INVALID
+    codon_profile = expected == "codon"
     record_count = 0
     aligned_length: int | None = None
     has_empty = unequal_lengths = non_triplet_ungapped = False
@@ -96,14 +101,16 @@ def validate_fasta_stream(
                 f"FASTA sequence data appears before the first header at line {line_number}: {path}"
             )
         sequence = "".join(line.split()).upper()
-        invalid.update(set(sequence) - allowed)
+        if invalid_character.search(sequence):
+            invalid.update(set(sequence) - allowed)
         current_length += len(sequence)
-        current_ungapped += (
-            len(sequence)
-            - sequence.count("-")
-            - sequence.count("?")
-            - sequence.count(".")
-        )
+        if codon_profile:
+            current_ungapped += (
+                len(sequence)
+                - sequence.count("-")
+                - sequence.count("?")
+                - sequence.count(".")
+            )
         residues += len(sequence)
 
     if current_length is not None:
@@ -119,7 +126,7 @@ def validate_fasta_stream(
         )
 
     assert aligned_length is not None
-    if expected == "codon":
+    if codon_profile:
         if unequal_lengths:
             raise SequenceContractError(f"Codon FASTA is not an alignment: {path}")
         if aligned_length % 3:

@@ -1,3 +1,4 @@
+from io import StringIO
 from itertools import product
 import random
 
@@ -6,6 +7,13 @@ import pytest
 
 from cdskit import validate
 from cdskit.codonutil import summarize_codons
+from cdskit.fasta_contract import SequenceContractError, validate_fasta_stream
+
+
+def test_strict_fasta_reports_all_normalized_invalid_characters():
+    stream = StringIO(">record\nAC\tßU\nNΩx$\n")
+    with pytest.raises(SequenceContractError, match=r"alphabet: \$XΩ"):
+        validate_fasta_stream(stream, "dna")
 
 
 def reference_counts(sequence):
