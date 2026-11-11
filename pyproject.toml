@@ -39,6 +39,9 @@ dependencies = [
 test = [
   "pytest>=7",
 ]
+dnds-ml = [
+  "scipy>=1.9",
+]
 coverage = [
   "pytest-cov>=5",
   "pytest-xdist>=3",

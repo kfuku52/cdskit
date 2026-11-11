@@ -264,6 +264,11 @@ dev = [
     { name = "torch", version = "2.13.0", source = { registry = "https://pypi.org/simple" } },
     { name = "transformers" },
 ]
+dnds-ml = [
+    { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
+    { name = "scipy", version = "1.18.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+]
 ml = [
     { name = "pyyaml" },
     { name = "scikit-learn", version = "1.7.2", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.11' and extra == 'extra-6-cdskit-ml') or (extra == 'extra-6-cdskit-dev' and extra == 'extra-6-cdskit-ml-cpu') or (extra == 'extra-6-cdskit-ml' and extra == 'extra-6-cdskit-ml-cpu')" },
@@ -350,6 +355,7 @@ requires-dist = [
     { name = "scikit-learn", marker = "extra == 'dev'", specifier = ">=1.4" },
     { name = "scikit-learn", marker = "extra == 'ml'", specifier = ">=1.4" },
     { name = "scikit-learn", marker = "extra == 'ml-cpu'", specifier = ">=1.4" },
+    { name = "scipy", marker = "extra == 'dnds-ml'", specifier = ">=1.9" },
     { name = "torch", marker = "sys_platform == 'linux' and extra == 'ml-cpu'", specifier = ">=2.2", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "cdskit", extra = "ml-cpu" } },
     { name = "torch", marker = "sys_platform != 'linux' and extra == 'ml-cpu'", specifier = ">=2.2" },
     { name = "torch", marker = "extra == 'dev'", specifier = ">=2.2" },
@@ -358,7 +364,7 @@ requires-dist = [
     { name = "transformers", marker = "extra == 'ml'", specifier = ">=4.40" },
     { name = "transformers", marker = "extra == 'ml-cpu'", specifier = ">=4.40" },
 ]
-provides-extras = ["test", "coverage", "quality", "build", "security", "ml", "ml-cpu", "dev"]
+provides-extras = ["test", "dnds-ml", "coverage", "quality", "build", "security", "ml", "ml-cpu", "dev"]
 
 [package.metadata.requires-dev]
 build = [{ name = "build", specifier = ">=1" }]

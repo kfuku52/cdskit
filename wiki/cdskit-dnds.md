@@ -1,10 +1,10 @@
 # cdskit dnds
 
 Estimate pairwise nonsynonymous (`dN`) and synonymous (`dS`) distances from
-already aligned CDS pairs. This command uses a native NumPy batch implementation
-of Yang--Nielsen (2000), with equal path weights (`weighting=0`), pair-specific
-F3x4 codon frequencies and pair-specific kappa. It does not require PAML and does
-not run protein alignment. It is not weighted-path YN00 or codeml maximum likelihood.
+already aligned CDS pairs. The default `--method yn00` uses a native NumPy
+implementation of Yang–Nielsen (2000), with equal path weights (`weighting=0`),
+pair-specific F3x4 codon frequencies and pair-specific kappa. Both methods work
+directly on the supplied codon alignment and run independently of PAML.
 
 ## Input and execution
 
@@ -46,6 +46,28 @@ otherwise unestimable distances are `NA` (empty TSV cells), not zero. Valid zero
 zero. `dS_diagnostic` and `dN_diagnostic` preserve PAML-compatible finite-sample
 diagnostics for audit/comparison; saturated diagnostics are not usable distances.
 Inspect status and retained-codon counts before biological interpretation.
+
+## Optional maximum likelihood
+
+Install the `dnds-ml` extra to use the SciPy optimizer:
+
+```bash
+python -m pip install '.[dnds-ml]'
+cdskit dnds --pairs_file pairs.tsv --method gy94 --out_file distances.tsv
+```
+
+`gy94` fits a pairwise Goldman–Yang model with CF3x4 sense-codon frequencies.
+The TSV `method` field is `GY94_CF3x4_pairwise`. It uses the same paired
+deletion and stop rules. `S` and `N` are computed from neutral-model
+site fractions at fitted kappa. An identical retained pair has zero
+distances and unestimated kappa. `rate_boundary` leaves a distance missing
+when the numerical upper bound is reached. Its diagnostic field records
+the fitted bound. `kappa_boundary` indicates that kappa reached an
+optimization limit. Nonconverged fits leave model estimates missing.
+
+Simulation showed lower error for both distances on longer alignments.
+Ratios on short alignments could have much larger errors, and the
+likelihood fit takes substantially more CPU time. [Evaluation and runtime](https://github.com/kfuku52/cdskit/blob/master/docs/dnds-gy94-evaluation-2026-11-11.md)
 
 ## Numerical and speed comparison
 

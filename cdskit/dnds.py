@@ -26,6 +26,7 @@ from cdskit.util import resolve_threads
 BASES = "TCAG"
 BATCH_SIZE = 256
 METHOD = "YN00_weighting0_F3x4"
+_METHOD_LABELS = {"yn00": METHOD, "gy94": "GY94_CF3x4_pairwise"}
 DEFAULT_KAPPA = 4.6  # YN00 initializes each independent data set with this value.
 _GAP_BYTES = np.zeros(128, dtype=bool)
 _GAP_BYTES[list(b"-?.")] = True
@@ -417,7 +418,12 @@ def _encode_batch(
 
 def _estimate_batch(pairs: list[tuple[str, str]], code: int) -> list[dict[str, Any]]:
     geometry = _geometry(code)
-    encoded = _encode_batch(pairs, geometry)
+    return _estimate_encoded(_encode_batch(pairs, geometry), geometry)
+
+
+def _estimate_encoded(
+    encoded: list[tuple[Any, dict[str, Any]]], geometry: dict[str, Any]
+) -> list[dict[str, Any]]:
     rows = [
         dict(
             dS=None,
@@ -552,21 +558,37 @@ def _batch_size(pair_count: int, workers: int) -> int:
 
 
 def estimate_pairs(
-    pairs: list[tuple[str, str]], codon_table: int = 1, threads: int = 1
+    pairs: list[tuple[str, str]],
+    codon_table: int = 1,
+    threads: int = 1,
+    *,
+    method: str = "yn00",
 ) -> list[dict[str, Any]]:
     """Estimate independent aligned pairs; retain input order and NA statuses."""
     workers = resolve_threads(threads)
     _geometry(codon_table)
     size = _batch_size(len(pairs), workers)
+    estimator = _estimate_batch
+    if method == "gy94":
+        try:
+            from cdskit.dnds_mle import estimate_ml_batch
+        except ModuleNotFoundError as exc:
+            if exc.name != "scipy":
+                raise
+            raise ValueError(
+                "The gy94 method requires SciPy. Install the cdskit[dnds-ml] extra."
+            ) from exc
+        estimator = estimate_ml_batch
+        size = min(64, max(1, (len(pairs) + workers - 1) // workers))
+    elif method != "yn00":
+        raise ValueError(f"Unknown dN/dS method: {method}")
     chunks = [pairs[i : i + size] for i in range(0, len(pairs), size)]
     if workers == 1 or len(chunks) < 2:
-        return [row for chunk in chunks for row in _estimate_batch(chunk, codon_table)]
+        return [row for chunk in chunks for row in estimator(chunk, codon_table)]
     with ThreadPoolExecutor(max_workers=workers) as pool:
         return [
             row
-            for chunk in pool.map(
-                lambda chunk: _estimate_batch(chunk, codon_table), chunks
-            )
+            for chunk in pool.map(lambda chunk: estimator(chunk, codon_table), chunks)
             for row in chunk
         ]
 
@@ -583,16 +605,15 @@ def dnds_main(args: Any) -> None:
     ids = [row["pair_id"] for row in rows]
     if any(not identifier.strip() for identifier in ids) or len(ids) != len(set(ids)):
         raise ValueError("dnds pair_id values must be nonempty and unique")
-    values = estimate_pairs(
-        [(row["sequence_1"], row["sequence_2"]) for row in rows],
-        args.codontable,
-        args.threads,
-    )
+    pairs = [(row["sequence_1"], row["sequence_2"]) for row in rows]
+    method = getattr(args, "method", "yn00")
+    options = {"method": method} if method != "yn00" else {}
+    values = estimate_pairs(pairs, args.codontable, args.threads, **options)
     report = (
         dict(
             schema_version=TSV_REPORT_SCHEMA_VERSION,
             pair_id=identifier,
-            method=METHOD,
+            method=_METHOD_LABELS[method],
             codon_table=args.codontable,
             codon_semantics_version=CODON_SEMANTICS_VERSION,
             **{key: "" if value is None else value for key, value in result.items()},

@@ -199,7 +199,7 @@ command_dnds = lazy_command(
 )
 p_dnds = subparsers.add_parser(
     "dnds",
-    help="Batched YN00 synonymous/nonsynonymous distances from aligned CDS pairs.",
+    help="Synonymous/nonsynonymous distances from aligned CDS pairs.",
     parents=[p_version, p_codon, p_threads],
 )
 p_dnds.add_argument(
@@ -207,6 +207,12 @@ p_dnds.add_argument(
     required=True,
     metavar="PATH",
     help="Headered TSV with pair_id, sequence_1, sequence_2; each row is an independent codon alignment.",
+)
+p_dnds.add_argument(
+    "--method",
+    choices=["yn00", "gy94"],
+    default="yn00",
+    help="Equal-path YN00 (default), or pairwise GY94 maximum likelihood with SciPy.",
 )
 p_dnds.add_argument(
     "-o",
