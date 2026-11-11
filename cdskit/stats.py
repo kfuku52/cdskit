@@ -1,6 +1,7 @@
 from collections import Counter
 from contextlib import redirect_stdout
 from pathlib import Path
+import re
 
 import numpy as np
 
@@ -104,6 +105,15 @@ ALPHABETS = {
 }
 MISSING = {"dna": frozenset("XNO-?"), "aa": frozenset("X.*-?")}
 STATES = {"dna": frozenset("ACGT"), "aa": frozenset("ACDEFGHIKLMNPQRSTVWY")}
+_ALIGNMENT_ALPHABET_PATTERNS = {
+    kind: re.compile(f"[{re.escape(alphabet)}]*")
+    for kind, alphabet in ALPHABETS.items()
+}
+_PROTEIN_STATE_BITS = np.zeros(256, dtype=np.uint32)
+for _index, _residue in enumerate(sorted(STATES["aa"])):
+    _PROTEIN_STATE_BITS[ord(_residue)] = 1 << _index
+_PROTEIN_STATE_BITS.flags.writeable = False
+_ALIGNMENT_STATS_BLOCK = 65_536
 SUMMARY_COLUMNS = (
     "Alignment_name",
     "No_of_taxa",
@@ -118,6 +128,58 @@ SUMMARY_COLUMNS = (
     "AT_content",
     "GC_content",
 )
+
+
+def _alignment_character_counts(sequence, alphabet):
+    if len(sequence) < 256:
+        return Counter(sequence)
+    counts = np.zeros(128, dtype=np.int64)
+    for start in range(0, len(sequence), _ALIGNMENT_STATS_BLOCK):
+        encoded = sequence[start : start + _ALIGNMENT_STATS_BLOCK].encode("ascii")
+        counts += np.bincount(np.frombuffer(encoded, dtype=np.uint8), minlength=128)
+    return {letter: int(counts[ord(letter)]) for letter in alphabet}
+
+
+def _protein_alignment_site_counts(sequences, length):
+    variable = informative = 0
+    for start in range(0, length, _ALIGNMENT_STATS_BLOCK):
+        end = min(start + _ALIGNMENT_STATS_BLOCK, length)
+        seen = np.zeros(end - start, dtype=np.uint32)
+        repeated = np.zeros_like(seen)
+        for sequence in sequences:
+            codes = np.frombuffer(sequence[start:end].encode("ascii"), dtype=np.uint8)
+            residues = _PROTEIN_STATE_BITS[codes]
+            repeated |= seen & residues
+            seen |= residues
+        # Clearing the lowest set bit leaves a nonzero value when there are
+        # two or more distinct canonical residues in the corresponding mask.
+        variable += int(np.count_nonzero(seen & (seen - 1)))
+        informative += int(np.count_nonzero(repeated & (repeated - 1)))
+    return variable, informative
+
+
+def _alignment_site_counts(sequences, length, seq_type):
+    if seq_type == "aa" and length >= 256:
+        return _protein_alignment_site_counts(sequences, length)
+    variable = informative = 0
+    block_width = max(1, min(4096, 1_000_000 // len(sequences)))
+    for start in range(0, length, block_width):
+        width = min(block_width, length - start)
+        block = np.frombuffer(
+            "".join(sequence[start : start + width] for sequence in sequences).encode(
+                "ascii"
+            ),
+            dtype=np.uint8,
+        ).reshape(len(sequences), width)
+        present = np.zeros(width, dtype=np.uint8)
+        repeated = np.zeros(width, dtype=np.uint8)
+        for state in STATES[seq_type]:
+            counts_by_site = np.count_nonzero(block == ord(state), axis=0)
+            present += counts_by_site > 0
+            repeated += counts_by_site >= 2
+        variable += int(np.count_nonzero(present > 1))
+        informative += int(np.count_nonzero(repeated >= 2))
+    return variable, informative
 
 
 def summarize_alignment(records, seq_type, name="-"):
@@ -140,37 +202,19 @@ def summarize_alignment(records, seq_type, name="-"):
         if len(record) != length:
             raise ValueError("Alignment sequences must have equal lengths.")
         sequence = str(record.seq).upper()
-        invalid = set(sequence) - set(ALPHABETS[seq_type])
-        if invalid:
+        if _ALIGNMENT_ALPHABET_PATTERNS[seq_type].fullmatch(sequence) is None:
+            invalid = set(sequence) - set(ALPHABETS[seq_type])
             raise ValueError(
                 f"Invalid {seq_type} characters in {record.id}: {sorted(invalid)}"
             )
         sequences.append(sequence)
-        local_counts = Counter(sequence)
+        local_counts = _alignment_character_counts(sequence, ALPHABETS[seq_type])
         counts.update(local_counts)
         if seq_type == "dna":
             at = sum(local_counts[base] for base in "ATW")
             gc = sum(local_counts[base] for base in "GCS")
             at_fractions[record.id] = round(at / (at + gc), 3) if at + gc else 0
-    variable = informative = 0
-    # Bound the temporary matrix, including for alignments with many taxa.
-    block_width = max(1, min(4096, 1_000_000 // len(sequences)))
-    for start in range(0, length, block_width):
-        width = min(block_width, length - start)
-        block = np.frombuffer(
-            "".join(sequence[start : start + width] for sequence in sequences).encode(
-                "ascii"
-            ),
-            dtype=np.uint8,
-        ).reshape(len(sequences), width)
-        present = np.zeros(width, dtype=np.uint8)
-        repeated = np.zeros(width, dtype=np.uint8)
-        for state in STATES[seq_type]:
-            counts_by_site = np.count_nonzero(block == ord(state), axis=0)
-            present += counts_by_site > 0
-            repeated += counts_by_site >= 2
-        variable += int(np.count_nonzero(present > 1))
-        informative += int(np.count_nonzero(repeated >= 2))
+    variable, informative = _alignment_site_counts(sequences, length, seq_type)
     cells = len(records) * length
     missing = sum(counts[base] for base in MISSING[seq_type])
     row = dict(

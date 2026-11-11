@@ -58,6 +58,18 @@ def test_hand_counted_sites():
     assert row["GC_content"] == 0.625
 
 
+def test_long_protein_alignment_counts_canonical_states_and_ambiguities():
+    records = [
+        SeqRecord(Seq(s * 80), id=str(i))
+        for i, s in enumerate(("AA-X", "AA-B", "CC-Z", "CG-J"))
+    ]
+    row = summarize_alignment(records, "aa")
+    assert row["No_variable_sites"] == 160
+    assert row["Parsimony_informative_sites"] == 80
+    assert row["Undetermined_characters"] == 400
+    assert row["B"] == row["J"] == row["Z"] == 80
+
+
 @pytest.mark.parametrize(
     "sequences,ids,message",
     [
