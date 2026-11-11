@@ -70,7 +70,9 @@ def _rectangular_rows(
 
 
 @contextmanager
-def _open_headered_tsv(path: Pathish, required_columns: Iterable[Any] | None):
+def _open_headered_tsv(
+    path: Pathish, required_columns: Iterable[Any] | None
+) -> Iterator[tuple[list[str], Iterator[list[str]]]]:
     with open(path, "r", encoding="utf-8-sig", newline="") as inp:
         reader = csv.reader(inp, delimiter="\t", strict=True)
         try:
