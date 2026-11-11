@@ -1,4 +1,5 @@
 import sys
+import re
 from array import array
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
@@ -12,7 +13,11 @@ import numpy as np
 
 from cdskit.atomicio import atomic_output_paths
 from cdskit.codonreport import validate_codon_output_paths, write_codon_report
-from cdskit.codonutil import analyze_codon, definite_stop_patterns
+from cdskit.codonutil import (
+    analyze_codon,
+    definite_stop_patterns,
+    get_codon_table_components,
+)
 
 from cdskit.util import (
     parallel_map_ordered,
@@ -34,6 +39,7 @@ _REVCOMP_TABLE = str.maketrans(
     "ACGTRYMKWSBDHVN",
     "TGCAYRKMWSVHDBN",
 )
+_CONCRETE_DNA = re.compile(r"[ACGT]*")
 
 
 @dataclass
@@ -615,20 +621,23 @@ def candidate_report(
         key=lambda c: selection_key(c, selection),
         reverse=True,
     )
-    prefixes = (
-        candidate_attribute_prefixes(sequence, codontable, strand=strand)
-        if candidates
-        else {}
-    )
+    prefixes = {}
+    if candidates:
+        table = get_codon_table_components(codontable)
+        context_dependent = not table["stop_codons"].isdisjoint(table["forward_table"])
+        if context_dependent or _CONCRETE_DNA.fullmatch(sequence) is None:
+            prefixes = candidate_attribute_prefixes(sequence, codontable, strand=strand)
     rows = []
     best_primary = selection_key(candidates[0], selection)[:2] if candidates else None
     for index, candidate in enumerate(candidates):
-        left = candidate.start_idx // 3
-        right = candidate.end_idx // 3
-        possible, context, missing, ambiguous = (
-            prefix[right] - prefix[left]
-            for prefix in prefixes[candidate.strand, candidate.frame]
-        )
+        possible = context = missing = ambiguous = 0
+        if prefixes:
+            left = candidate.start_idx // 3
+            right = candidate.end_idx // 3
+            possible, context, missing, ambiguous = (
+                prefix[right] - prefix[left]
+                for prefix in prefixes[candidate.strand, candidate.frame]
+            )
         # Candidate fields are immutable scalars or tuples of scalars.
         fields = vars(candidate).copy()
         fields.pop("output_seq")

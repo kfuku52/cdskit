@@ -451,11 +451,14 @@ def test_report_failure_rolls_back_sequence_output(tmp_path, monkeypatch, comman
     ]
 
 
-def test_compact_orf_report_preserves_uncertainty_counts_and_coordinates():
+@pytest.mark.parametrize(
+    "sequence", ["NATGTANATGTAATGAX---ATGTARAAA", "ATGTAAATGTGATAG"]
+)
+def test_compact_orf_report_preserves_uncertainty_counts_and_coordinates(sequence):
     from cdskit.codonutil import summarize_codons
 
     for code in (1, 27, 28, 31):
-        record = SeqRecord(Seq("NATGTANATGTAATGAX---ATGTARAAA"), id="x")
+        record = SeqRecord(Seq(sequence), id="x")
         for selection in ("complete-first", "longest"):
             report = longestcds.candidate_report(record, code, selection, 1)
             for candidate in report["candidates"]:
