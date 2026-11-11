@@ -95,13 +95,25 @@ def _orf_scan_codons(codontable, start_policy):
     raise ValueError(f"Unknown ORF start policy: {start_policy}")
 
 
-def _oriented_sequences(sequence, strand):
+def _orf_directions(strand):
     if strand not in ("both", "forward", "reverse"):
         raise ValueError(f"Unknown ORF strand: {strand}")
     if strand != "reverse":
-        yield "+", sequence
+        yield "+"
     if strand != "forward":
-        yield "-", sequence.translate(_REVCOMP_TABLE)[::-1]
+        yield "-"
+
+
+def _oriented_slice(sequence, direction, start, end):
+    if direction == "+":
+        return sequence[start:end]
+    length = len(sequence)
+    return sequence[length - end : length - start].translate(_REVCOMP_TABLE)[::-1]
+
+
+def _oriented_sequences(sequence, strand):
+    for direction in _orf_directions(strand):
+        yield direction, _oriented_slice(sequence, direction, 0, len(sequence))
 
 
 def frame_end_index(seq_len, frame_offset):
@@ -425,6 +437,65 @@ def candidate_sort_key(candidate):
     return candidate.sort_key
 
 
+def _choose_without_stops(sequence, start_codons, strand):
+    length = len(sequence)
+    full_frame_length = frame_end_index(length, 0)
+    best = None
+    for direction in _orf_directions(strand):
+        if direction == "+":
+            motifs = start_codons
+            hits = (sequence.find(codon) for codon in motifs)
+            first = min(
+                (position for position in hits if position >= 0), default=length
+            )
+        else:
+            motifs = tuple(
+                codon.translate(_REVCOMP_TABLE)[::-1] for codon in start_codons
+            )
+            hits = (sequence.rfind(codon) for codon in motifs)
+            first = min(
+                (length - position - 3 for position in hits if position >= 0),
+                default=length,
+            )
+        # The first start gives the longest possible length on this strand.
+        # At most two following positions can tie after rounding to codons.
+        for start in range(first, min(first + 3, length - 2)):
+            left = start if direction == "+" else length - start - 3
+            if sequence[left : left + 3] not in motifs:
+                continue
+            frame = start % 3
+            candidate = make_candidate(
+                sequence,
+                direction,
+                frame,
+                start,
+                frame_end_index(length, frame),
+                True,
+                False,
+                include_sequence=False,
+            )
+            if best is None or candidate.sort_key > best.sort_key:
+                best = candidate
+        if best is not None and best.nt_len == full_frame_length:
+            break
+    if best is None:
+        direction = "-" if strand == "reverse" else "+"
+        best = make_candidate(
+            sequence,
+            direction,
+            0,
+            0,
+            full_frame_length,
+            False,
+            False,
+            include_sequence=False,
+        )
+    best.output_seq = _oriented_slice(
+        sequence, best.strand, best.start_idx, best.end_idx
+    )
+    return best
+
+
 def choose_best_candidate(
     seq_str,
     codontable,
@@ -447,9 +518,9 @@ def choose_best_candidate(
         )
         if candidate is not None:
             sequence = seq_str.upper()
-            if candidate.strand == "-":
-                sequence = sequence.translate(_REVCOMP_TABLE)[::-1]
-            candidate.output_seq = sequence[candidate.start_idx : candidate.end_idx]
+            candidate.output_seq = _oriented_slice(
+                sequence, candidate.strand, candidate.start_idx, candidate.end_idx
+            )
         return candidate
     if selection != "complete-first":
         raise ValueError(f"Unknown ORF selection: {selection}")
@@ -459,6 +530,8 @@ def choose_best_candidate(
         return None
 
     start_codons, stop_codons = _orf_scan_codons(codontable, start_policy)
+    if not stop_codons:
+        return _choose_without_stops(seq_upper, start_codons, strand)
     best_sort_key = None
     best_fields = None
     frame_ends = tuple(frame_end_index(seq_len, offset) for offset in range(3))
