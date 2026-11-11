@@ -219,7 +219,8 @@ def _fit_likelihood(counts, code, row, *, regularized=False, frequency_model="cf
         jac=True,
         method="L-BFGS-B",
         bounds=bounds,
-        options={"maxiter": 100, "ftol": 1e-11},
+        # Boundary fits can require more line-search steps than SciPy's default.
+        options={"maxiter": 100, "maxls": 60, "ftol": 1e-11},
     )
     if not fit.success or not np.isfinite(fit.fun) or not np.all(np.isfinite(fit.x)):
         return {"status": "not_converged"}
