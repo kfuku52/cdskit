@@ -1,4 +1,4 @@
-"""Exact subset scoring keeps scalar contracts while bounding vector temporaries."""
+"""Compact alignment scoring preserves weighted columns and exact ties."""
 
 import random
 
@@ -152,3 +152,15 @@ def test_compact_exact_matches_brute_force_with_sparse_sequence_indices():
         support_counts=support,
         num_sequences=kwargs["num_sequences"],
     ) == _brute(kwargs)
+
+
+def test_greedy_index_matches_direct_weighted_counts_across_row_groups():
+    rng = random.Random(722)
+    active = mx.indices_to_bitmask([0, 1, 6, 7, 10, 14, 22, 64, 67, 72])
+    support = {
+        rng.getrandbits(73): weight for weight in (0, 1, 2, 19, 2**32, 2**63 + 1) * 20
+    }
+    count = mx._indexed_column_counter(support, active)
+    assert count is not None
+    for kept in [0, active, *[rng.getrandbits(73) & active for _ in range(256)]]:
+        assert count(kept) == mx.count_complete_columns_with_support(support, kept)
