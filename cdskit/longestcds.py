@@ -1,7 +1,7 @@
 import sys
 from array import array
 from concurrent.futures import ProcessPoolExecutor
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from bisect import bisect_right
 from functools import lru_cache, partial
 
@@ -629,7 +629,8 @@ def candidate_report(
             prefix[right] - prefix[left]
             for prefix in prefixes[candidate.strand, candidate.frame]
         )
-        fields = asdict(candidate)
+        # Candidate fields are immutable scalars or tuples of scalars.
+        fields = vars(candidate).copy()
         fields.pop("output_seq")
         if index == 0:
             selected_sequence = (
@@ -640,16 +641,14 @@ def candidate_report(
             fields["output_seq"] = selected_sequence[
                 candidate.start_idx : candidate.end_idx
             ]
+        sort_key = selection_key(candidate, selection)
         rows.append(
             {
                 **fields,
-                "sort_key": selection_key(candidate, selection),
+                "sort_key": sort_key,
                 "rank": index + 1,
                 "selected": index == 0,
-                "tied_before_deterministic_order": selection_key(candidate, selection)[
-                    :2
-                ]
-                == best_primary,
+                "tied_before_deterministic_order": sort_key[:2] == best_primary,
                 "stop_evidence": "definite" if candidate.has_stop else "unconfirmed",
                 "possible_stop_codons": possible,
                 "context_dependent_codons": context,
@@ -799,16 +798,19 @@ def longestcds_main(args):
             )
         )
 
-    report_records = (
-        [
+    stream_report = bool(report) and args.outfile not in ("", "-") and report != "-"
+    candidate_reports = (
+        (
             candidate_report(
                 record, args.codontable, selection, index + 1, **search_options
             )
             for index, record in enumerate(records)
-        ]
+        )
         if report
-        else []
+        else ()
     )
+    # Complete candidate analysis before any nontransactional stdout write.
+    report_records = candidate_reports if stream_report else list(candidate_reports)
     outputs = [path for path in (args.outfile, report) if path not in ("", "-")]
     with atomic_output_paths(outputs) as temporary_paths:
         staged = dict(zip(outputs, temporary_paths, strict=True))
@@ -818,5 +820,9 @@ def longestcds_main(args):
             outseqformat=args.outseqformat,
         )
         write_codon_report(
-            staged.get(report, report), "longestorf", args.codontable, report_records
+            staged.get(report, report),
+            "longestorf",
+            args.codontable,
+            report_records,
+            stream=stream_report,
         )

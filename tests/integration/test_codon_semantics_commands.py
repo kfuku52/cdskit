@@ -481,6 +481,39 @@ def test_compact_orf_report_preserves_uncertainty_counts_and_coordinates():
             )
 
 
+def test_late_orf_candidate_failure_preserves_named_outputs(tmp_path, monkeypatch):
+    source, output, report = (
+        tmp_path / name for name in ("in.fa", "out.fa", "orf.json")
+    )
+    source.write_text(">one\nATGGCTTAA\n>two\nATGCCCTAG\n", encoding="utf-8")
+    output.write_text("previous alignment\n", encoding="utf-8")
+    report.write_text("previous report\n", encoding="utf-8")
+    generate = longestcds.candidate_report
+
+    def fail_on_second(record, codontable, selection, input_order, **options):
+        if input_order == 2:
+            raise ValueError("second candidate report failed")
+        return generate(record, codontable, selection, input_order, **options)
+
+    monkeypatch.setattr(longestcds, "candidate_report", fail_on_second)
+    args = psr.parse_args(
+        [
+            "longestorf",
+            "--seq_file",
+            str(source),
+            "--out_file",
+            str(output),
+            "--report",
+            str(report),
+        ]
+    )
+    with pytest.raises(ValueError, match="second candidate report failed"):
+        longestcds.longestcds_main(args)
+    assert output.read_text(encoding="utf-8") == "previous alignment\n"
+    assert report.read_text(encoding="utf-8") == "previous report\n"
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["in.fa", "orf.json", "out.fa"]
+
+
 def test_legacy_validate_summary_signature_is_preserved():
     record = SeqRecord(Seq("ATGTARAAA"), id="x")
     legacy = validate.summarize_single_record(
