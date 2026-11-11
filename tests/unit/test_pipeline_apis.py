@@ -101,6 +101,19 @@ def test_pairwise_identity_uses_pair_specific_observed_sites():
     ) == [1]
 
 
+def test_packed_identity_matches_scalar_across_missing_and_unicode_sites():
+    sequences = {
+        "a": "MACDEFGHIKLMNPQRSTVWYX-?" * 12,
+        "b": "MGCDEFGHIKLMNPQRSTVWYAXa" * 12,
+        "none": "X" * (24 * 12),
+        "unicode": "MGCDEFGHIKLMNPQRSTVWYAX雪" * 12,
+    }
+    pairs = [("a", "b"), ("a", "none"), ("unicode", "b"), ("a", "missing")] * 10
+    assert pairwise_identity(sequences, pairs) == pairwise_identity(
+        sequences, iter(pairs)
+    )
+
+
 @pytest.mark.parametrize(
     "table, sequence, ordinary",
     [(27, "ATGTGA", "MW"), (28, "ATGTAA", "MQ"), (31, "ATGTAA", "ME")],

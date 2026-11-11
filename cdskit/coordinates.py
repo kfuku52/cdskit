@@ -1,11 +1,19 @@
 """Bulk alignment coordinates and pairwise amino-acid identity."""
 
 import argparse
+from functools import lru_cache
+from itertools import product
 import json
 from pathlib import Path
 from cdskit.atomicio import atomic_output_path, validate_distinct_paths
 from cdskit.column_mapping import analyze_mapping
 from cdskit.translate import translate_sequence_string
+
+_AMINO_ACIDS = "ACDEFGHIKLMNPQRSTVWY"
+_OBSERVED_AA = frozenset(_AMINO_ACIDS)
+_AA_BYTES = bytes(_AMINO_ACIDS.find(chr(code)) + 1 for code in range(256))
+_CONCRETE_BASES = frozenset("ACGT")
+_CONCRETE_CODONS = frozenset("".join(codon) for codon in product("ACGT", repeat=3))
 
 
 def r_functions_path():
@@ -32,31 +40,86 @@ def trimmed_mapping(trimmed, untrimmed, gap="04", *, ambiguity="leftmost"):
     return dict(status=analysis.status, mapping=result)
 
 
+def _mask_identity_codons(sequence):
+    triplets = (sequence[i : i + 3] for i in range(0, len(sequence), 3))
+    if type(sequence) is str:
+        return "".join(
+            codon if codon in _CONCRETE_CODONS else "NNN" for codon in triplets
+        )
+    return "".join(
+        codon if set(codon) <= _CONCRETE_BASES else "NNN" for codon in triplets
+    )
+
+
+def _scalar_identity(first, second):
+    observed = identical = 0
+    for a, b in zip(first, second, strict=True):
+        if a in _OBSERVED_AA and b in _OBSERVED_AA:
+            observed += 1
+            identical += a == b
+    return identical / observed if observed else None
+
+
+def _pack_residues(sequence):
+    if type(sequence) is not str or not sequence.isascii():
+        return None
+    import numpy as np
+
+    codes = np.frombuffer(sequence.encode("ascii").translate(_AA_BYTES), dtype=np.uint8)
+
+    def pack(values):
+        return int.from_bytes(
+            np.packbits(values, bitorder="little").tobytes(), "little"
+        )
+
+    # Five bits identify each canonical residue. One bitset tracks which
+    # positions participate in a comparison at all.
+    return pack(codes > 0), tuple(pack(codes & (1 << bit)) for bit in range(5))
+
+
+def _packed_identity(first, second):
+    common = first[0] & second[0]
+    if not common:
+        return None
+    different = 0
+    for a, b in zip(first[1], second[1], strict=True):
+        different |= a ^ b
+    return (common & ~different).bit_count() / common.bit_count()
+
+
 def pairwise_identity(sequences, pairs, *, mode="protein", genetic_code=1):
     if mode not in {"cds", "protein"}:
         raise ValueError("Expected cds or protein")
-    if len({len(s) for s in sequences.values()}) > 1:
+    lengths = {len(s) for s in sequences.values()}
+    if len(lengths) > 1:
         raise ValueError("Sequence identity requires an alignment")
+    length = next(iter(lengths), 0)
     proteins = dict(sequences)
     if mode == "cds":
         for name, sequence in proteins.items():
             if len(sequence) % 3:
                 raise ValueError("CDS alignment length is not divisible by three")
-            triplets = [sequence[i : i + 3] for i in range(0, len(sequence), 3)]
-            masked = "".join(c if set(c) <= set("ACGT") else "NNN" for c in triplets)
+            masked = _mask_identity_codons(sequence)
             proteins[name] = translate_sequence_string(masked, genetic_code, False)
-    alphabet = set("ACDEFGHIKLMNPQRSTVWY")
+        length //= 3
+    use_packed = type(pairs) in (list, tuple) and len(pairs) >= 32 and length >= 256
+    cache_size = max(2, min(512, (8 * 1024 * 1024) // (length + 256)))
+
+    @lru_cache(maxsize=cache_size)
+    def packed(name):
+        return _pack_residues(proteins[name])
+
     values: list[float | None] = []
     for left, right in pairs:
         if left not in proteins or right not in proteins:
             values.append(None)
             continue
-        valid = [
-            (a, b)
-            for a, b in zip(proteins[left], proteins[right], strict=True)
-            if a in alphabet and b in alphabet
-        ]
-        values.append(sum(a == b for a, b in valid) / len(valid) if valid else None)
+        if use_packed:
+            first, second = packed(left), packed(right)
+            if first is not None and second is not None:
+                values.append(_packed_identity(first, second))
+                continue
+        values.append(_scalar_identity(proteins[left], proteins[right]))
     return values
 
 
