@@ -1,4 +1,5 @@
 import copy
+from itertools import chain
 import math
 import sys
 
@@ -15,7 +16,11 @@ from cdskit.codonutil import (
     classify_codon,
     analyze_codon,
 )
-from cdskit.atomicio import atomic_output_paths, atomic_write_json
+from cdskit.atomicio import (
+    atomic_output_paths,
+    atomic_write_json,
+    atomic_write_json_array,
+)
 from cdskit.util import (
     read_seqs,
     replace_record_sequence,
@@ -74,18 +79,17 @@ def summarize_codon_site(seq_strings, codon_site, codontable):
     }
 
 
-def summarize_codon_sites(seq_strings, codontable):
-    """Collect site counts a row at a time without an alignment-sized matrix."""
-    num_sites = len(seq_strings[0]) // 3 if seq_strings else 0
+def _count_site_features(seq_strings, num_sites, codontable):
     totals = np.zeros((num_sites, 6), dtype=np.int64)
     for sequence in seq_strings:
         values = codon_features(sequence, codontable)
         if values is None or len(sequence) != num_sites * 3:
-            return [
-                summarize_codon_site(seq_strings, site, codontable)
-                for site in range(num_sites)
-            ]
+            return None
         totals += values[0]
+    return totals
+
+
+def _site_summaries_from_counts(totals):
     fields = (
         "clean_codons",
         "missing_codons",
@@ -94,28 +98,41 @@ def summarize_codon_sites(seq_strings, codontable):
         "possible_stop_codons",
         "context_dependent_codons",
     )
-    return [
-        {
+    for site, counts in enumerate(totals):
+        yield {
             "codon_site_1based": site + 1,
             **dict(zip(fields, map(int, counts), strict=True)),
         }
-        for site, counts in enumerate(totals)
-    ]
+
+
+def summarize_codon_sites(seq_strings, codontable):
+    """Collect site counts a row at a time without an alignment-sized matrix."""
+    num_sites = len(seq_strings[0]) // 3 if seq_strings else 0
+    totals = _count_site_features(seq_strings, num_sites, codontable)
+    if totals is None:
+        return [
+            summarize_codon_site(seq_strings, site, codontable)
+            for site in range(num_sites)
+        ]
+    return list(_site_summaries_from_counts(totals))
+
+
+def _annotate_site_decision(summary, num_sequences, min_clean_fraction):
+    clean_fraction = (
+        summary["clean_codons"] / num_sequences if num_sequences > 0 else 0.0
+    )
+    summary["clean_fraction"] = clean_fraction
+    summary["unclean_codons"] = num_sequences - summary["clean_codons"]
+    summary["keep"] = clean_fraction >= min_clean_fraction
+    return summary["keep"]
 
 
 def choose_kept_codon_sites(site_summaries, num_sequences, min_clean_fraction):
-    kept_sites = list()
-    for summary in site_summaries:
-        clean_fraction = 0.0
-        if num_sequences > 0:
-            clean_fraction = summary["clean_codons"] / num_sequences
-        summary["clean_fraction"] = clean_fraction
-        summary["unclean_codons"] = num_sequences - summary["clean_codons"]
-        keep = clean_fraction >= min_clean_fraction
-        summary["keep"] = keep
-        if keep:
-            kept_sites.append(summary["codon_site_1based"] - 1)
-    return kept_sites
+    return [
+        summary["codon_site_1based"] - 1
+        for summary in site_summaries
+        if _annotate_site_decision(summary, num_sequences, min_clean_fraction)
+    ]
 
 
 def _kept_sites_without_report(records, codontable, min_clean_fraction):
@@ -167,27 +184,48 @@ def build_trimcodon_summary(site_summaries, kept_sites, num_sequences, args):
         for summary in site_summaries
         if not summary["keep"]
     ]
+    summary = _trimcodon_metadata(
+        len(site_summaries), kept_sites, removed_sites, num_sequences, args
+    )
+    summary["site_summaries"] = site_summaries
+    return summary
+
+
+def _trimcodon_metadata(num_sites, kept_sites, removed_sites, num_sequences, args):
     return {
         "num_sequences": num_sequences,
         "codon_semantics_version": CODON_SEMANTICS_VERSION,
         "codon_table": getattr(args, "codontable", 1),
-        "num_input_codon_sites": len(site_summaries),
+        "num_input_codon_sites": num_sites,
         "num_output_codon_sites": len(kept_sites),
         "num_removed_codon_sites": len(removed_sites),
         "min_clean_fraction": args.min_clean_fraction,
         "kept_codon_sites_1based": [site + 1 for site in kept_sites],
         "removed_codon_sites_1based": removed_sites,
-        "site_summaries": site_summaries,
     }
 
 
-def write_trimcodon_report(report_path, summary):
+def _trimcodon_tsv_sites(site_rows):
+    for source_row in site_rows:
+        row = dict(source_row)
+        row["section"] = "site"
+        row["clean_fraction"] = "{:.6f}".format(row["clean_fraction"])
+        row["keep"] = "yes" if row["keep"] else "no"
+        yield row
+
+
+def write_trimcodon_report(report_path, summary, *, site_rows=None):
     if report_path == "":
         return
     if report_path.lower().endswith(".json"):
-        atomic_write_json(report_path, summary, indent=2)
+        if site_rows is None:
+            atomic_write_json(report_path, summary, indent=2)
+        else:
+            atomic_write_json_array(
+                report_path, summary, "site_summaries", site_rows, batch_size=128
+            )
         return
-    rows = [
+    summary_rows = [
         {"section": "summary", "metric": key, "value": summary[key]}
         for key in [
             "num_sequences",
@@ -199,12 +237,8 @@ def write_trimcodon_report(report_path, summary):
             "min_clean_fraction",
         ]
     ]
-    for source_row in summary["site_summaries"]:
-        row = dict(source_row)
-        row["section"] = "site"
-        row["clean_fraction"] = "{:.6f}".format(row["clean_fraction"])
-        row["keep"] = "yes" if row["keep"] else "no"
-        rows.append(row)
+    sites = summary["site_summaries"] if site_rows is None else site_rows
+    rows = chain(summary_rows, _trimcodon_tsv_sites(sites))
     write_sectioned_tsv(
         path=report_path,
         fieldnames=[
@@ -222,8 +256,31 @@ def write_trimcodon_report(report_path, summary):
             "context_dependent_codons",
             "keep",
         ],
-        rows=rows,
+        rows=list(rows) if site_rows is None else rows,
     )
+
+
+def _trimcodon_report_data(records, num_sites, args):
+    totals = _count_site_features(
+        (str(record.seq) for record in records), num_sites, args.codontable
+    )
+    assert totals is not None
+    count = len(records)
+    threshold = args.min_clean_fraction
+    keep = totals[:, 0] / count >= threshold if count else np.empty(0, dtype=bool)
+    kept = np.flatnonzero(keep).tolist()
+    removed = (np.flatnonzero(~keep) + 1).tolist()
+    summary = _trimcodon_metadata(num_sites, kept, removed, count, args)
+
+    def annotated_sites():
+        for row in _site_summaries_from_counts(totals):
+            _annotate_site_decision(row, count, threshold)
+            yield row
+
+    if args.report == "-":
+        summary["site_summaries"] = list(annotated_sites())
+        return kept, summary, None
+    return kept, summary, annotated_sites()
 
 
 def trimcodon_main(args):
@@ -235,21 +292,16 @@ def trimcodon_main(args):
     args.min_clean_fraction = validate_fraction(
         name="--min_clean_fraction", value=args.min_clean_fraction
     )
-    summary = None
+    num_sites = len(records[0]) // 3 if records else 0
+    summary = site_rows = None
     if args.report:
-        seq_strings = [str(record.seq) for record in records]
-        site_summaries = summarize_codon_sites(seq_strings, args.codontable)
-        kept_sites = choose_kept_codon_sites(
-            site_summaries, len(records), args.min_clean_fraction
-        )
-        summary = build_trimcodon_summary(
-            site_summaries, kept_sites, len(records), args
+        kept_sites, summary, site_rows = _trimcodon_report_data(
+            records, num_sites, args
         )
     else:
         kept_sites = _kept_sites_without_report(
             records, args.codontable, args.min_clean_fraction
         )
-    num_sites = len(records[0]) // 3 if records else 0
     sys.stderr.write("Removed codon sites: {:,}\n".format(num_sites - len(kept_sites)))
     out_records = _trim_records_to_codon_sites(records, kept_sites)
     outputs = [path for path in (args.outfile, args.report) if path not in ("", "-")]
@@ -262,5 +314,7 @@ def trimcodon_main(args):
         )
         if summary is not None:
             write_trimcodon_report(
-                report_path=staged.get(args.report, args.report), summary=summary
+                report_path=staged.get(args.report, args.report),
+                summary=summary,
+                site_rows=site_rows,
             )

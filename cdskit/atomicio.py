@@ -9,6 +9,7 @@ import tempfile
 import warnings
 from collections.abc import Iterable, Iterator, Mapping
 from contextlib import contextmanager
+from itertools import islice
 from pathlib import Path
 from typing import Any, TypeAlias
 
@@ -278,3 +279,42 @@ def atomic_write_json(
     with atomic_text_writer(path, encoding="utf-8") as handle:
         json.dump(payload, handle, **kwargs)
         handle.write("\n")
+
+
+def atomic_write_json_array(
+    path: Pathish,
+    metadata: Mapping[str, Any],
+    key: str,
+    rows: Iterable[Any],
+    *,
+    batch_size: int = 1,
+) -> None:
+    """Append a streamed array to a JSON object with two-space indentation."""
+    if batch_size < 1:
+        raise ValueError("JSON array batch size must be positive.")
+    if key in metadata:
+        raise ValueError("Streamed JSON array key must be separate from metadata.")
+    encoder = json.JSONEncoder(indent=2, ensure_ascii=False, allow_nan=False)
+    header, tail = encoder.encode({**metadata, key: []}).rsplit("[]", 1)
+    with atomic_text_writer(path) as handle:
+        handle.write(header + "[")
+        separator = "\n    "
+        has_rows = False
+        iterator = iter(rows)
+        while batch := list(islice(iterator, batch_size)):
+            handle.write(separator)
+            if batch_size == 1:
+                parts = encoder.iterencode(batch[0])
+                while tokens := list(islice(parts, 2048)):
+                    # Newlines inside JSON strings have already been escaped.
+                    handle.write("".join(tokens).replace("\n", "\n    "))
+            else:
+                # The encoder wraps the group in brackets and indents its
+                # rows by two spaces. Remove the wrapper and nest the rows.
+                encoded = encoder.encode(batch)
+                handle.write(encoded[4:-2].replace("\n", "\n  "))
+            separator = ",\n    "
+            has_rows = True
+        if has_rows:
+            handle.write("\n  ")
+        handle.write("]" + tail + "\n")

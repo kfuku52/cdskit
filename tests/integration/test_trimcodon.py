@@ -10,12 +10,42 @@ import pytest
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
+from cdskit import trimcodon
 from cdskit.tsvio import read_tsv
 from cdskit.trimcodon import trimcodon_main
 
 
 class TestTrimcodonMain:
     """Tests for trimcodon_main function."""
+
+    @pytest.mark.parametrize("extension", ["json", "tsv"])
+    def test_report_failure_rolls_back_sequence_and_report(
+        self, temp_dir, mock_args, monkeypatch, extension
+    ):
+        source = temp_dir / "input.fa"
+        output, report = temp_dir / "output.fa", temp_dir / f"sites.{extension}"
+        source.write_text(">x\nATGGCTCCC\n")
+        output.write_bytes(b"previous sequence\n")
+        report.write_bytes(b"previous report\n")
+        build_rows = trimcodon._site_summaries_from_counts
+
+        def fail_after_one_row(counts):
+            yield next(build_rows(counts))
+            raise RuntimeError("site report generation failed")
+
+        monkeypatch.setattr(
+            trimcodon, "_site_summaries_from_counts", fail_after_one_row
+        )
+        args = mock_args(
+            seqfile=str(source),
+            outfile=str(output),
+            report=str(report),
+            min_clean_fraction=0.5,
+        )
+        with pytest.raises(RuntimeError, match="site report generation failed"):
+            trimcodon_main(args)
+        assert output.read_bytes() == b"previous sequence\n"
+        assert report.read_bytes() == b"previous report\n"
 
     @pytest.mark.parametrize("threshold", [1 / 3, math.nextafter(1 / 3, 1)])
     def test_trimcodon_without_report_matches_site_decisions(

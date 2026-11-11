@@ -1,11 +1,10 @@
 """Versioned provenance reports for padding and ORF candidate selection."""
 
-from itertools import chain, islice
-import json
+from itertools import chain
 
 from cdskit.atomicio import (
-    atomic_text_writer,
     atomic_write_json,
+    atomic_write_json_array,
     validate_distinct_paths,
     validate_output_paths,
 )
@@ -22,26 +21,6 @@ def validate_codon_output_paths(seqfile, outfile, report):
     validate_output_paths(outputs)
 
 
-def _write_streaming_json(path, metadata, records):
-    encoder = json.JSONEncoder(indent=2, ensure_ascii=False, allow_nan=False)
-    header, tail = encoder.encode({**metadata, "sequences": []}).rsplit("[]", 1)
-    with atomic_text_writer(path) as handle:
-        handle.write(header + "[")
-        separator = "\n    "
-        has_rows = False
-        for record in records:
-            handle.write(separator)
-            parts = encoder.iterencode(record)
-            while batch := list(islice(parts, 2048)):
-                # Newlines in JSON string values are already escaped.
-                handle.write("".join(batch).replace("\n", "\n    "))
-            separator = ",\n    "
-            has_rows = True
-        if has_rows:
-            handle.write("\n  ")
-        handle.write("]" + tail + "\n")
-
-
 def write_codon_report(path, command, codontable, records, *, stream=False):
     if not path:
         return
@@ -54,7 +33,7 @@ def write_codon_report(path, command, codontable, records, *, stream=False):
     }
     if path.lower().endswith(".json"):
         if stream:
-            _write_streaming_json(path, metadata, records)
+            atomic_write_json_array(path, metadata, "sequences", records)
         else:
             atomic_write_json(path, {**metadata, "sequences": records}, indent=2)
         return
