@@ -29,10 +29,10 @@ BATCH_SIZE = 256
 _LIKELIHOOD_PAIRS_PER_PROCESS = 128
 _LIKELIHOOD_MAX_PROCESSES = 8
 METHOD = "YN00_weighting0_F3x4"
-_METHOD_LABELS = {
-    "yn00": METHOD,
-    "gy94": "GY94_CF3x4_pairwise",
-    "gy94-regularized": "GY94_CF3x4_log_ratio_penalty",
+_LIKELIHOOD_LABELS = {"gy94": "pairwise", "gy94-regularized": "log_ratio_penalty"}
+_FREQUENCY_LABELS = {
+    "cf3x4": "CF3x4",
+    "empirical-shrinkage": "empirical_shrinkage",
 }
 DEFAULT_KAPPA = 4.6  # YN00 initializes each independent data set with this value.
 _GAP_BYTES = np.zeros(128, dtype=bool)
@@ -570,19 +570,26 @@ def estimate_pairs(
     threads: int = 1,
     *,
     method: str = "yn00",
+    frequency_model: str | None = None,
 ) -> list[dict[str, Any]]:
     """Estimate independent aligned pairs; retain input order and NA statuses."""
     return _estimate_pairs(
-        pairs, codon_table, threads, method, likelihood_processes=False
+        pairs, codon_table, threads, method, frequency_model, likelihood_processes=False
     )
 
 
-def _estimate_pairs(pairs, codon_table, threads, method, *, likelihood_processes):
+def _estimate_pairs(
+    pairs, codon_table, threads, method, frequency_model, *, likelihood_processes
+):
     workers = resolve_threads(threads)
     _geometry(codon_table)
     size = _batch_size(len(pairs), workers)
     estimator = partial(_estimate_batch, code=codon_table)
-    if method in ("gy94", "gy94-regularized"):
+    if method in _LIKELIHOOD_LABELS:
+        if frequency_model is None:
+            frequency_model = "cf3x4"
+        if frequency_model not in _FREQUENCY_LABELS:
+            raise ValueError(f"Unknown GY94 frequency model: {frequency_model}")
         try:
             from cdskit.dnds_mle import estimate_ml_batch
         except ModuleNotFoundError as exc:
@@ -595,6 +602,7 @@ def _estimate_pairs(pairs, codon_table, threads, method, *, likelihood_processes
             estimate_ml_batch,
             code=codon_table,
             regularized=method == "gy94-regularized",
+            frequency_model=frequency_model,
         )
         if likelihood_processes:
             # Each spawned worker imports SciPy and builds its own codon data.
@@ -607,6 +615,8 @@ def _estimate_pairs(pairs, codon_table, threads, method, *, likelihood_processes
         size = min(64, max(1, (len(pairs) + workers - 1) // workers))
     elif method != "yn00":
         raise ValueError(f"Unknown dN/dS method: {method}")
+    elif frequency_model is not None:
+        raise ValueError("--frequency_model requires --method gy94 or gy94-regularized")
     chunks = [pairs[i : i + size] for i in range(0, len(pairs), size)]
     if workers == 1 or len(chunks) < 2:
         return [row for chunk in chunks for row in estimator(chunk)]
@@ -637,18 +647,30 @@ def dnds_main(args: Any, *, likelihood_processes: bool = False) -> None:
         raise ValueError("dnds pair_id values must be nonempty and unique")
     pairs = [(row["sequence_1"], row["sequence_2"]) for row in rows]
     method = getattr(args, "method", "yn00")
+    frequency_model = getattr(args, "frequency_model", None)
     if likelihood_processes and method != "yn00":
         values = _estimate_pairs(
-            pairs, args.codontable, args.threads, method, likelihood_processes=True
+            pairs,
+            args.codontable,
+            args.threads,
+            method,
+            frequency_model,
+            likelihood_processes=True,
         )
     else:
         options = {"method": method} if method != "yn00" else {}
+        if frequency_model is not None:
+            options["frequency_model"] = frequency_model
         values = estimate_pairs(pairs, args.codontable, args.threads, **options)
+    label = METHOD
+    if method in _LIKELIHOOD_LABELS:
+        composition = _FREQUENCY_LABELS[frequency_model or "cf3x4"]
+        label = f"GY94_{composition}_{_LIKELIHOOD_LABELS[method]}"
     report = (
         dict(
             schema_version=TSV_REPORT_SCHEMA_VERSION,
             pair_id=identifier,
-            method=_METHOD_LABELS[method],
+            method=label,
             codon_table=args.codontable,
             codon_semantics_version=CODON_SEMANTICS_VERSION,
             **{key: "" if value is None else value for key, value in result.items()},

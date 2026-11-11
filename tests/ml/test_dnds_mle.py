@@ -59,13 +59,21 @@ def test_gy94_analytic_gradient_matches_central_differences(regularized):
 
 
 @pytest.mark.parametrize(
-    ("method", "label"),
+    ("method", "frequency", "label"),
     [
-        ("gy94", "GY94_CF3x4_pairwise"),
-        ("gy94-regularized", "GY94_CF3x4_log_ratio_penalty"),
+        ("gy94", None, "GY94_CF3x4_pairwise"),
+        ("gy94-regularized", "cf3x4", "GY94_CF3x4_log_ratio_penalty"),
+        ("gy94", "empirical-shrinkage", "GY94_empirical_shrinkage_pairwise"),
+        (
+            "gy94-regularized",
+            "empirical-shrinkage",
+            "GY94_empirical_shrinkage_log_ratio_penalty",
+        ),
     ],
 )
-def test_gy94_cli_preserves_pair_order_and_missing_status(tmp_path, method, label):
+def test_gy94_cli_preserves_pair_order_and_missing_status(
+    tmp_path, method, frequency, label
+):
     pairs, output = tmp_path / "pairs.tsv", tmp_path / "gy94.tsv"
     first, second = divergent_pair()
     pairs.write_text(
@@ -88,6 +96,7 @@ def test_gy94_cli_preserves_pair_order_and_missing_status(tmp_path, method, labe
                 method,
                 "--threads",
                 "2",
+                *(["--frequency_model", frequency] if frequency else []),
             ]
         )
         == 0
@@ -105,6 +114,22 @@ def test_gy94_cli_preserves_pair_order_and_missing_status(tmp_path, method, labe
     assert all(rows[0][key] == rows[1][key] for key in ("dN", "dS", "kappa"))
     assert rows[2]["dS"] == "0.0" and rows[2]["retained_codons"] == "1"
     assert rows[3]["dS"] == rows[3]["dN"] == ""
+
+
+def test_codon_frequency_shrinkage_keeps_unobserved_codons_positive():
+    counts = np.array([[0, 8, 0], [8, 0, 0], [0, 0, 0]])
+    target = np.array([0.65, 0.25, 0.10])
+    frequencies = dnds_mle._shrink_codon_frequencies(
+        counts, counts.sum(axis=0) + counts.sum(axis=1), target
+    )
+    expected = (16 * np.array([0.5, 0.5, 0]) + target) / 17
+    assert frequencies == pytest.approx(expected)
+    assert frequencies.sum() == pytest.approx(1) and np.all(frequencies > 0)
+
+
+def test_yn00_rejects_gy94_frequency_option():
+    with pytest.raises(ValueError, match="requires --method gy94"):
+        dnds.estimate_pairs([], frequency_model="empirical-shrinkage")
 
 
 def test_gy94_regularization_shrinks_an_observed_ratio_toward_half():
@@ -137,6 +162,8 @@ def test_gy94_process_workers_preserve_output_bytes_and_fail_atomically(tmp_path
         str(pairs),
         "--method",
         "gy94-regularized",
+        "--frequency_model",
+        "empirical-shrinkage",
     ]
     env = {
         **os.environ,

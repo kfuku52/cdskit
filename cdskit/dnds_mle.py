@@ -130,10 +130,29 @@ def _log_likelihood(generator, derivatives, coordinates, observed):
     return -np.dot(observed, np.log(probabilities)), gradient
 
 
-def _prepare_likelihood(counts, code):
+def _shrink_codon_frequencies(counts, totals, target):
+    sites = counts.sum()
+    if sites <= 1:
+        return target
+    empirical = totals / (2 * sites)
+    spread = np.sum((empirical - target) ** 2)
+    if spread == 0:
+        return target
+    # Each independent codon column contributes 0, 1/2 or 1 to a codon's
+    # empirical frequency. Use the diagonal counts to retain dependence
+    # between the two aligned endpoints in the variance of the sample mean.
+    second_moment = (totals + 2 * counts.diagonal()) / (4 * sites)
+    variance = np.sum(np.maximum(second_moment - empirical**2, 0)) / (sites - 1)
+    # Keep a positive target contribution even for zero sample variance.
+    weight = np.clip(variance / spread, 1 / (sites + 1), 1)
+    return (1 - weight) * empirical + weight * target
+
+
+def _prepare_likelihood(counts, code, *, frequency_model="cf3x4"):
     sense, bases, positions, basis = _likelihood_geometry(code)
     counts = counts.reshape(64, 64)[sense[:, None], sense]
-    composition = (counts.sum(axis=0) + counts.sum(axis=1)) @ positions
+    totals = counts.sum(axis=0) + counts.sum(axis=1)
+    composition = totals @ positions
     # Positive marginals keep all sense states in the fitted model for
     # short alignments where some bases are unobserved.
     marginals = composition.reshape(3, 4) + 0.5
@@ -141,6 +160,8 @@ def _prepare_likelihood(counts, code):
     pi = _corrected_frequencies(marginals, bases, positions)
     if pi is None:
         return None
+    if frequency_model == "empirical-shrinkage":
+        pi = _shrink_codon_frequencies(counts, totals, pi)
     square_root = np.sqrt(pi)
     matrices = basis * square_root[None, :, None] * square_root[None, None, :]
     outgoing = (basis * pi[None, None, :]).sum(axis=2)
@@ -176,13 +197,15 @@ def _penalized_objective(likelihood, parameters):
     return loss + delta**2 / (2 * _LOG_RATIO_VARIANCE), gradient
 
 
-def _fit_likelihood(counts, code, row, *, regularized=False):
+def _fit_likelihood(counts, code, row, *, regularized=False, frequency_model="cf3x4"):
     model = _PENALIZED_MODEL if regularized else _MODEL
+    if frequency_model == "empirical-shrinkage":
+        model += "_empirical_shrinkage"
     # An identical pair has zero distances and no identifiable kappa.
     if counts.reshape(64, 64).trace() == row["retained_codons"]:
         return dict(dS=0.0, dN=0.0, dS_model=model, dN_model=model, status="identical")
 
-    likelihood = _prepare_likelihood(counts, code)
+    likelihood = _prepare_likelihood(counts, code, frequency_model=frequency_model)
     if likelihood is None:
         return {"status": "frequency_not_converged"}
     initial = _initial_parameters(row)
@@ -230,7 +253,11 @@ def _fit_likelihood(counts, code, row, *, regularized=False):
 
 
 def estimate_ml_batch(
-    pairs: list[tuple[str, str]], code: int, *, regularized: bool = False
+    pairs: list[tuple[str, str]],
+    code: int,
+    *,
+    regularized: bool = False,
+    frequency_model: str = "cf3x4",
 ) -> list[dict[str, Any]]:
     geometry = _geometry(code)
     # Use one orientation even when initializing from YN00's floating-point
@@ -244,7 +271,9 @@ def estimate_ml_batch(
     for row, (counts, _) in zip(rows, encoded, strict=True):
         if counts is None:
             continue
-        fit = _fit_likelihood(counts, code, row, regularized=regularized)
+        fit = _fit_likelihood(
+            counts, code, row, regularized=regularized, frequency_model=frequency_model
+        )
         # YN00 estimates initialize the optimizer only. Avoid returning any
         # of their values as ML estimates if the likelihood fit fails.
         row.update(

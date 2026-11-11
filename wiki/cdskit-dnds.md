@@ -82,6 +82,22 @@ The penalty improved average ratio error on held-out simulations and
 increased error for the smallest simulated true ratio (0.005).
 [Regularization evaluation](https://github.com/kfuku52/cdskit/blob/master/docs/dnds-gy94-evaluation-2026-11-11.md#regularization)
 
+Either GY94 method accepts `--frequency_model empirical-shrinkage`. This
+blends the observed sense-codon frequencies with the CF3x4 estimates,
+using more of the observed distribution when the alignment supports it.
+With the three-codon example, the command below reports
+`GY94_empirical_shrinkage_log_ratio_penalty`, retains three codons, and
+reports dS about 0.276, dN about 0.054, and status `kappa_boundary`.
+
+```bash
+cdskit dnds --pairs_file pairs.tsv --method gy94-regularized \
+  --frequency_model empirical-shrinkage --out_file distances-shrinkage.tsv
+```
+
+The largest gains were on long simulated alignments with equilibrium
+frequencies outside the CF3x4 model. Average errors increased slightly at
+60 codons. [Frequency evaluation](https://github.com/kfuku52/cdskit/blob/master/docs/dnds-gy94-evaluation-2026-11-11.md#empirical-codon-frequency-shrinkage)
+
 The likelihood CLI uses processes when `--threads` allows at least two
 workers and the input has at least 256 pairs. It uses at most eight
 processes, with at least 128 pairs per process on average. Use `--threads 1`

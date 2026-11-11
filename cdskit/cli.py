@@ -215,6 +215,11 @@ p_dnds.add_argument(
     help="Equal-path YN00 (default), GY94 maximum likelihood, or GY94 with a log-ratio penalty.",
 )
 p_dnds.add_argument(
+    "--frequency_model",
+    choices=["cf3x4", "empirical-shrinkage"],
+    help="Codon frequencies for either GY94 method. Defaults to CF3x4.",
+)
+p_dnds.add_argument(
     "-o",
     "--out_file",
     dest="outfile",

@@ -90,6 +90,44 @@ OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 \
   --replicates 60 --workers 6 --output /tmp/dnds-regularization-evaluation.json
 ```
 
+## Empirical codon frequency shrinkage
+
+`--frequency_model empirical-shrinkage` is available for both GY94 methods.
+It estimates each sense-codon frequency as a blend of the empirical frequency
+and the CF3x4 target. The target weight is the summed sampling variance of
+the empirical frequencies divided by their squared Euclidean distance from
+the target. It is clipped to `[1/(L+1), 1]` for `L` retained codons, keeping
+frequencies positive even with zero observed variance. The variance treats
+the two endpoints of a codon column as one observation, with values 0, ½,
+or 1 for each codon. [Multinomial frequency shrinkage](https://jmlr.org/papers/v10/hausser09a.html)
+
+The independent evaluation used 103,680 simulated pairs across codes 1,
+2 and 11, two new nucleotide composition profiles, two kappa values, five
+true ratios (0.008–4.5), four path lengths (0.05–2.2), and four alignment
+lengths. The three generating models used product frequencies, nonproduct
+frequencies, and two site classes with a shared dS and ratios of 0.3 and 1.7
+times the overall ratio. Both estimators used the same Gaussian log-ratio
+penalty. The table reports mean absolute errors on common finite pairs.
+
+| Panel | dS CF3x4 → shrinkage | dN CF3x4 → shrinkage | dN/dS CF3x4 → shrinkage |
+| --- | ---: | ---: | ---: |
+| All | 0.1530 → 0.1474 | 0.0392 → 0.0382 | 0.4515 → 0.4436 |
+| 60 codons | 0.2647 → 0.2708 | 0.0576 → 0.0585 | 0.6569 → 0.6589 |
+| 520 codons | 0.1072 → 0.0976 | 0.0316 → 0.0299 | 0.3816 → 0.3718 |
+| 1,500 codons | 0.0743 → 0.0565 | 0.0275 → 0.0247 | 0.2867 → 0.2653 |
+| 1,500 codons, nonproduct | 0.1262 → 0.0728 | 0.0196 → 0.0112 | 0.2995 → 0.2351 |
+
+The ratio was finite for 103,206 CF3x4 estimates and 103,178 shrinkage
+estimates, with 103,147 in common. Effects on the product and site-mixture
+panels were small. The simulation evaluates stationary alignments and uses
+regularized GY94 throughout.
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 \
+  .venvs/full-3.12-cpu/bin/python scripts/evaluate_dnds_frequencies.py \
+  --replicates 36 --workers 6 --output /tmp/dnds-frequency-evaluation.json
+```
+
 ## Runtime and reproduction
 
 For 400 simulated pairs of 900 codons on Apple M2 Max with Python 3.12,

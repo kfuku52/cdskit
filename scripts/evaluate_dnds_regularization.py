@@ -7,11 +7,15 @@ from itertools import product
 from pathlib import Path
 
 import numpy as np
-from scipy.linalg import expm
 
 from cdskit.atomicio import atomic_write_json
 from cdskit.dnds import estimate_pairs
-from evaluate_dnds_estimators import codon_model, distances, error_summary, sample_joint
+from evaluate_dnds_estimators import (
+    distances,
+    error_summary,
+    sample_joint,
+    simulation_distribution,
+)
 
 PROFILES = (
     np.array(
@@ -26,20 +30,9 @@ METHODS = ("yn00", "gy94", "gy94-regularized")
 
 def evaluate(setting):
     code, frequency, kappa, omega, distance, length, model, count = setting
-    codons, pi, generator, scale = codon_model(
-        code, frequency, kappa, omega, model == "nonproduct", PROFILES
+    codons, pi, conditional, ds = simulation_distribution(
+        code, frequency, kappa, omega, distance, model, PROFILES, (0.15, 1.85)
     )
-    ds = distance * scale
-    if model == "mixture":
-        # Equal site classes share the same true dS and have mean true ratio omega.
-        conditional = np.zeros_like(generator)
-        for factor in (0.15, 1.85):
-            _, _, matrix, subscale = codon_model(
-                code, frequency, kappa, omega * factor, False, PROFILES
-            )
-            conditional += 0.5 * expm(matrix * (ds / subscale))
-    else:
-        conditional = expm(generator * distance)
     seed = [
         754687,
         code,

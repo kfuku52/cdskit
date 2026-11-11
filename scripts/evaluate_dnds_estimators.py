@@ -75,6 +75,25 @@ def simulate_pairs(codons, pi, generator, distance, length, count, seed):
     return sample_joint(codons, pi, expm(generator * distance), length, count, seed)
 
 
+def simulation_distribution(
+    code, frequency, kappa, omega, distance, model, profiles, site_multipliers
+):
+    codons, pi, generator, scale = codon_model(
+        code, frequency, kappa, omega, model == "nonproduct", profiles
+    )
+    ds = distance * scale
+    if model != "mixture":
+        return codons, pi, expm(generator * distance), ds
+    # Equal site classes share true dS and have the specified mean ratio.
+    conditional = np.zeros_like(generator)
+    for factor in site_multipliers:
+        _, _, matrix, subscale = codon_model(
+            code, frequency, kappa, omega * factor, False, profiles
+        )
+        conditional += expm(matrix * (ds / subscale)) / len(site_multipliers)
+    return codons, pi, conditional, ds
+
+
 def sample_joint(codons, pi, conditional, length, count, seed):
     joint = np.maximum(conditional, 0) * pi[:, None]
     joint /= joint.sum()
