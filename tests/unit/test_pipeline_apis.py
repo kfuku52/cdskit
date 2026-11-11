@@ -392,6 +392,36 @@ def test_identical_proteins_honor_the_callers_alignment_scoring(profile):
     assert actual.aligned_residues == expected
 
 
+@pytest.mark.parametrize("mismatches", [1, 3, 4])
+def test_proven_ungapped_protein_scores_match_pairwise_alignment(
+    monkeypatch, mismatches
+):
+    from cdskit import protein_similarity
+
+    first = "ACDX" * 64
+    second = "V" * mismatches + first[mismatches:]
+    aligner = protein_similarity.protein_aligner
+    signatures = (first, ((9, 0), (190, 1))), (second, ((9, 0), (190, 2)))
+    expected_count = sum(
+        a == b and a not in "XBZJ" for a, b in zip(first, second, strict=True)
+    )
+    assert protein_similarity._proven_ungapped_match_count(
+        first, second, aligner()
+    ) == (expected_count if mismatches <= 3 else None)
+    assert (
+        protein_similarity._proven_ungapped_match_count(
+            first, second, aligner(open_gap_score=-1)
+        )
+        is None
+    )
+    options = dict(max_alignment_cells=len(first) ** 2, aligner_factory=aligner)
+    actual = protein_similarity.score_protein_junctions(*signatures, **options)
+    monkeypatch.setattr(
+        protein_similarity, "_proven_ungapped_match_count", lambda *args: None
+    )
+    assert actual == protein_similarity.score_protein_junctions(*signatures, **options)
+
+
 @pytest.mark.parametrize("rows", [[], [""], ["", ""], ["AC-", "A--"], ["NN?", "---"]])
 def test_alignment_statistics_preserve_empty_and_gap_contracts(tmp_path, rows):
     from cdskit.alignment_metrics import alignment_length_stats

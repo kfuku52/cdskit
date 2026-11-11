@@ -51,6 +51,27 @@ def project_junctions(
     return positions
 
 
+def _gap_scores_at_most(aligner, maximum_open):
+    if hasattr(aligner, "open_internal_insertion_score"):
+        names = (
+            (f"{mode}_{end}_{kind}_score", mode)
+            for mode in ("open", "extend")
+            for end in ("left", "internal", "right")
+            for kind in ("insertion", "deletion")
+        )
+    else:  # Biopython 1.80-1.85 use the original target/query names.
+        names = (
+            (f"{kind}_{end}_{mode}_gap_score", mode)
+            for mode in ("open", "extend")
+            for end in ("left", "internal", "right")
+            for kind in ("target", "query")
+        )
+    return all(
+        getattr(aligner, name) <= (maximum_open if mode == "open" else 0.0)
+        for name, mode in names
+    )
+
+
 def _identical_alignment_is_optimal(aligner):
     """Only bypass a caller's aligner when its scoring proves the shortcut."""
     try:
@@ -62,23 +83,49 @@ def _identical_alignment_is_optimal(aligner):
             or aligner.match_score < aligner.mismatch_score
         ):
             return False
-        if hasattr(aligner, "open_internal_insertion_score"):
-            gap_names = (
-                f"{mode}_{end}_{kind}_score"
-                for mode in ("open", "extend")
-                for end in ("left", "internal", "right")
-                for kind in ("insertion", "deletion")
-            )
-        else:  # Biopython 1.80-1.85 use the original target/query names.
-            gap_names = (
-                f"{kind}_{end}_{mode}_gap_score"
-                for mode in ("open", "extend")
-                for end in ("left", "internal", "right")
-                for kind in ("target", "query")
-            )
-        return all(getattr(aligner, name) <= 0 for name in gap_names)
+        return _gap_scores_at_most(aligner, 0.0)
     except (AttributeError, ValueError):
         return False
+
+
+def _proven_ungapped_match_count(protein_a, protein_b, aligner):
+    if (
+        len(protein_a) != len(protein_b)
+        or not protein_a.isascii()
+        or not protein_b.isascii()
+    ):
+        return None
+    if protein_a == protein_b:
+        if _identical_alignment_is_optimal(aligner):
+            return len(protein_a) - sum(protein_a.count(residue) for residue in "XBZJ")
+        return None
+    if len(protein_a) < 128 or type(aligner) is not PairwiseAligner:
+        return None
+    # On equal-length inputs, a gapped global alignment must open a gap
+    # in each sequence and lose at least one aligned pair. Its score is at
+    # most 2*(length - 1) - 10, below 2*length - 9 for three mismatches.
+    mismatches = matches = 0
+    for first, second in zip(protein_a, protein_b, strict=True):
+        if first != second:
+            mismatches += 1
+            if mismatches > 3:
+                return None
+        elif first not in "XBZJ":
+            matches += 1
+    try:
+        if (
+            aligner.mode != "global"
+            or aligner.substitution_matrix is not None
+            or aligner.wildcard is not None
+            or aligner.match_score != 2.0
+            or aligner.mismatch_score != -1.0
+            or not 0 <= aligner.epsilon < 1
+            or not _gap_scores_at_most(aligner, -5.0)
+        ):
+            return None
+    except (AttributeError, ValueError):
+        return None
+    return matches
 
 
 def score_protein_junctions(
@@ -103,16 +150,10 @@ def score_protein_junctions(
     internal_loss_a = internal_loss_b = False
     segments_a, segments_b = [], []
     aligner = aligner_factory()
-    if (
-        protein_a == protein_b
-        and protein_a.isascii()
-        and _identical_alignment_is_optimal(aligner)
-    ):
-        # A full identical alignment has no gaps under these scoring rules.
-        # Keep the native input contract for non-ASCII strings and apply the
-        # cell cap before this shortcut, including perfectly matching pairs.
+    ungapped_matches = _proven_ungapped_match_count(protein_a, protein_b, aligner)
+    if ungapped_matches is not None:
         aligned = column = len(protein_a)
-        matches = sum(residue not in "XBZJ" for residue in protein_a)
+        matches = ungapped_matches
         if boundaries_a:
             segments_a.append((0, aligned, 0))
         if boundaries_b:
