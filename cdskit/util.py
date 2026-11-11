@@ -746,9 +746,32 @@ def filter_gff_group_boundaries(
     return result
 
 
+def _gff_output_rows(data: Any) -> Iterator[Any]:
+    import numpy as np
+
+    if (
+        type(data) is np.ndarray
+        and data.ndim == 1
+        and data.dtype.names == GFF_COLUMNS
+        and all(
+            data.dtype[name].kind in ("i", "u")
+            if name in ("start", "end")
+            else data.dtype[name].kind == "U"
+            for name in GFF_COLUMNS
+        )
+    ):
+        # Convert structured rows in C without boxing every NumPy field in
+        # Python. Other dtypes retain their scalar formatting (e.g. float32).
+        for start in range(0, len(data), 4096):
+            yield from data[start : start + 4096].tolist()
+    else:
+        yield from data
+
+
 def write_gff(gff: dict[str, Any], outfile: Any) -> None:
     import numpy as np
 
+    data = gff["data"]
     group_boundaries = gff.get("group_boundaries")
     headers = (
         [line for line in gff["header"] if line != "###"]
@@ -761,10 +784,10 @@ def write_gff(gff: dict[str, Any], outfile: Any) -> None:
             + (len(group_boundaries) if group_boundaries is not None else 0)
         )
     )
-    sys.stderr.write("Number of output GFF records: {:,}\n".format(len(gff["data"])))
+    sys.stderr.write("Number of output GFF records: {:,}\n".format(len(data)))
     sys.stderr.write(
         "Number of output GFF unique seqids: {:,}\n".format(
-            len(np.unique(gff["data"]["seqid"]))
+            len(np.unique(data["seqid"]))
         )
     )
     context = nullcontext(sys.stdout) if outfile == "-" else atomic_text_writer(outfile)
@@ -772,10 +795,11 @@ def write_gff(gff: dict[str, Any], outfile: Any) -> None:
         if headers:
             f.write("\n".join(headers) + "\n")
         boundaries = Counter(group_boundaries or [])
-        for index, row in enumerate(gff["data"]):
-            f.write("###\n" * boundaries[index])
+        for index, row in enumerate(_gff_output_rows(data)):
+            if boundary_count := boundaries[index]:
+                f.write("###\n" * boundary_count)
             f.write("\t".join(map(str, row)) + "\n")
-        f.write("###\n" * boundaries[len(gff["data"])])
+        f.write("###\n" * boundaries[len(data)])
 
 
 def coordinates2ranges(gff_coordinates: Sequence[int]) -> list[tuple[int, int]]:

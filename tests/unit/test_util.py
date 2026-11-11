@@ -395,6 +395,17 @@ class TestReadGff:
 class TestWriteGff:
     """Tests for write_gff function."""
 
+    def test_write_preserves_nonstandard_numpy_scalar_formatting(self, tmp_path):
+        dtype = [
+            (name, "f4" if name == "score" else kind) for name, kind in util.GFF_DTYPE
+        ]
+        data = np.array(
+            [("s", "src", "gene", 1, 9, 0.1, "+", ".", "ID=a")], dtype=dtype
+        )
+        output = tmp_path / "float32.gff"
+        util.write_gff({"header": [], "data": data}, output)
+        assert output.read_text() == "s\tsrc\tgene\t1\t9\t0.1\t+\t.\tID=a\n"
+
     def test_write_and_read_roundtrip(self, temp_dir):
         out_path = temp_dir / "roundtrip.gff"
         dtype = [
