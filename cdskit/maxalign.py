@@ -807,16 +807,12 @@ def _solve_branch_and_bound(
             or (upper == best_score[0] and size - 1 < best_score[1])
         ):
             continue
-        row_weights: Counter[int] = Counter()
-        for gaps, weight in options.items():
-            while gaps:
-                bit = gaps & -gaps
-                row_weights[bit] += weight
-                gaps ^= bit
-        pivot = max(row_weights, key=row_weights.__getitem__)
+        remaining = budget - (n - size)
+        pivot = _branch_pivot(options, size, remaining, complete, best_score)
+        if pivot is None:
+            continue
         keep_options: Counter[int] = Counter()
         remove_options: Counter[int] = Counter()
-        remaining = budget - (n - size) - 1
         remove_complete = complete
         for gaps, weight in options.items():
             if not gaps & pivot:
@@ -824,7 +820,7 @@ def _solve_branch_and_bound(
             reduced = gaps & ~pivot
             if not reduced:
                 remove_complete += weight
-            elif reduced.bit_count() <= remaining:
+            elif reduced.bit_count() < remaining:
                 remove_options[reduced] += weight
         pending.append((removed, complete, keep_options))
         pending.append((removed | pivot, remove_complete, remove_options))
@@ -836,6 +832,32 @@ def _solve_branch_and_bound(
         complete_codon_columns=best_columns,
         steps=[],
     )
+
+
+def _branch_pivot(options, size, remaining, complete, best_score):
+    # A recovered column requires all of its missing rows to be removed.
+    # Share its weight across those rows. Rounding each share up after
+    # scaling preserves an integer upper bound without floating-point error.
+    scale = 1024
+    row_weights: Counter[int] = Counter()
+    for gaps, weight in options.items():
+        gap_size = gaps.bit_count()
+        share = (weight * scale + gap_size - 1) // gap_size
+        while gaps:
+            bit = gaps & -gaps
+            row_weights[bit] += share
+            gaps ^= bit
+
+    # Removing k rows can recover at most the sum of the k largest row
+    # shares. Check each permitted k because the area also depends on k.
+    possible = complete * scale
+    top_weights = sorted(row_weights.values(), reverse=True)[:remaining]
+    for removed, weight in enumerate(top_weights, 1):
+        possible += weight
+        kept = size - removed
+        if (possible // scale * kept, kept) >= best_score:
+            return max(row_weights, key=row_weights.__getitem__)
+    return None
 
 
 def greedy_missing_set_gap_counts(

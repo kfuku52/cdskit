@@ -2,6 +2,7 @@
 Tests for cdskit maxalign command.
 """
 
+from itertools import combinations
 import json
 import pytest
 
@@ -40,6 +41,20 @@ def test_branch_search_respects_protection_and_reports_work_exhaustion():
     assert result == expected
     with pytest.raises(ValueError, match="work limit"):
         _solve_branch_and_bound(counts, active, [0], 1, work_limit=0)
+
+
+def test_branch_search_bounds_column_recovery_by_number_of_rows_removed():
+    active = list(range(12))
+    all_present = indices_to_bitmask(active)
+    gapped = {
+        all_present ^ ((1 << first) | (1 << second)): 1
+        for first, second in combinations(active, 2)
+    }
+    counts = {all_present: 200, **gapped}
+    # This budget permits processing the root's patterns exactly once.
+    result = _solve_branch_and_bound(counts, active, [], 6, work_limit=3 * len(gapped))
+    assert result["kept_indices"] == active
+    assert result["complete_codon_columns"] == 200 and result["area"] == 2400
 
 
 def test_packed_support_masks_match_scalar_across_byte_blocks(monkeypatch):
