@@ -6,7 +6,8 @@ from typing import Any
 
 import numpy as np
 from scipy.linalg import eigh, expm, expm_frechet
-from scipy.optimize import minimize
+from scipy.optimize import minimize, root
+from scipy.special import softmax
 
 from cdskit.dnds import _encode_batch, _estimate_encoded, _geometry
 
@@ -20,6 +21,7 @@ _LOG_RATIO_CENTER = float(np.log(0.5))
 _LOG_RATIO_VARIANCE = 1.8**2
 _MODEL = "GY94"
 _PENALIZED_MODEL = "GY94_regularized"
+_FREQUENCY_TOLERANCE = 1e-10
 
 
 @lru_cache(maxsize=32)
@@ -42,12 +44,42 @@ def _corrected_frequencies(marginals, bases, positions):
     # marginals on the sense codons, with stop codons excluded throughout.
     pi = np.prod(marginals[np.arange(3), bases], axis=1)
     pi /= pi.sum()
-    for _ in range(200):
+    for _ in range(32):
         for position in range(3):
             current = pi @ positions[:, position * 4 : position * 4 + 4]
             pi *= (marginals[position] / current)[bases[:, position]]
-        if np.max(np.abs((pi @ positions).reshape(3, 4) - marginals)) <= 1e-10:
+        if (
+            np.max(np.abs((pi @ positions).reshape(3, 4) - marginals))
+            <= _FREQUENCY_TOLERANCE
+        ):
             return pi
+    return _solve_frequency_marginals(marginals, positions, pi)
+
+
+def _solve_frequency_marginals(marginals, positions, initial):
+    # Iterative scaling slows when a stop is excluded from an otherwise
+    # abundant combination. Continue in the same log-linear family using
+    # the covariance of the nucleotide indicators as the Jacobian.
+    reference = np.argmax(marginals, axis=1, keepdims=True)
+    free = (np.arange(4) != reference).ravel()
+    features = positions[:, free]
+    target = marginals.ravel()[free]
+    log_initial = np.log(initial)
+
+    def residual_and_jacobian(delta):
+        pi = softmax(log_initial + features @ delta)
+        expected = pi @ features
+        covariance = features.T @ (pi[:, None] * features) - np.outer(
+            expected, expected
+        )
+        return expected - target, covariance
+
+    fit = root(residual_and_jacobian, np.zeros(len(target)), jac=True, method="hybr")
+    pi = softmax(log_initial + features @ fit.x)
+    # Certify the full set of marginals, including the three reference bases.
+    error = np.max(np.abs(pi @ positions - marginals.ravel()))
+    if error <= _FREQUENCY_TOLERANCE and np.all(pi > 0):
+        return pi
     return None
 
 

@@ -127,6 +127,32 @@ def test_codon_frequency_shrinkage_keeps_unobserved_codons_positive():
     assert frequencies.sum() == pytest.approx(1) and np.all(frequencies > 0)
 
 
+@pytest.mark.parametrize(
+    ("code", "first_codon", "second_codon"),
+    [(1, "CAA", "TCA"), (2, "CGG", "ACA"), (22, "ACA", "TCG")],
+)
+def test_cf3x4_matches_marginals_near_a_structural_zero(
+    code, first_codon, second_codon
+):
+    first = (first_codon + second_codon) * 120
+    second = (first_codon + second_codon) * 119 + second_codon * 2
+    _, bases, positions, _ = dnds_mle._likelihood_geometry(code)
+    expected = np.full((3, 4), 0.5)
+    for codon, count in ((first_codon, 239), (second_codon, 241)):
+        expected[np.arange(3), [dnds.BASES.index(base) for base in codon]] += count
+    expected /= 482
+
+    frequencies = dnds_mle._corrected_frequencies(expected, bases, positions)
+    assert frequencies is not None
+    assert np.all(frequencies > 0) and frequencies.sum() == pytest.approx(1)
+    assert (frequencies @ positions).reshape(3, 4) == pytest.approx(expected, abs=1e-10)
+
+    row = dnds.estimate_pairs([(first, second)], code, method="gy94-regularized")[0]
+    assert row["status"] in {"ok", "kappa_boundary"}
+    assert row["retained_codons"] == 240
+    assert row["dS"] > 0 and row["dN"] > 0
+
+
 def test_yn00_rejects_gy94_frequency_option():
     with pytest.raises(ValueError, match="requires --method gy94"):
         dnds.estimate_pairs([], frequency_model="empirical-shrinkage")
