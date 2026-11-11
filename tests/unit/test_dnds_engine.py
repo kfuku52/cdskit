@@ -88,6 +88,10 @@ def test_batched_encoding_matches_individual_pair_semantics(code):
         ("ATGTARGCT", "ATGAAAGCT"),
         ("ATGTRA---", "ATGAAA---"),
         ("ATGAGRNNN", "ATGAAANNN"),
+        ("ATGGCT---", "ATGTAA?.A"),
+        ("", ""),
+        ("ATGAAA---", "ATGTAANNN"),
+        ("ATGTAATAG", "ATGAAA---"),
         ("augGCN?.-gct", "ATGGCT---gcc"),
     ]
     geometry = _geometry(code)

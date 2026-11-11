@@ -27,6 +27,9 @@ BASES = "TCAG"
 BATCH_SIZE = 256
 METHOD = "YN00_weighting0_F3x4"
 DEFAULT_KAPPA = 4.6  # YN00 initializes each independent data set with this value.
+_GAP_BYTES = np.zeros(128, dtype=bool)
+_GAP_BYTES[list(b"-?.")] = True
+_GAP_BYTES.flags.writeable = False
 REPORT_COLUMNS = (
     "schema_version",
     "pair_id",
@@ -320,6 +323,29 @@ def _distance(
     return distance, np.minimum(kappa, 999), model
 
 
+def _mark_internal_stops(
+    stops: np.ndarray[Any, Any],
+    chars: np.ndarray[Any, Any],
+    pair_indices: np.ndarray[Any, Any],
+    ends: np.ndarray[Any, Any],
+    internal: np.ndarray[Any, Any],
+) -> None:
+    positions = np.flatnonzero(stops)
+    indices = pair_indices[positions]
+    pair_ends = ends[indices]
+    early = positions + 1 < pair_ends
+    for position, end, index in zip(
+        positions[early], pair_ends[early], indices[early], strict=True
+    ):
+        # A later evaluable codon makes this stop internal. A partially
+        # gapped codon is unevaluable, but NNN can still follow an internal stop.
+        if (
+            not internal[index]
+            and (~_GAP_BYTES[chars[position + 1 : end]].any(axis=1)).any()
+        ):
+            internal[index] = True
+
+
 def _encode_batch(
     pairs: list[tuple[str, str]], geometry: dict[str, Any]
 ) -> list[tuple[Any, dict[str, Any]]]:
@@ -338,6 +364,8 @@ def _encode_batch(
             )
     lengths = np.array([len(a) // 3 for a, _ in sequences])
     pair_indices = np.repeat(np.arange(len(pairs)), lengths)
+    ends = lengths.cumsum()
+    internal = np.zeros(len(pairs), dtype=bool)
     encoded = []
     stops = []
     for side in (0, 1):
@@ -354,36 +382,37 @@ def _encode_batch(
         if any(symbol in sequence for symbol in geometry["ambiguous_stop_symbols"]):
             stop |= np.isin(keys, geometry["ambiguous_stop_keys"])
         stops.append(stop)
+        if stop.any():
+            _mark_internal_stops(stop, chars, pair_indices, ends, internal)
     if any(np.any(array < -1) for array in encoded):
         raise ValueError("Invalid DNA alphabet in dnds input")
     concrete = [array >= 0 for array in encoded]
     valid = concrete[0] & concrete[1] & ~stops[0] & ~stops[1]
-    stop_pairs = np.unique(pair_indices[stops[0] | stops[1]])
-    if len(stop_pairs):
-        # Rare stop-containing pairs use the same last-evaluable-codon rule;
-        # the bulk path does not infer terminal stops from concatenated CDS.
-        valid[np.isin(pair_indices, stop_pairs)] = False
+    if internal.any():
+        valid &= ~internal[pair_indices]
     counts = np.bincount(
         pair_indices[valid] * 4096 + encoded[0][valid] * 64 + encoded[1][valid],
         minlength=len(pairs) * 4096,
     ).reshape(len(pairs), 4096)
     retained = counts.sum(axis=1)
-    result = [
+    return [
         (
             counts[i] if retained[i] else None,
             dict(
                 aligned_codons=int(length),
                 retained_codons=int(retained[i]),
                 excluded_codons=int(length - retained[i]),
-                status="ok" if retained[i] else "no_aligned_sense_codons",
+                status=(
+                    "internal_stop"
+                    if internal[i]
+                    else "ok"
+                    if retained[i]
+                    else "no_aligned_sense_codons"
+                ),
             ),
         )
         for i, length in enumerate(lengths)
     ]
-    for i in stop_pairs:
-        first, second = sequences[i]
-        result[i] = _encode_pair(first, second, geometry)
-    return result
 
 
 def _estimate_batch(pairs: list[tuple[str, str]], code: int) -> list[dict[str, Any]]:
