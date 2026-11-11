@@ -5,8 +5,8 @@ import json
 import os
 import sys
 from collections import Counter
-from collections.abc import Iterable, Mapping
-from contextlib import nullcontext
+from collections.abc import Iterable, Iterator, Mapping
+from contextlib import contextmanager, nullcontext
 from typing import Any, TypeAlias
 
 from cdskit.atomicio import atomic_text_writer
@@ -54,16 +54,23 @@ def validate_fieldnames(
     return fieldnames
 
 
-def read_tsv(
-    path: Pathish,
-    required_columns: Iterable[Any] | None = None,
-    return_fieldnames: bool = False,
-) -> Any:
-    """Read a strict, rectangular, headered TSV file.
+def _rectangular_rows(
+    reader: Iterable[list[str]], path: Pathish, width: int
+) -> Iterator[list[str]]:
+    for line_number, values in enumerate(reader, start=2):
+        if not values:
+            continue
+        if len(values) != width:
+            raise ValueError(
+                "TSV row width mismatch in {} at line {}: expected {} columns, got {}.".format(
+                    path, line_number, width, len(values)
+                )
+            )
+        yield values
 
-    UTF-8 BOM is accepted for interoperability, while writers always emit plain
-    UTF-8 with LF line endings.
-    """
+
+@contextmanager
+def _open_headered_tsv(path: Pathish, required_columns: Iterable[Any] | None):
     with open(path, "r", encoding="utf-8-sig", newline="") as inp:
         reader = csv.reader(inp, delimiter="\t", strict=True)
         try:
@@ -75,23 +82,32 @@ def read_tsv(
             path=path,
             required_columns=required_columns,
         )
-        rows = []
-        for line_number, values in enumerate(reader, start=2):
-            if len(values) == 0:
-                continue
-            if len(values) != len(fieldnames):
-                raise ValueError(
-                    "TSV row width mismatch in {} at line {}: expected {} columns, got {}.".format(
-                        path,
-                        line_number,
-                        len(fieldnames),
-                        len(values),
-                    )
-                )
-            rows.append(dict(zip(fieldnames, values, strict=True)))
+        yield fieldnames, _rectangular_rows(reader, path, len(fieldnames))
+
+
+def read_tsv(
+    path: Pathish,
+    required_columns: Iterable[Any] | None = None,
+    return_fieldnames: bool = False,
+) -> Any:
+    """Read a strict, rectangular, headered TSV file.
+
+    UTF-8 BOM is accepted for interoperability, while writers always emit plain
+    UTF-8 with LF line endings.
+    """
+    with _open_headered_tsv(path, required_columns) as (fieldnames, values):
+        rows = [dict(zip(fieldnames, row, strict=True)) for row in values]
     if return_fieldnames:
         return rows, fieldnames
     return rows
+
+
+def read_tsv_columns(path: Pathish, columns: Iterable[Any]) -> list[tuple[str, ...]]:
+    """Read requested columns in order while validating the whole TSV."""
+    selected = _column_list(columns)
+    with _open_headered_tsv(path, selected) as (fieldnames, values):
+        indices = tuple(fieldnames.index(name) for name in selected)
+        return [tuple(row[index] for index in indices) for row in values]
 
 
 def write_tsv(

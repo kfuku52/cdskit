@@ -21,7 +21,7 @@ from cdskit.codonutil import (
     definite_stop_patterns,
     get_forward_table,
 )
-from cdskit.tsvio import TSV_REPORT_SCHEMA_VERSION, read_tsv, write_tsv
+from cdskit.tsvio import TSV_REPORT_SCHEMA_VERSION, read_tsv_columns, write_tsv
 from cdskit.util import resolve_threads
 
 BASES = "TCAG"
@@ -639,13 +639,12 @@ def dnds_main(args: Any, *, likelihood_processes: bool = False) -> None:
     validate_distinct_paths(inputs=[args.pairs_file], outputs=[args.outfile])
     if args.outfile != "-":
         validate_output_paths([args.outfile])
-    rows = read_tsv(
-        args.pairs_file, required_columns=("pair_id", "sequence_1", "sequence_2")
-    )
-    ids = [row["pair_id"] for row in rows]
+    rows = read_tsv_columns(args.pairs_file, ("pair_id", "sequence_1", "sequence_2"))
+    ids = [row[0] for row in rows]
     if any(not identifier.strip() for identifier in ids) or len(ids) != len(set(ids)):
         raise ValueError("dnds pair_id values must be nonempty and unique")
-    pairs = [(row["sequence_1"], row["sequence_2"]) for row in rows]
+    pairs = [(first, second) for _, first, second in rows]
+    del rows
     method = getattr(args, "method", "yn00")
     frequency_model = getattr(args, "frequency_model", None)
     if likelihood_processes and method != "yn00":

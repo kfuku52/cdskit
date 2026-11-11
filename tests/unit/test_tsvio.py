@@ -8,6 +8,7 @@ from cdskit.tsvio import (
     TSV_REPORT_SCHEMA_VERSION,
     json_cell,
     read_tsv,
+    read_tsv_columns,
     write_sectioned_tsv,
     write_tsv,
 )
@@ -19,6 +20,19 @@ def test_read_tsv_rejects_non_rectangular_rows(tmp_path):
 
     with pytest.raises(ValueError, match="row width mismatch"):
         read_tsv(str(path))
+
+
+def test_tsv_column_projection_preserves_order_and_validates_unused_cells(tmp_path):
+    path = tmp_path / "project.tsv"
+    path.write_text(
+        '\ufeffnote\taccession\tsequence\r\n"extra\tdata"\tα\tMAAA\r\n',
+        encoding="utf-8",
+    )
+    assert read_tsv_columns(path, ("sequence", "accession")) == [("MAAA", "α")]
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write("β\tMCCC\n")
+    with pytest.raises(ValueError, match=r"row width mismatch.*line 3"):
+        read_tsv_columns(path, ("sequence", "accession"))
 
 
 def test_read_tsv_rejects_duplicate_and_missing_columns(tmp_path):
