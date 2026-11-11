@@ -86,6 +86,22 @@ def test_gtf_utr_boundary_requires_a_complete_adjacent_stop(strand, stops, expec
     assert terminal_utr_blocks(model, "5") == [list(coordinates(10, 11))]
 
 
+def test_coge_terminal_exons_require_child_source_and_feature_identity():
+    annotation = (
+        "chr1\tCoGe\tgene\t1\t30\t.\t+\t.\tID=g\n"
+        "chr1\tCoGe\tmRNA\t1\t30\t.\t+\t.\tID=t;Parent=g;coge_fid=1\n"
+        "chr1\tCoGe\texon\t1\t9\t.\t+\t.\tParent=t;coge_fid=1\n"
+        "chr1\tCoGe\tCDS\t10\t21\t.\t+\t0\tParent=t;coge_fid=2\n"
+        "chr1\tCoGe\texon\t22\t30\t.\t+\t.\tParent=t;coge_fid=1\n"
+    )
+    model = read_models(annotation)["t"]
+    assert model["exons"] == [[0, 30]]
+    assert model["declared_exons"] == [[0, 9], [21, 30]]
+    assert model["cds"] == [(9, 21, 0)]
+    with pytest.raises(ValueError, match="CDS is not contained"):
+        read_models(annotation.replace("CoGe\tCDS", "other\tCDS"))
+
+
 def test_mapping_exposes_ambiguity_and_legacy_policy():
     assert trimmed_mapping(["A"], ["A", "A"])["status"] == "ambiguous"
     assert trimmed_mapping(["A"], ["A", "A"], ambiguity="unresolved")["mapping"] == [

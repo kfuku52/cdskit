@@ -4,14 +4,41 @@ Coordinates are zero-based half-open. Source exon paths and outer transcript
 ends stay fixed; a boundary change never translates a UTR along the genome.
 """
 
+from bisect import bisect_right
 from collections import defaultdict
-from typing import Any
+from operator import itemgetter
+from typing import Any, NamedTuple
 
 from Bio.Seq import Seq
 from cdskit.gff_attributes import parse_gff_attributes
 from cdskit.sequence_io import open_text
 
 UTR_FEATURE_TYPES = {"5": "five_prime_UTR", "3": "three_prime_UTR"}
+_CHILD_KINDS = {
+    kind: kind
+    for kind in (
+        "exon",
+        "cds",
+        "utr",
+        "five_prime_utr",
+        "three_prime_utr",
+        "5utr",
+        "3utr",
+    )
+}
+_MODEL_CHILD_KEYS = frozenset(("ID", "Parent", "transcript_id", "gene_id", "coge_fid"))
+_BLOCK_START = itemgetter(0)
+
+
+class _TranscriptChild(NamedTuple):
+    kind: str
+    seqid: str
+    strand: str
+    start: str
+    end: str
+    phase: str
+    gene: str
+    coge: tuple[tuple[str, ...], tuple[str, ...]] | None
 
 
 class TranscriptGroups:
@@ -140,15 +167,13 @@ def _coge_terminal_segments(model, rows):
         return None
     low, high = model["bounds"]
     coding_low, coding_high = model["cds"][0][0], model["cds"][-1][1]
-    for kind, fields, attrs in rows:
-        if (
-            fields[1].lower() != "coge"
-            or attrs.get("Parent") != (model["id"],)
-            or len(attrs.get("coge_fid", ())) != 1
-            or not attrs["coge_fid"][0].isdecimal()
-        ):
+    for row in rows:
+        if row.coge is None:
             return None
-        if kind == "exon" and attrs["coge_fid"] != fid:
+        parents, feature = row.coge
+        if parents != (model["id"],) or len(feature) != 1 or not feature[0].isdecimal():
+            return None
+        if row.kind == "exon" and feature != fid:
             return None
     if any(not (b <= coding_low or a >= coding_high) for a, b in model["exons"]):
         return None
@@ -164,10 +189,20 @@ def read_models(text, *, strict=True):
     return read_model_rows(text.splitlines(), strict=strict)
 
 
+def _contained_blocks(blocks, exons):
+    for block in blocks:
+        index = bisect_right(exons, block[0], key=_BLOCK_START) - 1
+        if index < 0 or block[1] > exons[index][1]:
+            return False
+    return True
+
+
 def read_model_rows(lines, *, strict=True):
     """Read a line iterator without retaining the complete annotation text."""
     models: dict[str, Any] = {}
-    children, genes = defaultdict(list), set()
+    children: dict[str, list[_TranscriptChild]] = defaultdict(list)
+    genes: set[str] = set()
+    shared_names: dict[str, str] = {}
     stop_rows = defaultdict(list)
     for line in lines:
         line = line.rstrip("\r\n")
@@ -178,16 +213,15 @@ def read_model_rows(lines, *, strict=True):
         f = line.split("\t")
         if len(f) != 9:
             raise ValueError("Invalid transcript GFF/GTF row")
-        attrs = parse_gff_attributes(f[8])
-
-        def scalar(key, attrs=attrs):
-            return next(iter(attrs.get(key, ())), "")
-
         kind = f[2].lower()
+        is_transcript = kind.endswith(("rna", "transcript"))
+        attrs = parse_gff_attributes(
+            f[8], keys=None if is_transcript else _MODEL_CHILD_KEYS
+        )
         if kind.endswith("gene"):
-            genes.add(scalar("ID"))
-        if kind.endswith(("rna", "transcript")):
-            tid = scalar("ID") or scalar("transcript_id")
+            genes.add(next(iter(attrs.get("ID", ())), ""))
+        if is_transcript:
+            tid = next(iter(attrs.get("ID", ()) or attrs.get("transcript_id", ())), "")
             parents = attrs.get("Parent", ()) or attrs.get("gene_id", ())
             # Standalone noncoding RNAs need no coding-locus owner. Validate
             # ownership only when this transcript actually has CDS children.
@@ -212,45 +246,39 @@ def read_model_rows(lines, *, strict=True):
             owners = attrs.get("Parent", ()) or attrs.get("transcript_id", ())
             for tid in owners:
                 stop_rows[tid].append((f[0], f[6], f[3], f[4]))
-        elif kind in {
-            "exon",
-            "cds",
-            "utr",
-            "five_prime_utr",
-            "three_prime_utr",
-            "5utr",
-            "3utr",
-        }:
-            owners = attrs.get("Parent", ()) or attrs.get("transcript_id", ())
-            # Child IDs and free-form attributes are not model geometry. Keep
-            # only ownership and the CoGe interpreter's explicit source proof.
-            # Original GFF rows are preserved separately by each writer.
-            attrs = {
-                key: attrs[key]
-                for key in ("Parent", "gene_id", "coge_fid")
-                if key in attrs
-            }
-            f[8] = ""
-            for tid in owners:
-                children[tid].append((kind, f, attrs))
+        elif kind in _CHILD_KINDS:
+            parents = attrs.get("Parent", ())
+            gene = next(iter(attrs.get("gene_id", ())), "")
+            row = _TranscriptChild(
+                _CHILD_KINDS[kind],
+                shared_names.setdefault(f[0], f[0]),
+                f[6],
+                f[3],
+                f[4],
+                f[7],
+                shared_names.setdefault(gene, gene),
+                (parents, attrs.get("coge_fid", ()))
+                if f[1].lower() == "coge"
+                else None,
+            )
+            for tid in parents or attrs.get("transcript_id", ()):
+                children[tid].append(row)
     # Release raw child fields as transcripts are finalized, instead of keeping
     # both every parsed feature and every completed model alive until return.
     for tid in list(children):
         rows = children.pop(tid)
         stops = stop_rows.pop(tid, ())
-        if not any(kind == "cds" for kind, _, _ in rows):
+        if not any(row.kind == "cds" for row in rows):
             continue
         if tid not in models:
-            gene = next(iter(rows[0][2].get("gene_id", ())), "") or (
-                tid if tid in genes else ""
-            )
+            gene = rows[0].gene or (tid if tid in genes else "")
             if not gene:
                 raise ValueError("Unresolved transcript parent: " + tid)
             models[tid] = dict(
                 id=tid,
                 gene=gene,
-                seqid=rows[0][1][0],
-                strand=rows[0][1][6],
+                seqid=rows[0].seqid,
+                strand=rows[0].strand,
                 cds=[],
                 exons=[],
                 utr=[],
@@ -263,8 +291,11 @@ def read_model_rows(lines, *, strict=True):
             raise ValueError(
                 "Transcript requires unique identity and one gene owner: " + tid
             )
-        for kind, f, _ in rows:
-            if (f[0], f[6]) != (model["seqid"], model["strand"]) or f[6] not in {
+        for row in rows:
+            if (row.seqid, row.strand) != (
+                model["seqid"],
+                model["strand"],
+            ) or row.strand not in {
                 "+",
                 "-",
             }:
@@ -272,15 +303,15 @@ def read_model_rows(lines, *, strict=True):
                     raise ValueError("Transcript features disagree on contig or strand")
                 model["problem"] = "multiple_contigs_or_strands"
                 continue
-            block = [int(f[3]) - 1, int(f[4])]
+            block = [int(row.start) - 1, int(row.end)]
             if block[0] < 0 or block[1] <= block[0]:
                 raise ValueError("Invalid transcript coordinates")
-            if kind == "cds":
+            if row.kind == "cds":
                 model["cds"].append(
-                    [*block, int(f[7]) if f[7] in {"0", "1", "2"} else None]
+                    [*block, int(row.phase) if row.phase in {"0", "1", "2"} else None]
                 )
             else:
-                model["exons" if kind == "exon" else "utr"].append(block)
+                model["exons" if row.kind == "exon" else "utr"].append(block)
         model["cds"] = sorted(
             set(tuple(b) for b in model["cds"]),
             key=lambda b: (b[0], b[1], -1 if b[2] is None else b[2]),
@@ -292,10 +323,8 @@ def read_model_rows(lines, *, strict=True):
                 raise ValueError("Overlapping transcript CDS blocks")
             model["problem"] = "overlapping_cds"
         model["exons"] = merge_blocks(model["exons"] or [*model["cds"], *model["utr"]])
-        if any(
-            not any(x <= a < b <= y for x, y in model["exons"])
-            for a, b, _ in model["cds"]
-        ):
+        cds_contained = _contained_blocks(model["cds"], model["exons"])
+        if not cds_contained:
             interpreted = _coge_terminal_segments(model, rows)
             if interpreted is not None:
                 model["declared_exons"] = model["exons"]
@@ -303,14 +332,12 @@ def read_model_rows(lines, *, strict=True):
                 model["exon_path_basis"] = (
                     "coge_coding_plus_terminal_noncoding_segments"
                 )
-        for a, b, _ in model["cds"]:
-            if not any(x <= a < b <= y for x, y in model["exons"]):
-                if strict:
-                    raise ValueError("CDS is not contained in its transcript exons")
-                model["problem"] = "cds_outside_exons"
-        if any(
-            not any(x <= a < b <= y for x, y in model["exons"]) for a, b in model["utr"]
-        ):
+                cds_contained = _contained_blocks(model["cds"], model["exons"])
+        if not cds_contained:
+            if strict:
+                raise ValueError("CDS is not contained in its transcript exons")
+            model["problem"] = "cds_outside_exons"
+        if not _contained_blocks(model["utr"], model["exons"]):
             if strict:
                 raise ValueError("UTR is not contained in its transcript exons")
             model["problem"] = "utr_outside_exons"
