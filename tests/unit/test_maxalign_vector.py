@@ -124,3 +124,31 @@ def test_small_and_empty_ranges_preserve_scalar_behavior():
     assert mx.evaluate_exact_subset_range(**kwargs) == _brute(kwargs)
     kwargs["subset_end"] = 0
     assert mx.evaluate_exact_subset_range(**kwargs) is None
+
+
+def test_compact_exact_matches_brute_force_with_sparse_sequence_indices():
+    rng = random.Random(316)
+    variable = list(range(0, 20, 2))
+    required = [5, 65]
+    required_mask = mx.indices_to_bitmask(required)
+    support = {required_mask | rng.getrandbits(21): 180 for _ in range(48)}
+    kwargs = dict(
+        subset_start=0,
+        subset_end=1 << len(variable),
+        subset_variable_masks=mx.build_variable_subset_masks(variable),
+        required_mask=required_mask,
+        required_count=len(required),
+        support_counts=support,
+        max_removed=6,
+        total_sequences=12,
+        num_sequences=66,
+    )
+    assert mx.solve_exact(
+        None,
+        candidate_indices=variable + required,
+        required_indices=required,
+        max_removed=kwargs["max_removed"],
+        total_sequences=kwargs["total_sequences"],
+        support_counts=support,
+        num_sequences=kwargs["num_sequences"],
+    ) == _brute(kwargs)

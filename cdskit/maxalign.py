@@ -26,6 +26,7 @@ from cdskit.tsvio import json_cell, write_sectioned_tsv
 
 
 DEFAULT_MISSING_CHARS = "-?."
+_MAX_EXACT_SEQUENCES = 24
 _EXACT_SUBSET_BLOCK_SIZE = 32_768
 _BYTE_POPCOUNTS = np.array([value.bit_count() for value in range(256)], dtype=np.uint8)
 _BYTE_POPCOUNTS.flags.writeable = False
@@ -195,7 +196,13 @@ def _complete_subset_counts(subset_variable_masks, required_mask, support_counts
     variable_bits = [
         subset_variable_masks[1 << i] for i in range(size.bit_length() - 1)
     ]
-    counts = np.zeros(size, dtype=np.int64)
+    return _dense_complete_counts(
+        size, variable_bits, required_mask, support_counts, np.int64
+    )
+
+
+def _dense_complete_counts(size, variable_bits, required_mask, support_counts, dtype):
+    counts = np.zeros(size, dtype=dtype)
     for support_mask, site_count in support_counts.items():
         if support_mask & required_mask != required_mask:
             continue
@@ -283,6 +290,33 @@ def _evaluate_dense_subset_range(
     )
     if max_kept > maximum or largest_count > maximum // max_kept:
         return NotImplemented
+
+    def kept_indices_at(subset):
+        return mask_to_indices(
+            required_mask | subset_variable_masks[subset], num_sequences
+        )
+
+    return _best_dense_subset_range(
+        subset_start,
+        subset_end,
+        required_count,
+        max_removed,
+        total_sequences,
+        complete_counts,
+        kept_indices_at,
+    )
+
+
+def _best_dense_subset_range(
+    subset_start,
+    subset_end,
+    required_count,
+    max_removed,
+    total_sequences,
+    complete_counts,
+    kept_indices_at,
+):
+    max_kept = required_count + len(complete_counts).bit_length() - 1
     minimum_kept = (
         max(1, total_sequences - max_removed) if max_removed is not None else 1
     )
@@ -292,10 +326,12 @@ def _evaluate_dense_subset_range(
     for start in range(subset_start, subset_end, _EXACT_SUBSET_BLOCK_SIZE):
         end = min(start + _EXACT_SUBSET_BLOCK_SIZE, subset_end)
         masks = np.arange(start, end, dtype=np.uint32)
-        # Byte counts sum independently of byte order, using NumPy 1.23 APIs.
-        kept = _BYTE_POPCOUNTS[masks.view(np.uint8).reshape(-1, 4)].sum(
-            axis=1, dtype=np.int64
-        )
+        # The compact indices have at most 24 bits.
+        kept = (
+            _BYTE_POPCOUNTS[masks & 255]
+            + _BYTE_POPCOUNTS[(masks >> 8) & 255]
+            + _BYTE_POPCOUNTS[masks >> 16]
+        ).astype(np.int64)
         kept += required_count
         valid = kept >= minimum_kept
         if not valid.any():
@@ -312,13 +348,7 @@ def _evaluate_dense_subset_range(
             continue
         finalists = np.flatnonzero(tied & (kept == best_kept)) + start
         kept_indices, selected = min(
-            (
-                mask_to_indices(
-                    required_mask | subset_variable_masks[int(i)], num_sequences
-                ),
-                int(i),
-            )
-            for i in finalists
+            (kept_indices_at(int(i)), int(i)) for i in finalists
         )
         candidate = dict(
             area=best_area,
@@ -445,6 +475,67 @@ def evaluate_exact_subset_chunk(
     )
 
 
+def _solve_compact_exact(
+    variable_indices,
+    required_indices,
+    support_counts,
+    max_removed,
+    total_sequences,
+    num_sequences,
+):
+    # The public solver also accepts hand-built masks and counts. Use the
+    # original arithmetic when those inputs cannot use compact integer counts.
+    indices = variable_indices + required_indices
+    if (
+        not 10 <= len(variable_indices) <= _MAX_EXACT_SEQUENCES
+        or type(total_sequences) is not int
+        or type(num_sequences) is not int
+        or (max_removed is not None and type(max_removed) is not int)
+        or len(indices) != len(set(indices))
+        or any(type(i) is not int or not 0 <= i < num_sequences for i in indices)
+        or any(
+            type(mask) is not int or type(count) is not int or count < 0
+            for mask, count in support_counts.items()
+        )
+    ):
+        return NotImplemented
+    size = 1 << len(variable_indices)
+    total_sites = sum(support_counts.values())
+    if total_sites * len(indices) > np.iinfo(np.int64).max:
+        return NotImplemented
+    dtype = (
+        np.min_scalar_type(total_sites)
+        if total_sites <= np.iinfo(np.uint32).max
+        else np.dtype(np.int64)
+    )
+    complete_counts = _dense_complete_counts(
+        size,
+        [1 << index for index in variable_indices],
+        indices_to_bitmask(required_indices),
+        support_counts,
+        dtype,
+    )
+
+    def kept_indices_at(subset):
+        return sorted(
+            required_indices
+            + [
+                variable_indices[i]
+                for i in get_subset_indices(subset, len(variable_indices))
+            ]
+        )
+
+    return _best_dense_subset_range(
+        0,
+        size,
+        len(required_indices),
+        max_removed,
+        total_sequences,
+        complete_counts,
+        kept_indices_at,
+    )
+
+
 def solve_exact(
     codon_presence_matrix,
     candidate_indices=None,
@@ -479,6 +570,17 @@ def solve_exact(
         if codon_presence_matrix is None:
             raise ValueError("support_counts or codon_presence_matrix is required.")
         support_counts = support_counts_from_matrix(codon_presence_matrix)
+    threads = resolve_threads(threads=threads)
+    compact = _solve_compact_exact(
+        variable_indices,
+        required_indices,
+        support_counts,
+        max_removed,
+        total_sequences,
+        num_sequences,
+    )
+    if compact is not NotImplemented:
+        return compact
     max_mask = 1 << len(variable_indices)
     subset_variable_masks = build_variable_subset_masks(
         variable_indices=variable_indices
@@ -488,7 +590,6 @@ def solve_exact(
     complete_counts = _complete_subset_counts(
         subset_variable_masks, required_mask, support_counts
     )
-    threads = resolve_threads(threads=threads)
     # Exact-search workers need enough subsets to amortize process startup and
     # shared-data serialization. More than eight workers oversubscribes the
     # common search sizes without improving throughput.
@@ -814,9 +915,10 @@ def validate_max_exact_sequences(max_exact_sequences):
     if max_exact_sequences < 1:
         txt = "--max_exact_sequences should be >= 1, but got {}. Exiting.\n"
         raise ValueError(txt.format(max_exact_sequences))
-    if max_exact_sequences > 22:
+    if max_exact_sequences > _MAX_EXACT_SEQUENCES:
         raise ValueError(
-            "--max_exact_sequences should be <= 22 to bound the 2^n exact-search memory use."
+            f"--max_exact_sequences should be <= {_MAX_EXACT_SEQUENCES} "
+            "to bound the 2^n exact-search memory use."
         )
 
 

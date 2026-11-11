@@ -45,7 +45,7 @@ ATGAAACCCGGG
 ## Key options
 
 - `--mode auto|exact|greedy`: Solver mode. `auto` uses exact search for small inputs and greedy search for larger inputs.
-- `--max_exact_sequences INT`: Maximum number of sequences allowed in exact mode (default: `16`).
+- `--max_exact_sequences INT` sets the sequence limit for exact search. The default is `16` and the accepted range is `1`–`24`.
 - `--missing_chars STR`: Characters treated as missing within a codon (default: `-?.`).
 - `--keep_seq_name_regex REGEX [REGEX ...]`: Never remove matching sequence IDs.
 - `--max_removed INT`: Maximum number of sequences that may be removed.
@@ -64,6 +64,7 @@ and each removal step. List-valued `removed_ids` cells are JSON arrays.
 - Input sequence lengths should be multiples of three.
 - Output keeps only retained sequences and codon sites that are complete in the retained set.
 - `--mode auto` switches to `greedy` when the number of input sequences exceeds `--max_exact_sequences`.
+- Exact search scales exponentially in the number of unprotected sequences. For 24 unprotected sequences and up to 65,535 codon columns, the subset count table uses at most 32 MiB. Input records and other working memory are additional.
 
 ## References
 

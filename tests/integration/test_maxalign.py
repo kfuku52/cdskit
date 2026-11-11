@@ -629,7 +629,6 @@ class TestMaxalignHelpers:
         assert greedy["area"] == 2
 
     def test_solve_exact_process_fallback_to_threads(self, monkeypatch):
-        matrix = [[True, True] * 50 for _ in range(17)]
         attempted = []
 
         class FailingProcessPool:
@@ -638,13 +637,13 @@ class TestMaxalignHelpers:
                 raise PermissionError("no process pool")
 
         monkeypatch.setattr("cdskit.maxalign.ProcessPoolExecutor", FailingProcessPool)
-        monkeypatch.setattr(
-            "cdskit.maxalign._complete_subset_counts", lambda *args: None
+        # Nonintegral direct-API weights use the scalar subset scorer.
+        result = solve_exact(
+            None, num_sequences=17, support_counts={(1 << 17) - 1: 100.5}, threads=4
         )
-        result = solve_exact(matrix, threads=4)
         assert attempted
         assert result is not None
-        assert result["num_kept"] >= 1
+        assert result["area"] == 17 * 100.5
 
     def test_select_indices_by_patterns_matches_record_id(self):
         records = [
