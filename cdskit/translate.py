@@ -106,6 +106,19 @@ def get_codon_translator(codontable):
     return translator
 
 
+def _concrete_amino_codes(codons, lookup):
+    indices = codons[:, 0] * 16 + codons[:, 1] * 4 + codons[:, 2]
+    return lookup[indices]
+
+
+def _translate_concrete_sequence_codes(sequence, codontable):
+    """Translate an already validated, uppercase, concrete CDS."""
+    kernel = _get_translation_kernel(codontable)
+    encoded = sequence.encode("ascii").translate(kernel["encode_table"])
+    codons = np.frombuffer(encoded, dtype=np.uint8).reshape(-1, 3)
+    return _concrete_amino_codes(codons, kernel["concrete_lut"])
+
+
 def translate_sequence_codes(seq_str, codontable, to_stop=False):
     """Translate complete codons to an ASCII uint8 array without string assembly."""
     # Explicit public lookup callers retain their eager table and mutations.
@@ -130,8 +143,7 @@ def translate_sequence_codes(seq_str, codontable, to_stop=False):
     codons = codes.reshape(-1, 3)
     if maximum < 4 and "concrete_lut" in translator:
         # Four-base indices fit in uint8; no ambiguity/error scan is needed.
-        indices = codons[:, 0] * 16 + codons[:, 1] * 4 + codons[:, 2]
-        amino_acids = translator["concrete_lut"][indices]
+        amino_acids = _concrete_amino_codes(codons, translator["concrete_lut"])
         if to_stop:
             stop_indices = np.flatnonzero(amino_acids == ord("*"))
             if len(stop_indices):

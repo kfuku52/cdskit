@@ -86,3 +86,29 @@ def test_dual_coding_internal_and_terminal_matching(code, terminal, sense, capsy
         "aTg---" + terminal.lower() + "------AtG---" + terminal
     )
     assert capsys.readouterr().err == ""
+
+
+@pytest.mark.parametrize(
+    "code,terminal", [(1, "TAA"), (27, "TGA"), (28, "TAA"), (31, "TAG")]
+)
+def test_long_concrete_alignment_preserves_case_gaps_and_terminal_stop(
+    code, terminal, capsys
+):
+    sequence = "aTggcT" * 100 + terminal.lower()
+    protein = "m-.?" * 100
+    expected = "aTg------gcT" * 100
+    assert (
+        backalign_sequence_strings(sequence, protein + "*", code, "x", True)
+        == expected + terminal.lower()
+    )
+    assert capsys.readouterr().err == ""
+    assert backalign_sequence_strings(sequence, protein, code, "x", True) == expected
+    assert (
+        capsys.readouterr().err
+        == "Ignored terminal stop codon not present in amino acid alignment: x\n"
+    )
+    with pytest.raises(
+        ValueError, match="aligned position 1: aa_aln=W, translated=M, codon=aTg"
+    ):
+        backalign_sequence_strings(sequence, "W" + protein[1:], code, "x", True)
+    assert capsys.readouterr().err == ""

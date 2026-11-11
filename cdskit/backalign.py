@@ -1,13 +1,17 @@
 import Bio.Seq
 import Bio.SeqRecord
+import re
 import sys
 from concurrent.futures import ProcessPoolExecutor
 from functools import partial
+
+import numpy as np
 
 from cdskit.codonutil import (
     get_codon_translator as get_codon_translator,
     translate_single_codon as translate_single_codon,
 )
+from cdskit.translate import _translate_concrete_sequence_codes
 
 from cdskit.util import (
     parallel_map_ordered,
@@ -25,6 +29,8 @@ AA_GAP_CHARS = {"-", "."}
 AA_WILDCARD_CHARS = {"X", "?"}
 CDS_GAP_CHARS = {"-", "."}
 _GAP_DROP_TABLE_CACHE: dict = {}
+_CONCRETE_DNA = re.compile(r"[ACGT]+")
+_VECTOR_MIN_CODONS = 192
 
 
 def remove_gap_chars(seq, gap_chars):
@@ -116,6 +122,45 @@ def backalign_record(cdn_record, pep_record, codontable):
     return out_record
 
 
+def _align_concrete_codons(sequence, upper, peptide, codontable, stop_codons):
+    if len(sequence) % 3 or _CONCRETE_DNA.fullmatch(upper) is None:
+        return None
+    protein = np.frombuffer(peptide.encode("ascii"), dtype=np.uint8)
+    observed = (protein != ord("-")) & (protein != ord("."))
+    residues = protein[observed]
+    bases = 3 * len(residues)
+    if len(sequence) - bases not in {0, 3}:
+        return None
+
+    translated = _translate_concrete_sequence_codes(upper, codontable)
+    terminal_stop = upper[-3:] in stop_codons or translated[-1] == ord("*")
+    omitted = bases != len(sequence)
+    if omitted and not terminal_stop:
+        return None
+    matches = (
+        (residues == translated[: len(residues)])
+        | (residues == ord("X"))
+        | (residues == ord("?"))
+    )
+    if not omitted and terminal_stop and residues[-1] == ord("*"):
+        matches[-1] = True
+    if not matches.all():
+        return None
+    if len(residues) == len(protein):
+        return sequence[:bases], omitted
+    output = np.full((len(protein), 3), ord("-"), dtype=np.uint8)
+    output[observed] = np.frombuffer(
+        sequence[:bases].encode("ascii"), dtype=np.uint8
+    ).reshape(-1, 3)
+    return output.tobytes().decode("ascii"), omitted
+
+
+def _warn_omitted_terminal_stop(seq_id):
+    sys.stderr.write(
+        f"Ignored terminal stop codon not present in amino acid alignment: {seq_id}\n"
+    )
+
+
 def backalign_sequence_strings(
     cdn_seq_raw, pep_seq_raw, codontable, seq_id, emit_terminal_stop_warning
 ):
@@ -129,6 +174,16 @@ def backalign_sequence_strings(
     preserve_case = cdn_seq != cdn_seq_upper
     pep_seq = pep_seq_raw
     pep_seq_upper = pep_seq.upper()
+    if num_codons >= _VECTOR_MIN_CODONS and cdn_seq.isascii() and pep_seq.isascii():
+        aligned = _align_concrete_codons(
+            cdn_seq, cdn_seq_upper, pep_seq_upper, codontable, stop_codons
+        )
+        if aligned is not None:
+            result, omitted = aligned
+            if omitted and emit_terminal_stop_warning:
+                _warn_omitted_terminal_stop(seq_id)
+            return result
+    # Check mismatches in alignment order for the established error positions.
     aligned_codons = [""] * len(pep_seq)
     codon_index = 0
 
@@ -178,8 +233,7 @@ def backalign_sequence_strings(
         is_terminal_stop = terminal_codon in stop_codons or terminal_aa == "*"
         if is_terminal_stop:
             if emit_terminal_stop_warning:
-                txt = "Ignored terminal stop codon not present in amino acid alignment: {}\n"
-                sys.stderr.write(txt.format(seq_id))
+                _warn_omitted_terminal_stop(seq_id)
         else:
             txt = "Unmatched codon remained for {}. The amino acid alignment may be truncated."
             raise ValueError(txt.format(seq_id))
