@@ -46,6 +46,13 @@ failures and 923 upper rate-bound cases. Raising the L-BFGS-B line-search
 limit from 20 to 60 reduced failures from 377 to 7 on these same pairs.
 [SciPy L-BFGS-B options](https://docs.scipy.org/doc/scipy/reference/optimize.minimize-lbfgsb.html)
 
+When the line search stops abnormally, CDSKIT reevaluates the same
+likelihood and gradient using scaling and squaring, which avoids cancellation
+in small transition probabilities from the spectral calculation. Starting
+from the last finite parameters and requiring optimizer convergence recovered
+all 41 prior line-search failures across this panel and the regularization
+panel below. [Matrix exponential and Fréchet derivative](https://doi.org/10.1137/080716426)
+
 A short, weakly identified dS can
 make its ratio unstable. This evaluation uses stationary simulated
 alignments and covers one kind of frequency misspecification. Performance

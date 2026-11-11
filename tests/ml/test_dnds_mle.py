@@ -41,21 +41,51 @@ def test_gy94_equal_codon_frequencies_match_paml_codeml(monkeypatch):
 
 
 @pytest.mark.parametrize("regularized", [False, True])
-def test_gy94_analytic_gradient_matches_central_differences(regularized):
+@pytest.mark.parametrize("direct", [False, True])
+def test_gy94_analytic_gradient_matches_central_differences(regularized, direct):
     counts, _ = dnds._encode_batch([divergent_pair()], dnds._geometry(1))[0]
     model = dnds_mle._prepare_likelihood(counts, 1)
     assert model is not None
     parameters = np.array([0.23, 0.35, np.log(2.5)])
-    objective = model.objective
+    objective = partial(model.objective, direct=direct)
     if regularized:
         parameters[:2] = np.log(parameters[:2])
-        objective = partial(dnds_mle._penalized_objective, model)
+        objective = partial(dnds_mle._penalized_objective, model, direct=direct)
     offsets = np.eye(3) * 1e-6
     gradient = [
         (objective(parameters + step)[0] - objective(parameters - step)[0]) / 2e-6
         for step in offsets
     ]
     assert objective(parameters)[1] == pytest.approx(gradient, abs=3e-6)
+
+
+@pytest.mark.parametrize("method", ["gy94", "gy94-regularized"])
+def test_gy94_refits_the_same_likelihood_after_a_line_search_failure(
+    monkeypatch, method
+):
+    pairs = [divergent_pair()]
+    expected = dnds.estimate_pairs(pairs, method=method)[0]
+    minimize = dnds_mle.minimize
+    starts, results = [], []
+
+    def stop_first_fit(objective, initial, **options):
+        starts.append(initial.copy())
+        result = minimize(objective, initial, **options)
+        results.append(result)
+        if len(results) == 1:
+            result.success = False
+            result.status = 2
+        else:
+            assert objective.keywords == {"direct": True}
+        return result
+
+    monkeypatch.setattr(dnds_mle, "minimize", stop_first_fit)
+    actual = dnds.estimate_pairs(pairs, method=method)[0]
+    assert len(starts) == 2 and results[1].success
+    assert starts[1] == pytest.approx(results[0].x)
+    assert actual["status"] == expected["status"] == "ok"
+    for field in ("dS", "dN", "kappa"):
+        assert actual[field] == pytest.approx(expected[field], abs=2e-6)
 
 
 @pytest.mark.parametrize(

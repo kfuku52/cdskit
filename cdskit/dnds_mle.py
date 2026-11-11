@@ -90,7 +90,7 @@ class _PairLikelihood:
     coordinates: tuple
     observed: np.ndarray
 
-    def objective(self, parameters):
+    def objective(self, parameters, *, direct=False):
         ds, dn, log_kappa = parameters
         kappa = np.exp(log_kappa)
         rates = self.neutral_rates
@@ -106,7 +106,8 @@ class _PairLikelihood:
         log_kappa_derivative = scale * (syn_ts * ds + non_ts * dn) - generator * (
             transition_rate / neutral_rate
         )
-        return _log_likelihood(
+        evaluate = _direct_log_likelihood if direct else _log_likelihood
+        return evaluate(
             generator,
             (syn, non, log_kappa_derivative),
             self.coordinates,
@@ -125,40 +126,40 @@ def _log_likelihood(generator, derivatives, coordinates, observed):
     if np.any(probabilities <= 1e-12):
         # Near zero, small off-diagonal probabilities can disappear through
         # cancellation in the eigendecomposition.
-        probabilities = expm(generator)[coordinates]
-        if np.any(probabilities <= 0):
-            return np.inf, np.zeros(len(derivatives))
-        weights = observed / probabilities
-        gradient = -np.array(
-            [
-                np.dot(
-                    weights,
-                    expm_frechet(generator, derivative, compute_expm=False)[
-                        coordinates
-                    ],
-                )
-                for derivative in derivatives
-            ]
-        )
-    else:
-        separation = np.abs(eigenvalues[:, None] - eigenvalues[None, :])
-        quotient = np.divide(
-            -np.expm1(-separation),
-            separation,
-            out=np.ones_like(separation),
-            where=separation > 0,
-        )
-        divided_difference = (
-            np.maximum(exponentials[:, None], exponentials[None, :]) * quotient
-        )
-        weights = np.zeros_like(transition)
-        weights[coordinates] = -observed / probabilities
-        adjoint = (
-            vectors @ ((vectors.T @ weights @ vectors) * divided_difference) @ vectors.T
-        )
-        gradient = np.array(
-            [np.sum(adjoint * derivative) for derivative in derivatives]
-        )
+        return _direct_log_likelihood(generator, derivatives, coordinates, observed)
+    separation = np.abs(eigenvalues[:, None] - eigenvalues[None, :])
+    quotient = np.divide(
+        -np.expm1(-separation),
+        separation,
+        out=np.ones_like(separation),
+        where=separation > 0,
+    )
+    divided_difference = (
+        np.maximum(exponentials[:, None], exponentials[None, :]) * quotient
+    )
+    weights = np.zeros_like(transition)
+    weights[coordinates] = -observed / probabilities
+    adjoint = (
+        vectors @ ((vectors.T @ weights @ vectors) * divided_difference) @ vectors.T
+    )
+    gradient = np.array([np.sum(adjoint * derivative) for derivative in derivatives])
+    return -np.dot(observed, np.log(probabilities)), gradient
+
+
+def _direct_log_likelihood(generator, derivatives, coordinates, observed):
+    probabilities = expm(generator)[coordinates]
+    if np.any(probabilities <= 0):
+        return np.inf, np.zeros(len(derivatives))
+    weights = observed / probabilities
+    gradient = -np.array(
+        [
+            np.dot(
+                weights,
+                expm_frechet(generator, derivative, compute_expm=False)[coordinates],
+            )
+            for derivative in derivatives
+        ]
+    )
     return -np.dot(observed, np.log(probabilities)), gradient
 
 
@@ -219,10 +220,10 @@ def _initial_parameters(row):
     )
 
 
-def _penalized_objective(likelihood, parameters):
+def _penalized_objective(likelihood, parameters, *, direct=False):
     log_ds, log_dn, log_kappa = parameters
     ds, dn = np.exp(parameters[:2])
-    loss, gradient = likelihood.objective(np.array([ds, dn, log_kappa]))
+    loss, gradient = likelihood.objective(np.array([ds, dn, log_kappa]), direct=direct)
     delta = log_dn - log_ds - _LOG_RATIO_CENTER
     adjust = delta / _LOG_RATIO_VARIANCE
     gradient = gradient * np.array([ds, dn, 1.0]) + np.array([-adjust, adjust, 0.0])
@@ -245,15 +246,19 @@ def _fit_likelihood(counts, code, row, *, regularized=False, frequency_model="cf
     if regularized:
         initial[:2] = np.log(initial[:2])
         objective, bounds = partial(_penalized_objective, likelihood), _PENALIZED_BOUNDS
-    fit = minimize(
-        objective,
-        initial,
+    minimize_fit = partial(
+        minimize,
         jac=True,
         method="L-BFGS-B",
         bounds=bounds,
         # Boundary fits can require more line-search steps than SciPy's default.
         options={"maxiter": 100, "maxls": 60, "ftol": 1e-11},
     )
+    fit = minimize_fit(objective, initial)
+    if not fit.success and fit.status == 2 and np.all(np.isfinite(fit.x)):
+        # Cancellation in small spectral probabilities can stall the line
+        # search. Refit the same objective with scaling and squaring throughout.
+        fit = minimize_fit(partial(objective, direct=True), fit.x)
     if not fit.success or not np.isfinite(fit.fun) or not np.all(np.isfinite(fit.x)):
         return {"status": "not_converged"}
     ds, dn, log_kappa = (float(value) for value in fit.x)
