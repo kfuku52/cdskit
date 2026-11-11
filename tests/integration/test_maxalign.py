@@ -11,6 +11,7 @@ from Bio.SeqRecord import SeqRecord
 
 from cdskit.tsvio import read_tsv
 
+from cdskit import maxalign
 from cdskit.maxalign import (
     _solve_branch_and_bound,
     indices_to_bitmask,
@@ -39,6 +40,19 @@ def test_branch_search_respects_protection_and_reports_work_exhaustion():
     assert result == expected
     with pytest.raises(ValueError, match="work limit"):
         _solve_branch_and_bound(counts, active, [0], 1, work_limit=0)
+
+
+def test_packed_support_masks_match_scalar_across_byte_blocks(monkeypatch):
+    records = [
+        SeqRecord(Seq(("AcT?NNG.GT-N"[i % 4 :] + "ACGT?-.N") * 96)[:768])
+        for i in range(25)
+    ]
+    missing = "N?.-"
+    expected = maxalign.subset_support_bitmasks(
+        maxalign.build_codon_presence_matrix(records, set(missing))
+    )
+    monkeypatch.setattr(maxalign, "_SUPPORT_BLOCK_BYTES", 2048)
+    assert maxalign.build_support_masks(records, missing) == expected
 
 
 class TestMaxalignMain:

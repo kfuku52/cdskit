@@ -30,6 +30,7 @@ DEFAULT_MISSING_CHARS = "-?."
 _MAX_EXACT_SEQUENCES = 24
 _BRANCH_SEARCH_WORK_LIMIT = 2_000_000
 _EXACT_SUBSET_BLOCK_SIZE = 32_768
+_SUPPORT_BLOCK_BYTES = 4 * 1024 * 1024
 _BYTE_POPCOUNTS = np.array([value.bit_count() for value in range(256)], dtype=np.uint8)
 _BYTE_POPCOUNTS.flags.writeable = False
 
@@ -75,8 +76,18 @@ def build_support_masks(records, missing_chars):
     if len(records) == 0:
         return list()
     num_sites = len(records[0].seq) // 3
-    masks = [0] * num_sites
     missing_chars = set(missing_chars)
+    if (
+        type(records) in (list, tuple)
+        and len(records) >= 8
+        and 64 <= num_sites <= _SUPPORT_BLOCK_BYTES // 8
+        and num_sites * len(records) >= 2048
+        and all(type(char) is str for char in missing_chars)
+    ):
+        packed = _packed_support_masks(records, missing_chars, num_sites)
+        if packed is not None:
+            return packed
+    masks = [0] * num_sites
     for seq_idx, record in enumerate(records):
         seq = str(record.seq)
         seq_bit = 1 << seq_idx
@@ -89,6 +100,31 @@ def build_support_masks(records, missing_chars):
             ):
                 masks[site_idx] |= seq_bit
             site_idx += 1
+    return masks
+
+
+def _packed_support_masks(records, missing_chars, num_sites):
+    # Round each full block to a byte boundary before appending its row bits.
+    block_rows = min(len(records), (_SUPPORT_BLOCK_BYTES // num_sites) // 8 * 8)
+    presence_by_byte = bytes(int(chr(code) not in missing_chars) for code in range(256))
+    masks: list[int] = []
+    for first in range(0, len(records), block_rows):
+        block = records[first : first + block_rows]
+        presence = np.empty((num_sites, len(block)), dtype=np.uint8)
+        for index, record in enumerate(block):
+            sequence = str(record.seq)
+            if len(sequence) != 3 * num_sites or not sequence.isascii():
+                return None
+            codes = np.frombuffer(
+                sequence.encode("ascii").translate(presence_by_byte), dtype=np.uint8
+            )
+            presence[:, index] = codes[::3] & codes[1::3] & codes[2::3]
+        rows = np.packbits(presence, axis=1, bitorder="little")
+        if not first:
+            masks = [int.from_bytes(row, "little") for row in rows]
+        else:
+            for site, row in enumerate(rows):
+                masks[site] |= int.from_bytes(row, "little") << first
     return masks
 
 
