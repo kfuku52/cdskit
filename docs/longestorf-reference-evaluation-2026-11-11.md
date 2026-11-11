@@ -64,3 +64,43 @@ input hashes.
   --annotation /tmp/Arabidopsis_thaliana.TAIR10.cds.all.fa.gz \
   --output /tmp/orf-arabidopsis.json --workers 5
 ```
+
+## Known clipped coding ends
+
+The clipped-end comparison used GENCODE human 47 and mouse M36 basic
+annotations. It supplied the missing sides from `cds_start_NF` and
+`cds_end_NF` tags and scored agreement with the annotated partial CDS.
+These tags mark an unconfirmed coding boundary. The panel required the
+corresponding CDS to reach the input edge within two bases, so the benchmark
+tests partial fragments with known missing sides. [GENCODE tags](https://www.gencodegenes.org/pages/tags.html)
+
+The evaluator trimmed any partial leading codon using the first CDS phase
+and retained only whole codons at a clipped 3′ end. It required a terminal
+stop or ATG at each intact end as appropriate, concrete ACGT and no internal
+stop. One transcript per gene per missing-side group was selected by the
+lowest hash of its versioned ID. Four mouse entries failed the sequence
+checks. All three methods used code 1, forward orientation and ATG-only
+start detection.
+
+| Panel | Missing ends | Complete-first | Longest | Clipped-end selection |
+| --- | --- | ---: | ---: | ---: |
+| Human 47 | 5′ | 1/49 | 1/49 | 46/49 |
+| Human 47 | 3′ | 2/59 | 5/59 | 55/59 |
+| Human 47 | Both | 0/22 | 22/22 | 22/22 |
+| Mouse M36 | 5′ | 0/22 | 0/22 | 21/22 |
+| Mouse M36 | 3′ | 0/23 | 8/23 | 21/23 |
+| Mouse M36 | Both | 0/15 | 15/15 | 15/15 |
+
+The results measure recovery given known clipping. They do not measure
+automatic detection of clipping or recovery of sequence beyond the input.
+
+Run the same command separately for each release with the matching FASTA
+and GTF. The mouse files are [protein-coding transcript FASTA](https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_mouse/release_M36/gencode.vM36.pc_transcripts.fa.gz) (`52cffd84fd954f3eddc317db1d0dc588dae9403aadcc9f16658353e395ec0a12`)
+and [basic GTF](https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_mouse/release_M36/gencode.vM36.basic.annotation.gtf.gz) (`acc6f6650b1a32d200a50b18494749ab39a4a176b22d80182552efb713a483a7`).
+
+```bash
+.venvs/core-3.12/bin/python scripts/evaluate_partial_orf_reference.py \
+  --transcripts /tmp/gencode.vM36.pc_transcripts.fa.gz \
+  --annotation /tmp/gencode.vM36.basic.annotation.gtf.gz \
+  --output /tmp/partial-orf-mouse.json
+```

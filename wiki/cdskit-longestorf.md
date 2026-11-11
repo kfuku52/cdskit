@@ -53,7 +53,7 @@ Candidates are prioritized in the following order:
 - Output sequence orientation follows the predicted coding strand.
 - Coordinates in output description (`start`, `end`) are reported on the original input strand coordinates (1-based), with strand indicated by `strand=+/-`.
 - Header annotation (`strand=... frame=... start=...`) is optional via `--annotate_seq_name yes|no` (default: `no`).
-- `aa_len` is `nt_len / 3`; for a complete candidate it includes the terminal
+- `aa_len` is `nt_len / 3`; for a candidate with a stop it includes the terminal
   stop position. It is not the length of the protein after removing `*`.
 
 ## Explicit selection and candidate reports
@@ -86,6 +86,30 @@ selection policy, and missing/ambiguous counts supplement stop uncertainty.
 Coordinates refer to the original input. The output sequence is in coding orientation.
 Reports include `search_strand` and `start_policy` when the corresponding
 options differ from their defaults.
+
+### Known clipped coding ends
+
+Use `--selection partial-5prime` when coding sequence reaches the input's
+5′ edge and its start is missing. It searches from each frame's first
+complete codon to its first definite stop, including that stop.
+`partial-3prime` requires an allowed start and extends to the last complete
+codon at the 3′ edge without crossing a definite stop. `partial-both`
+compares stop-free frames that span both edges. These options rank the
+eligible candidates by length and report their start and stop flags.
+If no frame qualifies, the output sequence is empty. The edge constraint
+applies in coding orientation on each strand being searched.
+
+For example, with `>seq1` and `GCTGCTTAACCC` in `fragment.fasta`, the command
+below returns `GCTGCTTAA` at positions 1–9 with category `partial`,
+`has_start=false`, and `has_stop=true`.
+
+```bash
+cdskit longestorf --seq_file fragment.fasta --out_file partial.fasta \
+  --strand forward --selection partial-5prime --report partial.json
+```
+
+The clipped-end policies improved coordinate recovery on GENCODE fragments
+when the missing sides were supplied from annotation. [Reference evaluation](https://github.com/kfuku52/cdskit/blob/master/docs/longestorf-reference-evaluation-2026-11-11.md#known-clipped-coding-ends)
 
 For an already oriented transcript with a canonical initiation assumption, use
 `--strand forward --start_policy atg-only`. For example, this combination

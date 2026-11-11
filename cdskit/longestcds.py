@@ -35,6 +35,7 @@ _CODON_SCAN_CACHE: dict = {}
 _POSITION_SCAN_MIN_LENGTH = 16384
 _POSITION_SCAN_MIN_PATTERNS = 8
 _POSITION_SCAN_BLOCK_SIZE = 65536
+_PARTIAL_SELECTIONS = {"partial-5prime", "partial-3prime", "partial-both"}
 _REVCOMP_TABLE = str.maketrans(
     "ACGTRYMKWSBDHVN",
     "TGCAYRKMWSVHDBN",
@@ -432,12 +433,12 @@ def choose_best_candidate(
     strand="both",
     start_policy="table",
 ):
-    if selection == "longest":
+    if selection == "longest" or selection in _PARTIAL_SELECTIONS:
         candidate = max(
-            iter_candidates(
+            _selection_candidates(
                 seq_str,
                 codontable,
-                include_sequence=False,
+                selection,
                 strand=strand,
                 start_policy=start_policy,
             ),
@@ -507,12 +508,65 @@ def choose_best_candidate(
 
 
 def selection_key(candidate, selection):
-    if selection == "complete-first":
+    if selection == "complete-first" or selection in _PARTIAL_SELECTIONS:
         return candidate.sort_key
     if selection == "longest":
         rank, length, *ties = candidate.sort_key
         return (length, rank, *ties)
     raise ValueError(f"Unknown ORF selection: {selection}")
+
+
+def _selection_candidates(sequence, codontable, selection, *, strand, start_policy):
+    if selection in _PARTIAL_SELECTIONS:
+        return _iter_partial_candidates(
+            sequence, codontable, selection, strand, start_policy
+        )
+    return iter_candidates(
+        sequence,
+        codontable,
+        include_sequence=False,
+        strand=strand,
+        start_policy=start_policy,
+    )
+
+
+def _iter_partial_candidates(sequence, codontable, selection, strand, start_policy):
+    missing_start = selection != "partial-3prime"
+    missing_stop = selection != "partial-5prime"
+    starts, stops = _orf_scan_codons(codontable, start_policy)
+    for direction, oriented in _oriented_sequences(sequence.upper(), strand):
+        start_positions, stop_positions = collect_start_stop_positions_by_frame(
+            oriented, () if missing_start else starts, stops
+        )
+        for frame, boundaries in enumerate(stop_positions):
+            end = frame_end_index(len(oriented), frame)
+            if missing_start:
+                if missing_stop and boundaries:
+                    continue
+                if not missing_stop:
+                    if not boundaries or boundaries[0] == frame:
+                        continue
+                    end = boundaries[0] + 3
+                eligible = [frame]
+            else:
+                # For a clipped 3' end, an observed start must follow the
+                # last definite stop in this frame.
+                observed = start_positions[frame]
+                offset = bisect_right(observed, boundaries[-1]) if boundaries else 0
+                eligible = observed[offset:]
+            for start in eligible:
+                if end - start >= 3:
+                    yield make_candidate(
+                        oriented,
+                        direction,
+                        frame,
+                        start,
+                        end,
+                        not missing_start,
+                        not missing_stop,
+                        False,
+                        category="partial",
+                    )
 
 
 def iter_candidates(
@@ -563,11 +617,25 @@ def iter_candidates(
 
 
 def make_candidate(
-    sequence, strand, frame, start, end, has_start, has_stop, include_sequence=True
+    sequence,
+    strand,
+    frame,
+    start,
+    end,
+    has_start,
+    has_stop,
+    include_sequence=True,
+    *,
+    category=None,
 ):
-    category = (
-        "complete" if has_start and has_stop else "partial" if has_start else "no_start"
-    )
+    if category is None:
+        category = (
+            "complete"
+            if has_start and has_stop
+            else "partial"
+            if has_start
+            else "no_start"
+        )
     key, fields = update_best_candidate(
         None,
         None,
@@ -611,10 +679,10 @@ def candidate_report(
 ):
     sequence = str(record.seq).upper()
     candidates = sorted(
-        iter_candidates(
+        _selection_candidates(
             sequence,
             codontable,
-            include_sequence=False,
+            selection,
             strand=strand,
             start_policy=start_policy,
         ),

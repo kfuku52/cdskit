@@ -71,6 +71,86 @@ def test_complete_cds_context_and_definite_to_stop():
             translate.translate_sequence_string(seq, 1, False, complete_cds=True)
 
 
+@pytest.mark.parametrize(
+    "mode,strand,sequence,expected,coordinates,has_start,has_stop",
+    [
+        ("partial-5prime", "forward", "GCTGCTTARCCC", "GCTGCTTAR", (1, 9), False, True),
+        (
+            "partial-5prime",
+            "reverse",
+            "GGGTTAAGCAGC",
+            "GCTGCTTAA",
+            (4, 12),
+            False,
+            True,
+        ),
+        (
+            "partial-3prime",
+            "forward",
+            "ATGTAACCATGGCTGCCG",
+            "ATGGCTGCC",
+            (9, 17),
+            True,
+            False,
+        ),
+        (
+            "partial-both",
+            "forward",
+            "GCTGCTGCTGCT",
+            "GCTGCTGCTGCT",
+            (1, 12),
+            False,
+            False,
+        ),
+    ],
+)
+def test_edge_partial_orf_cli_report_agrees_with_fasta(
+    tmp_path, mode, strand, sequence, expected, coordinates, has_start, has_stop
+):
+    source = tmp_path / "in.fa"
+    output, report = tmp_path / "out.fa", tmp_path / "out.json"
+    source.write_text(f">x\n{sequence}\n")
+    args = psr.parse_args(
+        [
+            "longestorf",
+            "--seq_file",
+            str(source),
+            "--out_file",
+            str(output),
+            "--report",
+            str(report),
+            "--strand",
+            strand,
+            "--start_policy",
+            "atg-only",
+            "--selection",
+            mode,
+        ]
+    )
+    longestcds.longestcds_main(args)
+    assert output.read_text() == f">x\n{expected}\n"
+    (row,) = json.loads(report.read_text())["sequences"]
+    candidate = row["candidates"][0]
+    assert row["selection"] == mode
+    assert candidate["selected"] and candidate["category"] == "partial"
+    assert (candidate["start_1based"], candidate["end_1based"]) == coordinates
+    assert candidate["output_seq"] == expected
+    assert (candidate["has_start"], candidate["has_stop"]) == (has_start, has_stop)
+
+
+def test_edge_partial_orf_does_not_infer_a_dual_coding_stop():
+    assert (
+        longestcds.choose_best_candidate(
+            "GCTTGAGCT", 27, "partial-5prime", strand="forward"
+        )
+        is None
+    )
+    partial = longestcds.choose_best_candidate(
+        "GCTTGAGCT", 27, "partial-both", strand="forward"
+    )
+    assert partial.output_seq == "GCTTGAGCT" and not partial.has_stop
+
+
 def test_draw_and_plot_do_not_disagree_with_translation():
     for code, codon, expected in [(1, "TAR", "*"), (27, "TGA", "W"), (31, "TAA", "E")]:
         table = get_codon_table_components(code)

@@ -745,9 +745,15 @@ p_longestcds.set_defaults(handler=command_longestcds)
 for orf_parser in (p_longestorf, p_longestcds):
     orf_parser.add_argument(
         "--selection",
-        choices=["complete-first", "longest"],
+        choices=[
+            "complete-first",
+            "longest",
+            "partial-5prime",
+            "partial-3prime",
+            "partial-both",
+        ],
         default="complete-first",
-        help="Candidate ranking: category then length (default), or length then category.",
+        help="Rank by category then length (default), by length then category, or by length with specified coding ends clipped at the input edges.",
     )
     orf_parser.add_argument(
         "--strand",
