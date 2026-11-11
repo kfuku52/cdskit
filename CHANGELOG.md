@@ -6,6 +6,34 @@ replacement to standard error.
 
 ## Unreleased
 
+## 0.36.0 — 2026-11-11
+
+### Added
+
+- Add optional pairwise GY94 dN/dS estimation, log-ratio regularization, and
+  empirical codon-frequency shrinkage through the `dnds-ml` extra.
+- Let `longestorf` restrict the strand and start codons or select an ORF with
+  known clipped coding ends.
+- Extend dense exact MaxAlign to 24 sequences and add a bounded exact search
+  for larger alignments.
+
+### Fixed
+
+- Exclude separately annotated terminal stop codons from derived 3′ UTRs,
+  including stops that span exon boundaries.
+- Improve GY94 frequency and likelihood convergence for difficult alignments.
+
+### Performance
+
+- Reduce memory use when reading GFF/GTF and pair tables, constructing
+  transcript coordinates, and writing ORF and codon-trimming reports.
+- Speed up alignment scoring, backalignment, trimming, gap adjustment, and
+  CNN input encoding. Parallelize large GY94 CLI batches across processes.
+
+See the [ORF reference evaluation](docs/longestorf-reference-evaluation-2026-11-11.md)
+and [dN/dS evaluation](docs/dnds-gy94-evaluation-2026-11-11.md) for results and
+reproduction commands.
+
 ## 0.35.1 — 2026-11-08
 
 ### Fixed
