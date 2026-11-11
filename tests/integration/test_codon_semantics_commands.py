@@ -267,10 +267,59 @@ def test_process_workers_preserve_new_semantics():
         pad.process_record_padding(name, seq, 1, "N", "preserve-frame")
         for name, seq in payloads
     ]
-    for mode in ("complete-first", "longest"):
-        expected = [longestcds.choose_best_candidate(seq, 1, mode) for seq in seqs]
-        actual = longestcds.choose_candidates_process_parallel(seqs, 1, 2, mode)
+    for mode, options in (
+        ("complete-first", {}),
+        ("longest", {}),
+        ("complete-first", {"strand": "reverse", "start_policy": "atg-only"}),
+    ):
+        expected = [
+            longestcds.choose_best_candidate(seq, 1, mode, **options) for seq in seqs
+        ]
+        actual = longestcds.choose_candidates_process_parallel(
+            seqs, 1, 2, mode, **options
+        )
         assert [asdict(x) for x in actual] == [asdict(x) for x in expected]
+
+
+@pytest.mark.parametrize(
+    "strand,orientation,start,end", [("forward", "+", 7, 15), ("reverse", "-", 1, 9)]
+)
+def test_orf_restricted_search_matches_report(
+    tmp_path, strand, orientation, start, end
+):
+    source, output, report = (
+        tmp_path / name for name in ("in.fa", "out.fa", "orf.json")
+    )
+    sequence = Seq("TTGGCTATGGCTTAA")
+    if strand == "reverse":
+        sequence = sequence.reverse_complement()
+    source.write_text(f">x\n{sequence}\n", encoding="utf-8")
+    args = psr.parse_args(
+        [
+            "longestorf",
+            "--seq_file",
+            str(source),
+            "--out_file",
+            str(output),
+            "--report",
+            str(report),
+            "--strand",
+            strand,
+            "--start_policy",
+            "atg-only",
+        ]
+    )
+    longestcds.longestcds_main(args)
+    assert output.read_text(encoding="utf-8") == ">x\nATGGCTTAA\n"
+    row = json.loads(report.read_text(encoding="utf-8"))["sequences"][0]
+    assert (row["search_strand"], row["start_policy"]) == (strand, "atg-only")
+    assert {candidate["strand"] for candidate in row["candidates"]} == {orientation}
+    selected = row["candidates"][row["selected_candidate_0based"]]
+    assert (
+        selected["start_1based"],
+        selected["end_1based"],
+        selected["output_seq"],
+    ) == (start, end, "ATGGCTTAA")
 
 
 def test_pad_drop_alias_and_preserved_frame(tmp_path):

@@ -1,6 +1,6 @@
 # cdskit longestorf
 
-`cdskit longestorf` searches six translated frames (3 on `+` strand and 3 on `-` strand) and returns one ranked ORF candidate for each input sequence. The default prioritizes complete candidates before length.
+`cdskit longestorf` returns one ranked ORF candidate for each input sequence. By default it searches six frames and prioritizes complete candidates before length.
 
 ## Example
 
@@ -48,6 +48,8 @@ Candidates are prioritized in the following order:
 - `longestcds` is a deprecated alias with the same behavior; use `longestorf`
   in new commands.
 - Input sequences do not need to be aligned.
+- For transcripts already oriented 5′ to 3′, use `--strand forward`. Use `--strand reverse` for inputs in the opposite orientation. The default `--strand both` searches both orientations.
+- Use `--start_policy atg-only` when restricting initiation to ATG. The default `table` uses every start codon allowed by the selected genetic code. Both policies keep the same stop rules and can return a stop-free segment when no start-based candidate qualifies.
 - Output sequence orientation follows the predicted coding strand.
 - Coordinates in output description (`start`, `end`) are reported on the original input strand coordinates (1-based), with strand indicated by `strand=+/-`.
 - Header annotation (`strand=... frame=... start=...`) is optional via `--annotate_seq_name yes|no` (default: `no`).
@@ -58,7 +60,7 @@ Candidates are prioritized in the following order:
 
 The default is `--selection complete-first`: category priority above, then
 length. `--selection longest` instead compares length first across **all**
-start-based candidates and maximal stop-free segments in all six frames, then
+start-based candidates and maximal stop-free segments in the searched frames, then
 category. A `no_start` candidate may win even when start-based candidates exist.
 The search is not limited to one longest complete candidate per strand.
 
@@ -81,7 +83,16 @@ from coordinates and strand. Counts are computed from per-frame prefix sums,
 so nested candidates do not repeatedly scan or copy the same long sequence.
 Reports still contain one row per candidate. `sort_key` records the actual
 selection policy, and missing/ambiguous counts supplement stop uncertainty.
-Coordinates refer to the original input; output sequence is in coding orientation.
+Coordinates refer to the original input. The output sequence is in coding orientation.
+Reports include `search_strand` and `start_policy` when the corresponding
+options differ from their defaults.
+
+For an already oriented transcript with a canonical initiation assumption, use
+`--strand forward --start_policy atg-only`. For example, this combination
+selects `ATGGCTTAA` from `TTGGCTATGGCTTAA` under genetic code 1.
+In the GENCODE Human 47 and Ensembl Plants 63 reference panels, the combination
+matched both annotated coordinates more often and missed some reference CDSs
+with non-ATG starts. [Evaluation and inputs](https://github.com/kfuku52/cdskit/blob/master/docs/longestorf-reference-evaluation-2026-11-11.md)
 
 Codes 27/28/31 do not terminate a candidate at a dual-coding codon based solely
 on table membership. Such boundaries are unconfirmed, and the candidate may

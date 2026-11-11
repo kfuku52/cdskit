@@ -741,7 +741,19 @@ for orf_parser in (p_longestorf, p_longestcds):
         "--selection",
         choices=["complete-first", "longest"],
         default="complete-first",
-        help="Candidate ranking: category then length (default), or length then category across all six frames.",
+        help="Candidate ranking: category then length (default), or length then category.",
+    )
+    orf_parser.add_argument(
+        "--strand",
+        choices=["both", "forward", "reverse"],
+        default="both",
+        help="Search both strands (default), or only the specified input orientation.",
+    )
+    orf_parser.add_argument(
+        "--start_policy",
+        choices=["table", "atg-only"],
+        default="table",
+        help="Allow all start codons in the selected code (default), or only ATG.",
     )
     orf_parser.add_argument(
         "--report",
