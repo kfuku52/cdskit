@@ -2,7 +2,10 @@
 
 import csv
 from functools import partial
+import os
 import random
+import subprocess
+import sys
 
 import numpy as np
 import pytest
@@ -113,3 +116,54 @@ def test_gy94_regularization_shrinks_an_observed_ratio_toward_half():
     assert all(row["status"] == "ok" for row in rows)
     likelihood, regularized = (row["dN"] / row["dS"] for row in rows)
     assert 0.5 < regularized < likelihood
+
+
+@pytest.mark.subprocess
+def test_gy94_process_workers_preserve_output_bytes_and_fail_atomically(tmp_path):
+    pairs = tmp_path / "pairs.tsv"
+    first, second = divergent_pair()
+    entries = [f"row_{i}\tATGGCT\tATGGCT\n" for i in range(256)]
+    entries[1] = f"forward\t{first}\t{second}\n"
+    entries[170] = f"reverse\t{second}\t{first}\n"
+    entries[254] = "terminal\tATGTAR?.A\tATGAAA---\n"
+    header = "pair_id\tsequence_1\tsequence_2\n"
+    pairs.write_text(header + "".join(entries), encoding="utf-8")
+    command = [
+        sys.executable,
+        "-m",
+        "cdskit.cli",
+        "dnds",
+        "--pairs_file",
+        str(pairs),
+        "--method",
+        "gy94-regularized",
+    ]
+    env = {
+        **os.environ,
+        "OPENBLAS_NUM_THREADS": "1",
+        "OMP_NUM_THREADS": "1",
+        "VECLIB_MAXIMUM_THREADS": "1",
+    }
+    serial, parallel = tmp_path / "serial.tsv", tmp_path / "parallel.tsv"
+    for workers, output in ((1, serial), (2, parallel)):
+        subprocess.run(
+            [*command, "--threads", str(workers), "--out_file", str(output)],
+            check=True,
+            capture_output=True,
+            env=env,
+            timeout=30,
+        )
+    expected = serial.read_bytes()
+    assert parallel.read_bytes() == expected
+
+    entries[254] = "bad\tATGG\tATGG\n"
+    pairs.write_text(header + "".join(entries), encoding="utf-8")
+    failed = subprocess.run(
+        [*command, "--threads", "2", "--out_file", str(parallel)],
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=30,
+    )
+    assert failed.returncode == 1 and "divisible by three" in failed.stderr
+    assert parallel.read_bytes() == expected

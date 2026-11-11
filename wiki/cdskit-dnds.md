@@ -82,6 +82,12 @@ The penalty improved average ratio error on held-out simulations and
 increased error for the smallest simulated true ratio (0.005).
 [Regularization evaluation](https://github.com/kfuku52/cdskit/blob/master/docs/dnds-gy94-evaluation-2026-11-11.md#regularization)
 
+The likelihood CLI uses processes when `--threads` allows at least two
+workers and the input has at least 256 pairs. It uses at most eight
+processes, with at least 128 pairs per process on average. Use `--threads 1`
+to keep fits in one process. Set BLAS threads to one when running several
+workers to limit nested parallelism.
+
 ## Numerical and speed comparison
 
 `scripts/benchmark_dnds.py` compares identical paired-deletion alignments with

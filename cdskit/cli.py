@@ -195,7 +195,7 @@ def strtobool(val):
 
 
 command_dnds = lazy_command(
-    command="dnds", module_name="cdskit.dnds", function_name="dnds_main"
+    command="dnds", module_name="cdskit.dnds", function_name="dnds_cli"
 )
 p_dnds = subparsers.add_parser(
     "dnds",
@@ -1507,7 +1507,7 @@ p_maxalign.add_argument(
     type=int,
     required=False,
     action="store",
-    help="default=%(default)s: Maximum number of input sequences for exact search.",
+    help="default=%(default)s: Maximum input sequences for the dense exact solver.",
 )
 p_maxalign.add_argument(
     "--missing_chars",

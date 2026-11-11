@@ -7,9 +7,10 @@ not a substitute for codeml maximum likelihood or weighted-path YN00.
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from functools import lru_cache, partial
 from itertools import permutations, product
+from multiprocessing import get_context
 from typing import Any
 
 import numpy as np
@@ -25,6 +26,8 @@ from cdskit.util import resolve_threads
 
 BASES = "TCAG"
 BATCH_SIZE = 256
+_LIKELIHOOD_PAIRS_PER_PROCESS = 128
+_LIKELIHOOD_MAX_PROCESSES = 8
 METHOD = "YN00_weighting0_F3x4"
 _METHOD_LABELS = {
     "yn00": METHOD,
@@ -569,10 +572,16 @@ def estimate_pairs(
     method: str = "yn00",
 ) -> list[dict[str, Any]]:
     """Estimate independent aligned pairs; retain input order and NA statuses."""
+    return _estimate_pairs(
+        pairs, codon_table, threads, method, likelihood_processes=False
+    )
+
+
+def _estimate_pairs(pairs, codon_table, threads, method, *, likelihood_processes):
     workers = resolve_threads(threads)
     _geometry(codon_table)
     size = _batch_size(len(pairs), workers)
-    estimator = _estimate_batch
+    estimator = partial(_estimate_batch, code=codon_table)
     if method in ("gy94", "gy94-regularized"):
         try:
             from cdskit.dnds_mle import estimate_ml_batch
@@ -582,22 +591,39 @@ def estimate_pairs(
             raise ValueError(
                 f"The {method} method requires SciPy. Install the cdskit[dnds-ml] extra."
             ) from exc
-        estimator = partial(estimate_ml_batch, regularized=method == "gy94-regularized")
+        estimator = partial(
+            estimate_ml_batch,
+            code=codon_table,
+            regularized=method == "gy94-regularized",
+        )
+        if likelihood_processes:
+            # Each spawned worker imports SciPy and builds its own codon data.
+            # Give it enough fits to amortize startup and bound concurrent RSS.
+            workers = min(
+                workers,
+                _LIKELIHOOD_MAX_PROCESSES,
+                max(1, len(pairs) // _LIKELIHOOD_PAIRS_PER_PROCESS),
+            )
         size = min(64, max(1, (len(pairs) + workers - 1) // workers))
     elif method != "yn00":
         raise ValueError(f"Unknown dN/dS method: {method}")
     chunks = [pairs[i : i + size] for i in range(0, len(pairs), size)]
     if workers == 1 or len(chunks) < 2:
-        return [row for chunk in chunks for row in estimator(chunk, codon_table)]
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        return [
-            row
-            for chunk in pool.map(lambda chunk: estimator(chunk, codon_table), chunks)
-            for row in chunk
-        ]
+        return [row for chunk in chunks for row in estimator(chunk)]
+    executor = (
+        ProcessPoolExecutor(max_workers=workers, mp_context=get_context("spawn"))
+        if likelihood_processes
+        else ThreadPoolExecutor(max_workers=workers)
+    )
+    with executor:
+        return [row for batch in executor.map(estimator, chunks) for row in batch]
 
 
-def dnds_main(args: Any) -> None:
+def dnds_cli(args: Any) -> None:
+    dnds_main(args, likelihood_processes=True)
+
+
+def dnds_main(args: Any, *, likelihood_processes: bool = False) -> None:
     # This handler is also called directly by workflow consumers, without the
     # CLI's path preflight. Protect their inputs and existing outputs as well.
     validate_distinct_paths(inputs=[args.pairs_file], outputs=[args.outfile])
@@ -611,8 +637,13 @@ def dnds_main(args: Any) -> None:
         raise ValueError("dnds pair_id values must be nonempty and unique")
     pairs = [(row["sequence_1"], row["sequence_2"]) for row in rows]
     method = getattr(args, "method", "yn00")
-    options = {"method": method} if method != "yn00" else {}
-    values = estimate_pairs(pairs, args.codontable, args.threads, **options)
+    if likelihood_processes and method != "yn00":
+        values = _estimate_pairs(
+            pairs, args.codontable, args.threads, method, likelihood_processes=True
+        )
+    else:
+        options = {"method": method} if method != "yn00" else {}
+        values = estimate_pairs(pairs, args.codontable, args.threads, **options)
     report = (
         dict(
             schema_version=TSV_REPORT_SCHEMA_VERSION,

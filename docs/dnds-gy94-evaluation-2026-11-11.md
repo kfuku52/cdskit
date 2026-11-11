@@ -98,6 +98,13 @@ the warmed single-worker wall-time medians over seven interleaved runs were
 output across its repeats. Set the BLAS thread count to one when benchmarking
 multiple CDSKIT workers.
 
+With 1,200 mixed simulated pairs (45–1,200 codons) and `--threads 4`,
+four interleaved fresh CLI runs on the same host had median wall times of
+17.97 seconds with threads and 5.46 seconds with processes for GY94.
+Regularized GY94 took 11.02 and 3.61 seconds. Complete TSV bytes matched
+within each method. Sampled peak RSS summed across the CLI process tree
+rose from 119 to 507 MiB for GY94. This sum includes shared pages.
+
 ```bash
 OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 \
   .venvs/full-3.12-cpu/bin/python scripts/evaluate_dnds_estimators.py \
