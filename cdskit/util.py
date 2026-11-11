@@ -9,6 +9,7 @@ import sys
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import nullcontext
+from operator import itemgetter
 from typing import Any, TypeVar
 
 import Bio.Data.CodonTable
@@ -671,7 +672,7 @@ def read_gff(gff_file: Any) -> dict[str, Any]:
     header_lines: list[str] = []
     group_boundaries: list[int] = []
     rows: list[tuple[Any, ...]] = []
-    max_widths = [1] * len(GFF_COLUMNS)
+    seqids: set[str] = set()
     with open(gff_file, "r", encoding="utf-8") as f:
         for line_number, line in enumerate(f, start=1):
             line = line.strip()
@@ -684,7 +685,7 @@ def read_gff(gff_file: Any) -> dict[str, Any]:
                 if line == "###":
                     group_boundaries.append(len(rows))
             else:
-                fields = [field.strip() for field in line.split("\t")]
+                fields = list(map(str.strip, line.split("\t")))
                 if len(fields) != len(GFF_COLUMNS):
                     raise ValueError(
                         "GFF line {} should contain exactly 9 tab-separated fields.".format(
@@ -700,18 +701,19 @@ def read_gff(gff_file: Any) -> dict[str, Any]:
                             line_number
                         )
                     ) from exc
-                row = [*fields[:3], start, end, *fields[5:]]
-                rows.append(tuple(row))
-                for index, value in enumerate(fields):
-                    if index not in (3, 4):
-                        max_widths[index] = max(max_widths[index], len(value))
+                rows.append((*fields[:3], start, end, *fields[5:]))
+                # NumPy's fixed-width Unicode field discards trailing NULs
+                # when comparing values. Match that normalization here.
+                seqids.add(fields[0].rstrip("\0"))
     if len(rows) == 0:
         data = np.array([], dtype=GFF_DTYPE)
     else:
         dtype = [
             (
                 name,
-                "i8" if name in ("start", "end") else "U{}".format(max_widths[index]),
+                "i8"
+                if name in ("start", "end")
+                else "U{}".format(max(1, max(map(len, map(itemgetter(index), rows))))),
             )
             for index, name in enumerate(GFF_COLUMNS)
         ]
@@ -720,11 +722,7 @@ def read_gff(gff_file: Any) -> dict[str, Any]:
         "Number of input GFF header lines: {:,}\n".format(len(header_lines))
     )
     sys.stderr.write("Number of input GFF records: {:,}\n".format(len(data)))
-    sys.stderr.write(
-        "Number of input GFF unique seqids: {:,}\n".format(
-            len(np.unique(data["seqid"]))
-        )
-    )
+    sys.stderr.write("Number of input GFF unique seqids: {:,}\n".format(len(seqids)))
     return {
         "header": header_lines,
         "data": data,

@@ -364,6 +364,20 @@ class TestReadGff:
         assert len(result["data"]) == 1
         assert result["data"][0]["attributes"] == long_attr
 
+    def test_read_gff_counts_unique_decoded_sequence_ids(self, tmp_path, capsys):
+        path = tmp_path / "ids.gff"
+        path.write_text(
+            "chr雪\tsrc\tgene\t1\t3\t.\t+\t.\tID=g1\n"
+            "chr雪\0\tsrc\tgene\t4\t6\t.\t+\t.\tID=g2\n",
+            encoding="utf-8",
+        )
+        data = util.read_gff(path)["data"]
+        assert data["seqid"].tolist() == ["chr雪", "chr雪"]
+        assert data.dtype["seqid"].itemsize == 20
+        assert capsys.readouterr().err.splitlines()[-1] == (
+            "Number of input GFF unique seqids: 1"
+        )
+
     def test_group_delimiter_roundtrip_preserves_feature_boundary(self, tmp_path):
         source = tmp_path / "grouped.gff"
         output = tmp_path / "roundtrip.gff"
