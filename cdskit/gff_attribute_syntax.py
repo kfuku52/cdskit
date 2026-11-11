@@ -8,8 +8,9 @@ never joined. Work on encoded text so existing escapes stay unchanged.
 import gzip
 import hashlib
 import re
-import shlex
 from pathlib import Path
+
+from cdskit.gff_attributes import iter_gtf_fields
 
 GFF_ATTRIBUTE_SYNTAX_VERSION = 8
 KEY_VALUE = re.compile(r"^[^\s=;]+=")
@@ -121,19 +122,8 @@ def validate_attributes(text):
             if field.strip() and not KEY_VALUE.match(field.strip()):
                 raise ValueError("Expected a GFF key=value attribute: " + repr(field))
         return
-    lexer = shlex.shlex(text, posix=True, punctuation_chars=";")
-    lexer.whitespace_split = True
-    lexer.commenters = ""
-    tokens = iter(lexer)
-    for key in tokens:
-        if key == ";":
-            continue
-        value = next(tokens, None)
-        if value is None or value == ";":
-            raise ValueError("Missing GTF attribute value: " + key)
-        separator = next(tokens, None)
-        if separator not in (None, ";"):
-            raise ValueError("Expected ';' after GTF attribute: " + key)
+    for _ in iter_gtf_fields(text):
+        pass
 
 
 def normalise_attributes(text, source, feature, *, allow_bare=False):

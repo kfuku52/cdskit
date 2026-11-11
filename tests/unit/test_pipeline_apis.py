@@ -4,6 +4,7 @@ import pytest
 
 from cdskit.coordinates import pairwise_identity, trimmed_mapping
 from cdskit.fasta_contract import SequenceContractError, validate_fasta_stream
+from cdskit.gff_attribute_syntax import validate_attributes
 from cdskit.gff_attributes import parse_gff_attributes
 from cdskit.label_mapping import shorten_labels
 from cdskit.transcript_coordinates import read_models, terminal_utr_blocks
@@ -35,6 +36,20 @@ def test_gff_embedded_fasta_and_quoted_attributes(tmp_path):
     )
     assert read_gff(path) is not None
     assert parse_gff_attributes('gene_id "a;b,c";') == {"gene_id": ("a;b,c",)}
+
+
+def test_gtf_projection_keeps_scalar_values_and_checks_unused_syntax():
+    text = 'gene_id "a;b,c"; level 2; tag "one"; tag "two";'
+    assert parse_gff_attributes(text, keys={"gene_id", "tag"}) == {
+        "gene_id": ("a;b,c",),
+        "tag": ("one", "two"),
+    }
+    validate_attributes(text)
+    malformed = 'gene_id "g"; unused "unterminated'
+    with pytest.raises(ValueError, match="No closing quotation"):
+        parse_gff_attributes(malformed, keys={"gene_id"})
+    with pytest.raises(ValueError, match="No closing quotation"):
+        validate_attributes(malformed)
 
 
 @pytest.mark.parametrize("strand", ["+", "-"])

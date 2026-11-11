@@ -5,6 +5,51 @@ import shlex
 from collections import defaultdict
 from urllib.parse import quote, unquote
 
+_SIMPLE_GTF_FIELD = re.compile(
+    r"""[ \t\r\n]*([A-Za-z0-9_.:-]+)[ \t\r\n]+"""
+    r"""(?:"([^"\\]*)"|([^ \t\r\n"'\\;]+))[ \t\r\n]*(?:;[ \t\r\n]*|\Z)"""
+)
+
+
+def _simple_gtf_fields(text):
+    fields = []
+    offset = 0
+    while offset < len(text):
+        match = _SIMPLE_GTF_FIELD.match(text, offset)
+        if not match:
+            return None
+        key, quoted, plain = match.groups()
+        value = quoted if quoted is not None else plain
+        # shlex uses the same token for a quoted literal semicolon and
+        # the separator. Keep its behavior for that exceptional syntax.
+        if value == ";":
+            return None
+        fields.append((key, value))
+        offset = match.end()
+    return fields
+
+
+def iter_gtf_fields(text):
+    """Yield scalar key/value pairs with the established GTF syntax checks."""
+    simple = _simple_gtf_fields(text)
+    if simple is not None:
+        yield from simple
+        return
+    lexer = shlex.shlex(text, posix=True, punctuation_chars=";")
+    lexer.whitespace_split = True
+    lexer.commenters = ""
+    tokens = iter(lexer)
+    for key in tokens:
+        if key == ";":
+            continue
+        value = next(tokens, None)
+        if value is None or value == ";":
+            raise ValueError("Missing GTF attribute value: " + key)
+        separator = next(tokens, None)
+        if separator not in (None, ";"):
+            raise ValueError("Expected ';' after GTF attribute: " + key)
+        yield key, value
+
 
 def normalize_gff_attribute_value(raw_value):
     value = str(raw_value or "").strip()
@@ -32,21 +77,7 @@ def parse_gff_attributes(attr_text, *, keys=None):
     text = str(attr_text or "")
     if re.match(r"^\s*[^\s=;]+\s+", text):
         # GTF quoted scalars have no GFF3 list or percent-escape semantics.
-        # Use the same quote-aware lexer as source syntax validation, so a
-        # literal comma/semicolon/percent remains one exact attribute value.
-        lexer = shlex.shlex(text, posix=True, punctuation_chars=";")
-        lexer.whitespace_split = True
-        lexer.commenters = ""
-        tokens = iter(lexer)
-        for key in tokens:
-            if key == ";":
-                continue
-            value = next(tokens, None)
-            if value is None or value == ";":
-                raise ValueError("Missing GTF attribute value: " + key)
-            separator = next(tokens, None)
-            if separator not in (None, ";"):
-                raise ValueError("Expected ';' after GTF attribute: " + key)
+        for key, value in iter_gtf_fields(text):
             if value and (keys is None or key in keys):
                 attrs[key].append(value)
         return {key: tuple(values) for key, values in attrs.items()}
