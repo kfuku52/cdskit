@@ -8,7 +8,7 @@ not a substitute for codeml maximum likelihood or weighted-path YN00.
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-from functools import lru_cache
+from functools import lru_cache, partial
 from itertools import permutations, product
 from typing import Any
 
@@ -26,7 +26,11 @@ from cdskit.util import resolve_threads
 BASES = "TCAG"
 BATCH_SIZE = 256
 METHOD = "YN00_weighting0_F3x4"
-_METHOD_LABELS = {"yn00": METHOD, "gy94": "GY94_CF3x4_pairwise"}
+_METHOD_LABELS = {
+    "yn00": METHOD,
+    "gy94": "GY94_CF3x4_pairwise",
+    "gy94-regularized": "GY94_CF3x4_log_ratio_penalty",
+}
 DEFAULT_KAPPA = 4.6  # YN00 initializes each independent data set with this value.
 _GAP_BYTES = np.zeros(128, dtype=bool)
 _GAP_BYTES[list(b"-?.")] = True
@@ -569,16 +573,16 @@ def estimate_pairs(
     _geometry(codon_table)
     size = _batch_size(len(pairs), workers)
     estimator = _estimate_batch
-    if method == "gy94":
+    if method in ("gy94", "gy94-regularized"):
         try:
             from cdskit.dnds_mle import estimate_ml_batch
         except ModuleNotFoundError as exc:
             if exc.name != "scipy":
                 raise
             raise ValueError(
-                "The gy94 method requires SciPy. Install the cdskit[dnds-ml] extra."
+                f"The {method} method requires SciPy. Install the cdskit[dnds-ml] extra."
             ) from exc
-        estimator = estimate_ml_batch
+        estimator = partial(estimate_ml_batch, regularized=method == "gy94-regularized")
         size = min(64, max(1, (len(pairs) + workers - 1) // workers))
     elif method != "yn00":
         raise ValueError(f"Unknown dN/dS method: {method}")

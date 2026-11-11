@@ -210,9 +210,9 @@ p_dnds.add_argument(
 )
 p_dnds.add_argument(
     "--method",
-    choices=["yn00", "gy94"],
+    choices=["yn00", "gy94", "gy94-regularized"],
     default="yn00",
-    help="Equal-path YN00 (default), or pairwise GY94 maximum likelihood with SciPy.",
+    help="Equal-path YN00 (default), GY94 maximum likelihood, or GY94 with a log-ratio penalty.",
 )
 p_dnds.add_argument(
     "-o",

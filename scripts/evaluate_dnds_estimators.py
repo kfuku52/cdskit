@@ -24,14 +24,14 @@ METRICS = ("dS", "dN", "dN_over_dS")
 METHODS = ("yn00", "gy94")
 
 
-def codon_model(code, frequency, kappa, omega, nonproduct):
+def codon_model(code, frequency, kappa, omega, nonproduct, profiles=FREQUENCIES):
     amino_acids = unambiguous_dna_by_id[code].forward_table
     codons = sorted(amino_acids)
     pi = np.array(
         [
             np.prod(
                 [
-                    FREQUENCIES[frequency][i, "ACGT".index(base)]
+                    profiles[frequency][i, "ACGT".index(base)]
                     for i, base in enumerate(codon)
                 ]
             )
@@ -72,7 +72,11 @@ def codon_model(code, frequency, kappa, omega, nonproduct):
 
 def simulate_pairs(codons, pi, generator, distance, length, count, seed):
     # Sample both endpoints directly from the stationary joint distribution.
-    joint = np.maximum(expm(generator * distance), 0) * pi[:, None]
+    return sample_joint(codons, pi, expm(generator * distance), length, count, seed)
+
+
+def sample_joint(codons, pi, conditional, length, count, seed):
+    joint = np.maximum(conditional, 0) * pi[:, None]
     joint /= joint.sum()
     rng = np.random.default_rng(np.random.SeedSequence(seed))
     draws = rng.choice(joint.size, size=(count, length), p=joint.ravel())

@@ -48,6 +48,48 @@ A separate equal-frequency check matched PAML 4.10.10 `codeml` with
 That check fixes frequencies to compare the same likelihood. The shipped
 estimator uses CF3x4. [PAML 4.10.10](https://github.com/abacus-gene/paml/releases/tag/v4.10.10)
 
+## Regularization
+
+`--method gy94-regularized` minimizes the same negative log likelihood plus
+`(log(dN/dS) - log(0.5))² / (2 × 1.8²)`. It optimizes both distances on the
+log scale with the same numerical bounds. The penalty applies only to the
+ratio. CDSKIT reports the fitted distances and no posterior intervals.
+The Bayesian pairwise literature motivates regularizing dN/dS when data
+weakly identify the ratio. The penalty here is fixed across pairs.
+[Bayesian pairwise substitution-rate estimates](https://doi.org/10.1093/molbev/msu142)
+
+The held-out design used two different composition profiles and crossed
+codes 1, 2 and 6, two kappa values, seven true ratios (0.005–5), four path
+lengths (0.01–2.2), four alignment lengths (40–1,200 codons), and three
+simulation models. The models used product frequencies, nonproduct
+frequencies, or two equally weighted site classes with a shared true dS
+and ratios of 0.15 and 1.85 times the overall ratio. Each setting had 60
+simulated pairs, for 241,920 total. The design was fixed before inspecting
+the held-out errors.
+
+Mean absolute errors below use the same finite pairs across all three
+methods for each metric. The ratio requires a positive dS.
+
+| Codons | dS YN00 / GY94 / regularized | dN YN00 / GY94 / regularized | dN/dS YN00 / GY94 / regularized |
+| ---: | ---: | ---: | ---: |
+| 40 | 0.1692 / 0.1986 / 0.1540 | 0.0619 / 0.0684 / 0.0603 | 0.6498 / 0.9009 / 0.6044 |
+| 90 | 0.1495 / 0.1349 / 0.1145 | 0.0559 / 0.0454 / 0.0447 | 0.5924 / 0.6743 / 0.5370 |
+| 360 | 0.1289 / 0.0723 / 0.0701 | 0.0523 / 0.0330 / 0.0331 | 0.5188 / 0.5064 / 0.4183 |
+| 1,200 | 0.1214 / 0.0501 / 0.0502 | 0.0509 / 0.0284 / 0.0284 | 0.4518 / 0.3903 / 0.3551 |
+| All | 0.1422 / 0.1137 / 0.0970 | 0.0553 / 0.0438 / 0.0417 | 0.5434 / 0.5929 / 0.4659 |
+
+Finite ratio counts were 201,924, 202,899, and 224,842, with 199,512
+pairs in common. At true dN/dS of 0.005 the ratio mean absolute errors
+were 0.0082, 0.0062, and 0.0343. The penalty can pull strongly conserved
+pairs away from their true ratios. The simulation does not establish
+empirical accuracy or validate tests of selection.
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 \
+  .venvs/full-3.12-cpu/bin/python scripts/evaluate_dnds_regularization.py \
+  --replicates 60 --workers 6 --output /tmp/dnds-regularization-evaluation.json
+```
+
 ## Runtime and reproduction
 
 For 400 simulated pairs of 900 codons on Apple M2 Max with Python 3.12,

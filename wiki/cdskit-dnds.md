@@ -3,7 +3,7 @@
 Estimate pairwise nonsynonymous (`dN`) and synonymous (`dS`) distances from
 already aligned CDS pairs. The default `--method yn00` uses a native NumPy
 implementation of Yang–Nielsen (2000), with equal path weights (`weighting=0`),
-pair-specific F3x4 codon frequencies and pair-specific kappa. Both methods work
+pair-specific F3x4 codon frequencies and pair-specific kappa. All methods work
 directly on the supplied codon alignment and run independently of PAML.
 
 ## Input and execution
@@ -47,7 +47,7 @@ zero. `dS_diagnostic` and `dN_diagnostic` preserve PAML-compatible finite-sample
 diagnostics for audit/comparison; saturated diagnostics are not usable distances.
 Inspect status and retained-codon counts before biological interpretation.
 
-## Optional maximum likelihood
+## Optional likelihood methods
 
 Install the `dnds-ml` extra to use the SciPy optimizer:
 
@@ -68,6 +68,19 @@ optimization limit. Nonconverged fits leave model estimates missing.
 Simulation showed lower error for both distances on longer alignments.
 Ratios on short alignments could have much larger errors, and the
 likelihood fit takes substantially more CPU time. [Evaluation and runtime](https://github.com/kfuku52/cdskit/blob/master/docs/dnds-gy94-evaluation-2026-11-11.md)
+
+```bash
+cdskit dnds --pairs_file pairs.tsv --method gy94-regularized --out_file distances-regularized.tsv
+```
+
+`gy94-regularized` adds a Gaussian penalty on the natural log of dN/dS,
+centered at `log(0.5)` with a standard deviation of `1.8`. It shrinks
+weakly determined ratios toward 0.5. Its `method` field is
+`GY94_CF3x4_log_ratio_penalty`. The three-codon example retains all three
+codons, with dS about 0.286, dN about 0.046, and status `kappa_boundary`.
+The penalty improved average ratio error on held-out simulations and
+increased error for the smallest simulated true ratio (0.005).
+[Regularization evaluation](https://github.com/kfuku52/cdskit/blob/master/docs/dnds-gy94-evaluation-2026-11-11.md#regularization)
 
 ## Numerical and speed comparison
 

@@ -1,6 +1,7 @@
 """Verify the opt-in codon likelihood and its published distance units."""
 
 import csv
+from functools import partial
 import random
 
 import numpy as np
@@ -36,21 +37,32 @@ def test_gy94_equal_codon_frequencies_match_paml_codeml(monkeypatch):
     assert row["S"] + row["N"] == pytest.approx(1050)
 
 
-def test_gy94_analytic_gradient_matches_central_differences():
+@pytest.mark.parametrize("regularized", [False, True])
+def test_gy94_analytic_gradient_matches_central_differences(regularized):
     counts, _ = dnds._encode_batch([divergent_pair()], dnds._geometry(1))[0]
     model = dnds_mle._prepare_likelihood(counts, 1)
     assert model is not None
     parameters = np.array([0.23, 0.35, np.log(2.5)])
+    objective = model.objective
+    if regularized:
+        parameters[:2] = np.log(parameters[:2])
+        objective = partial(dnds_mle._penalized_objective, model)
     offsets = np.eye(3) * 1e-6
     gradient = [
-        (model.objective(parameters + step)[0] - model.objective(parameters - step)[0])
-        / 2e-6
+        (objective(parameters + step)[0] - objective(parameters - step)[0]) / 2e-6
         for step in offsets
     ]
-    assert model.objective(parameters)[1] == pytest.approx(gradient, abs=3e-6)
+    assert objective(parameters)[1] == pytest.approx(gradient, abs=3e-6)
 
 
-def test_gy94_cli_preserves_pair_order_and_missing_status(tmp_path):
+@pytest.mark.parametrize(
+    ("method", "label"),
+    [
+        ("gy94", "GY94_CF3x4_pairwise"),
+        ("gy94-regularized", "GY94_CF3x4_log_ratio_penalty"),
+    ],
+)
+def test_gy94_cli_preserves_pair_order_and_missing_status(tmp_path, method, label):
     pairs, output = tmp_path / "pairs.tsv", tmp_path / "gy94.tsv"
     first, second = divergent_pair()
     pairs.write_text(
@@ -70,7 +82,7 @@ def test_gy94_cli_preserves_pair_order_and_missing_status(tmp_path):
                 "--out_file",
                 str(output),
                 "--method",
-                "gy94",
+                method,
                 "--threads",
                 "2",
             ]
@@ -85,8 +97,19 @@ def test_gy94_cli_preserves_pair_order_and_missing_status(tmp_path):
         "terminal",
         "internal",
     ]
-    assert all(row["method"] == "GY94_CF3x4_pairwise" for row in rows)
+    assert all(row["method"] == label for row in rows)
     assert [row["status"] for row in rows] == ["ok", "ok", "identical", "internal_stop"]
     assert all(rows[0][key] == rows[1][key] for key in ("dN", "dS", "kappa"))
     assert rows[2]["dS"] == "0.0" and rows[2]["retained_codons"] == "1"
     assert rows[3]["dS"] == rows[3]["dN"] == ""
+
+
+def test_gy94_regularization_shrinks_an_observed_ratio_toward_half():
+    pairs = [divergent_pair()]
+    rows = [
+        dnds.estimate_pairs(pairs, method=method)[0]
+        for method in ("gy94", "gy94-regularized")
+    ]
+    assert all(row["status"] == "ok" for row in rows)
+    likelihood, regularized = (row["dN"] / row["dS"] for row in rows)
+    assert 0.5 < regularized < likelihood

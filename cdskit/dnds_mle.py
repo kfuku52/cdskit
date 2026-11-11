@@ -1,7 +1,7 @@
 """Pairwise Goldman-Yang likelihood with corrected empirical codon frequencies."""
 
 from dataclasses import dataclass
-from functools import lru_cache
+from functools import lru_cache, partial
 from typing import Any
 
 import numpy as np
@@ -14,7 +14,12 @@ _MIN_RATE = 1e-6
 _MAX_RATE = 10.0
 _LOG_KAPPA_BOUNDS = (float(np.log(0.05)), float(np.log(60.0)))
 _BOUNDS = ((_MIN_RATE, _MAX_RATE), (_MIN_RATE, _MAX_RATE), _LOG_KAPPA_BOUNDS)
+_LOG_RATE_BOUNDS = (float(np.log(_MIN_RATE)), float(np.log(_MAX_RATE)))
+_PENALIZED_BOUNDS = (_LOG_RATE_BOUNDS, _LOG_RATE_BOUNDS, _LOG_KAPPA_BOUNDS)
+_LOG_RATIO_CENTER = float(np.log(0.5))
+_LOG_RATIO_VARIANCE = 1.8**2
 _MODEL = "GY94"
+_PENALIZED_MODEL = "GY94_regularized"
 
 
 @lru_cache(maxsize=32)
@@ -161,27 +166,43 @@ def _initial_parameters(row):
     )
 
 
-def _fit_likelihood(counts, code, row):
+def _penalized_objective(likelihood, parameters):
+    log_ds, log_dn, log_kappa = parameters
+    ds, dn = np.exp(parameters[:2])
+    loss, gradient = likelihood.objective(np.array([ds, dn, log_kappa]))
+    delta = log_dn - log_ds - _LOG_RATIO_CENTER
+    adjust = delta / _LOG_RATIO_VARIANCE
+    gradient = gradient * np.array([ds, dn, 1.0]) + np.array([-adjust, adjust, 0.0])
+    return loss + delta**2 / (2 * _LOG_RATIO_VARIANCE), gradient
+
+
+def _fit_likelihood(counts, code, row, *, regularized=False):
+    model = _PENALIZED_MODEL if regularized else _MODEL
     # An identical pair has zero distances and no identifiable kappa.
     if counts.reshape(64, 64).trace() == row["retained_codons"]:
-        return dict(
-            dS=0.0, dN=0.0, dS_model=_MODEL, dN_model=_MODEL, status="identical"
-        )
+        return dict(dS=0.0, dN=0.0, dS_model=model, dN_model=model, status="identical")
 
     likelihood = _prepare_likelihood(counts, code)
     if likelihood is None:
         return {"status": "frequency_not_converged"}
+    initial = _initial_parameters(row)
+    objective, bounds = likelihood.objective, _BOUNDS
+    if regularized:
+        initial[:2] = np.log(initial[:2])
+        objective, bounds = partial(_penalized_objective, likelihood), _PENALIZED_BOUNDS
     fit = minimize(
-        likelihood.objective,
-        _initial_parameters(row),
+        objective,
+        initial,
         jac=True,
         method="L-BFGS-B",
-        bounds=_BOUNDS,
+        bounds=bounds,
         options={"maxiter": 100, "ftol": 1e-11},
     )
     if not fit.success or not np.isfinite(fit.fun) or not np.all(np.isfinite(fit.x)):
         return {"status": "not_converged"}
     ds, dn, log_kappa = (float(value) for value in fit.x)
+    if regularized:
+        ds, dn = float(np.exp(ds)), float(np.exp(dn))
     kappa = float(np.exp(log_kappa))
     rates = likelihood.neutral_rates
     syn = rates[0] + kappa * rates[1]
@@ -196,7 +217,7 @@ def _fit_likelihood(counts, code, row):
     if min(abs(log_kappa - endpoint) for endpoint in _LOG_KAPPA_BOUNDS) <= 1e-7:
         status = "kappa_boundary"
     for name, value in (("dS", ds), ("dN", dn)):
-        estimates[f"{name}_model"] = _MODEL
+        estimates[f"{name}_model"] = model
         if value >= _MAX_RATE - 1e-6:
             estimates[name] = None
             estimates[f"{name}_diagnostic"] = value
@@ -208,7 +229,9 @@ def _fit_likelihood(counts, code, row):
     return {**estimates, "status": status}
 
 
-def estimate_ml_batch(pairs: list[tuple[str, str]], code: int) -> list[dict[str, Any]]:
+def estimate_ml_batch(
+    pairs: list[tuple[str, str]], code: int, *, regularized: bool = False
+) -> list[dict[str, Any]]:
     geometry = _geometry(code)
     # Use one orientation even when initializing from YN00's floating-point
     # calculations. Reversing the two input rows then follows the same fit.
@@ -221,7 +244,7 @@ def estimate_ml_batch(pairs: list[tuple[str, str]], code: int) -> list[dict[str,
     for row, (counts, _) in zip(rows, encoded, strict=True):
         if counts is None:
             continue
-        fit = _fit_likelihood(counts, code, row)
+        fit = _fit_likelihood(counts, code, row, regularized=regularized)
         # YN00 estimates initialize the optimizer only. Avoid returning any
         # of their values as ML estimates if the likelihood fit fails.
         row.update(
