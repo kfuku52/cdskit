@@ -35,6 +35,10 @@ _BYTE_POPCOUNTS = np.array([value.bit_count() for value in range(256)], dtype=np
 _BYTE_POPCOUNTS.flags.writeable = False
 
 
+class _BranchSearchLimit(ValueError):
+    pass
+
+
 def popcount(mask):
     return mask.bit_count()
 
@@ -541,6 +545,23 @@ def _solve_compact_exact(
     total_sites = sum(support_counts.values())
     if total_sites * len(indices) > np.iinfo(np.int64).max:
         return NotImplemented
+    if max_removed is not None:
+        available = max_removed - (total_sequences - len(indices))
+        if available < 0:
+            return None
+        if len(variable_indices) >= 20 and available <= 8:
+            # A tight removal limit often makes the gap-pattern search much
+            # smaller. Keep its work small when the dense solver is available.
+            try:
+                return _solve_branch_and_bound(
+                    support_counts,
+                    sorted(indices),
+                    required_indices,
+                    available,
+                    work_limit=min(30_000, size // 128),
+                )
+            except _BranchSearchLimit:
+                pass
     dtype = (
         np.min_scalar_type(total_sites)
         if total_sites <= np.iinfo(np.uint32).max
@@ -773,7 +794,7 @@ def _solve_branch_and_bound(
 
         work += len(options) + sum(gaps.bit_count() for gaps in options)
         if work > work_limit:
-            raise ValueError(
+            raise _BranchSearchLimit(
                 "MaxAlign branch-and-bound search reached its work limit. "
                 "Use a smaller --max_removed to restrict the search."
             )

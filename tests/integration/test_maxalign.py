@@ -55,6 +55,26 @@ def test_packed_support_masks_match_scalar_across_byte_blocks(monkeypatch):
     assert maxalign.build_support_masks(records, missing) == expected
 
 
+def test_exact_with_small_removal_budget_accounts_for_excluded_and_protected_rows(
+    monkeypatch,
+):
+    candidates = list(range(1, 25))
+    active = indices_to_bitmask(candidates)
+    counts = {active: 5, active ^ (1 << 3): 6, active ^ (1 << 4): 100}
+
+    def unexpected_dense_search(*args):
+        pytest.fail(
+            "The removal-constrained problem does not need a dense subset table"
+        )
+
+    monkeypatch.setattr(maxalign, "_dense_complete_counts", unexpected_dense_search)
+    result = solve_exact(
+        None, candidates, [4], 2, 25, support_counts=counts, num_sequences=25
+    )
+    assert result["kept_indices"] == [i for i in candidates if i != 3]
+    assert result["complete_codon_columns"] == 11 and result["area"] == 23 * 11
+
+
 class TestMaxalignMain:
     """Tests for maxalign_main function."""
 
