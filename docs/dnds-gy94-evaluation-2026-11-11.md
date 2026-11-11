@@ -38,12 +38,13 @@ methods. The ratio requires positive dS.
 | 60 | 0.2614 → 0.2615 | 0.0634 → 0.0611 | 0.3294 → 0.5756 |
 | 240 | 0.2216 → 0.1268 | 0.0556 → 0.0278 | 0.2574 → 0.2478 |
 | 900 | 0.2060 → 0.0714 | 0.0534 → 0.0168 | 0.2197 → 0.1532 |
-| All | 0.2297 → 0.1534 | 0.0575 → 0.0352 | 0.2667 → 0.3169 |
+| All | 0.2297 → 0.1534 | 0.0575 → 0.0352 | 0.2667 → 0.3168 |
 
-YN00 and GY94 produced finite dS on 130,949 and 137,317 pairs, respectively.
-Finite ratio counts were 125,287 and 131,117. GY94 reported 7 optimizer
-failures and 923 upper rate-bound cases. Raising the L-BFGS-B line-search
-limit from 20 to 60 reduced failures from 377 to 7 on these same pairs.
+YN00 and GY94 produced finite dS on 130,949 and 137,324 pairs, respectively.
+Finite ratio counts were 125,287 and 131,124. GY94 reported 923 upper
+rate-bound cases. Raising the L-BFGS-B line-search limit from 20 to 60
+reduced failures from 377 to 7 on these same pairs. Reevaluation with
+scaling and squaring resolved the remaining 7 failures on the full panel.
 [SciPy L-BFGS-B options](https://docs.scipy.org/doc/scipy/reference/optimize.minimize-lbfgsb.html)
 
 When the line search stops abnormally, CDSKIT reevaluates the same
@@ -61,8 +62,10 @@ ground truth remains unmeasured.
 
 A separate equal-frequency check matched PAML 4.10.10 `codeml` with
 `runmode=-2` and `CodonFreq=0` to its displayed dN, dS, and kappa precision.
-On 36 more simulated pairs of 300 or 900 codons, both distances agreed
-within `0.00005` of PAML. These checks fix frequencies to compare the same
+On 36 more simulated pairs of 300 or 900 codons under code 1, both distances
+agreed within `0.00005` of PAML. Across another 72 pairs under codes 2 and
+6, 70 met that threshold and the largest distance difference was `0.00020`,
+on a near-zero dN fit. These checks fix frequencies to compare the same
 likelihood. The default frequency model is CF3x4. [PAML 4.10.10](https://github.com/abacus-gene/paml/releases/tag/v4.10.10)
 
 ## Regularization
@@ -130,14 +133,14 @@ penalty. The table reports mean absolute errors on common finite pairs.
 
 | Panel | dS CF3x4 → shrinkage | dN CF3x4 → shrinkage | dN/dS CF3x4 → shrinkage |
 | --- | ---: | ---: | ---: |
-| All | 0.1530 → 0.1473 | 0.0392 → 0.0381 | 0.4514 → 0.4435 |
+| All | 0.1530 → 0.1473 | 0.0392 → 0.0381 | 0.4513 → 0.4435 |
 | 60 codons | 0.2647 → 0.2707 | 0.0576 → 0.0585 | 0.6569 → 0.6589 |
 | 520 codons | 0.1072 → 0.0975 | 0.0316 → 0.0299 | 0.3816 → 0.3718 |
 | 1,500 codons | 0.0743 → 0.0565 | 0.0275 → 0.0247 | 0.2868 → 0.2653 |
-| 1,500 codons, nonproduct | 0.1263 → 0.0728 | 0.0196 → 0.0112 | 0.2994 → 0.2350 |
+| 1,500 codons, nonproduct | 0.1263 → 0.0728 | 0.0196 → 0.0112 | 0.2994 → 0.2349 |
 
-The ratio was finite for 103,265 CF3x4 estimates and 103,238 shrinkage
-estimates, with 103,227 in common. Effects on the product and site-mixture
+The ratio was finite for 103,265 CF3x4 estimates and 103,239 shrinkage
+estimates, with 103,228 in common. Effects on the product and site-mixture
 panels were small. The simulation evaluates stationary alignments and uses
 regularized GY94 throughout.
 
