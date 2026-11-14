@@ -106,3 +106,19 @@ def test_empty_maps(tmp_path, format_name, content):
     path = tmp_path / "sites"
     path.write_text(content)
     assert read_kept_sites(str(path), format_name, 0) == []
+
+
+def test_clipkit_log_keeps_order_and_nonblank_line_numbers(tmp_path):
+    path = tmp_path / "clipkit.log"
+    path.write_text("1 trim PI 0\r\n\r\n2 keep PI 0\u20283 keep PI 0\v4 trim PI 0")
+    assert read_kept_sites(str(path), "clipkit-log", 4) == [1, 2]
+    path.write_text("1 trim PI 0\n3 keep PI 0\n2 keep PI 0\n4 trim PI 0")
+    with pytest.raises(ValueError, match="every source AA column once, in order"):
+        read_kept_sites(str(path), "clipkit-log", 4)
+
+
+def test_map_read_error_takes_precedence_over_early_format_error(tmp_path):
+    path = tmp_path / "clipkit.log"
+    path.write_bytes(b"bad line\n" + b"\n" * 70_000 + b"\xff")
+    with pytest.raises(UnicodeDecodeError):
+        read_kept_sites(str(path), "clipkit-log", 4)

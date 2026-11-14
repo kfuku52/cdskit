@@ -3,6 +3,7 @@
 Coordinates are zero-based aligned amino-acid columns, including gap columns.
 """
 
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from itertools import pairwise
 from pathlib import Path
@@ -11,6 +12,7 @@ import sys
 
 _COLUMN_BLOCK_BYTES = 1024 * 1024
 _COLD_TRANSPOSE_MIN_CELLS = 8_000_000
+_COLUMN_INDEX = re.compile(r"[0-9]+")
 
 
 @dataclass(frozen=True)
@@ -100,29 +102,38 @@ def validate_sites(sites: list[int], source_length: int) -> None:
 
 
 def _integer(value: str) -> int:
-    if re.fullmatch(r"[0-9]+", value) is None:
+    if _COLUMN_INDEX.fullmatch(value) is None:
         raise ValueError(f"Invalid column index: {value!r}.")
     return int(value)
 
 
-def _clipkit_sites(lines: list[str], source_length: int) -> list[int]:
+def _clipkit_sites(lines: Iterable[str], source_length: int) -> list[int]:
     sites = []
-    positions = []
-    for line in lines:
+    complete = True
+    count = 0
+    for count, line in enumerate(lines, start=1):
         fields = line.split()
         if len(fields) != 4 or fields[1] not in {"keep", "trim"}:
             raise ValueError(
                 "Expected a four-column ClipKIT log with keep/trim actions."
             )
         position = _integer(fields[0]) - 1
-        positions.append(position)
+        complete &= position == count - 1
         if fields[1] == "keep":
             sites.append(position)
-    if positions != list(range(source_length)):
+    if not complete or count != max(0, source_length):
         raise ValueError(
             "ClipKIT log must cover every source AA column once, in order."
         )
     return sites
+
+
+def _nonblank_map_lines(handle: Iterable[str]) -> Iterator[str]:
+    for raw in handle:
+        # splitlines also accepts Unicode separators and ASCII control breaks.
+        for line in raw.splitlines():
+            if stripped := line.strip():
+                yield stripped
 
 
 def read_kept_sites(path: str, format_name: str, source_length: int) -> list[int]:
@@ -130,23 +141,35 @@ def read_kept_sites(path: str, format_name: str, source_length: int) -> list[int
 
     trimAl input is the standalone #ColumnsMap record, not mixed stdout.
     """
-    lines = [
-        line.strip() for line in Path(path).read_text().splitlines() if line.strip()
-    ]
-    if format_name in {"indices0", "indices1"}:
-        origin = int(format_name[-1])
-        sites = [_integer(line) - origin for line in lines]
-    elif format_name == "clipkit-log":
-        sites = _clipkit_sites(lines, source_length)
-    elif format_name == "trimal-colnumbering":
-        if len(lines) != 1 or not re.match(r"^#ColumnsMap(?:\s|$)", lines[0]):
-            raise ValueError("Expected exactly one trimAl #ColumnsMap record.")
-        payload = lines[0][len("#ColumnsMap") :].strip()
-        sites = (
-            [_integer(item.strip()) for item in payload.split(",")] if payload else []
-        )
-    else:
-        raise ValueError("Specify --kept_sites_format for --kept_sites.")
+    with Path(path).open() as handle:
+        lines = _nonblank_map_lines(handle)
+        try:
+            if format_name in {"indices0", "indices1"}:
+                origin = int(format_name[-1])
+                sites = [_integer(line) - origin for line in lines]
+            elif format_name == "clipkit-log":
+                sites = _clipkit_sites(lines, source_length)
+            elif format_name == "trimal-colnumbering":
+                line = next(lines, "")
+                if next(lines, None) is not None or not re.match(
+                    r"^#ColumnsMap(?:\s|$)", line
+                ):
+                    raise ValueError("Expected exactly one trimAl #ColumnsMap record.")
+                payload = line[len("#ColumnsMap") :].strip()
+                sites = (
+                    [_integer(item.strip()) for item in payload.split(",")]
+                    if payload
+                    else []
+                )
+            else:
+                raise ValueError("Specify --kept_sites_format for --kept_sites.")
+        except UnicodeError:
+            raise
+        except ValueError:
+            # A read/decoding error in the remaining file still takes precedence.
+            for _ in handle:
+                pass
+            raise
     validate_sites(sites, source_length)
     return sites
 
