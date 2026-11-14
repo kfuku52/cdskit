@@ -32,6 +32,8 @@ from cdskit.util import (
 )
 from cdskit.tsvio import write_sectioned_tsv
 
+_GATHER_MIN_RANGES = 256
+
 
 def validate_fraction(name, value):
     value = float(value)
@@ -158,8 +160,9 @@ def trim_record_to_codon_sites(record, kept_sites):
 
 
 def _trim_records_to_codon_sites(records, kept_sites):
-    """Reuse contiguous ranges for the sorted sites selected by the command."""
+    """Extract the command's sorted, validated sites from each row."""
     ranges: list[tuple[int, int]] = []
+    indices = None
     for site in kept_sites:
         start = site * 3
         end = start + 3
@@ -167,13 +170,22 @@ def _trim_records_to_codon_sites(records, kept_sites):
             ranges[-1] = (ranges[-1][0], end)
         else:
             ranges.append((start, end))
+            if len(ranges) == _GATHER_MIN_RANGES:
+                indices = np.asarray(kept_sites, dtype=np.intp)
+                break
     trimmed_records = []
     for record in records:
         trimmed = copy.copy(record)
-        seq_str = str(record.seq)
-        replace_record_sequence(
-            trimmed, "".join(seq_str[start:end] for start, end in ranges)
-        )
+        sequence: str | bytes
+        if indices is None:
+            seq_str = str(record.seq)
+            sequence = "".join(seq_str[start:end] for start, end in ranges)
+        else:
+            codons = np.frombuffer(
+                bytes(record.seq), dtype="S3", count=len(record) // 3
+            )
+            sequence = codons[indices].tobytes()
+        replace_record_sequence(trimmed, sequence)
         trimmed_records.append(trimmed)
     return trimmed_records
 
