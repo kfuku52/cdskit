@@ -41,17 +41,22 @@ def test_gy94_equal_codon_frequencies_match_paml_codeml(monkeypatch):
     assert row["S"] + row["N"] == pytest.approx(1050)
 
 
-@pytest.mark.parametrize("regularized", [False, True])
+@pytest.mark.parametrize("penalty", [None, "ratio", "ratio-and-kappa"])
 @pytest.mark.parametrize("direct", [False, True])
-def test_gy94_analytic_gradient_matches_central_differences(regularized, direct):
+def test_gy94_analytic_gradient_matches_central_differences(penalty, direct):
     counts, _ = dnds._encode_batch([divergent_pair()], dnds._geometry(1))[0]
     model = dnds_mle._prepare_likelihood(counts, 1)
     assert model is not None
     parameters = np.array([0.23, 0.35, np.log(2.5)])
     objective = partial(model.objective, direct=direct)
-    if regularized:
+    if penalty:
         parameters[:2] = np.log(parameters[:2])
-        objective = partial(dnds_mle._penalized_objective, model, direct=direct)
+        evaluate = (
+            dnds_mle._kappa_penalized_objective
+            if penalty == "ratio-and-kappa"
+            else dnds_mle._penalized_objective
+        )
+        objective = partial(evaluate, model, direct=direct)
     offsets = np.eye(3) * 1e-6
     gradient = [
         (objective(parameters + step)[0] - objective(parameters - step)[0]) / 2e-6
@@ -156,6 +161,16 @@ def test_gy94_iteration_retry_recovers_a_compositionally_sparse_pair(monkeypatch
             "gy94-regularized",
             "empirical-shrinkage",
             "GY94_empirical_shrinkage_log_ratio_penalty",
+        ),
+        (
+            "gy94-regularized-kappa",
+            None,
+            "GY94_CF3x4_log_ratio_and_kappa_penalty",
+        ),
+        (
+            "gy94-regularized-kappa",
+            "empirical-shrinkage",
+            "GY94_empirical_shrinkage_log_ratio_and_kappa_penalty",
         ),
     ],
 )

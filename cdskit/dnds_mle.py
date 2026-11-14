@@ -19,6 +19,7 @@ _LOG_RATE_BOUNDS = (float(np.log(_MIN_RATE)), float(np.log(_MAX_RATE)))
 _PENALIZED_BOUNDS = (_LOG_RATE_BOUNDS, _LOG_RATE_BOUNDS, _LOG_KAPPA_BOUNDS)
 _LOG_RATIO_CENTER = float(np.log(0.5))
 _LOG_RATIO_VARIANCE = 1.8**2
+_LOG_KAPPA_CENTER = float(np.log(3))
 _MODEL = "GY94"
 _PENALIZED_MODEL = "GY94_regularized"
 _FREQUENCY_TOLERANCE = 1e-10
@@ -230,7 +231,16 @@ def _penalized_objective(likelihood, parameters, *, direct=False):
     return loss + delta**2 / (2 * _LOG_RATIO_VARIANCE), gradient
 
 
-def _fit_likelihood(counts, code, row, *, model, regularized, frequency_model):
+def _kappa_penalized_objective(likelihood, parameters, *, direct=False):
+    loss, gradient = _penalized_objective(likelihood, parameters, direct=direct)
+    delta = parameters[2] - _LOG_KAPPA_CENTER
+    gradient[2] += delta
+    return loss + delta**2 / 2, gradient
+
+
+def _fit_likelihood(
+    counts, code, row, *, model, regularized, frequency_model, regularize_kappa=False
+):
     likelihood = _prepare_likelihood(counts, code, frequency_model=frequency_model)
     if likelihood is None:
         return {"status": "frequency_not_converged"}
@@ -238,7 +248,10 @@ def _fit_likelihood(counts, code, row, *, model, regularized, frequency_model):
     objective, bounds = likelihood.objective, _BOUNDS
     if regularized:
         initial[:2] = np.log(initial[:2])
-        objective, bounds = partial(_penalized_objective, likelihood), _PENALIZED_BOUNDS
+        penalized = (
+            _kappa_penalized_objective if regularize_kappa else _penalized_objective
+        )
+        objective, bounds = partial(penalized, likelihood), _PENALIZED_BOUNDS
     minimize_fit = partial(
         minimize,
         jac=True,
@@ -315,7 +328,10 @@ def estimate_ml_batch(
     *,
     regularized: bool = False,
     frequency_model: str = "cf3x4",
+    regularize_kappa: bool = False,
 ) -> list[dict[str, Any]]:
+    if regularize_kappa and not regularized:
+        raise ValueError("Log-kappa regularization requires log-ratio regularization.")
     geometry = _geometry(code)
     # Use one orientation even when initializing from YN00's floating-point
     # calculations. Reversing the two input rows then follows the same fit.
@@ -332,6 +348,8 @@ def estimate_ml_batch(
         for counts, metadata in encoded
     ]
     model = _PENALIZED_MODEL if regularized else _MODEL
+    if regularize_kappa:
+        model += "_kappa"
     if frequency_model == "empirical-shrinkage":
         model += "_empirical_shrinkage"
     # Keep the same YN00 batch shape whenever at least one fit is needed.
@@ -354,6 +372,7 @@ def estimate_ml_batch(
                 model=model,
                 regularized=regularized,
                 frequency_model=frequency_model,
+                regularize_kappa=regularize_kappa,
             )
         )
         # YN00 estimates initialize the optimizer only. Avoid returning any

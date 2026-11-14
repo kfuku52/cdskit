@@ -82,7 +82,22 @@ The penalty improved average ratio error on held-out simulations and
 increased error for the smallest simulated true ratio (0.005).
 [Regularization evaluation](https://github.com/kfuku52/cdskit/blob/master/docs/dnds-gy94-evaluation-2026-11-11.md#regularization)
 
-Either GY94 method accepts `--frequency_model empirical-shrinkage`. This
+`gy94-regularized-kappa` adds a second Gaussian penalty on the natural log of
+the transition/transversion rate parameter κ, centered at `log(3)` with a
+standard deviation of `1`. On held-out simulations, the extra penalty improved
+average accuracy most for short alignments. The log-κ error increased at the
+most extreme simulated κ values.
+[Log-κ regularization evaluation](https://github.com/kfuku52/cdskit/blob/master/docs/dnds-kappa-evaluation-2026-11-14.md)
+
+```bash
+cdskit dnds --pairs_file pairs.tsv --method gy94-regularized-kappa --out_file kappa.tsv
+```
+
+The three-codon example retains all three codons and reports
+`GY94_CF3x4_log_ratio_and_kappa_penalty`, with dS about 0.242, dN about 0.044,
+κ about 3.78, and status `ok`.
+
+All GY94 methods accept `--frequency_model empirical-shrinkage`. This
 blends the observed sense-codon frequencies with the CF3x4 estimates,
 using more of the observed distribution when the alignment supports it.
 With the three-codon example, the command below reports

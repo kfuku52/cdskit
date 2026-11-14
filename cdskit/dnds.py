@@ -29,7 +29,11 @@ BATCH_SIZE = 256
 _LIKELIHOOD_PAIRS_PER_PROCESS = 128
 _LIKELIHOOD_MAX_PROCESSES = 8
 METHOD = "YN00_weighting0_F3x4"
-_LIKELIHOOD_LABELS = {"gy94": "pairwise", "gy94-regularized": "log_ratio_penalty"}
+_LIKELIHOOD_LABELS = {
+    "gy94": "pairwise",
+    "gy94-regularized": "log_ratio_penalty",
+    "gy94-regularized-kappa": "log_ratio_and_kappa_penalty",
+}
 _FREQUENCY_LABELS = {
     "cf3x4": "CF3x4",
     "empirical-shrinkage": "empirical_shrinkage",
@@ -620,7 +624,8 @@ def _estimate_pairs(
         estimator = partial(
             estimate_ml_batch,
             code=codon_table,
-            regularized=method == "gy94-regularized",
+            regularized=method != "gy94",
+            regularize_kappa=method == "gy94-regularized-kappa",
             frequency_model=frequency_model,
         )
         if likelihood_processes:
@@ -635,7 +640,9 @@ def _estimate_pairs(
     elif method != "yn00":
         raise ValueError(f"Unknown dN/dS method: {method}")
     elif frequency_model is not None:
-        raise ValueError("--frequency_model requires --method gy94 or gy94-regularized")
+        raise ValueError(
+            "--frequency_model requires --method gy94 or a regularized GY94 method"
+        )
     chunks = [pairs[i : i + size] for i in range(0, len(pairs), size)]
     if workers == 1 or len(chunks) < 2:
         return [row for chunk in chunks for row in estimator(chunk)]

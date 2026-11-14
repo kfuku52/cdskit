@@ -210,14 +210,14 @@ p_dnds.add_argument(
 )
 p_dnds.add_argument(
     "--method",
-    choices=["yn00", "gy94", "gy94-regularized"],
+    choices=["yn00", "gy94", "gy94-regularized", "gy94-regularized-kappa"],
     default="yn00",
-    help="Equal-path YN00 (default), GY94 maximum likelihood, or GY94 with a log-ratio penalty.",
+    help="Equal-path YN00 (default), GY94 maximum likelihood, or GY94 with log-ratio and optional log-kappa penalties.",
 )
 p_dnds.add_argument(
     "--frequency_model",
     choices=["cf3x4", "empirical-shrinkage"],
-    help="Codon frequencies for either GY94 method. Defaults to CF3x4.",
+    help="Codon frequencies for GY94 methods. Defaults to CF3x4.",
 )
 p_dnds.add_argument(
     "-o",
