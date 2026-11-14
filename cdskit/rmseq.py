@@ -1,5 +1,7 @@
 import math
-from functools import partial
+from functools import lru_cache, partial
+
+from Bio.Seq import Seq
 
 from cdskit.util import (
     compile_safe_regex,
@@ -9,6 +11,9 @@ from cdskit.util import (
     stop_if_not_seqtype,
     write_seqs,
 )
+
+_RATE_BLOCK = 65_536
+_BYTE_RATE_MIN = 4096
 
 
 def normalize_problematic_chars(problematic_chars):
@@ -29,6 +34,27 @@ def normalize_problematic_chars(problematic_chars):
     return frozenset(normalized)
 
 
+@lru_cache(maxsize=32)
+def _problematic_byte_table(characters):
+    return bytes(code < 128 and chr(code).upper() in characters for code in range(256))
+
+
+def _problematic_ascii_count(sequence, characters):
+    if type(sequence) is Seq:
+        data = bytes(sequence)
+        if not data.isascii():
+            return None
+    elif type(sequence) is str and sequence.isascii():
+        data = sequence.encode("ascii")
+    else:
+        return None
+    table = _problematic_byte_table(characters)
+    return sum(
+        data[start : start + _RATE_BLOCK].translate(table).count(b"\x01")
+        for start in range(0, len(data), _RATE_BLOCK)
+    )
+
+
 def problematic_rate(seq, problematic_chars):
     seq_len = len(seq)
     if seq_len == 0:
@@ -40,6 +66,10 @@ def problematic_rate(seq, problematic_chars):
     )
     if len(normalized_chars) == 0:
         return 0.0
+    if seq_len >= _BYTE_RATE_MIN and 2 <= len(normalized_chars) <= 32:
+        count = _problematic_ascii_count(seq, normalized_chars)
+        if count is not None:
+            return count / seq_len
     sequence = str(seq).upper()
     if len(normalized_chars) > 32:
         # Counting once per symbol is useful for the small biological alphabet;

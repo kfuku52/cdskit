@@ -18,6 +18,18 @@ class TestRmseqHelpers:
         rate = problematic_rate("NNAA", "NN")
         assert rate == pytest.approx(2 / 4)
 
+    @pytest.mark.parametrize("sequence_type", [str, Seq])
+    def test_problematic_rate_counts_across_blocks(self, sequence_type):
+        sequence = sequence_type("a" * 65_535 + "nX-?a")
+        assert problematic_rate(sequence, ["n", "X", "-", "?"]) == 4 / len(sequence)
+        assert problematic_rate(sequence, frozenset({"n", "X", "SS"})) == 1 / len(
+            sequence
+        )
+
+    def test_problematic_rate_keeps_unicode_case_expansion(self):
+        sequence = "a" * 5000 + "ßé"
+        assert problematic_rate(sequence, ["s", "É"]) == 3 / len(sequence)
+
     def test_should_remove_record_matches_id_not_name(self):
         record = SeqRecord(
             Seq("ATGAAA"), id="remove_me", name="other_name", description=""
