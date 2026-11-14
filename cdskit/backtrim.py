@@ -318,6 +318,22 @@ def _write_backtrim_outputs(args, records, report):
         write_seqs(records, args.outfile, args.outseqformat)
 
 
+def _legacy_target_sites(source, target, kept_sites):
+    """Reconstruct the target positions of the legacy result in order."""
+    matched = []
+    unmatched = []
+    cursor = 0
+    for site in kept_sites:
+        column = source[site]
+        while cursor < len(target) and target[cursor] != column:
+            unmatched.append(cursor)
+            cursor += 1
+        matched.append(cursor)
+        cursor += 1
+    unmatched.extend(range(cursor, len(target)))
+    return matched, unmatched
+
+
 def backtrim_main(args):
     kept_path = getattr(args, "kept_sites", None)
     kept_format = getattr(args, "kept_sites_format", None)
@@ -390,7 +406,8 @@ def _backtrim_main(args, report):
     target = alignment_columns(pep_strings)
     report.update(source_column_count=len(source), target_column_count=len(target))
     kept_aa_sites = select_kept_sites(args, source, target, report)
-    if kept_aa_sites is None:
+    used_legacy = kept_aa_sites is None
+    if used_legacy:
         kept_aa_sites, multiple_count = (
             _find_legacy_column_matches(source, target, len(source))
             if cdn_records
@@ -400,23 +417,18 @@ def _backtrim_main(args, report):
         txt += "Trimmed {} codon sites that matched to multiple protein sites.\n"
         sys.stderr.write(txt.format(len(kept_aa_sites), len(target), multiple_count))
         report["legacy_trimmed_multiple_hit_sites"] = multiple_count
-    # Reconstruct the legacy output's target positions for an explicit omission report.
-    matched_target_sites = []
-    cursor = 0
-    for site in kept_aa_sites:
-        while cursor < len(target) and target[cursor] != source[site]:
-            cursor += 1
-        matched_target_sites.append(cursor)
-        cursor += 1
-    report.update(
-        status="success",
-        selected_sites=kept_aa_sites,
-        matched_target_sites=matched_target_sites,
-        unmatched_target_sites=sorted(
-            set(range(len(target))) - set(matched_target_sites)
-        ),
-        output_complete=len(kept_aa_sites) == len(target),
-    )
+    if getattr(args, "mapping_report", None):
+        if used_legacy:
+            matched, unmatched = _legacy_target_sites(source, target, kept_aa_sites)
+        else:
+            matched, unmatched = list(range(len(target))), []
+        report.update(
+            status="success",
+            selected_sites=kept_aa_sites,
+            matched_target_sites=matched,
+            unmatched_target_sites=unmatched,
+            output_complete=len(kept_aa_sites) == len(target),
+        )
     ranges, indices = plan_codon_selection(kept_aa_sites)
 
     def trim_worker(record):

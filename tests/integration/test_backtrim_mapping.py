@@ -135,6 +135,17 @@ def test_legacy_partial_report(tmp_path, write_fasta, mock_args):
     assert not report["output_complete"]
 
 
+def test_legacy_report_lists_leading_internal_and_trailing_omissions(
+    tmp_path, write_fasta, mock_args
+):
+    args = inputs(tmp_path, write_fasta, mock_args, [("s", "GCTCCT")], [("s", "KAWPG")])
+    backtrim_main(args)
+    report = json.loads((tmp_path / "map.json").read_text())
+    assert report["selected_sites"] == [0, 1]
+    assert report["matched_target_sites"] == [1, 3]
+    assert report["unmatched_target_sites"] == [0, 2, 4]
+
+
 def test_cli_strict_exit_and_explicit_success(tmp_path, write_fasta, mock_args):
     args = inputs(tmp_path, write_fasta, mock_args)
     command = [
