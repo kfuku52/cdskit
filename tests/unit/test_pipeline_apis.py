@@ -475,6 +475,26 @@ def test_tuple_fasta_parser_never_silently_discards_empty_headers(tmp_path, text
     source.write_text(text)
     with pytest.raises(ValueError, match="Empty FASTA header"):
         list(fasta_records(source))
+    with pytest.raises(ValueError, match="Empty FASTA header"):
+        list(fasta_records(source, identifiers=()))
+
+
+def test_tuple_fasta_selection_keeps_duplicates_order_headers_and_empty_sequences(
+    tmp_path,
+):
+    from cdskit.sequence_selection import fasta_records
+
+    path = tmp_path / "mixed.fa"
+    path.write_bytes(
+        b"\r\n>a description  \r\n  ATG  \r\n\r\n>b\r\nTGA\r\n>a\r\n>c\r\nA A\r\n"
+    )
+    expected = [r for r in fasta_records(path) if r[0] == "a"]
+    assert expected == [("a", "a description  ", "ATG"), ("a", "a", "")]
+    assert list(fasta_records(path, identifiers={"a", "missing"})) == expected
+    assert list(fasta_records(path, identifiers=())) == []
+    path.write_text(" ATG\n>a\nTTA\n")
+    with pytest.raises(ValueError, match="precedes the first header"):
+        list(fasta_records(path, identifiers={"other"}))
 
 
 def test_coordinate_bridge_protects_requests_and_respects_ambiguity_policy(

@@ -21,30 +21,38 @@ def select_records(records, identifiers, *, require_all=True, reject_duplicates=
         raise ValueError(f"Missing sequence IDs: {sorted(wanted - seen)}")
 
 
-def fasta_records(path, opener=None):
+def fasta_records(path, opener=None, *, identifiers=None):
+    """Stream literal FASTA tuples, optionally materializing only named records.
+
+    Input order and structural validation are the same in both modes. Missing
+    requested IDs and duplicate matching records are left to the caller.
+    """
     if opener is None:
         from cdskit.sequence_io import open_text
 
         opener = open_text
-    header = ""
+    wanted = None if identifiers is None else set(identifiers)
+    header = identifier = ""
+    selected = False
     sequence: list[str] = []
     with opener(path) as handle:
         for raw_line in handle:
-            line = raw_line.rstrip("\r\n")
-            if line.startswith(">"):
-                if not line[1:].strip():
+            if raw_line.startswith(">"):
+                next_header = raw_line[1:].rstrip("\r\n")
+                fields = next_header.split(None, 1)
+                if not fields:
                     raise ValueError(f"Empty FASTA header: {path}")
-                if header:
-                    identifier = header.split(None, 1)[0]
+                if selected:
                     yield identifier, header, "".join(sequence)
-                header = line[1:]
+                identifier = fields[0]
+                selected = wanted is None or identifier in wanted
+                header = next_header
                 sequence = []
-            elif header:
-                sequence.append(line.strip())
-            elif line.strip():
+            elif selected:
+                sequence.append(raw_line.strip())
+            elif not header and raw_line.strip():
                 raise ValueError(
                     f"FASTA sequence data precedes the first header: {path}"
                 )
-    if header:
-        identifier = header.split(None, 1)[0]
+    if selected:
         yield identifier, header, "".join(sequence)
