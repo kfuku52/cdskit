@@ -35,6 +35,9 @@ _FREQUENCY_LABELS = {
     "empirical-shrinkage": "empirical_shrinkage",
 }
 DEFAULT_KAPPA = 4.6  # YN00 initializes each independent data set with this value.
+_NORMALIZE_DNA = bytes.maketrans(
+    b"abcdefghijklmnopqrstuvwxyzU", b"ABCDEFGHIJKLMNOPQRSTTVWXYZT"
+)
 _GAP_BYTES = np.zeros(128, dtype=bool)
 _GAP_BYTES[list(b"-?.")] = True
 _GAP_BYTES.flags.writeable = False
@@ -362,33 +365,34 @@ def _encode_batch(
         return []
     if any(not a.isascii() or not b.isascii() for a, b in pairs):
         raise ValueError("Invalid DNA alphabet in dnds input")
-    sequences = [
-        (a.upper().replace("U", "T"), b.upper().replace("U", "T")) for a, b in pairs
-    ]
-    for a, b in sequences:
+    for a, b in pairs:
         if len(a) != len(b) or len(a) % 3:
             raise ValueError(
                 "dnds requires equally aligned CDS lengths divisible by three"
             )
-    lengths = np.array([len(a) // 3 for a, _ in sequences])
+    lengths = np.array([len(a) // 3 for a, _ in pairs])
     pair_indices = np.repeat(np.arange(len(pairs)), lengths)
     ends = lengths.cumsum()
     internal = np.zeros(len(pairs), dtype=bool)
     encoded = []
     stops = []
     for side in (0, 1):
-        sequence = "".join(pair[side] for pair in sequences)
-        chars = np.frombuffer(sequence.encode("ascii"), dtype=np.uint8).reshape(-1, 3)
+        sequence = "".join(pair[side] for pair in pairs).encode("ascii")
+        sequence = sequence.translate(_NORMALIZE_DNA)
+        chars = np.frombuffer(sequence, dtype=np.uint8).reshape(-1, 3)
         keys = chars[:, 0].astype(np.int32) << 14
         keys |= chars[:, 1].astype(np.int32) << 7
         keys |= chars[:, 2]
-        codons = geometry["codon_lookup"][keys].astype(np.int16)
+        codons = geometry["codon_lookup"][keys]
         encoded.append(codons)
         stop = (codons >= 0) & ~geometry["sense"][codons]
         # Shared codon semantics includes ambiguous definite stops. A cheap
         # symbol scan keeps the usual A/C/G/T/N/gap path free of extra lookups.
-        if any(symbol in sequence for symbol in geometry["ambiguous_stop_symbols"]):
-            stop |= np.isin(keys, geometry["ambiguous_stop_keys"])
+        if any(
+            ord(symbol) in sequence for symbol in geometry["ambiguous_stop_symbols"]
+        ):
+            ambiguous = codons == -1
+            stop[ambiguous] = np.isin(keys[ambiguous], geometry["ambiguous_stop_keys"])
         stops.append(stop)
         if stop.any():
             _mark_internal_stops(stop, chars, pair_indices, ends, internal)
@@ -399,7 +403,9 @@ def _encode_batch(
     if internal.any():
         valid &= ~internal[pair_indices]
     counts = np.bincount(
-        pair_indices[valid] * 4096 + encoded[0][valid] * 64 + encoded[1][valid],
+        pair_indices[valid] * 4096
+        + encoded[0][valid].astype(np.int16) * 64
+        + encoded[1][valid],
         minlength=len(pairs) * 4096,
     ).reshape(len(pairs), 4096)
     retained = counts.sum(axis=1)
