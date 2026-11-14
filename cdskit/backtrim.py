@@ -16,6 +16,7 @@ from cdskit.atomicio import (
     atomic_write_json,
     validate_distinct_paths,
 )
+from cdskit.codonarray import plan_codon_selection, select_codon_bytes
 from cdskit.column_mapping import (
     alignment_columns,
     analyze_mapping,
@@ -260,6 +261,10 @@ def codon_sites_to_nucleotide_ranges(codon_sites):
 def trim_codon_record_with_ranges(record, nucleotide_ranges):
     seq_str = str(record.seq)
     trimmed_seq = "".join([seq_str[start:end] for start, end in nucleotide_ranges])
+    return _trimmed_record(record, trimmed_seq)
+
+
+def _trimmed_record(record, trimmed_seq):
     return SeqRecord(
         seq=Seq(trimmed_seq),
         id=record.id,
@@ -412,10 +417,11 @@ def _backtrim_main(args, report):
         ),
         output_complete=len(kept_aa_sites) == len(target),
     )
-    nucleotide_ranges = codon_sites_to_nucleotide_ranges(codon_sites=kept_aa_sites)
-    trim_worker = partial(
-        trim_codon_record_with_ranges, nucleotide_ranges=nucleotide_ranges
-    )
+    ranges, indices = plan_codon_selection(kept_aa_sites)
+
+    def trim_worker(record):
+        return _trimmed_record(record, select_codon_bytes(record.seq, ranges, indices))
+
     trimmed_cdn_records = parallel_map_ordered(
         items=cdn_records, worker=trim_worker, threads=threads
     )
