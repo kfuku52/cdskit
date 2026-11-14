@@ -9,10 +9,11 @@ from cdskit.atomicio import atomic_text_writer
 from cdskit.tsvio import write_tsv
 
 from cdskit.util import (
+    DnaValidation,
+    iter_seq_chunks,
     parallel_map_ordered,
     read_seqs,
     resolve_threads,
-    stop_if_not_dna,
 )
 
 LOWERCASE_DELETE_TABLE = str.maketrans("", "", "abcdefghijklmnopqrstuvwxyz")
@@ -75,19 +76,32 @@ def record_stats(record):
 
 
 def sequence_stats_main(args):
-    records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
-    stop_if_not_dna(records=records, label="--seq_file")
-    threads = resolve_threads(getattr(args, "threads", 1))
-    num_seq = len(records)
-    record_count_stats = parallel_map_ordered(
-        items=records, worker=record_stats, threads=threads
-    )
-    bp_masked = sum(x["bp_masked"] for x in record_count_stats)
-    bp_all = sum(x["bp_all"] for x in record_count_stats)
-    bp_G = sum(x["bp_G"] for x in record_count_stats)
-    bp_C = sum(x["bp_C"] for x in record_count_stats)
-    bp_N = sum(x["bp_N"] for x in record_count_stats)
-    bp_gap = sum(x["bp_gap"] for x in record_count_stats)
+    validation = DnaValidation()
+    thread_error = None
+    try:
+        threads = resolve_threads(getattr(args, "threads", 1))
+    except (ValueError, TypeError) as exc:
+        # Keep input errors ahead of thread errors, including for direct callers.
+        thread_error = exc
+        threads = 1
+    num_seq = bp_masked = bp_all = bp_G = bp_C = bp_N = bp_gap = 0
+    for records in iter_seq_chunks(
+        seqfile=args.seqfile, seqformat=args.inseqformat, max_chunk_residues=8_000_000
+    ):
+        validation.inspect(records)
+        if validation.invalid or thread_error is not None:
+            continue
+        num_seq += len(records)
+        for row in parallel_map_ordered(records, record_stats, threads):
+            bp_masked += row["bp_masked"]
+            bp_all += row["bp_all"]
+            bp_G += row["bp_G"]
+            bp_C += row["bp_C"]
+            bp_N += row["bp_N"]
+            bp_gap += row["bp_gap"]
+    validation.raise_if_invalid()
+    if thread_error is not None:
+        raise thread_error
     print("Number of sequences: {:,}".format(num_seq))
     print("Total length: {:,}".format(bp_all))
     print("Total softmasked length: {:,}".format(bp_masked))

@@ -407,32 +407,49 @@ def _invalid_sequence_chars(
     return invalid_chars
 
 
+class DnaValidation:
+    """Accumulate DNA diagnostics for either a batch or a stream of records."""
+
+    def __init__(self) -> None:
+        self._invalid_ids: list[str] = []
+        self._invalid_chars: set[str] = set()
+
+    @property
+    def invalid(self) -> bool:
+        return bool(self._invalid_ids)
+
+    def inspect(self, records: Iterable[SeqRecord]) -> None:
+        for record in records:
+            record_invalid_chars = _invalid_sequence_chars(
+                str(record.seq), DNA_ALLOWED_CHARS, _DNA_VALID_PREFIX
+            )
+            if record_invalid_chars:
+                self._invalid_chars.update(record_invalid_chars)
+                # Keep ten examples and at most one overflow marker.
+                if len(self._invalid_ids) < 11:
+                    self._invalid_ids.append(str(record.id))
+
+    def raise_if_invalid(self, label: str = "--seq_file") -> None:
+        if not self._invalid_ids:
+            return
+        shown = ",".join(self._invalid_ids[:10])
+        if len(self._invalid_ids) > 10:
+            shown += ",..."
+        chars = "".join(sorted(self._invalid_chars))
+        txt = (
+            "Invalid non-DNA character(s) were detected in {} ({}) [chars: {}]. "
+            "DNA-only input is required (use T instead of U). Exiting.\n"
+        )
+        raise ValueError(txt.format(label, shown, chars))
+
+
 def stop_if_not_dna(
     records: Sequence[SeqRecord],
     label: str = "--seq_file",
 ) -> None:
-    invalid_ids = list()
-    invalid_chars = set()
-    for record in records:
-        seq_str = str(record.seq)
-        record_invalid_chars = _invalid_sequence_chars(
-            seq_str, DNA_ALLOWED_CHARS, _DNA_VALID_PREFIX
-        )
-        if record_invalid_chars:
-            invalid_chars.update(record_invalid_chars)
-            invalid_ids.append(str(record.id))
-    if len(invalid_ids) == 0:
-        return
-    max_show = 10
-    shown = ",".join(invalid_ids[:max_show])
-    if len(invalid_ids) > max_show:
-        shown += ",..."
-    chars = "".join(sorted(invalid_chars))
-    txt = (
-        "Invalid non-DNA character(s) were detected in {} ({}) [chars: {}]. "
-        "DNA-only input is required (use T instead of U). Exiting.\n"
-    )
-    raise ValueError(txt.format(label, shown, chars))
+    validation = DnaValidation()
+    validation.inspect(records)
+    validation.raise_if_invalid(label)
 
 
 def stop_if_not_protein(
