@@ -269,6 +269,15 @@ def _fit_likelihood(
         # A slowly changing fit can exhaust the iteration budget. Resume
         # from its last point using the cancellation-resistant objective.
         fit = _resume_likelihood_fit(minimize_fit, objective, fit, bounds)
+    if not fit.success and fit.status in (1, 2) and np.all(np.isfinite(fit.x)):
+        # Try a positive, neutral-ratio start when continuing the stalled fit
+        # has failed. Accept the new fit only if it improves the same objective.
+        neutral = np.array([0.1, 0.1, _LOG_KAPPA_CENTER])
+        if regularized:
+            neutral[:2] = np.log(neutral[:2])
+        fit = _retry_likelihood_fit(
+            minimize_fit, objective, fit, bounds, neutral, ftol=1e-14
+        )
     if not fit.success or not np.isfinite(fit.fun) or not np.all(np.isfinite(fit.x)):
         return {"status": "not_converged"}
     ds, dn, log_kappa = (float(value) for value in fit.x)
@@ -301,12 +310,18 @@ def _fit_likelihood(
 
 
 def _resume_likelihood_fit(minimize_fit, objective, previous, bounds):
+    return _retry_likelihood_fit(
+        minimize_fit, objective, previous, bounds, previous.x, ftol=_FIT_OPTIONS["ftol"]
+    )
+
+
+def _retry_likelihood_fit(minimize_fit, objective, previous, bounds, start, *, ftol):
     direct = partial(objective, direct=True)
     loss, _ = direct(previous.x)
     fit = minimize_fit(
         direct,
-        previous.x,
-        options={**_FIT_OPTIONS, "maxiter": 300},
+        start,
+        options={**_FIT_OPTIONS, "maxiter": 300, "ftol": ftol},
     )
     lower, upper = np.asarray(bounds).T
     projected = fit.x - np.clip(fit.x - fit.jac, lower, upper)

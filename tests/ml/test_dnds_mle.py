@@ -151,6 +151,29 @@ def test_gy94_iteration_retry_recovers_a_compositionally_sparse_pair(monkeypatch
     assert row["dN"] == pytest.approx(0.0515, abs=2e-5)
 
 
+def test_gy94_tries_neutral_start_after_two_unsuccessful_line_searches(monkeypatch):
+    pairs = [divergent_pair()]
+    expected = dnds.estimate_pairs(pairs, method="gy94-regularized-kappa")[0]
+    minimize = dnds_mle.minimize
+    starts = []
+
+    def stall_first_two_searches(objective, initial, **kwargs):
+        starts.append(initial.copy())
+        if len(starts) < 3:
+            return SimpleNamespace(x=initial.copy(), success=False, status=2)
+        assert objective.keywords == {"direct": True}
+        return minimize(objective, initial, **kwargs)
+
+    monkeypatch.setattr(dnds_mle, "minimize", stall_first_two_searches)
+    [actual] = dnds.estimate_pairs(pairs, method="gy94-regularized-kappa")
+
+    assert len(starts) == 3
+    assert starts[-1] == pytest.approx(np.log([0.1, 0.1, 3.0]))
+    assert actual["status"] == expected["status"] == "ok"
+    for field in ("dS", "dN", "kappa"):
+        assert actual[field] == pytest.approx(expected[field], abs=2e-6)
+
+
 @pytest.mark.parametrize(
     ("method", "frequency", "label"),
     [
