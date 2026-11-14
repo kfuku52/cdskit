@@ -124,9 +124,12 @@ _ALIGNMENT_ALPHABET_PATTERNS = {
     for kind, alphabet in ALPHABETS.items()
 }
 _PROTEIN_STATE_BITS = np.zeros(256, dtype=np.uint32)
+_PROTEIN_STATE_CODES = np.zeros(256, dtype=np.uint8)
 for _index, _residue in enumerate(sorted(STATES["aa"])):
     _PROTEIN_STATE_BITS[ord(_residue)] = 1 << _index
+    _PROTEIN_STATE_CODES[ord(_residue)] = _index + 1
 _PROTEIN_STATE_BITS.flags.writeable = False
+_PROTEIN_STATE_CODES.flags.writeable = False
 _DNA_STATE_BITS = np.zeros(256, dtype=np.uint8)
 _DNA_STATE_BITS[list(b"ACGT")] = (1, 2, 4, 8)
 _DNA_STATE_BITS.flags.writeable = False
@@ -175,12 +178,30 @@ def _alignment_site_bit_counts(sequences, length, state_bits):
     return variable, informative
 
 
+def _protein_site_counts(block):
+    # Code zero contains ambiguous or missing residues. Each column
+    # has its own group of bins, so the matrix needs only one count.
+    width = block.shape[1]
+    bins = len(STATES["aa"]) + 1
+    offsets = np.arange(0, width * bins, bins, dtype=np.intp)
+    keys = _PROTEIN_STATE_CODES[block] + offsets
+    counts = np.bincount(keys.ravel(), minlength=width * bins).reshape(width, bins)[
+        :, 1:
+    ]
+    variable = np.count_nonzero(np.count_nonzero(counts, axis=1) >= 2)
+    informative = np.count_nonzero(np.count_nonzero(counts >= 2, axis=1) >= 2)
+    return int(variable), int(informative)
+
+
 def _alignment_site_counts(sequences, length, seq_type):
     if length >= 256:
         bits = _PROTEIN_STATE_BITS if seq_type == "aa" else _DNA_STATE_BITS
         return _alignment_site_bit_counts(sequences, length, bits)
     variable = informative = 0
-    block_width = max(1, min(4096, 1_000_000 // len(sequences)))
+    # Protein counting uses an integer key for each cell. Keep that array
+    # bounded by limiting the number of columns per block.
+    max_cells = 262_144 if seq_type == "aa" else 1_000_000
+    block_width = max(1, min(length, max_cells // len(sequences)))
     for start in range(0, length, block_width):
         width = min(block_width, length - start)
         block = np.frombuffer(
@@ -189,6 +210,11 @@ def _alignment_site_counts(sequences, length, seq_type):
             ),
             dtype=np.uint8,
         ).reshape(len(sequences), width)
+        if seq_type == "aa":
+            block_variable, block_informative = _protein_site_counts(block)
+            variable += block_variable
+            informative += block_informative
+            continue
         present = np.zeros(width, dtype=np.uint8)
         repeated = np.zeros(width, dtype=np.uint8)
         for state in STATES[seq_type]:

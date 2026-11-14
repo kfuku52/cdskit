@@ -72,6 +72,18 @@ def test_long_protein_alignment_counts_canonical_states_and_ambiguities():
     assert row["B"] == row["J"] == row["Z"] == 80
 
 
+def test_short_protein_alignment_counts_sites_across_blocks():
+    records = [
+        SeqRecord(Seq(s * 60), id=str(i))
+        for i, s in enumerate(("aY-X", "aY-B", "CY-Z", "CG-J", *("BX.?",) * 1100))
+    ]
+    row = summarize_alignment(records, "aa")
+    assert row["No_variable_sites"] == 120
+    assert row["Parsimony_informative_sites"] == 60
+    assert row["A"] == row["C"] == 120
+    assert row["Y"] == 180
+
+
 @pytest.mark.parametrize(
     "sequences,ids,message",
     [
