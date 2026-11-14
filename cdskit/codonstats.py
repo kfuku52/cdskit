@@ -5,9 +5,7 @@ from itertools import product
 from cdskit.alignment_metrics import _concrete_codon_histogram
 from cdskit.codonutil import (
     CODON_SEMANTICS_VERSION,
-    CODON_MISSING,
     UNAMBIGUOUS_NT,
-    classify_codon,
     analyze_codon,
     get_forward_table,
 )
@@ -22,12 +20,23 @@ _HISTOGRAM_MIN_CODONS = 256
 _USAGE_ARRAY_MIN_NT = 3 * 4096
 _CONCRETE_CODONS = tuple("".join(bases) for bases in product("ACGT", repeat=3))
 _CONCRETE_CODON_SET = frozenset(_CONCRETE_CODONS)
+_CONCRETE_CODON_KEYS = {codon: codon for codon in _CONCRETE_CODONS}
 
 
 def gc_percent(gc_count, total_count):
     if total_count == 0:
         return 0.0
     return (gc_count / total_count) * 100
+
+
+def _scalar_codon_counts(sequence):
+    starts = range(0, len(sequence), 3)
+    if len(sequence) < _HISTOGRAM_MIN_CODONS * 3 and sequence.isascii():
+        upper = sequence.upper()
+        return Counter(upper[start : start + 3] for start in starts).items()
+    # Preserve triplet boundaries during Unicode case expansion and avoid
+    # accumulating an unbounded number of distinct invalid triplets.
+    return ((sequence[start : start + 3].upper(), 1) for start in starts)
 
 
 def _summarize_record_scalar(record, codontable, seq_str):
@@ -41,31 +50,32 @@ def _summarize_record_scalar(record, codontable, seq_str):
     usage: Counter[str] = Counter()
     gc_counts = [0, 0, 0]
     gc_denoms = [0, 0, 0]
-    for i in range(0, len(seq_str), 3):
-        codon = seq_str[i : i + 3]
-        codon_upper = codon.upper()
+    for codon_upper, count in _scalar_codon_counts(seq_str):
         for pos, ch in enumerate(codon_upper):
             if ch in UNAMBIGUOUS_NT:
-                gc_denoms[pos] += 1
+                gc_denoms[pos] += count
                 if ch in ("G", "C"):
-                    gc_counts[pos] += 1
-        state = classify_codon(codon=codon_upper, codontable=codontable)
+                    gc_counts[pos] += count
         meaning = analyze_codon(codon_upper, codontable)
-        if state == CODON_MISSING:
-            codons_missing += 1
+        if meaning.missing:
+            codons_missing += count
             continue
         if len(codon_upper) < 3:
             if not meaning.ambiguous and not meaning.invalid:
-                usage[codon_upper] += 1
+                usage[codon_upper] += count
             continue
-        codons_complete += 1
-        codons_stop += int(meaning.definite_stop)
-        possible_stop += int(meaning.possible_stop)
-        context_dependent += int(meaning.context_dependent)
+        codons_complete += count
+        if meaning.definite_stop:
+            codons_stop += count
+        if meaning.possible_stop:
+            possible_stop += count
+        if meaning.context_dependent:
+            context_dependent += count
         if not meaning.ambiguous and not meaning.invalid:
-            usage[codon_upper] += 1
+            # Reuse the 64 keys across records when summaries are kept together.
+            usage[_CONCRETE_CODON_KEYS.get(codon_upper, codon_upper)] += count
         else:
-            codons_ambiguous += 1
+            codons_ambiguous += count
     gc_total = sum(gc_counts)
     gc_denom_total = sum(gc_denoms)
     return {

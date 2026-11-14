@@ -122,6 +122,15 @@ def test_scalar_histogram_boundary_matches_reference(length):
     )
 
 
+@pytest.mark.parametrize("code", [1, 27, 28, 31])
+def test_short_record_counts_preserve_case_normalization_and_usage_order(code):
+    sequence = "gctTARaaaTANn.CtgaGCT???AAATGaA"
+    _assert_summary(
+        summarize_record(SimpleNamespace(seq=sequence, id="record"), code),
+        _reference(sequence, code),
+    )
+
+
 @pytest.mark.parametrize("sequence", ["", "NNN" * 300, "---" * 300, "???...NNN" * 100])
 def test_zero_gc_denominators_and_empty_usage(sequence):
     actual = summarize_record(SimpleNamespace(seq=sequence, id="record"), 1)
