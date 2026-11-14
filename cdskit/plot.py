@@ -19,7 +19,7 @@ from matplotlib.patches import Patch, PathPatch, Rectangle
 from matplotlib.textpath import TextPath
 from matplotlib.transforms import Affine2D
 
-from cdskit.codonarray import codon_features
+from cdskit.codonarray import codon_states
 from cdskit.codonutil import (
     analyze_codon,
     codon_has_missing,
@@ -192,14 +192,14 @@ def _make_site_ticks(num_sites):
 
 def _build_state_matrix(records, codontable):
     if len(records) == 0:
-        return np.zeros((0, 0), dtype=int)
+        return np.zeros((0, 0), dtype=np.uint8)
     num_sites = len(records[0].seq) // 3
-    matrix = np.zeros((len(records), num_sites), dtype=int)
+    matrix = np.empty((len(records), num_sites), dtype=np.uint8)
     for row_idx, record in enumerate(records):
         seq = str(record.seq)
-        values = codon_features(seq, codontable)
-        if values is not None and len(seq) == num_sites * 3:
-            matrix[row_idx] = values[1]
+        states = codon_states(seq, codontable)
+        if states is not None and len(seq) == num_sites * 3:
+            matrix[row_idx] = states
             continue
         for site_idx in range(num_sites):
             codon = seq[site_idx * 3 : site_idx * 3 + 3]
@@ -953,15 +953,8 @@ def _build_summary_figure(records, site_summaries, kept_sites, ambiguous_by_seq,
             [site["clean_fraction"] for site in site_summaries], dtype=float
         )
         stop_positions = x[[site["stop_codons"] > 0 for site in site_summaries]]
-        keep_mask = np.array(
-            [
-                [
-                    1 if site_idx in set(kept_sites) else 0
-                    for site_idx in range(num_sites)
-                ]
-            ],
-            dtype=int,
-        )
+        keep_mask = np.zeros((1, num_sites), dtype=np.uint8)
+        keep_mask[0, kept_sites] = 1
 
         main_ax.plot(x, clean_values, color=COL_CLEAN, linewidth=2.2)
         main_ax.axhline(
@@ -1108,15 +1101,8 @@ def _build_map_figure(records, summary, args):
         strip_ax.set_axis_off()
     else:
         state_matrix = _build_state_matrix(records=records, codontable=args.codontable)
-        keep_mask = np.array(
-            [
-                [
-                    1 if site_idx in set(summary["kept_sites"]) else 0
-                    for site_idx in range(num_sites)
-                ]
-            ],
-            dtype=int,
-        )
+        keep_mask = np.zeros((1, num_sites), dtype=np.uint8)
+        keep_mask[0, summary["kept_sites"]] = 1
         site_ticks = _make_site_ticks(num_sites)
         tick_positions = [tick - 1 for tick in site_ticks]
         cmap = ListedColormap([COL_COMPLETE, COL_MISSING, COL_AMBIGUOUS, COL_STOP])

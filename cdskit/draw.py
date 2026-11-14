@@ -3,7 +3,6 @@ from html import escape
 from math import ceil
 
 from cdskit.codonutil import (
-    ambiguous_codon_counts,
     codon_has_missing,
     codon_is_ambiguous,
     codon_is_stop,
@@ -22,6 +21,7 @@ from cdskit.util import (
     stop_if_not_dna,
     stop_if_not_multiple_of_three,
 )
+from cdskit.validate import sequence_ambiguous_codon_counts
 
 
 DEFAULT_WIDTH = 1200
@@ -138,7 +138,7 @@ def summarize_draw(records, codontable, min_clean_fraction):
     ambiguous_total = 0
     evaluable_total = 0
     for record in records:
-        ambiguous, evaluable = ambiguous_codon_counts(str(record.seq))
+        ambiguous, evaluable = sequence_ambiguous_codon_counts(str(record.seq))
         sequence_ambiguous_counts.append((record.id, ambiguous))
         ambiguous_total += ambiguous
         evaluable_total += evaluable
