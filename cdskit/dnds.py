@@ -126,39 +126,27 @@ def _geometry(code: int) -> dict[str, Any]:
                 neighbor_index += 1
     differences = np.zeros((4096, 4))
     classes = np.zeros((4096, 32))
-    for i, j in product(range(64), repeat=2):
-        if not sense[i] or not sense[j]:
-            continue
-        index = i * 64 + j
-        for pos in range(3):
-            if nondegenerate[i, pos] and nondegenerate[j, pos]:
-                a, b = bases[i, pos], bases[j, pos]
-                classes[index, a * 4 + b] += 0.5
-                classes[index, b * 4 + a] += 0.5
-        if fourfold[i] and fourfold[j] and amino[i] == amino[j]:
-            a, b = bases[i, 2], bases[j, 2]
-            classes[index, 16 + a * 4 + b] += 0.5
-            classes[index, 16 + b * 4 + a] += 0.5
-        changed = [pos for pos in range(3) if codons[i][pos] != codons[j][pos]]
-        paths = []
-        for steps in permutations(changed):
-            current = codons[i]
-            counts = np.zeros(4)
-            for pos in steps:
-                following = current[:pos] + codons[j][pos] + current[pos + 1 :]
-                if following not in forward:
-                    break
-                same = forward[current] == forward[following]
-                ts = {current[pos], following[pos]} in ({"T", "C"}, {"A", "G"})
-                counts[(0 if same else 2) + (0 if ts else 1)] += 1
-                current = following
-            else:
-                paths.append(counts)
-        if paths:
-            differences[index] = np.mean(paths, axis=0)
-        elif changed:
-            # The documented YN00 all-stop-path convention, not an NG86 switch.
-            differences[index, 2:] = (0.5, len(changed) - 0.5)
+    sense_indices = [i for i, is_sense in enumerate(sense) if is_sense]
+    for start, i in enumerate(sense_indices):
+        for j in sense_indices[start:]:
+            index, reverse = i * 64 + j, j * 64 + i
+            for pos in range(3):
+                if nondegenerate[i, pos] and nondegenerate[j, pos]:
+                    a, b = bases[i, pos], bases[j, pos]
+                    classes[index, a * 4 + b] += 0.5
+                    classes[index, b * 4 + a] += 0.5
+            if fourfold[i] and fourfold[j] and amino[i] == amino[j]:
+                a, b = bases[i, 2], bases[j, 2]
+                classes[index, 16 + a * 4 + b] += 0.5
+                classes[index, 16 + b * 4 + a] += 0.5
+            if i != j:
+                # Reversing a shortest sense path preserves its substitution
+                # classes. Both directions therefore have the same average.
+                differences[index] = _equal_path_differences(
+                    codons[i], codons[j], forward
+                )
+                differences[reverse] = differences[index]
+                classes[reverse] = classes[index]
     alphabet = np.full(256, -2, dtype=np.int16)
     for base in "RYSWKMBDHVNX-?.":
         alphabet[ord(base)] = -1
@@ -206,6 +194,31 @@ def _geometry(code: int) -> dict[str, Any]:
             }
         ),
     )
+
+
+def _equal_path_differences(first, second, forward):
+    changed = [i for i in range(3) if first[i] != second[i]]
+    totals = [0, 0, 0, 0]
+    count = 0
+    for steps in permutations(changed):
+        current = first
+        classes = []
+        for pos in steps:
+            following = current[:pos] + second[pos] + current[pos + 1 :]
+            if following not in forward:
+                break
+            same = forward[current] == forward[following]
+            ts = {current[pos], following[pos]} in ({"T", "C"}, {"A", "G"})
+            classes.append((0 if same else 2) + (0 if ts else 1))
+            current = following
+        else:
+            for category in classes:
+                totals[category] += 1
+            count += 1
+    if count:
+        return [total / count for total in totals]
+    # YN00's convention for pairs with no sense-only shortest path.
+    return [0.0, 0.0, 0.5, len(changed) - 0.5]
 
 
 def _encode_pair(
