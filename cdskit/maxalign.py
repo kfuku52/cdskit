@@ -778,6 +778,7 @@ def _solve_branch_and_bound(
     budget = n - 1 if max_removed is None else min(max_removed, n - 1)
     initial = count_complete_columns_with_support(support_counts, active)
     options = _greedy_missing_counts(support_counts, active, protected, budget)
+    groups = _equivalent_gap_rows(active & ~protected, options)
     best_score, best_mask, best_columns = (initial * n, n), active, initial
     pending = [(0, initial, options)]
     work = 0
@@ -811,6 +812,8 @@ def _solve_branch_and_bound(
         pivot = _branch_pivot(options, size, remaining, complete, best_score)
         if pivot is None:
             continue
+        pivot = groups.get(pivot, pivot)
+        next_budget = remaining - pivot.bit_count()
         keep_options: Counter[int] = Counter()
         remove_options: Counter[int] = Counter()
         remove_complete = complete
@@ -820,7 +823,7 @@ def _solve_branch_and_bound(
             reduced = gaps & ~pivot
             if not reduced:
                 remove_complete += weight
-            elif reduced.bit_count() < remaining:
+            elif reduced.bit_count() <= next_budget:
                 remove_options[reduced] += weight
         pending.append((removed, complete, keep_options))
         pending.append((removed | pivot, remove_complete, remove_options))
@@ -832,6 +835,36 @@ def _solve_branch_and_bound(
         complete_codon_columns=best_columns,
         steps=[],
     )
+
+
+def _equivalent_gap_rows(removable: int, options: Counter[int]) -> dict[int, int]:
+    # Refine the partition until each group has identical membership in all
+    # recoverable patterns. Removing only part of a group recovers no sites,
+    # so keeping the whole group gives at least as much area and wins ties.
+    if not options:
+        return {}
+    groups = [removable]
+    for gaps in options:
+        refined: list[int] = []
+        for group in groups:
+            common = group & gaps
+            if common and common != group:
+                refined.extend(
+                    part for part in (common, group ^ common) if part & (part - 1)
+                )
+            else:
+                refined.append(group)
+        groups = refined
+        if not groups:
+            return {}
+    by_row = {}
+    for group in groups:
+        remaining = group
+        while remaining:
+            bit = remaining & -remaining
+            by_row[bit] = group
+            remaining ^= bit
+    return by_row
 
 
 def _branch_pivot(options, size, remaining, complete, best_score):

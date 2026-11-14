@@ -57,6 +57,30 @@ def test_branch_search_bounds_column_recovery_by_number_of_rows_removed():
     assert result["complete_codon_columns"] == 200 and result["area"] == 2400
 
 
+@pytest.mark.parametrize("protected,budget", [([], 3), ([], 2), ([1], 3)])
+def test_branch_search_groups_rows_with_the_same_recoverable_gaps(protected, budget):
+    active = list(range(8))
+    all_present = indices_to_bitmask(active)
+    group = indices_to_bitmask([1, 3, 5])
+    counts = {
+        all_present: 30,
+        all_present ^ group: 65,
+        all_present ^ (group | (1 << 7)): 25,
+        all_present ^ (1 << 7): 14,
+    }
+    result = _solve_branch_and_bound(counts, active, protected, budget)
+    expected = solve_exact(
+        None,
+        active,
+        protected,
+        budget,
+        len(active),
+        support_counts=counts,
+        num_sequences=len(active),
+    )
+    assert result == expected
+
+
 def test_packed_support_masks_match_scalar_across_byte_blocks(monkeypatch):
     records = [
         SeqRecord(Seq(("AcT?NNG.GT-N"[i % 4 :] + "ACGT?-.N") * 96)[:768])
