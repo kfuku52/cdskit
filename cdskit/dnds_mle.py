@@ -22,6 +22,8 @@ _LOG_RATIO_VARIANCE = 1.8**2
 _MODEL = "GY94"
 _PENALIZED_MODEL = "GY94_regularized"
 _FREQUENCY_TOLERANCE = 1e-10
+_FIT_GRADIENT_TOLERANCE = 1e-5
+_FIT_OPTIONS = {"maxiter": 100, "maxls": 60, "ftol": 1e-11}
 
 
 @lru_cache(maxsize=32)
@@ -243,13 +245,17 @@ def _fit_likelihood(counts, code, row, *, model, regularized, frequency_model):
         method="L-BFGS-B",
         bounds=bounds,
         # Boundary fits can require more line-search steps than SciPy's default.
-        options={"maxiter": 100, "maxls": 60, "ftol": 1e-11},
+        options=_FIT_OPTIONS,
     )
     fit = minimize_fit(objective, initial)
     if not fit.success and fit.status == 2 and np.all(np.isfinite(fit.x)):
         # Cancellation in small spectral probabilities can stall the line
         # search. Refit the same objective with scaling and squaring throughout.
         fit = minimize_fit(partial(objective, direct=True), fit.x)
+    if not fit.success and fit.status == 1 and np.all(np.isfinite(fit.x)):
+        # A slowly changing fit can exhaust the iteration budget. Resume
+        # from its last point using the cancellation-resistant objective.
+        fit = _resume_likelihood_fit(minimize_fit, objective, fit, bounds)
     if not fit.success or not np.isfinite(fit.fun) or not np.all(np.isfinite(fit.x)):
         return {"status": "not_converged"}
     ds, dn, log_kappa = (float(value) for value in fit.x)
@@ -279,6 +285,28 @@ def _fit_likelihood(counts, code, row, *, model, regularized, frequency_model):
                 0.0 if value <= _MIN_RATE * 1.000001 else value
             )
     return {**estimates, "status": status}
+
+
+def _resume_likelihood_fit(minimize_fit, objective, previous, bounds):
+    direct = partial(objective, direct=True)
+    loss, _ = direct(previous.x)
+    fit = minimize_fit(
+        direct,
+        previous.x,
+        options={**_FIT_OPTIONS, "maxiter": 300},
+    )
+    lower, upper = np.asarray(bounds).T
+    projected = fit.x - np.clip(fit.x - fit.jac, lower, upper)
+    # Relative loss alone can signal convergence on a nearly flat surface.
+    # Require the box-constrained first-order condition at a resumed fit.
+    if (
+        fit.success
+        and np.isfinite(fit.fun)
+        and fit.fun <= loss
+        and np.max(np.abs(projected)) <= _FIT_GRADIENT_TOLERANCE
+    ):
+        return fit
+    return previous
 
 
 def estimate_ml_batch(

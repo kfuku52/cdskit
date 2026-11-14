@@ -6,6 +6,7 @@ import os
 import random
 import subprocess
 import sys
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -86,6 +87,63 @@ def test_gy94_refits_the_same_likelihood_after_a_line_search_failure(
     assert actual["status"] == expected["status"] == "ok"
     for field in ("dS", "dN", "kappa"):
         assert actual[field] == pytest.approx(expected[field], abs=2e-6)
+
+
+@pytest.mark.parametrize(
+    ("ds_gradient", "loss", "accepted"),
+    [(-0.1, 2.0, True), (0.1, 2.0, False), (-0.1, 4.0, False)],
+)
+def test_gy94_iteration_retry_checks_projected_gradient_and_loss(
+    ds_gradient, loss, accepted
+):
+    previous = SimpleNamespace(x=np.array([0.2, 0.3, 1.0]))
+    fit = SimpleNamespace(
+        x=np.array([10.0, 0.2, 1.0]),
+        jac=np.array([ds_gradient, 0.0, 0.0]),
+        fun=loss,
+        success=True,
+    )
+
+    def objective(parameters, *, direct=False):
+        assert direct
+        return 3.0, np.zeros(3)
+
+    def minimize_retry(target, initial, *, options):
+        assert initial is previous.x
+        assert target(initial)[0] == 3.0
+        assert options["maxiter"] > 100
+        return fit
+
+    actual = dnds_mle._resume_likelihood_fit(
+        minimize_retry, objective, previous, dnds_mle._BOUNDS
+    )
+    assert actual is (fit if accepted else previous)
+
+
+def test_gy94_iteration_retry_recovers_a_compositionally_sparse_pair(monkeypatch):
+    pairs = [("TCGGGA" * 600, "TCGGGA" * 599 + "GGAGGA")]
+    minimize = dnds_mle.minimize
+    retries = []
+
+    def exhaust_initial_budget(objective, initial, **kwargs):
+        if not retries:
+            retries.append(kwargs["options"]["maxiter"])
+            # Force the iteration-limit branch independently of BLAS details.
+            fit = minimize(objective, initial, **kwargs)
+            fit.success = False
+            fit.status = 1
+            return fit
+        retries.append(kwargs["options"]["maxiter"])
+        return minimize(objective, initial, **kwargs)
+
+    monkeypatch.setattr(dnds_mle, "minimize", exhaust_initial_budget)
+    [row] = dnds.estimate_pairs(
+        pairs, 2, method="gy94", frequency_model="empirical-shrinkage"
+    )
+    assert retries == [100, 300]
+    assert row["status"] == "rate_boundary"
+    assert row["dS"] is None
+    assert row["dN"] == pytest.approx(0.0515, abs=2e-5)
 
 
 @pytest.mark.parametrize(
