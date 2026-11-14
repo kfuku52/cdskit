@@ -6,6 +6,29 @@ replacement to standard error.
 
 ## Unreleased
 
+## 0.37.0 — 2026-11-14
+
+### Added
+
+- Add `dnds --method gy94-regularized-kappa` to regularize the transition to
+  transversion rate ratio in pairwise GY94 fits. The
+  [simulation evaluation](docs/dnds-kappa-evaluation-2026-11-14.md) reports
+  gains on short alignments and higher log-κ error at extreme simulated κ values.
+
+### Fixed
+
+- Recover more GY94 fits that reach the iteration limit or stall during line
+  search. Preserve missing estimates at the upper distance bound.
+
+### Performance
+
+- Reduce CPU time and memory use in codon usage, sequence and alignment
+  summaries, degeneracy, and complete-CDS translation.
+- Reduce temporary arrays and redundant work in dN/dS, MaxAlign, hammer,
+  plotting, and codon alignment trimming.
+- Stream split and degeneracy output records, and read backtrim position files
+  without retaining every log line.
+
 ## 0.36.0 — 2026-11-11
 
 ### Added
