@@ -25,6 +25,7 @@ _GAP_TRANSLATION = bytes(int(chr(code) in GAP_ONLY_CHARS) for code in range(256)
 _AA_NON_MISSING = np.ones(256, dtype=bool)
 _AA_NON_MISSING[AA_MISSING_CODES] = False
 _AA_NON_MISSING.flags.writeable = False
+_ALIGNMENT_BLOCK_NUCLEOTIDES = 3 * 1024 * 1024
 
 
 def codon_is_gap_like(codon):
@@ -60,12 +61,11 @@ def build_codon_gap_like_matrix(records):
     if seq_len == 0:
         return np.zeros((num_records, 0), dtype=bool)
 
-    seq_bytes = "".join([str(record.seq) for record in records]).encode("ascii")
-    nt_matrix = np.frombuffer(
-        seq_bytes.translate(_GAP_TRANSLATION), dtype=bool
-    ).reshape(num_records, seq_len)
-    codon_matrix = nt_matrix.reshape(num_records, seq_len // 3, 3)
-    return codon_matrix.all(axis=2)
+    gap_like = np.empty((num_records, seq_len // 3), dtype=bool)
+    for i, record in enumerate(records):
+        bases = np.frombuffer(bytes(record.seq).translate(_GAP_TRANSLATION), dtype=bool)
+        gap_like[i] = bases[::3] & bases[1::3] & bases[2::3]
+    return gap_like
 
 
 def build_non_missing_site(records, codontable, threads):
@@ -76,11 +76,16 @@ def build_non_missing_site(records, codontable, threads):
     seq_len = len(records[0].seq)
     if seq_len == 0:
         return np.zeros(0, dtype=int)
-    amino_acids = translate_sequence_codes(
-        seq_str="".join(str(record.seq) for record in records),
-        codontable=codontable,
-    ).reshape(num_records, seq_len // 3)
-    return _AA_NON_MISSING[amino_acids].sum(axis=0)
+    block_rows = max(1, _ALIGNMENT_BLOCK_NUCLEOTIDES // seq_len)
+    occupied = np.zeros(seq_len // 3, dtype=int)
+    for start in range(0, num_records, block_rows):
+        block = records[start : start + block_rows]
+        amino_acids = translate_sequence_codes(
+            seq_str="".join(str(record.seq) for record in block),
+            codontable=codontable,
+        ).reshape(len(block), seq_len // 3)
+        occupied += _AA_NON_MISSING[amino_acids].sum(axis=0)
+    return occupied
 
 
 def select_codon_site_indices(

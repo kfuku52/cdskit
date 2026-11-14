@@ -25,10 +25,19 @@ def test_gap_matrix_matches_character_membership():
 
 
 @pytest.mark.parametrize("code", [1, 2, 27, 28, 31])
-def test_occupancy_retains_translation_based_missing_rules(code):
-    sequences = ["ATGGCNTARTANTGATGGTAA---NNN", "atggcntartantgatggtaa---nnn"]
+def test_occupancy_retains_translation_based_missing_rules_across_blocks(
+    code, monkeypatch
+):
+    sequences = [
+        "ATGGCNTARTANTGATGGTAA---NNN",
+        "atggcntartantgatggtaa---nnn",
+        "---GCATARTANGGTTGATAAATGNNN",
+    ]
+    monkeypatch.setattr(hammer, "_ALIGNMENT_BLOCK_NUCLEOTIDES", 2 * len(sequences[0]))
     records = [SeqRecord(Seq(sequence)) for sequence in sequences]
-    translated = translate_sequence_codes("".join(sequences), code).reshape(2, -1)
+    translated = translate_sequence_codes("".join(sequences), code).reshape(
+        len(sequences), -1
+    )
     expected = np.array(
         [sum(chr(int(aa)) not in "-?X*" for aa in column) for column in translated.T]
     )
