@@ -7,6 +7,10 @@ from dataclasses import dataclass
 from itertools import pairwise
 from pathlib import Path
 import re
+import sys
+
+_COLUMN_BLOCK_BYTES = 1024 * 1024
+_COLD_TRANSPOSE_MIN_CELLS = 8_000_000
 
 
 @dataclass(frozen=True)
@@ -20,7 +24,34 @@ def alignment_columns(sequences: list[str]) -> list[str]:
     if len({len(sequence) for sequence in sequences}) > 1:
         raise ValueError("Sequences must be aligned before column mapping.")
     normalized = [sequence.upper().replace(".", "-") for sequence in sequences]
+    cells = len(normalized) * len(normalized[0]) if normalized else 0
+    if (
+        type(sequences) in (list, tuple)
+        and len(normalized) >= 16
+        and cells >= 65_536
+        and ("numpy" in sys.modules or cells >= _COLD_TRANSPOSE_MIN_CELLS)
+        # ASCII normalization keeps the original widths. Unicode uppercasing
+        # may expand a residue, so preserve the strict zip path in that case.
+        and all(type(row) is str and row.isascii() for row in sequences)
+    ):
+        return _ascii_columns(normalized)
     return ["".join(column) for column in zip(*normalized, strict=True)]
+
+
+def _ascii_columns(rows: list[str]) -> list[str]:
+    import numpy as np
+
+    width = len(rows[0])
+    height = len(rows)
+    block_width = max(1, _COLUMN_BLOCK_BYTES // height)
+    columns: list[str] = []
+    for start in range(0, width, block_width):
+        stop = min(start + block_width, width)
+        block = "".join(row[start:stop] for row in rows).encode("ascii")
+        transposed = np.frombuffer(block, dtype=np.uint8).reshape(height, -1).T
+        text = transposed.tobytes().decode("ascii")
+        columns.extend(text[i : i + height] for i in range(0, len(text), height))
+    return columns
 
 
 def _earliest(source: list[str], target: list[str]) -> list[int]:

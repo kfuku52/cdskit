@@ -4,6 +4,7 @@ from itertools import combinations, product
 
 import pytest
 
+from cdskit import column_mapping
 from cdskit.column_mapping import (
     alignment_columns,
     analyze_mapping,
@@ -37,6 +38,19 @@ def test_normalization_and_alignment_validation():
     assert alignment_columns(["a.", "A-"]) == ["AA", "--"]
     with pytest.raises(ValueError, match="aligned"):
         alignment_columns(["A", "AA"])
+
+
+def test_ascii_column_transpose_preserves_normalization_across_blocks(monkeypatch):
+    monkeypatch.setattr(column_mapping, "_COLUMN_BLOCK_BYTES", 512)
+    monkeypatch.setattr(column_mapping, "_COLD_TRANSPOSE_MIN_CELLS", 0)
+    rows = ["aM.x-?" * 120] * 64 + ["Tq.Y*n" * 120] * 32
+    expected = ["".join(column) for column in zip(*rows, strict=True)]
+    assert alignment_columns(rows) == [
+        column.upper().replace(".", "-") for column in expected
+    ]
+    rows[-1] = rows[-1][:-1] + "ß"
+    with pytest.raises(ValueError, match="zip"):
+        alignment_columns(rows)
 
 
 @pytest.mark.parametrize(
