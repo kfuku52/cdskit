@@ -1,9 +1,9 @@
 import numpy as np
 import sys
-from functools import partial
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
+from cdskit.codonarray import plan_codon_selection, select_codon_bytes
 from cdskit.translate import translate_sequence_codes
 from cdskit.util import (
     parallel_map_ordered,
@@ -144,6 +144,10 @@ def codon_sites_to_nucleotide_ranges(codon_sites):
 def build_hammer_output_record(record, selected_nucleotide_ranges):
     seq_str = str(record.seq)
     new_seq = "".join([seq_str[start:end] for start, end in selected_nucleotide_ranges])
+    return _hammer_output_record(record, new_seq)
+
+
+def _hammer_output_record(record, new_seq):
     return SeqRecord(
         seq=Seq(new_seq),
         id=record.id,
@@ -184,13 +188,13 @@ def hammer_main(args):
         codon_gap_like_matrix=codon_gap_like_matrix,
         original_records=original_records,
     )
-    selected_nucleotide_ranges = codon_sites_to_nucleotide_ranges(
-        selected_non_missing_idx.tolist()
-    )
-    worker = partial(
-        build_hammer_output_record,
-        selected_nucleotide_ranges=selected_nucleotide_ranges,
-    )
+    ranges, indices = plan_codon_selection(selected_non_missing_idx.tolist())
+
+    def worker(record):
+        return _hammer_output_record(
+            record, select_codon_bytes(record.seq, ranges, indices)
+        )
+
     records = parallel_map_ordered(
         items=original_records,
         worker=worker,

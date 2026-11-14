@@ -15,6 +15,31 @@ for _index, _character in enumerate(_ALPHABET):
     _encoding[ord(_character)] = _encoding[ord(_character.lower())] = _index
 _ENCODING = bytes(_encoding)
 _HISTOGRAM_BLOCK_CODONS = 65536
+_GATHER_MIN_RANGES = 256
+
+
+def plan_codon_selection(sites):
+    """Prepare extraction of sorted codon sites from aligned rows."""
+    ranges: list[tuple[int, int]] = []
+    for site in sites:
+        start = int(site) * 3
+        end = start + 3
+        if ranges and ranges[-1][1] == start:
+            ranges[-1] = (ranges[-1][0], end)
+        else:
+            ranges.append((start, end))
+            if len(ranges) == _GATHER_MIN_RANGES:
+                return [], np.asarray(sites, dtype=np.intp)
+    return ranges, None
+
+
+def select_codon_bytes(sequence, ranges, indices):
+    """Gather original triplets from a validated row, preserving case and gaps."""
+    data = bytes(sequence)
+    if indices is None:
+        return b"".join(data[start:end] for start, end in ranges)
+    codons = np.frombuffer(data, dtype="S3", count=len(data) // 3)
+    return codons[indices].tobytes()
 
 
 class CodonHistogram(NamedTuple):
