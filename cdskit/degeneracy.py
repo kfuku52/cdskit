@@ -47,6 +47,14 @@ def _fold_lookup(codontable):
 
 
 def classify_alignment_columns(records, codontable):
+    result = _classify_alignment_columns(records, codontable)
+    folds = result["assignments"]
+    assignments = folds.astype(object)
+    assignments[folds < 0] = None
+    return {**result, "assignments": assignments.tolist()}
+
+
+def _classify_alignment_columns(records, codontable):
     length = len(records[0])
     minimum = np.full(length, 5, dtype=np.int8)
     maximum = np.full(length, -1, dtype=np.int8)
@@ -59,13 +67,11 @@ def classify_alignment_columns(records, codontable):
         np.maximum(maximum, folds, out=maximum)
         np.minimum(minimum, np.where(folds < 0, 5, folds), out=minimum)
     assigned = minimum == maximum
-    assignments = np.full(length, None, dtype=object)
-    assignments[assigned] = minimum[assigned]
+    minimum[~assigned] = -1
     return {
-        "assignments": assignments.tolist(),
+        "assignments": minimum,
         "counts_by_fold": {
-            fold: int(np.count_nonzero(assigned & (minimum == fold)))
-            for fold in (0, 2, 3, 4)
+            fold: int(np.count_nonzero(minimum == fold)) for fold in (0, 2, 3, 4)
         },
         "num_conflict_sites": int(np.count_nonzero((maximum >= 0) & ~assigned)),
         "num_unassigned_sites": int(np.count_nonzero(maximum < 0)),
@@ -74,8 +80,18 @@ def classify_alignment_columns(records, codontable):
 
 def trim_record_to_positions(record, positions):
     trimmed = copy.copy(record)
-    seq_str = str(record.seq)
-    replace_record_sequence(trimmed, "".join(seq_str[pos] for pos in positions))
+    sequence: bytes | str
+    if (
+        isinstance(positions, np.ndarray)
+        and positions.ndim == 1
+        and positions.dtype.kind in "iu"
+    ):
+        bases = np.frombuffer(bytes(record.seq), dtype=np.uint8)
+        sequence = bases[positions].tobytes()
+    else:
+        seq_str = str(record.seq)
+        sequence = "".join(seq_str[pos] for pos in positions)
+    replace_record_sequence(trimmed, sequence)
     return trimmed
 
 
@@ -124,9 +140,9 @@ def degeneracy_main(args):
         "selected_folds": selected_folds,
     }
     prefix_str = resolve_output_prefix(args)
-    assignments = []
+    assignments = np.empty(0, dtype=np.int8)
     if records:
-        classification = classify_alignment_columns(
+        classification = _classify_alignment_columns(
             records=records, codontable=args.codontable
         )
         assignments = classification["assignments"]
@@ -160,18 +176,15 @@ def degeneracy_main(args):
             summary=summary,
         )
         for fold, outfile in zip(selected_folds, sequence_outputs, strict=False):
-            positions = [
-                idx for idx, assignment in enumerate(assignments) if assignment == fold
-            ]
+            positions = np.flatnonzero(assignments == fold)
             sys.stderr.write(
                 f"Writing {fold}-fold positions ({len(positions)} sites).\n"
             )
-            out_records = [
-                trim_record_to_positions(record=record, positions=positions)
-                for record in records
-            ]
             write_seqs(
-                records=out_records,
+                records=[
+                    trim_record_to_positions(record=record, positions=positions)
+                    for record in records
+                ],
                 outfile=staged[outfile],
                 outseqformat=args.outseqformat,
             )
