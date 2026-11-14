@@ -8,13 +8,18 @@ import Bio.SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
+from cdskit import degeneracy
 from cdskit.degeneracy import degeneracy_main
 
 
 class TestDegeneracyMain:
     """Tests for degeneracy_main function."""
 
-    def test_degeneracy_writes_expected_fold_outputs(self, temp_dir, mock_args):
+    def test_degeneracy_writes_expected_fold_outputs(
+        self, temp_dir, mock_args, monkeypatch
+    ):
+        monkeypatch.setattr(degeneracy, "_COMPACT_SELECTION_MIN", 1)
+        monkeypatch.setattr(degeneracy, "_CLASSIFY_BLOCK_NT", 3)
         input_path = temp_dir / "input.fasta"
         prefix = temp_dir / "deg"
 

@@ -33,6 +33,7 @@ _BASE_CODES = bytes(
     "ACGTacgt".index(chr(i)) % 4 if chr(i) in "ACGTacgt" else 4 for i in range(256)
 )
 _CLASSIFY_BLOCK_NT = 3 * 65_536
+_COMPACT_SELECTION_MIN = 1_000_000
 
 
 @lru_cache(maxsize=64)
@@ -116,6 +117,26 @@ def trim_record_to_positions(record, positions):
     return trimmed
 
 
+def _positions_for_fold(assignments, fold, count):
+    if (
+        count < _COMPACT_SELECTION_MIN
+        or np.dtype(np.intp).itemsize <= np.dtype(np.int32).itemsize
+        or len(assignments) - 1 > np.iinfo(np.int32).max
+    ):
+        return np.flatnonzero(assignments == fold)
+    # The report already gives the count. Build compact indexes without ever
+    # allocating a full-width boolean mask or converting a full intp array.
+    positions = np.empty(count, dtype=np.int32)
+    cursor = 0
+    for start in range(0, len(assignments), _CLASSIFY_BLOCK_NT):
+        block = assignments[start : start + _CLASSIFY_BLOCK_NT]
+        local = np.flatnonzero(block == fold)
+        stop = cursor + len(local)
+        positions[cursor:stop] = local + start
+        cursor = stop
+    return positions
+
+
 def write_degeneracy_report(report_path, summary):
     if report_path == "":
         return
@@ -151,13 +172,14 @@ def degeneracy_main(args):
     stop_if_not_multiple_of_three(records=records)
     stop_if_invalid_codontable(args.codontable)
     selected_folds = sorted(set(int(fold) for fold in args.fold))
+    counts_by_fold = {0: 0, 2: 0, 3: 0, 4: 0}
     summary = {
         "num_sequences": len(records),
         "num_input_nt_sites": 0,
         "num_input_codon_sites": 0,
         "num_conflict_sites": 0,
         "num_unassigned_sites": 0,
-        "counts_by_fold": {"0": 0, "2": 0, "3": 0, "4": 0},
+        "counts_by_fold": {str(key): value for key, value in counts_by_fold.items()},
         "selected_folds": selected_folds,
     }
     prefix_str = resolve_output_prefix(args)
@@ -167,6 +189,7 @@ def degeneracy_main(args):
             records=records, codontable=args.codontable
         )
         assignments = classification["assignments"]
+        counts_by_fold = classification["counts_by_fold"]
         summary = {
             "num_sequences": len(records),
             "num_input_nt_sites": len(records[0]),
@@ -174,8 +197,7 @@ def degeneracy_main(args):
             "num_conflict_sites": classification["num_conflict_sites"],
             "num_unassigned_sites": classification["num_unassigned_sites"],
             "counts_by_fold": {
-                str(key): value
-                for key, value in classification["counts_by_fold"].items()
+                str(key): value for key, value in counts_by_fold.items()
             },
             "selected_folds": selected_folds,
         }
@@ -197,7 +219,9 @@ def degeneracy_main(args):
             summary=summary,
         )
         for fold, outfile in zip(selected_folds, sequence_outputs, strict=False):
-            positions = np.flatnonzero(assignments == fold)
+            positions = _positions_for_fold(
+                assignments, fold, counts_by_fold.get(fold, 0)
+            )
             sys.stderr.write(
                 f"Writing {fold}-fold positions ({len(positions)} sites).\n"
             )
