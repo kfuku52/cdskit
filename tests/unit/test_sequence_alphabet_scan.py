@@ -99,11 +99,14 @@ def test_invalid_ids_keep_order_duplicates_and_ten_record_limit(seqtype):
 
 
 @pytest.mark.parametrize("seqtype", ["dna", "protein", "auto"])
-def test_unicode_controls_and_surrogates_keep_sorted_diagnostics(seqtype):
+@pytest.mark.parametrize("prefix_length", [3, 70_000])
+def test_unicode_controls_and_surrogates_keep_sorted_diagnostics(
+    seqtype, prefix_length
+):
     # SeqRecord stores ASCII; record-like objects cover existing str conversion.
     characters = "éΩ😀\ud800\udfff\x00\x01\n\r\t!Uu"
     records = [
-        SimpleNamespace(seq="ACG" + characters, id="unicode"),
+        SimpleNamespace(seq="A" * prefix_length + characters, id="unicode"),
         SimpleNamespace(seq="!", id=17),
     ]
     _assert_diagnostics(records, seqtype)

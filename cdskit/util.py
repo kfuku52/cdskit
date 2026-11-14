@@ -67,6 +67,16 @@ _PROTEIN_VALID_PREFIX = re.compile(
 _SEQUENCE_VALID_PREFIX = re.compile(
     "[" + re.escape("".join(sorted(_SEQUENCE_ALLOWED_CHARS))) + "]*"
 )
+_ASCII_ALPHABETS = {
+    pattern: "".join(sorted(alphabet)).encode("ascii")
+    for pattern, alphabet in (
+        (_DNA_VALID_PREFIX, DNA_ALLOWED_CHARS),
+        (_PROTEIN_VALID_PREFIX, PROTEIN_ALLOWED_CHARS),
+        (_SEQUENCE_VALID_PREFIX, _SEQUENCE_ALLOWED_CHARS),
+    )
+}
+_ALPHABET_SCAN_BLOCK = 65_536
+_ASCII_ALPHABET_SCAN_MIN = 4096
 DEFAULT_MAX_SEQUENCE_RECORDS = 1_000_000
 DEFAULT_MAX_SEQUENCE_RESIDUES = 1_000_000_000
 DEFAULT_MAX_SEQUENCE_ID_LENGTH = 4096
@@ -392,6 +402,15 @@ def _invalid_sequence_chars(
 ) -> set[str] | None:
     if type(sequence) is not str:
         return set(sequence).difference(allowed_chars)
+    if len(sequence) >= _ASCII_ALPHABET_SCAN_MIN and sequence.isascii():
+        allowed_bytes = _ASCII_ALPHABETS[valid_prefix]
+        invalid_bytes: set[int] = set()
+        for start in range(0, len(sequence), _ALPHABET_SCAN_BLOCK):
+            block = sequence[start : start + _ALPHABET_SCAN_BLOCK].encode("ascii")
+            remainder = block.translate(None, allowed_bytes)
+            if remainder:
+                invalid_bytes.update(remainder)
+        return {chr(byte) for byte in invalid_bytes} if invalid_bytes else None
     # The character classes include zero repetitions, so every string matches.
     match = valid_prefix.match(sequence)
     assert match is not None
@@ -400,9 +419,11 @@ def _invalid_sequence_chars(
         return None
     invalid_chars: set[str] = set()
     # Skip the valid prefix and bound temporary slices for long invalid records.
-    for start in range(first_invalid, len(sequence), 65536):
+    for start in range(first_invalid, len(sequence), _ALPHABET_SCAN_BLOCK):
         invalid_chars.update(
-            set(sequence[start : start + 65536]).difference(allowed_chars)
+            set(sequence[start : start + _ALPHABET_SCAN_BLOCK]).difference(
+                allowed_chars
+            )
         )
     return invalid_chars
 
