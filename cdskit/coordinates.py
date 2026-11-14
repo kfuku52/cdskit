@@ -14,6 +14,7 @@ _OBSERVED_AA = frozenset(_AMINO_ACIDS)
 _AA_BYTES = bytes(_AMINO_ACIDS.find(chr(code)) + 1 for code in range(256))
 _CONCRETE_BASES = frozenset("ACGT")
 _CONCRETE_CODONS = frozenset("".join(codon) for codon in product("ACGT", repeat=3))
+_NONCONCRETE_BYTES = bytes(int(chr(code) not in _CONCRETE_BASES) for code in range(256))
 
 
 def r_functions_path():
@@ -41,6 +42,21 @@ def trimmed_mapping(trimmed, untrimmed, gap="04", *, ambiguity="leftmost"):
 
 
 def _mask_identity_codons(sequence):
+    if (
+        type(sequence) is str
+        and len(sequence) >= 384
+        and len(sequence) % 3 == 0
+        and sequence.isascii()
+    ):
+        import numpy as np
+
+        masked = bytearray(sequence, "ascii")
+        flags = np.frombuffer(masked.translate(_NONCONCRETE_BYTES), dtype=np.bool_)
+        unusable = flags[::3] | flags[1::3] | flags[2::3]
+        if not unusable.any():
+            return sequence
+        np.frombuffer(masked, dtype=np.uint8).reshape(-1, 3)[unusable] = ord("N")
+        return masked.decode("ascii")
     triplets = (sequence[i : i + 3] for i in range(0, len(sequence), 3))
     if type(sequence) is str:
         return "".join(
