@@ -50,32 +50,32 @@ def test_public_split_preserves_metadata_and_source_sequence(sequence):
     assert len(original.features) == 1
 
 
-def test_main_releases_previous_position_records_before_next_write(
-    tmp_path, mock_args, monkeypatch
-):
-    originals = [annotated_record(), annotated_record(seq_id="second")]
+def test_main_releases_fasta_records_during_write(tmp_path, mock_args, monkeypatch):
+    originals = [annotated_record(seq_id=f"record{i}") for i in range(5)]
     monkeypatch.setattr(split, "read_seqs", lambda **kwargs: originals)
     previous_refs = []
     calls = []
-    write_seqs = split.write_seqs
+    write_seqs = split.Bio.SeqIO.write
 
     def inspect_write(records, outfile, outseqformat):
         assert all(reference() is None for reference in previous_refs)
-        assert isinstance(records, list)
         position = len(calls)
-        assert [str(record.seq) for record in records] == [
-            str(record.seq)[position::3] for record in originals
-        ]
-        for original, projected in zip(originals, records, strict=True):
-            assert projected.annotations == original.annotations
-            assert projected.description == original.description
-            assert projected.features == []
-            assert projected.letter_annotations == {}
-        previous_refs[:] = [weakref.ref(record) for record in records]
         calls.append(position)
-        write_seqs(records=records, outfile=outfile, outseqformat=outseqformat)
 
-    monkeypatch.setattr(split, "write_seqs", inspect_write)
+        def inspect_records():
+            for original, projected in zip(originals, records, strict=True):
+                assert all(reference() is None for reference in previous_refs[:-1])
+                assert str(projected.seq) == str(original.seq)[position::3]
+                assert projected.annotations == original.annotations
+                assert projected.description == original.description
+                assert projected.features == []
+                assert projected.letter_annotations == {}
+                previous_refs.append(weakref.ref(projected))
+                yield projected
+
+        return write_seqs(inspect_records(), outfile, outseqformat)
+
+    monkeypatch.setattr(split.Bio.SeqIO, "write", inspect_write)
     split.split_main(
         mock_args(seqfile=str(tmp_path / "input.fa"), prefix=str(tmp_path / "out"))
     )
@@ -86,7 +86,9 @@ def test_main_releases_previous_position_records_before_next_write(
     assert all(record.annotations["molecule_type"] == "DNA" for record in originals)
 
 
-@pytest.mark.parametrize("outseqformat", ["fasta", "phylip", "clustal", "genbank"])
+@pytest.mark.parametrize(
+    "outseqformat", ["fasta", "fasta-2line", "tab", "phylip", "clustal", "genbank"]
+)
 def test_main_output_bytes_match_public_split_for_sequence_and_alignment_formats(
     tmp_path, mock_args, capsys, outseqformat
 ):
@@ -136,17 +138,18 @@ def test_later_write_failure_rolls_back_all_positions(
         for output in outputs:
             with open(output, "w") as handle:
                 handle.write("original " + output)
-    write_seqs = split.write_seqs
+    write_seqs = split.Bio.SeqIO.write
     calls = 0
 
-    def fail_second_write(**kwargs):
+    def fail_second_write(*args, **kwargs):
         nonlocal calls
         calls += 1
-        write_seqs(**kwargs)
+        count = write_seqs(*args, **kwargs)
         if calls == 2:
             raise OSError("second output failed")
+        return count
 
-    monkeypatch.setattr(split, "write_seqs", fail_second_write)
+    monkeypatch.setattr(split.Bio.SeqIO, "write", fail_second_write)
     with pytest.raises(OSError, match="second output failed"):
         split.split_main(mock_args(seqfile=str(source), prefix=prefix))
 

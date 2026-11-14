@@ -1,6 +1,8 @@
 import copy
 import sys
 
+import Bio.SeqIO
+
 from cdskit.atomicio import atomic_output_paths, validate_distinct_paths
 from cdskit.util import (
     read_seqs,
@@ -24,15 +26,13 @@ def resolve_output_prefix(args):
     return args.seqfile
 
 
+def _codon_position_record(record, position):
+    position_record = copy.copy(record)
+    return replace_record_sequence(position_record, record.seq[position::3])
+
+
 def split_record_by_codon_position(record):
-    seq = record.seq
-    first_record = copy.copy(record)
-    second_record = copy.copy(record)
-    third_record = copy.copy(record)
-    replace_record_sequence(first_record, seq[0::3])
-    replace_record_sequence(second_record, seq[1::3])
-    replace_record_sequence(third_record, seq[2::3])
-    return first_record, second_record, third_record
+    return tuple(_codon_position_record(record, position) for position in range(3))
 
 
 def build_split_output_paths(prefix, outseqformat):
@@ -44,13 +44,13 @@ def build_split_output_paths(prefix, outseqformat):
 
 
 def _write_codon_position(records, position, outfile, outseqformat):
-    """Release this position's record copies before constructing the next."""
-    position_records = []
-    for record in records:
-        position_record = copy.copy(record)
-        replace_record_sequence(position_record, record.seq[position::3])
-        position_records.append(position_record)
-    write_seqs(records=position_records, outfile=outfile, outseqformat=outseqformat)
+    projected = (_codon_position_record(record, position) for record in records)
+    if outseqformat in ("fasta", "fasta-2line", "tab"):
+        # These writers consume one record at a time. The path is already staged.
+        sys.stderr.write(f"Number of output sequences: {len(records):,}\n")
+        Bio.SeqIO.write(projected, outfile, outseqformat)
+    else:
+        write_seqs(records=list(projected), outfile=outfile, outseqformat=outseqformat)
 
 
 def split_main(args):
