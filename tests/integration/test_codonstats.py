@@ -2,8 +2,10 @@
 Tests for cdskit codonstats command.
 """
 
-import pytest
+from itertools import product
+
 import Bio.SeqIO
+import pytest
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
@@ -30,6 +32,35 @@ def test_summarize_record_ignores_partial_codon_for_complete_counts(
     assert summary["codons_complete"] == expected_complete
     assert summary["codons_missing"] == expected_missing
     assert summary["codons_ambiguous"] == expected_ambiguous
+
+
+@pytest.mark.parametrize("code,tga,taa", [(1, "*", "*"), (28, "W", "Q")])
+def test_usage_retains_only_concrete_codons_across_input_lengths(
+    code, tga, taa, tmp_path, mock_args, write_fasta, capsys
+):
+    source = write_fasta(
+        tmp_path / "source.fa",
+        [("dup", "tgaGcn---" * 23_000), ("dup", "TgATAATAR???")],
+    )
+    codonstats_main(mock_args(seqfile=str(source), mode="usage", codontable=code))
+    assert capsys.readouterr().out.splitlines() == [
+        "codon\taa\tcount\tfraction",
+        f"TAA\t{taa}\t1\t0.000043",
+        f"TGA\t{tga}\t23001\t0.999957",
+    ]
+
+
+def test_usage_lists_every_concrete_codon_once(
+    tmp_path, mock_args, write_fasta, capsys
+):
+    codons = ["".join(bases) for bases in product("ACGT", repeat=3)]
+    source = write_fasta(
+        tmp_path / "source.fa", [("r", "".join(reversed(codons)) * 300)]
+    )
+    codonstats_main(mock_args(seqfile=str(source), mode="usage", codontable=1))
+    rows = [line.split("\t") for line in capsys.readouterr().out.splitlines()[1:]]
+    assert [row[0] for row in rows] == codons
+    assert all(row[2:] == ["300", "0.015625"] for row in rows)
 
 
 class TestCodonstatsMain:

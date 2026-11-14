@@ -1,6 +1,8 @@
 import sys
 from collections import Counter
+from itertools import product
 
+from cdskit.alignment_metrics import _concrete_codon_histogram
 from cdskit.codonutil import (
     CODON_SEMANTICS_VERSION,
     CODON_MISSING,
@@ -17,6 +19,9 @@ from cdskit.util import (
 )
 
 _HISTOGRAM_MIN_CODONS = 256
+_USAGE_ARRAY_MIN_NT = 3 * 4096
+_CONCRETE_CODONS = tuple("".join(bases) for bases in product("ACGT", repeat=3))
+_CONCRETE_CODON_SET = frozenset(_CONCRETE_CODONS)
 
 
 def gc_percent(gc_count, total_count):
@@ -143,6 +148,10 @@ def print_usage_table(summaries, codontable):
     usage: Counter[str] = Counter()
     for summary in summaries:
         usage.update(summary["usage"])
+    _print_usage_counts(usage, codontable)
+
+
+def _print_usage_counts(usage, codontable):
     total = sum(usage.values())
     forward_table = get_forward_table(codontable=codontable)
     sys.stdout.write("codon\taa\tcount\tfraction\n")
@@ -154,11 +163,33 @@ def print_usage_table(summaries, codontable):
         sys.stdout.write(f"{codon}\t{aa}\t{usage[codon]}\t{fraction:.6f}\n")
 
 
+def _count_validated_usage(records):
+    """Count concrete codons once across validated in-frame DNA records."""
+    usage: Counter[str] = Counter()
+    for record in records:
+        sequence = str(record.seq).upper()
+        if len(sequence) >= _USAGE_ARRAY_MIN_NT:
+            counts = _concrete_codon_histogram(sequence, len(sequence))
+            for codon, count in zip(_CONCRETE_CODONS, counts, strict=True):
+                if count:
+                    usage[codon] += int(count)
+        else:
+            usage.update(
+                codon
+                for start in range(0, len(sequence), 3)
+                if (codon := sequence[start : start + 3]) in _CONCRETE_CODON_SET
+            )
+    return usage
+
+
 def codonstats_main(args):
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
     stop_if_not_dna(records=records, label="--seq_file")
     stop_if_not_multiple_of_three(records=records)
     stop_if_invalid_codontable(args.codontable)
+    if args.mode == "usage":
+        _print_usage_counts(_count_validated_usage(records), args.codontable)
+        return
     summaries = [
         summarize_record(record=record, codontable=args.codontable)
         for record in records
@@ -167,5 +198,4 @@ def codonstats_main(args):
         print_summary_table(summaries=summaries)
     if args.mode == "both":
         sys.stdout.write("\n")
-    if args.mode in ("usage", "both"):
         print_usage_table(summaries=summaries, codontable=args.codontable)

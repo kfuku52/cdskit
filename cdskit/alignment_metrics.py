@@ -85,7 +85,8 @@ def normalize_nuc_counts(counts):
     return {key: value / total for key, value in counts.items()}
 
 
-def _positional_counts_ascii(sequence, usable_len):
+def _concrete_codon_histogram(sequence, usable_len):
+    """Count uppercase ASCII A/C/G/T triplets in a complete-codon prefix."""
     import numpy as np
 
     histogram = np.zeros(64, dtype=np.int64)
@@ -97,7 +98,11 @@ def _positional_counts_ascii(sequence, usable_len):
         valid = (first | second | third) < 4
         keys = first * 16 + second * 4 + third
         histogram += np.bincount(keys if valid.all() else keys[valid], minlength=64)
-    codons = histogram.reshape(4, 4, 4)
+    return histogram
+
+
+def _positional_counts_ascii(sequence, usable_len):
+    codons = _concrete_codon_histogram(sequence, usable_len).reshape(4, 4, 4)
     return (codons.sum(axis=(1, 2)), codons.sum(axis=(0, 2)), codons.sum(axis=(0, 1)))
 
 
