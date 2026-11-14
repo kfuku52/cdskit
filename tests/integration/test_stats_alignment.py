@@ -46,14 +46,16 @@ def test_matches_amas_reference(name, tmp_path):
         assert actual["GC_content"] == actual["AT_content"] == "NA"
 
 
-def test_hand_counted_sites():
+@pytest.mark.parametrize("repeats", [1, 21846])
+def test_hand_counted_sites(repeats):
     records = [
-        SeqRecord(Seq(s), id=str(i)) for i, s in enumerate(["AAN", "ACN", "GCN", "GCN"])
+        SeqRecord(Seq(s * repeats), id=str(i))
+        for i, s in enumerate(["AAN", "ACN", "GCN", "GCN"])
     ]
     row = summarize_alignment(records, "dna")
-    assert row["No_variable_sites"] == 2
-    assert row["Parsimony_informative_sites"] == 1
-    assert row["Undetermined_characters"] == 4
+    assert row["No_variable_sites"] == 2 * repeats
+    assert row["Parsimony_informative_sites"] == repeats
+    assert row["Undetermined_characters"] == 4 * repeats
     assert row["Missing_percent"] == 33.333
     assert row["GC_content"] == 0.625
 

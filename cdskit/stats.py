@@ -113,6 +113,9 @@ _PROTEIN_STATE_BITS = np.zeros(256, dtype=np.uint32)
 for _index, _residue in enumerate(sorted(STATES["aa"])):
     _PROTEIN_STATE_BITS[ord(_residue)] = 1 << _index
 _PROTEIN_STATE_BITS.flags.writeable = False
+_DNA_STATE_BITS = np.zeros(256, dtype=np.uint8)
+_DNA_STATE_BITS[list(b"ACGT")] = (1, 2, 4, 8)
+_DNA_STATE_BITS.flags.writeable = False
 _ALIGNMENT_STATS_BLOCK = 65_536
 SUMMARY_COLUMNS = (
     "Alignment_name",
@@ -140,15 +143,15 @@ def _alignment_character_counts(sequence, alphabet):
     return {letter: int(counts[ord(letter)]) for letter in alphabet}
 
 
-def _protein_alignment_site_counts(sequences, length):
+def _alignment_site_bit_counts(sequences, length, state_bits):
     variable = informative = 0
     for start in range(0, length, _ALIGNMENT_STATS_BLOCK):
         end = min(start + _ALIGNMENT_STATS_BLOCK, length)
-        seen = np.zeros(end - start, dtype=np.uint32)
+        seen = np.zeros(end - start, dtype=state_bits.dtype)
         repeated = np.zeros_like(seen)
         for sequence in sequences:
             codes = np.frombuffer(sequence[start:end].encode("ascii"), dtype=np.uint8)
-            residues = _PROTEIN_STATE_BITS[codes]
+            residues = state_bits[codes]
             repeated |= seen & residues
             seen |= residues
         # Clearing the lowest set bit leaves a nonzero value when there are
@@ -159,8 +162,9 @@ def _protein_alignment_site_counts(sequences, length):
 
 
 def _alignment_site_counts(sequences, length, seq_type):
-    if seq_type == "aa" and length >= 256:
-        return _protein_alignment_site_counts(sequences, length)
+    if length >= 256:
+        bits = _PROTEIN_STATE_BITS if seq_type == "aa" else _DNA_STATE_BITS
+        return _alignment_site_bit_counts(sequences, length, bits)
     variable = informative = 0
     block_width = max(1, min(4096, 1_000_000 // len(sequences)))
     for start in range(0, length, block_width):
