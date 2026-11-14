@@ -57,10 +57,11 @@ def _ascii_columns(rows: list[str]) -> list[str]:
 def _earliest(source: list[str], target: list[str]) -> list[int]:
     sites = []
     cursor = 0
+    source_length = len(source)
     for column in target:
-        while cursor < len(source) and source[cursor] != column:
+        while cursor < source_length and source[cursor] != column:
             cursor += 1
-        if cursor == len(source):
+        if cursor == source_length:
             return []
         sites.append(cursor)
         cursor += 1
@@ -76,8 +77,16 @@ def analyze_mapping(source: list[str], target: list[str]) -> MappingAnalysis:
     left = _earliest(source, target)
     if len(left) != len(target):
         return MappingAnalysis("unmatched", [], [])
-    reverse = _earliest(source[::-1], target[::-1])
-    right = [len(source) - 1 - site for site in reversed(reverse)]
+    # A complete forward map guarantees that the backward scan finds a match
+    # for each column. Keep the original column indexes throughout the scan.
+    right = []
+    cursor = len(source) - 1
+    for column in reversed(target):
+        while source[cursor] != column:
+            cursor -= 1
+        right.append(cursor)
+        cursor -= 1
+    right.reverse()
     return MappingAnalysis("unique" if left == right else "ambiguous", left, right)
 
 
