@@ -11,7 +11,7 @@ from Bio.SeqRecord import SeqRecord
 import pytest
 
 from cdskit import longestcds
-from cdskit.codonutil import definite_stop_patterns
+from cdskit.codonutil import analyze_codon, definite_stop_patterns
 
 
 CODES = sorted(unambiguous_dna_by_id)
@@ -170,3 +170,29 @@ def test_complete_first_block_choice_preserves_boundary_candidates(
         for seq in inputs
     ]
     assert actual == expected
+
+
+@pytest.mark.parametrize("code", [1, 27, 28, 31])
+def test_candidate_attribute_prefixes_cross_blocks_and_preserve_scalar_flags(
+    code, monkeypatch
+):
+    monkeypatch.setattr(longestcds, "_CANDIDATE_PREFIX_BLOCK_NT", 192)
+    sequence = "ATGTAATAGTARTANTGRNNN-GC?.G" * 18 + "!RY" + "GCNTGG" * 50
+    actual = longestcds.candidate_attribute_prefixes(sequence, code)
+    for direction, oriented in longestcds._oriented_sequences(sequence, "both"):
+        for frame in range(3):
+            expected = [[0] for _ in range(4)]
+            for start in range(frame, len(oriented) - 2, 3):
+                meaning = analyze_codon(oriented[start : start + 3], code)
+                for prefix, flag in zip(
+                    expected,
+                    (
+                        meaning.possible_stop,
+                        meaning.context_dependent,
+                        meaning.missing,
+                        meaning.ambiguous,
+                    ),
+                    strict=True,
+                ):
+                    prefix.append(prefix[-1] + int(flag))
+            assert [list(prefix) for prefix in actual[direction, frame + 1]] == expected

@@ -12,6 +12,7 @@ from Bio.SeqRecord import SeqRecord
 import numpy as np
 
 from cdskit.atomicio import atomic_output_paths
+from cdskit.codonarray import codon_features
 from cdskit.codonreport import validate_codon_output_paths, write_codon_report
 from cdskit.codonutil import (
     analyze_codon,
@@ -36,6 +37,7 @@ _POSITION_SCAN_MIN_LENGTH = 16384
 _POSITION_SCAN_MIN_PATTERNS = 8
 _POSITION_SCAN_BLOCK_SIZE = 65536
 _BEST_BLOCK_SCAN_MIN_LENGTH = 262_144
+_CANDIDATE_PREFIX_BLOCK_NT = 3 * 16384
 _PARTIAL_SELECTIONS = {"partial-5prime", "partial-3prime", "partial-both"}
 _REVCOMP_TABLE = str.maketrans(
     "ACGTRYMKWSBDHVN",
@@ -890,9 +892,29 @@ def candidate_attribute_prefixes(sequence, codontable, *, strand="both"):
     prefixes = {}
     for direction, oriented in _oriented_sequences(sequence, strand):
         for frame in range(3):
-            counts = [array("Q", [0]) for _ in range(4)]
-            for start in range(frame, len(oriented) - 2, 3):
-                meaning = analyze_codon(oriented[start : start + 3], codontable)
+            prefixes[direction, frame + 1] = _frame_attribute_prefixes(
+                oriented, frame, codontable
+            )
+    return prefixes
+
+
+def _frame_attribute_prefixes(sequence, frame, codontable):
+    counts = [array("Q", [0]) for _ in range(4)]
+    end = frame_end_index(len(sequence), frame)
+    for start in range(frame, end, _CANDIDATE_PREFIX_BLOCK_NT):
+        block = sequence[start : min(end, start + _CANDIDATE_PREFIX_BLOCK_NT)]
+        values = codon_features(block, codontable) if len(block) >= 192 else None
+        if values is not None:
+            features, _ = values
+            # Outside-alphabet triplets take the scalar path below. For
+            # supported DNA the ambiguity/invalid flag is exactly ambiguity.
+            for prefix, index in zip(counts, (4, 5, 1, 2), strict=True):
+                cumulative = np.cumsum(features[:, index], dtype=np.uint64)
+                cumulative += prefix[-1]
+                prefix.frombytes(cumulative.tobytes())
+        else:
+            for offset in range(0, len(block), 3):
+                meaning = analyze_codon(block[offset : offset + 3], codontable)
                 flags = (
                     meaning.possible_stop,
                     meaning.context_dependent,
@@ -901,8 +923,7 @@ def candidate_attribute_prefixes(sequence, codontable, *, strand="both"):
                 )
                 for prefix, flag in zip(counts, flags, strict=True):
                     prefix.append(prefix[-1] + int(flag))
-            prefixes[direction, frame + 1] = counts
-    return prefixes
+    return counts
 
 
 def candidate_report(
