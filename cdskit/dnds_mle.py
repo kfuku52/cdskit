@@ -147,19 +147,17 @@ def _log_likelihood(generator, derivatives, coordinates, observed):
 
 
 def _direct_log_likelihood(generator, derivatives, coordinates, observed):
-    probabilities = expm(generator)[coordinates]
+    transition = expm(generator)
+    probabilities = transition[coordinates]
     if np.any(probabilities <= 0):
         return np.inf, np.zeros(len(derivatives))
-    weights = observed / probabilities
-    gradient = -np.array(
-        [
-            np.dot(
-                weights,
-                expm_frechet(generator, derivative, compute_expm=False)[coordinates],
-            )
-            for derivative in derivatives
-        ]
-    )
+    # The Fréchet derivative's adjoint uses the transpose of the generator.
+    # Here it is symmetric, so one derivative in the loss-weight direction
+    # gives the gradient for all model parameters.
+    weights = np.zeros_like(transition)
+    weights[coordinates] = -observed / probabilities
+    adjoint = expm_frechet(generator, weights, compute_expm=False)
+    gradient = np.array([np.sum(adjoint * derivative) for derivative in derivatives])
     return -np.dot(observed, np.log(probabilities)), gradient
 
 
