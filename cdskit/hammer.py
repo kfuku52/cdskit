@@ -91,35 +91,32 @@ def select_codon_site_indices(
     codon_gap_like_matrix,
     original_records,
 ):
-    selected_non_missing_idx = None
-    last_non_missing_idx = np.array([], dtype=int)
+    if not prevent_gap_only:
+        selected = np.flatnonzero(non_missing_site >= nail_value)
+        _report_removed_sites(max_len - selected.size, max_len)
+        return selected
 
-    for current_nail in range(nail_value, 0, -1):
-        non_missing_idx = np.flatnonzero(non_missing_site >= current_nail)
-        last_non_missing_idx = non_missing_idx
-        num_removed_site = max_len - non_missing_idx.shape[0]
-        sys.stderr.write(
-            "{:,} out of {:,} codon sites will be removed.\n".format(
-                num_removed_site, max_len
+    # Each row first becomes usable at the highest occupancy of a column
+    # containing a non-gap-like codon in that row. Reuse these thresholds
+    # and the column counts while reproducing the relaxation diagnostics.
+    row_thresholds = np.array(
+        [non_missing_site.max(where=~row, initial=0) for row in codon_gap_like_matrix]
+    )
+    below_nail = np.bincount(non_missing_site, minlength=nail_value).cumsum()
+    final_nail = max(1, min(nail_value, int(row_thresholds.min(initial=nail_value))))
+    for current_nail in range(nail_value, final_nail - 1, -1):
+        removed = max_len - non_missing_site.size + below_nail[current_nail - 1]
+        _report_removed_sites(removed, max_len)
+        for i in np.flatnonzero(row_thresholds < current_nail):
+            txt = "A gap-only sequence was generated with --nail {}. Will try --nail {}: {}\n"
+            sys.stderr.write(
+                txt.format(current_nail, current_nail - 1, original_records[i].name)
             )
-        )
-        if prevent_gap_only:
-            gap_only_mask = np.all(codon_gap_like_matrix[:, non_missing_idx], axis=1)
-            if np.any(gap_only_mask):
-                for i in np.flatnonzero(gap_only_mask):
-                    txt = "A gap-only sequence was generated with --nail {}. Will try --nail {}: {}\n"
-                    sys.stderr.write(
-                        txt.format(
-                            current_nail, current_nail - 1, original_records[i].name
-                        )
-                    )
-                continue
-        selected_non_missing_idx = non_missing_idx
-        break
+    return np.flatnonzero(non_missing_site >= final_nail)
 
-    if selected_non_missing_idx is None:
-        return last_non_missing_idx
-    return selected_non_missing_idx
+
+def _report_removed_sites(removed, total):
+    sys.stderr.write(f"{removed:,} out of {total:,} codon sites will be removed.\n")
 
 
 def codon_sites_to_nucleotide_ranges(codon_sites):
