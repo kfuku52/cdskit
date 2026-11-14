@@ -9,6 +9,7 @@ from Bio.SeqRecord import SeqRecord
 import numpy as np
 import pytest
 
+from cdskit import degeneracy
 from cdskit.degeneracy import classify_alignment_columns
 from cdskit.maxalign import solve_exact
 
@@ -56,6 +57,16 @@ def test_degeneracy_matches_independent_genetic_code_enumeration(code):
         ["", ""],
     ):
         records = [SeqRecord(Seq(sequence)) for sequence in sequences]
+        assert classify_alignment_columns(records, code) == reference_degeneracy(
+            sequences, code
+        )
+
+
+def test_degeneracy_preserves_classification_at_block_boundaries(monkeypatch):
+    monkeypatch.setattr(degeneracy, "_CLASSIFY_BLOCK_NT", 9)
+    sequences = ["gctttt???TGATGGATG---", "GCCTTCNNN---GGGATG..."]
+    records = [SeqRecord(Seq(sequence)) for sequence in sequences]
+    for code in (1, 27):
         assert classify_alignment_columns(records, code) == reference_degeneracy(
             sequences, code
         )

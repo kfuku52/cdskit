@@ -4,6 +4,7 @@ from functools import lru_cache, partial
 from itertools import product
 
 import numpy as np
+from Bio.Seq import Seq
 
 from cdskit.codonutil import degeneracy_fold_by_position
 from cdskit.split import resolve_output_prefix
@@ -31,6 +32,7 @@ def build_degeneracy_output_path(prefix, fold, outseqformat):
 _BASE_CODES = bytes(
     "ACGTacgt".index(chr(i)) % 4 if chr(i) in "ACGTacgt" else 4 for i in range(256)
 )
+_CLASSIFY_BLOCK_NT = 3 * 65_536
 
 
 @lru_cache(maxsize=64)
@@ -60,21 +62,40 @@ def _classify_alignment_columns(records, codontable):
     maximum = np.full(length, -1, dtype=np.int8)
     lookup = _fold_lookup(codontable)
     for record in records:
-        encoded = str(record.seq).encode("ascii").translate(_BASE_CODES)
-        codons = np.frombuffer(encoded, dtype=np.uint8).reshape(-1, 3)
-        indices = codons[:, 0] * 25 + codons[:, 1] * 5 + codons[:, 2]
-        folds = lookup[indices].reshape(-1)
-        np.maximum(maximum, folds, out=maximum)
-        np.minimum(minimum, np.where(folds < 0, 5, folds), out=minimum)
-    assigned = minimum == maximum
-    minimum[~assigned] = -1
+        sequence = record.seq
+        if type(sequence) is Seq:
+            data = bytes(sequence)
+            if not data.isascii():
+                data.decode("ascii")  # Preserve the sequence decoding error.
+        else:
+            data = str(sequence).encode("ascii")
+        if len(data) != length or length % 3:
+            raise ValueError("Expected aligned sequences with complete codons.")
+        for start in range(0, length, _CLASSIFY_BLOCK_NT):
+            stop = min(start + _CLASSIFY_BLOCK_NT, length)
+            encoded = data[start:stop].translate(_BASE_CODES)
+            codons = np.frombuffer(encoded, dtype=np.uint8).reshape(-1, 3)
+            indices = codons[:, 0] * 25 + codons[:, 1] * 5 + codons[:, 2]
+            folds = lookup[indices].reshape(-1)
+            low, high = minimum[start:stop], maximum[start:stop]
+            np.maximum(high, folds, out=high)
+            np.minimum(low, np.where(folds < 0, 5, folds), out=low)
+    counts = dict.fromkeys((0, 2, 3, 4), 0)
+    conflicts = unassigned = 0
+    for start in range(0, length, _CLASSIFY_BLOCK_NT):
+        stop = min(start + _CLASSIFY_BLOCK_NT, length)
+        low, high = minimum[start:stop], maximum[start:stop]
+        assigned = low == high
+        low[~assigned] = -1
+        for fold in counts:
+            counts[fold] += int(np.count_nonzero(low == fold))
+        conflicts += int(np.count_nonzero((high >= 0) & ~assigned))
+        unassigned += int(np.count_nonzero(high < 0))
     return {
         "assignments": minimum,
-        "counts_by_fold": {
-            fold: int(np.count_nonzero(minimum == fold)) for fold in (0, 2, 3, 4)
-        },
-        "num_conflict_sites": int(np.count_nonzero((maximum >= 0) & ~assigned)),
-        "num_unassigned_sites": int(np.count_nonzero(maximum < 0)),
+        "counts_by_fold": counts,
+        "num_conflict_sites": conflicts,
+        "num_unassigned_sites": unassigned,
     }
 
 
