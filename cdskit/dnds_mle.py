@@ -228,14 +228,7 @@ def _penalized_objective(likelihood, parameters, *, direct=False):
     return loss + delta**2 / (2 * _LOG_RATIO_VARIANCE), gradient
 
 
-def _fit_likelihood(counts, code, row, *, regularized=False, frequency_model="cf3x4"):
-    model = _PENALIZED_MODEL if regularized else _MODEL
-    if frequency_model == "empirical-shrinkage":
-        model += "_empirical_shrinkage"
-    # An identical pair has zero distances and no identifiable kappa.
-    if counts.reshape(64, 64).trace() == row["retained_codons"]:
-        return dict(dS=0.0, dN=0.0, dS_model=model, dN_model=model, status="identical")
-
+def _fit_likelihood(counts, code, row, *, model, regularized, frequency_model):
     likelihood = _prepare_likelihood(counts, code, frequency_model=frequency_model)
     if likelihood is None:
         return {"status": "frequency_not_converged"}
@@ -303,12 +296,37 @@ def estimate_ml_batch(
         for first, second in pairs
     ]
     encoded = _encode_batch(ordered, geometry)
-    rows = _estimate_encoded(encoded, geometry)
-    for row, (counts, _) in zip(rows, encoded, strict=True):
+    # Identical retained codons have zero distances and no identifiable kappa.
+    # Only pairs that need a likelihood fit need YN00 starting parameters.
+    identical = [
+        counts is not None
+        and counts.reshape(64, 64).trace() == metadata["retained_codons"]
+        for counts, metadata in encoded
+    ]
+    model = _PENALIZED_MODEL if regularized else _MODEL
+    if frequency_model == "empirical-shrinkage":
+        model += "_empirical_shrinkage"
+    # Keep the same YN00 batch shape whenever at least one fit is needed.
+    needs_fit = any(
+        counts is not None and not same
+        for (counts, _), same in zip(encoded, identical, strict=True)
+    )
+    initial_inputs = encoded if needs_fit else [(None, meta) for _, meta in encoded]
+    rows = _estimate_encoded(initial_inputs, geometry)
+    for row, (counts, _), same in zip(rows, encoded, identical, strict=True):
         if counts is None:
             continue
-        fit = _fit_likelihood(
-            counts, code, row, regularized=regularized, frequency_model=frequency_model
+        fit = (
+            dict(dS=0.0, dN=0.0, dS_model=model, dN_model=model, status="identical")
+            if same
+            else _fit_likelihood(
+                counts,
+                code,
+                row,
+                model=model,
+                regularized=regularized,
+                frequency_model=frequency_model,
+            )
         )
         # YN00 estimates initialize the optimizer only. Avoid returning any
         # of their values as ML estimates if the likelihood fit fails.
