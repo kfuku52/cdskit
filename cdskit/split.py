@@ -1,7 +1,6 @@
 import copy
+from functools import partial
 import sys
-
-import Bio.SeqIO
 
 from cdskit.atomicio import atomic_output_paths, validate_distinct_paths
 from cdskit.util import (
@@ -9,7 +8,7 @@ from cdskit.util import (
     replace_record_sequence,
     stop_if_not_dna,
     stop_if_not_multiple_of_three,
-    write_seqs,
+    write_transformed_seqs,
 )
 
 
@@ -43,16 +42,6 @@ def build_split_output_paths(prefix, outseqformat):
     )
 
 
-def _write_codon_position(records, position, outfile, outseqformat):
-    projected = (_codon_position_record(record, position) for record in records)
-    if outseqformat in ("fasta", "fasta-2line", "tab"):
-        # These writers consume one record at a time. The path is already staged.
-        sys.stderr.write(f"Number of output sequences: {len(records):,}\n")
-        Bio.SeqIO.write(projected, outfile, outseqformat)
-    else:
-        write_seqs(records=list(projected), outfile=outfile, outseqformat=outseqformat)
-
-
 def split_main(args):
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
     stop_if_not_dna(records=records, label="--seq_file")
@@ -66,6 +55,9 @@ def split_main(args):
     with atomic_output_paths(outputs) as staged:
         for position, ordinal in enumerate(("first", "second", "third")):
             sys.stderr.write(f"Writing {ordinal} codon positions.\n")
-            _write_codon_position(
-                records, position, staged[position], args.outseqformat
+            write_transformed_seqs(
+                records,
+                partial(_codon_position_record, position=position),
+                staged[position],
+                args.outseqformat,
             )

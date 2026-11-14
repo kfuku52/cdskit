@@ -370,6 +370,22 @@ def write_seqs(
             Bio.SeqIO.write(records, temporary, outseqformat)
 
 
+def write_transformed_seqs(
+    records: Sequence[SeqRecord],
+    transform: Callable[[SeqRecord], SeqRecord],
+    outfile: str,
+    outseqformat: str,
+) -> None:
+    """Apply a one-to-one transform lazily for simple named outputs."""
+    projected = (transform(record) for record in records)
+    if outfile == "-" or outseqformat not in ("fasta", "fasta-2line", "tab"):
+        write_seqs(list(projected), outfile, outseqformat)
+        return
+    sys.stderr.write(f"Number of output sequences: {len(records):,}\n")
+    with atomic_output_path(outfile) as temporary:
+        Bio.SeqIO.write(projected, temporary, outseqformat)
+
+
 def stop_if_not_multiple_of_three(records: Sequence[SeqRecord]) -> None:
     has_non_triplet_sequence = False
     for record in records:

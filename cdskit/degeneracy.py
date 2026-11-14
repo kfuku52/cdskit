@@ -1,6 +1,6 @@
 import copy
 import sys
-from functools import lru_cache
+from functools import lru_cache, partial
 from itertools import product
 
 import numpy as np
@@ -19,7 +19,7 @@ from cdskit.util import (
     stop_if_not_aligned,
     stop_if_not_dna,
     stop_if_not_multiple_of_three,
-    write_seqs,
+    write_transformed_seqs,
 )
 from cdskit.tsvio import write_tsv
 
@@ -180,11 +180,9 @@ def degeneracy_main(args):
             sys.stderr.write(
                 f"Writing {fold}-fold positions ({len(positions)} sites).\n"
             )
-            write_seqs(
-                records=[
-                    trim_record_to_positions(record=record, positions=positions)
-                    for record in records
-                ],
+            write_transformed_seqs(
+                records=records,
+                transform=partial(trim_record_to_positions, positions=positions),
                 outfile=staged[outfile],
                 outseqformat=args.outseqformat,
             )

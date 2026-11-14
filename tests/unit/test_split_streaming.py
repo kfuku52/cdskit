@@ -55,7 +55,7 @@ def test_main_releases_fasta_records_during_write(tmp_path, mock_args, monkeypat
     monkeypatch.setattr(split, "read_seqs", lambda **kwargs: originals)
     previous_refs = []
     calls = []
-    write_seqs = split.Bio.SeqIO.write
+    write_seqs = Bio.SeqIO.write
 
     def inspect_write(records, outfile, outseqformat):
         assert all(reference() is None for reference in previous_refs)
@@ -75,7 +75,7 @@ def test_main_releases_fasta_records_during_write(tmp_path, mock_args, monkeypat
 
         return write_seqs(inspect_records(), outfile, outseqformat)
 
-    monkeypatch.setattr(split.Bio.SeqIO, "write", inspect_write)
+    monkeypatch.setattr(Bio.SeqIO, "write", inspect_write)
     split.split_main(
         mock_args(seqfile=str(tmp_path / "input.fa"), prefix=str(tmp_path / "out"))
     )
@@ -138,7 +138,7 @@ def test_later_write_failure_rolls_back_all_positions(
         for output in outputs:
             with open(output, "w") as handle:
                 handle.write("original " + output)
-    write_seqs = split.Bio.SeqIO.write
+    write_seqs = Bio.SeqIO.write
     calls = 0
 
     def fail_second_write(*args, **kwargs):
@@ -149,7 +149,7 @@ def test_later_write_failure_rolls_back_all_positions(
             raise OSError("second output failed")
         return count
 
-    monkeypatch.setattr(split.Bio.SeqIO, "write", fail_second_write)
+    monkeypatch.setattr(Bio.SeqIO, "write", fail_second_write)
     with pytest.raises(OSError, match="second output failed"):
         split.split_main(mock_args(seqfile=str(source), prefix=prefix))
 
