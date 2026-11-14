@@ -2,6 +2,7 @@
 
 from pathlib import Path
 from collections import Counter
+import sys
 
 
 def alignment_length_stats(file) -> dict[str, int]:
@@ -68,6 +69,13 @@ def alignment_length_stats(file) -> dict[str, int]:
 
 
 VALID_NUCLEOTIDES = ("A", "C", "G", "T")
+_BASE_CODES = bytes(
+    VALID_NUCLEOTIDES.index(chr(code)) if chr(code) in VALID_NUCLEOTIDES else 4
+    for code in range(256)
+)
+_FREQUENCY_BLOCK_NT = 3 * 65_536
+_FREQUENCY_ARRAY_MIN_NT = 16_384
+_FREQUENCY_COLD_MIN_NT = 3_000_000
 
 
 def normalize_nuc_counts(counts):
@@ -77,14 +85,43 @@ def normalize_nuc_counts(counts):
     return {key: value / total for key, value in counts.items()}
 
 
+def _positional_counts_ascii(sequence, usable_len):
+    import numpy as np
+
+    histogram = np.zeros(64, dtype=np.int64)
+    for start in range(0, usable_len, _FREQUENCY_BLOCK_NT):
+        end = min(start + _FREQUENCY_BLOCK_NT, usable_len)
+        encoded = sequence[start:end].encode("ascii").translate(_BASE_CODES)
+        first, second, third = np.frombuffer(encoded, dtype=np.uint8).reshape(-1, 3).T
+        # The fifth code sets bit 2 in any unusable position.
+        valid = (first | second | third) < 4
+        keys = first * 16 + second * 4 + third
+        histogram += np.bincount(keys if valid.all() else keys[valid], minlength=64)
+    codons = histogram.reshape(4, 4, 4)
+    return (codons.sum(axis=(1, 2)), codons.sum(axis=(0, 2)), codons.sum(axis=(0, 1)))
+
+
 def positional_nucleotide_frequencies(sequences):
     """F3X4: U→T, omit an entire ambiguous codon, include definite stop codons."""
     counts = [{nuc: 0.0 for nuc in VALID_NUCLEOTIDES} for _ in range(3)]
+    long_ascii_nt = 0
     for sequence in sequences:
         seq = str(sequence).upper().replace("U", "T")
         usable_len = len(seq) - (len(seq) % 3)
         # Short sequences seldom repeat enough codons to offset aggregation.
-        if usable_len < 384:
+        long_ascii = usable_len >= _FREQUENCY_ARRAY_MIN_NT and seq.isascii()
+        if long_ascii:
+            long_ascii_nt += usable_len
+        # Avoid the first NumPy import for small standalone library workloads.
+        if long_ascii and (
+            long_ascii_nt >= _FREQUENCY_COLD_MIN_NT or "numpy" in sys.modules
+        ):
+            for position, values in zip(
+                counts, _positional_counts_ascii(seq, usable_len), strict=True
+            ):
+                for base, value in zip(VALID_NUCLEOTIDES, values, strict=True):
+                    position[base] += int(value)
+        elif usable_len < 384:
             for i in range(0, usable_len, 3):
                 codon = seq[i : (i + 3)]
                 if any(base not in VALID_NUCLEOTIDES for base in codon):

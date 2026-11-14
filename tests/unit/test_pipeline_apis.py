@@ -449,6 +449,24 @@ def test_alignment_statistics_keep_read_errors_ahead_of_length_errors(tmp_path):
         alignment_length_stats(path)
 
 
+def test_positional_nucleotide_frequencies_across_blocks(monkeypatch):
+    from cdskit import alignment_metrics
+
+    monkeypatch.setattr(alignment_metrics, "_FREQUENCY_ARRAY_MIN_NT", 3)
+    monkeypatch.setattr(alignment_metrics, "_FREQUENCY_COLD_MIN_NT", 0)
+    monkeypatch.setattr(alignment_metrics, "_FREQUENCY_BLOCK_NT", 6)
+    sequences = iter(("augTARtaaAAN---cgtTA", "AéGTTT", "", "RGT??."))
+    assert alignment_metrics.positional_nucleotide_frequencies(sequences) == [
+        {"A": 0.25, "C": 0.25, "G": 0.0, "T": 0.5},
+        {"A": 0.25, "C": 0.0, "G": 0.25, "T": 0.5},
+        {"A": 0.25, "C": 0.0, "G": 0.25, "T": 0.5},
+    ]
+    assert (
+        alignment_metrics.positional_nucleotide_frequencies(["NNN-"])
+        == [dict.fromkeys("ACGT", 0.25)] * 3
+    )
+
+
 @pytest.mark.parametrize("text", [">\n", ">   \nATG\n", ">\n>valid\nATG\n"])
 def test_tuple_fasta_parser_never_silently_discards_empty_headers(tmp_path, text):
     from cdskit.sequence_selection import fasta_records
