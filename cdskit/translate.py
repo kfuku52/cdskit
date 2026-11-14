@@ -5,7 +5,10 @@ from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
 from cdskit.atomicio import atomic_output_path
+from cdskit.codonarray import codon_states
 from cdskit.codonutil import (
+    CODON_MISSING,
+    CODON_STOP,
     analyze_codon,
     get_codon_table_components,
     get_codon_translator as get_scalar_translator,
@@ -24,6 +27,8 @@ from cdskit.util import (
 _CODON_TRANSLATOR_CACHE: dict = {}
 _TRANSLATION_KERNEL_CACHE: dict = {}
 _TRANSLATION_ALPHABET = "ACGTRYSWKMBDHVNX-?."
+_COMPLETE_CDS_BLOCK_NT = 3 * 65_536
+_COMPLETE_CDS_BULK_MIN_NT = 3 * 96
 
 
 def _fill_translation_entries(translator, scalar_translator, indices):
@@ -217,6 +222,27 @@ def translate_sequence_string(seq_str, codontable, to_stop, complete_cds=False):
     return amino_acids.tobytes().decode("ascii")
 
 
+def _valid_complete_cds_body(sequence, codontable):
+    if type(sequence) is str and len(sequence) >= _COMPLETE_CDS_BULK_MIN_NT:
+        for start in range(0, len(sequence), _COMPLETE_CDS_BLOCK_NT):
+            states = codon_states(
+                sequence[start : start + _COMPLETE_CDS_BLOCK_NT], codontable
+            )
+            # A complete ASCII triplet from the encoding alphabet cannot be
+            # invalid. A None result means at least one unsupported character.
+            if (
+                states is None
+                or ((states == CODON_MISSING) | (states == CODON_STOP)).any()
+            ):
+                return False
+        return True
+    for start in range(0, len(sequence), 3):
+        meaning = analyze_codon(sequence[start : start + 3], codontable, "ordinary")
+        if meaning.missing or meaning.invalid or meaning.definite_stop:
+            return False
+    return True
+
+
 def translate_complete_cds(seq_str, codontable):
     """Validate an explicitly supplied complete CDS, then omit its terminator."""
     sequence = seq_str.upper()
@@ -233,13 +259,12 @@ def translate_complete_cds(seq_str, codontable):
         raise Bio.Data.CodonTable.TranslationError(
             "A complete CDS needs a compatible terminal stop codon."
         )
-    for start in range(0, len(sequence) - 3, 3):
-        meaning = analyze_codon(sequence[start : start + 3], codontable, "ordinary")
-        if meaning.missing or meaning.invalid or meaning.definite_stop:
-            raise Bio.Data.CodonTable.TranslationError(
-                "Invalid or missing codon, or definite internal stop in complete CDS."
-            )
-    protein = translate_sequence_string(sequence[:-3], codontable, False)
+    body = sequence[:-3]
+    if not _valid_complete_cds_body(body, codontable):
+        raise Bio.Data.CodonTable.TranslationError(
+            "Invalid or missing codon, or definite internal stop in complete CDS."
+        )
+    protein = translate_sequence_string(body, codontable, False)
     return "M" + protein[1:]
 
 

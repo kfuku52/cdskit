@@ -100,3 +100,33 @@ def test_direct_code_array_length_error_keeps_exception_and_dtype():
     with pytest.raises(TranslationError) as raised:
         translate.translate_sequence_codes("AT", 1)
     assert str(raised.value) == "Sequence length should be a multiple of three."
+
+
+@pytest.mark.parametrize(
+    "code,body,terminal,expected",
+    [
+        (1, "gcnTAN", "TAR", "AX"),
+        (1, "TAR", "TAA", None),
+        (1, "A?T", "TAA", None),
+        (1, "AUG", "TAA", None),
+        (27, "TGA", "TGA", "W"),
+        (28, "TAATAGTGA", "TAR", "QQW"),
+        (31, "TAATAG", "TAR", "EE"),
+    ],
+)
+def test_complete_cds_long_body_preserves_context_and_rejects_invalid_codons(
+    code, body, terminal, expected
+):
+    sequence = "atg" + "GCT" * 120 + body + terminal
+    if expected is None:
+        with pytest.raises(TranslationError, match="Invalid or missing codon"):
+            translate.translate_complete_cds(sequence, code)
+    else:
+        assert translate.translate_complete_cds(sequence, code) == (
+            "M" + "A" * 120 + expected
+        )
+
+
+def test_complete_cds_checks_internal_stops_near_end_of_long_sequence():
+    with pytest.raises(TranslationError, match="definite internal stop"):
+        translate.translate_complete_cds("ATG" + "GCT" * 66_000 + "TARTAA", 1)
