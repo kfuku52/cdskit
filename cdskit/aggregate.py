@@ -1,10 +1,13 @@
 #!/usr/bin/env python
 
 import sys
+from collections import defaultdict
 from functools import partial
 
 from Bio.SeqRecord import SeqRecord
 
+from cdskit.atomicio import atomic_output_paths, validate_distinct_paths
+from cdskit.homology import read_hits, select_representative, write_selection_report
 from cdskit.util import (
     compile_safe_regex,
     parallel_map_ordered,
@@ -39,8 +42,42 @@ def validate_aggregate_expressions(expressions):
     ]
 
 
+def aggregate_with_hits(args, records, names, hit_table, report):
+    ids = {record.id for record in records}
+    if len(ids) != len(records) or "" in ids:
+        raise ValueError("Hit-based aggregation requires unique, nonempty sequence IDs")
+    hits = read_hits(hit_table, ids)
+    groups = defaultdict(list)
+    for record, name in zip(records, names, strict=True):
+        groups[name].append(record)
+    selections = [
+        (name, *select_representative(group, hits)) for name, group in groups.items()
+    ]
+    output_records = [selected for _, _, selected, _, _, _ in selections]
+    outputs = [path for path in (args.outfile, report) if path not in ("", "-")]
+    with atomic_output_paths(outputs) as paths:
+        staged = dict(zip(outputs, paths, strict=True))
+        if report:
+            write_selection_report(staged[report], selections)
+        write_seqs(
+            output_records, staged.get(args.outfile, args.outfile), args.outseqformat
+        )
+
+
 def aggregate_main(args):
     expressions = list(getattr(args, "expression", []) or [])
+    hit_table = getattr(args, "hit_table", "")
+    report = getattr(args, "selection_report", "")
+    if report and (not hit_table or report == "-"):
+        raise ValueError("--selection_report requires a file path and --hit_table")
+    if hit_table:
+        if not expressions or hit_table == "-":
+            raise ValueError(
+                "--hit_table requires a file path and an aggregation expression"
+            )
+        validate_distinct_paths(
+            inputs=[args.seqfile, hit_table], outputs=[args.outfile, report]
+        )
     if len(expressions) == 0:
         sys.stderr.write("Regular expressions for aggregating sequences: (none)\n")
     else:
@@ -71,6 +108,9 @@ def aggregate_main(args):
         worker=worker,
         threads=threads,
     )
+    if hit_table:
+        aggregate_with_hits(args, records, aggregated_names, hit_table, report)
+        return
     uniq: dict[str, SeqRecord] = {}
     for record, newname in zip(records, aggregated_names, strict=True):
         if newname in uniq:

@@ -41,6 +41,28 @@ ATGTCGAGATCCCGAGAATTGCGAGTAAGCACCAGCTTCTCAAAACCAAAATAA
   record encountered in the input.
 - If `--expression` is omitted, records are copied without aggregation.
 
+## Protein-supported representatives
+
+Pass `--hit_table hits.tsv --selection_report choices.tsv` with an aggregation
+expression to use protein homology. The TSV requires this header, with protein
+coordinates in 1-based inclusive units:
+
+```text
+query_id	target_id	evalue	bitscore	query_start	query_end	query_length	target_start	target_end	target_length
+```
+
+These columns correspond to DIAMOND `blastp --outfmt 6 qseqid sseqid evalue bitscore
+qstart qend qlen sstart send slen`. The query ID matches the FASTA ID. Compare
+hits from the same search settings and database. A qualifying HSP has
+E-value at most 1e-5 and covers at least 60% of both sequences.
+
+The longest candidate remains the baseline. A qualifying alternative can
+replace an unsupported baseline if all supported candidates share a near-best
+target. For a supported baseline, an alternative must hit the baseline's best
+target within a 1.10-fold margin of its own best bitscore, gain at least 10% in bitscore
+on that target, and cover at least as much of the target. The report records
+the baseline, selected sequence and evidence for every group.
+
 ## Citation
 
 No separate method paper is designated for this utility. Report the CDSKIT

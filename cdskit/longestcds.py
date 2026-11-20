@@ -3,15 +3,17 @@ import re
 from array import array
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
-from bisect import bisect_right
+from bisect import bisect_left, bisect_right
 from functools import lru_cache, partial
+from itertools import islice
 
 import Bio.Data.CodonTable
+from Bio import SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 import numpy as np
 
-from cdskit.atomicio import atomic_output_paths
+from cdskit.atomicio import atomic_output_paths, validate_distinct_paths
 from cdskit.codonarray import codon_features
 from cdskit.codonreport import validate_codon_output_paths, write_codon_report
 from cdskit.codonutil import (
@@ -44,6 +46,7 @@ _REVCOMP_TABLE = str.maketrans(
     "TGCAYRKMWSVHDBN",
 )
 _CONCRETE_DNA = re.compile(r"[ACGT]*")
+ALT_ORF_SUFFIX = r"\.cdskit-orf-[0-9]+$"
 
 
 @dataclass
@@ -661,14 +664,15 @@ def choose_best_candidate(
     start_policy="table",
 ):
     if selection == "longest" or selection in _PARTIAL_SELECTIONS:
+        eligible = (
+            longest_frame_candidates(seq_str, codontable, strand, start_policy)
+            if selection == "longest"
+            else _iter_partial_candidates(
+                seq_str, codontable, selection, strand, start_policy
+            )
+        )
         candidate = max(
-            _selection_candidates(
-                seq_str,
-                codontable,
-                selection,
-                strand=strand,
-                start_policy=start_policy,
-            ),
+            eligible,
             key=lambda c: selection_key(c, selection),
             default=None,
         )
@@ -747,6 +751,69 @@ def selection_key(candidate, selection):
         rank, length, *ties = candidate.sort_key
         return (length, rank, *ties)
     raise ValueError(f"Unknown ORF selection: {selection}")
+
+
+def longest_frame_candidates(sequence, codontable, strand, start_policy):
+    """Yield at most one started and one start-free candidate per frame."""
+    sequence = sequence.upper()
+    starts, stops = _orf_scan_codons(codontable, start_policy)
+    for direction, oriented in _oriented_sequences(sequence, strand):
+        frame_starts, frame_stops = collect_start_stop_positions_by_frame(
+            oriented, starts, stops
+        )
+        # The last tie-breaker is the lower coordinate on the original strand.
+        forward = direction == "+"
+        for frame, (starts_at, stops_at) in enumerate(
+            zip(frame_starts, frame_stops, strict=True)
+        ):
+            end = frame_end_index(len(oriented), frame)
+            best = (0, False, 0)
+            index = 0
+            stop_index = 0
+            while index < len(starts_at):
+                start = starts_at[index]
+                stop_index = bisect_right(stops_at, start, lo=stop_index)
+                has_stop = stop_index < len(stops_at)
+                stop = stops_at[stop_index] + 3 if has_stop else end
+                key = (stop - start, has_stop, -start if forward else stop)
+                if key > best:
+                    best = key
+                    best_start, best_end = start, stop
+                if not has_stop:
+                    break
+                # Later starts sharing this stop are strictly shorter.
+                index = bisect_left(starts_at, stop - 3, lo=index + 1)
+            if best[0] >= 3:
+                yield make_candidate(
+                    oriented,
+                    direction,
+                    frame,
+                    best_start,
+                    best_end,
+                    True,
+                    best[1],
+                    False,
+                )
+
+            best = (0, 0)
+            start = frame
+            for stop in (*stops_at, end):
+                key = (stop - start, -start if forward else stop)
+                if key > best:
+                    best = key
+                    best_start, best_end = start, stop
+                start = stop + 3
+            if best[0] >= 3:
+                yield make_candidate(
+                    oriented,
+                    direction,
+                    frame,
+                    best_start,
+                    best_end,
+                    False,
+                    False,
+                    False,
+                )
 
 
 def _selection_candidates(sequence, codontable, selection, *, strand, start_policy):
@@ -1054,11 +1121,6 @@ def build_output_record(record, candidate, annotate_seqname):
             description=description,
         )
 
-    meta = (
-        f"strand={candidate.strand} frame={candidate.frame} "
-        f"start={candidate.start_1based} end={candidate.end_1based} "
-        f"nt_len={candidate.nt_len} aa_len={candidate.aa_len} category={candidate.category}"
-    )
     if candidate.output_seq != "":
         output_seq = candidate.output_seq
     else:
@@ -1069,7 +1131,7 @@ def build_output_record(record, candidate, annotate_seqname):
             reverse_complement = seq_upper.translate(_REVCOMP_TABLE)[::-1]
             output_seq = reverse_complement[candidate.start_idx : candidate.end_idx]
     if annotate_seqname:
-        description = f"{record.id} {meta}"
+        description = f"{record.id} {candidate_metadata(candidate)}"
     else:
         description = record.description
     return SeqRecord(
@@ -1078,6 +1140,123 @@ def build_output_record(record, candidate, annotate_seqname):
         name=record.name,
         description=description,
     )
+
+
+def candidate_metadata(candidate):
+    return (
+        f"strand={candidate.strand} frame={candidate.frame} "
+        f"start={candidate.start_1based} end={candidate.end_1based} "
+        f"nt_len={candidate.nt_len} aa_len={candidate.aa_len} category={candidate.category}"
+    )
+
+
+def alternate_records(record, baseline, codontable, selection, search_options):
+    best = {}
+    for candidate in _selection_candidates(
+        str(record.seq), codontable, selection, **search_options
+    ):
+        key = candidate.strand, candidate.frame, candidate.has_start
+        previous = best.get(key)
+        if previous is None or selection_key(candidate, selection) > selection_key(
+            previous, selection
+        ):
+            best[key] = candidate
+    yield from distinct_alternates(
+        record.id, str(record.seq), str(baseline.seq), best.values(), selection
+    )
+
+
+def distinct_alternates(identifier, sequence, baseline, candidates, selection):
+    seen = {baseline}
+    sequence = sequence.upper()
+    alternatives = sorted(
+        candidates,
+        key=lambda candidate: selection_key(candidate, selection),
+        reverse=True,
+    )
+    for index, candidate in enumerate(alternatives, 1):
+        coding = _oriented_slice(
+            sequence, candidate.strand, candidate.start_idx, candidate.end_idx
+        )
+        if coding in seen:
+            continue
+        seen.add(coding)
+        name = f"{identifier}.cdskit-orf-{index}"
+        yield SeqRecord(
+            Seq(coding), id=name, description=f"{name} {candidate_metadata(candidate)}"
+        )
+
+
+def longest_with_alternates(item, codontable, strand, start_policy):
+    identifier, sequence = item
+    candidates = list(
+        longest_frame_candidates(sequence, codontable, strand, start_policy)
+    )
+    best = max(
+        candidates, key=partial(selection_key, selection="longest"), default=None
+    )
+    if best is None:
+        return None, ""
+    best.output_seq = _oriented_slice(
+        sequence.upper(), best.strand, best.start_idx, best.end_idx
+    )
+    models = distinct_alternates(
+        identifier, sequence, best.output_seq, candidates, "longest"
+    )
+    return best, "".join(model.format("fasta") for model in models)
+
+
+def write_longest_with_alternates(records, worker, threads, stream):
+    def inputs():
+        return ((record.id, str(record.seq)) for record in records)
+
+    candidates = []
+    if should_use_process_pool(records=records, threads=threads):
+        try:
+            with ProcessPoolExecutor(
+                max_workers=min(threads, len(records))
+            ) as executor:
+                pending = inputs()
+                while batch := list(islice(pending, threads * 256)):
+                    for candidate, fasta in executor.map(worker, batch, chunksize=32):
+                        candidates.append(candidate)
+                        stream.write(fasta)
+            return candidates
+        except (OSError, PermissionError):
+            sys.stderr.write(
+                "Process-based parallelism unavailable; falling back to serial processing.\n"
+            )
+            candidates.clear()
+            stream.seek(0)
+            stream.truncate()
+    for candidate, fasta in map(worker, inputs()):
+        candidates.append(candidate)
+        stream.write(fasta)
+    return candidates
+
+
+def choose_primary_candidates(records, codontable, threads, selection, search_options):
+    if should_use_process_pool(records=records, threads=threads):
+        try:
+            seq_strings = [str(record.seq) for record in records]
+            return choose_candidates_process_parallel(
+                seq_strings=seq_strings,
+                codontable=codontable,
+                threads=threads,
+                selection=selection,
+                **search_options,
+            )
+        except (OSError, PermissionError):
+            sys.stderr.write(
+                "Process-based parallelism unavailable; falling back to threads.\n"
+            )
+    worker = partial(
+        choose_best_candidate_from_record,
+        codontable=codontable,
+        selection=selection,
+        **search_options,
+    )
+    return parallel_map_ordered(items=records, worker=worker, threads=threads)
 
 
 def longestcds_main(args):
@@ -1090,42 +1269,24 @@ def longestcds_main(args):
         start_policy=getattr(args, "start_policy", "table"),
     )
     report = getattr(args, "report", "")
+    alternate = getattr(args, "alternate_orfs", "")
+    if alternate:
+        if alternate == "-":
+            raise ValueError("--alternate_orfs requires a FASTA file path")
+        validate_distinct_paths(
+            inputs=[args.seqfile], outputs=[args.outfile, report, alternate]
+        )
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
+    if alternate:
+        ids = {record.id for record in records}
+        if len(ids) != len(records) or any(
+            not name or re.search(ALT_ORF_SUFFIX, name) for name in ids
+        ):
+            raise ValueError(
+                "--alternate_orfs requires unique IDs without a reserved .cdskit-orf-N suffix"
+            )
     stop_if_not_dna(records=records, label="--seq_file")
     stop_if_invalid_codontable(args.codontable)
-    candidates = None
-    if should_use_process_pool(records=records, threads=threads):
-        try:
-            seq_strings = [str(record.seq) for record in records]
-            candidates = choose_candidates_process_parallel(
-                seq_strings=seq_strings,
-                codontable=args.codontable,
-                threads=threads,
-                selection=selection,
-                **search_options,
-            )
-        except (OSError, PermissionError):
-            sys.stderr.write(
-                "Process-based parallelism unavailable; falling back to threads.\n"
-            )
-    if candidates is None:
-        worker = partial(
-            choose_best_candidate_from_record,
-            codontable=args.codontable,
-            selection=selection,
-            **search_options,
-        )
-        candidates = parallel_map_ordered(items=records, worker=worker, threads=threads)
-
-    output_records = list()
-    for record, candidate in zip(records, candidates, strict=False):
-        output_records.append(
-            build_output_record(
-                record=record,
-                candidate=candidate,
-                annotate_seqname=annotate_seqname,
-            )
-        )
 
     stream_report = bool(report) and args.outfile not in ("", "-") and report != "-"
     candidate_reports = (
@@ -1140,9 +1301,44 @@ def longestcds_main(args):
     )
     # Complete candidate analysis before any nontransactional stdout write.
     report_records = candidate_reports if stream_report else list(candidate_reports)
-    outputs = [path for path in (args.outfile, report) if path not in ("", "-")]
+    outputs = [
+        path for path in (args.outfile, report, alternate) if path not in ("", "-")
+    ]
     with atomic_output_paths(outputs) as temporary_paths:
         staged = dict(zip(outputs, temporary_paths, strict=True))
+        combined = alternate and selection == "longest"
+        if combined:
+            worker = partial(
+                longest_with_alternates, codontable=args.codontable, **search_options
+            )
+            with open(staged[alternate], "w", encoding="utf-8") as stream:
+                candidates = write_longest_with_alternates(
+                    records, worker, threads, stream
+                )
+        else:
+            candidates = choose_primary_candidates(
+                records, args.codontable, threads, selection, search_options
+            )
+        output_records = [
+            build_output_record(record, candidate, annotate_seqname)
+            for record, candidate in zip(records, candidates, strict=True)
+        ]
+
+        if alternate and not combined:
+            with open(staged[alternate], "w", encoding="utf-8") as stream:
+                SeqIO.write(
+                    (
+                        model
+                        for record, baseline in zip(
+                            records, output_records, strict=True
+                        )
+                        for model in alternate_records(
+                            record, baseline, args.codontable, selection, search_options
+                        )
+                    ),
+                    stream,
+                    "fasta",
+                )
         write_seqs(
             records=output_records,
             outfile=staged.get(args.outfile, args.outfile),

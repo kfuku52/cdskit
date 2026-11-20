@@ -10,6 +10,41 @@ from cdskit.cli import main as cli_main
 from cdskit.longestcds import longestcds_main
 
 
+def test_longestorf_exports_distinct_same_transcript_alternatives(tmp_path):
+    source, output, alternatives = (
+        tmp_path / name for name in ("transcripts.fa", "baseline.fa", "alt.fa")
+    )
+    source.write_text(">seq1\nATGCATTTTGACTTAAATACC\n")
+    cli_main(
+        [
+            "longestorf",
+            "--seq_file",
+            str(source),
+            "--out_file",
+            str(output),
+            "--selection",
+            "longest",
+            "--alternate_orfs",
+            str(alternatives),
+            "--strand",
+            "forward",
+        ]
+    )
+    baseline = Bio.SeqIO.read(output, "fasta")
+    candidates = list(Bio.SeqIO.parse(alternatives, "fasta"))
+    assert str(baseline.seq) == "ATGCATTTTGACTTAAATACC"
+    assert 1 <= len(candidates) <= 6
+    assert len({str(candidate.seq) for candidate in candidates}) == len(candidates)
+    assert all(
+        candidate.id.startswith("seq1.cdskit-orf-") and candidate.seq != baseline.seq
+        for candidate in candidates
+    )
+    assert any(
+        str(candidate.seq) == "TTGACTTAA" and "strand=+" in candidate.description
+        for candidate in candidates
+    )
+
+
 class TestLongestCdsMain:
     """Tests for longestcds_main function."""
 

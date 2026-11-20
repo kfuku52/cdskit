@@ -2,6 +2,8 @@
 Tests for cdskit aggregate command.
 """
 
+import csv
+
 import pytest
 
 import Bio.SeqIO
@@ -9,6 +11,80 @@ from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
 from cdskit.aggregate import aggregate_main, aggregate_name
+from cdskit.homology import HIT_COLUMNS
+
+
+def test_aggregate_uses_comparable_protein_hits_and_reports_the_decision(
+    tmp_path, mock_args
+):
+    source, output, hits, report = (
+        tmp_path / name for name in ("input.fa", "out.fa", "hits.tsv", "choices.tsv")
+    )
+    source.write_text(
+        "".join(
+            f">{gene}.{iso}\n{'ATG' * length}\n"
+            for gene in ("gain", "weak", "different", "untested")
+            for iso, length in ((1, 100), (2, 90))
+        )
+    )
+    rows = [
+        ("gain.1", "shared", "1e-20", 100, 1, 65, 100, 1, 65, 90),
+        ("gain.2", "shared", "1e-32", 125, 1, 85, 90, 1, 85, 90),
+        ("weak.2", "short-domain", "1e-90", 305, 1, 20, 90, 1, 20, 90),
+        ("different.1", "one", "1e-12", 80, 1, 75, 100, 1, 75, 100),
+        ("different.2", "two", "1e-40", 250, 1, 85, 90, 1, 85, 90),
+    ]
+    with hits.open("w", newline="") as stream:
+        writer = csv.writer(stream, delimiter="\t")
+        writer.writerow(HIT_COLUMNS)
+        writer.writerows(rows)
+    args = mock_args(
+        seqfile=str(source),
+        outfile=str(output),
+        expression=[r"\.[12]$"],
+        mode="longest",
+        hit_table=str(hits),
+        selection_report=str(report),
+    )
+    aggregate_main(args)
+    assert [r.id for r in Bio.SeqIO.parse(output, "fasta")] == [
+        "gain.2",
+        "weak.1",
+        "different.1",
+        "untested.1",
+    ]
+    with report.open() as stream:
+        decisions = {
+            row["group_id"]: row for row in csv.DictReader(stream, delimiter="\t")
+        }
+    assert decisions["gain"]["baseline_target_id"] == "shared"
+    assert decisions["gain"]["reason"] == "stronger_shared_target"
+    assert decisions["weak"]["reason"] == "no_qualified_hit"
+    assert decisions["different"]["selected_id"] == "different.1"
+
+
+def test_unknown_hit_id_cannot_replace_existing_outputs(tmp_path, mock_args):
+    source, output, hits, report = (
+        tmp_path / name for name in ("input.fa", "out.fa", "hits.tsv", "choices.tsv")
+    )
+    source.write_text(">transcript.1\nATGAAA\n")
+    output.write_text("existing sequence")
+    report.write_text("existing provenance")
+    hits.write_text(
+        "\t".join(HIT_COLUMNS) + "\nold_id\ttarget\t1e-6\t30\t1\t2\t2\t1\t2\t2\n"
+    )
+    args = mock_args(
+        seqfile=str(source),
+        outfile=str(output),
+        expression=[r"\.1$"],
+        mode="longest",
+        hit_table=str(hits),
+        selection_report=str(report),
+    )
+    with pytest.raises(ValueError, match="Unknown hit query"):
+        aggregate_main(args)
+    assert output.read_text() == "existing sequence"
+    assert report.read_text() == "existing provenance"
 
 
 class TestAggregateHelpers:

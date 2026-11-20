@@ -347,6 +347,12 @@ p_aggregate.add_argument(
     nargs="+",
     help="default=%(default)s: Regular expression(s) to aggregate sequences. If omitted, no aggregation by regex is applied.",
 )
+p_aggregate.add_argument(
+    "--hit_table", default="", help="Protein-hit TSV for representative selection."
+)
+p_aggregate.add_argument(
+    "--selection_report", default="", help="Optional TSV recording hit-based decisions."
+)
 p_aggregate.set_defaults(handler=command_aggregate)
 
 
@@ -776,6 +782,11 @@ for orf_parser in (p_longestorf, p_longestcds):
         "--report",
         default="",
         help="Optional candidate provenance report (.json or .tsv).",
+    )
+    orf_parser.add_argument(
+        "--alternate_orfs",
+        default="",
+        help="Write a FASTA of the best distinct alternative start-based and stop-free ORFs per frame.",
     )
 
 

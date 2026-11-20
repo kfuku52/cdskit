@@ -87,6 +87,14 @@ Coordinates refer to the original input. The output sequence is in coding orient
 Reports include `search_strand` and `start_policy` when the corresponding
 options differ from their defaults.
 
+`--alternate_orfs alternates.fasta` exports the best distinct start-based
+candidate and stop-free candidate per frame under the chosen selection rule.
+It retains the normal representative in the main output and excludes its
+sequence from the alternatives. Alternate IDs add a reserved
+`.cdskit-orf-N` suffix to the source ID, with source coordinates in the FASTA
+description. This bounded export can be translated for protein search and
+combined with the main output for hit-based `aggregate`.
+
 ### Known clipped coding ends
 
 Use `--selection partial-5prime` when coding sequence reaches the input's

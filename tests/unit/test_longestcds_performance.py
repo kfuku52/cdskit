@@ -148,6 +148,30 @@ def test_block_scan_preserves_candidates_selection_ties_and_report(
     assert snapshot() == expected
 
 
+@pytest.mark.parametrize("code", CODES)
+def test_longest_frame_candidates_match_exhaustive_scan(code):
+    rng = random.Random(20261120)
+    sequences = ["", "AT", "CCCTAGCCCTARCCC", "ATGATGSARTTGCTGAGGTAAGGGATG"]
+    for alphabet in ("ACGT", "AACCGGTTRYWN"):
+        sequences += ["".join(rng.choices(alphabet, k=249)) for _ in range(10)]
+    for sequence in sequences:
+        for policy in ("table", "atg-only"):
+            expected = {}
+            for candidate in longestcds.iter_candidates(
+                sequence, code, include_sequence=False, start_policy=policy
+            ):
+                frame = candidate.strand, candidate.frame, candidate.has_start
+                best = expected.get(frame)
+                if best is None or longestcds.selection_key(
+                    candidate, "longest"
+                ) > longestcds.selection_key(best, "longest"):
+                    expected[frame] = candidate
+            actual = list(
+                longestcds.longest_frame_candidates(sequence, code, "both", policy)
+            )
+            assert actual == list(expected.values())
+
+
 @pytest.mark.parametrize("strand", ["forward", "reverse", "both"])
 @pytest.mark.parametrize("policy", ["table", "atg-only"])
 def test_complete_first_block_choice_preserves_boundary_candidates(
