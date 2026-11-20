@@ -18,7 +18,6 @@ class CommandPaths:
 COMMAND_PATHS = {
     name: CommandPaths()
     for name in (
-        "aggregate",
         "hammer",
         "label",
         "longestorf",
@@ -35,6 +34,14 @@ COMMAND_PATHS.update(
     {
         "concat": CommandPaths(inputs=("genes_tsv", "taxa_tsv"), outputs=()),
         "accession2fasta": CommandPaths(inputs=("accession_file",)),
+        "aggregate": CommandPaths(
+            inputs=("seqfile", "group_table", "hit_table"),
+            outputs=("outfile", "selection_report"),
+        ),
+        "regroup": CommandPaths(
+            inputs=("seqfile", "paths", "fastg", "locus_table", "junction_table"),
+            outputs=("outfile", "report"),
+        ),
         "backalign": CommandPaths(inputs=("seqfile", "aa_aln")),
         "backtrim": CommandPaths(
             inputs=("seqfile", "trimmed_aa_aln", "kept_sites"),

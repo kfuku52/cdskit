@@ -71,6 +71,7 @@ See [Wiki](https://github.com/kfuku52/cdskit/wiki) for detailed descriptions.
 - [`intersection`](https://github.com/kfuku52/cdskit/wiki/cdskit-intersection): Dropping non-overlapping sequence labels between two sequences files or between a sequence file and a gff file
 - [`label`](https://github.com/kfuku52/cdskit/wiki/cdskit-label): Modifying sequence labels
 - [`longestorf`](https://github.com/kfuku52/cdskit/wiki/cdskit-longestorf): Finding the longest ORF by six-frame translation (+/- strands, 3 frames each)
+- [`regroup`](wiki/cdskit-regroup.md): Auditing rnaSPAdes groups and splitting groups with locus evidence
 - [`localize`](https://github.com/kfuku52/cdskit/wiki/cdskit-localize): Predicting targeting peptide classes (`noTP`, `SP`, `mTP`, `cTP`, `lTP`) or compatible multi-label localization models from CDS or protein input
 - [`localize-learn`](https://github.com/kfuku52/cdskit/wiki/cdskit-localize-learn): Training custom localization models from TSV or UniProt-derived labels
 - [`mask`](https://github.com/kfuku52/cdskit/wiki/cdskit-mask): Masking ambiguous and/or stop codons

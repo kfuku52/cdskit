@@ -8,6 +8,7 @@ from Bio.SeqRecord import SeqRecord
 
 from cdskit.atomicio import atomic_output_paths, validate_distinct_paths
 from cdskit.homology import read_hits, select_representative, write_selection_report
+from cdskit.tsvio import read_tsv_columns
 from cdskit.util import (
     compile_safe_regex,
     parallel_map_ordered,
@@ -42,6 +43,15 @@ def validate_aggregate_expressions(expressions):
     ]
 
 
+def read_group_table(path):
+    groups = {}
+    for transcript, group in read_tsv_columns(path, ("transcript_id", "group_id")):
+        if not transcript or not group or transcript in groups:
+            raise ValueError(f"Invalid or repeated group assignment for {transcript!r}")
+        groups[transcript] = group
+    return groups
+
+
 def aggregate_with_hits(args, records, names, hit_table, report):
     ids = {record.id for record in records}
     if len(ids) != len(records) or "" in ids:
@@ -67,16 +77,18 @@ def aggregate_with_hits(args, records, names, hit_table, report):
 def aggregate_main(args):
     expressions = list(getattr(args, "expression", []) or [])
     hit_table = getattr(args, "hit_table", "")
+    group_table = getattr(args, "group_table", "")
     report = getattr(args, "selection_report", "")
     if report and (not hit_table or report == "-"):
         raise ValueError("--selection_report requires a file path and --hit_table")
-    if hit_table:
-        if not expressions or hit_table == "-":
+    if hit_table or group_table:
+        if hit_table and (not (expressions or group_table) or hit_table == "-"):
             raise ValueError(
-                "--hit_table requires a file path and an aggregation expression"
+                "--hit_table requires a file path and an aggregation expression or group table"
             )
         validate_distinct_paths(
-            inputs=[args.seqfile, hit_table], outputs=[args.outfile, report]
+            inputs=[args.seqfile, hit_table, group_table],
+            outputs=[args.outfile, report],
         )
     if len(expressions) == 0:
         sys.stderr.write("Regular expressions for aggregating sequences: (none)\n")
@@ -96,7 +108,7 @@ def aggregate_main(args):
         seqtype=getattr(args, "seqtype", "auto"),
         label="--seq_file",
     )
-    if len(expressions) == 0:
+    if not (expressions or group_table):
         write_seqs(
             records=records, outfile=args.outfile, outseqformat=args.outseqformat
         )
@@ -108,6 +120,12 @@ def aggregate_main(args):
         worker=worker,
         threads=threads,
     )
+    if group_table:
+        groups = read_group_table(group_table)
+        try:
+            aggregated_names = [groups[name] for name in aggregated_names]
+        except KeyError as error:
+            raise ValueError(f"No group assignment for {error.args[0]!r}") from None
     if hit_table:
         aggregate_with_hits(args, records, aggregated_names, hit_table, report)
         return

@@ -43,6 +43,12 @@ ATGTCGAGATCCCGAGAATTGCGAGTAAGCACCAGCTTCTCAAAACCAAAATAA
 
 ## Protein-supported representatives
 
+Use `--group_table groups.tsv` to supply explicit groups with the columns
+`transcript_id` and `group_id`. The representative FASTA retains the original
+sequence ID. When combined with `--expression`, the expressions are applied to
+sequence IDs before looking up their group. For example, this lets alternative
+ORFs with a `.cdskit-orf-N` suffix share the source transcript's group.
+
 Pass `--hit_table hits.tsv --selection_report choices.tsv` with an aggregation
 expression to use protein homology. The TSV requires this header, with protein
 coordinates in 1-based inclusive units:

@@ -351,9 +351,50 @@ p_aggregate.add_argument(
     "--hit_table", default="", help="Protein-hit TSV for representative selection."
 )
 p_aggregate.add_argument(
+    "--group_table",
+    default="",
+    help="TSV of transcript_id and group_id. Apply any --expression to the ID before lookup.",
+)
+p_aggregate.add_argument(
     "--selection_report", default="", help="Optional TSV recording hit-based decisions."
 )
 p_aggregate.set_defaults(handler=command_aggregate)
+
+
+command_regroup = lazy_command(
+    command="regroup", module_name="cdskit.regroup", function_name="regroup_main"
+)
+p_regroup = subparsers.add_parser(
+    "regroup",
+    help="Audit rnaSPAdes groups and split groups with locus evidence.",
+    parents=[p_version],
+)
+p_regroup.add_argument(
+    "--seq_file",
+    dest="seqfile",
+    required=True,
+    help="rnaSPAdes FASTA, optionally gzip-compressed.",
+)
+p_regroup.add_argument(
+    "--out_file", dest="outfile", required=True, help="Transcript-to-group TSV."
+)
+p_regroup.add_argument("--report", required=True, help="Per-group audit TSV.")
+p_regroup.add_argument("--paths", default="", help="rnaSPAdes transcripts.paths.")
+p_regroup.add_argument("--fastg", default="", help="Matching assembly_graph.fastg.")
+p_regroup.add_argument(
+    "--kmer_size", default=0, type=int, help="Final assembly graph k-mer size."
+)
+p_regroup.add_argument(
+    "--locus_table",
+    default="",
+    help="TSV of transcript_id and uniquely supported locus_id.",
+)
+p_regroup.add_argument(
+    "--junction_table",
+    default="",
+    help="TSV of externally measured junction read-pair support.",
+)
+p_regroup.set_defaults(handler=command_regroup)
 
 
 command_backtrim = lazy_command(
