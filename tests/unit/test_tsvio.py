@@ -27,6 +27,7 @@ def test_tsv_column_projection_preserves_order_and_validates_unused_cells(tmp_pa
     path.write_text(
         '\ufeffnote\taccession\tsequence\r\n"extra\tdata"\tα\tMAAA\r\n',
         encoding="utf-8",
+        newline="",
     )
     assert read_tsv_columns(path, ("sequence", "accession")) == [("MAAA", "α")]
     with path.open("a", encoding="utf-8") as handle:

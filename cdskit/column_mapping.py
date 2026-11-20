@@ -141,7 +141,7 @@ def read_kept_sites(path: str, format_name: str, source_length: int) -> list[int
 
     trimAl input is the standalone #ColumnsMap record, not mixed stdout.
     """
-    with Path(path).open() as handle:
+    with Path(path).open(encoding="utf-8-sig") as handle:
         lines = _nonblank_map_lines(handle)
         try:
             if format_name in {"indices0", "indices1"}:

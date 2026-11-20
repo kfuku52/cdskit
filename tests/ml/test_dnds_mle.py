@@ -133,10 +133,10 @@ def test_gy94_iteration_retry_recovers_a_compositionally_sparse_pair(monkeypatch
     def exhaust_initial_budget(objective, initial, **kwargs):
         if not retries:
             retries.append(kwargs["options"]["maxiter"])
-            # Force the iteration-limit branch independently of BLAS details.
+            # One optimizer step leaves a genuine unfinished fit to resume.
+            kwargs["options"] = {**kwargs["options"], "maxiter": 1}
             fit = minimize(objective, initial, **kwargs)
-            fit.success = False
-            fit.status = 1
+            assert not fit.success and fit.status == 1
             return fit
         retries.append(kwargs["options"]["maxiter"])
         return minimize(objective, initial, **kwargs)
