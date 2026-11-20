@@ -243,3 +243,32 @@ options.
 
 - Sayers EW et al. (2025). GenBank 2025 update. *Nucleic Acids Research* 53:D56–D61. [Paper](https://doi.org/10.1093/nar/gkae1114) — Data resource; also record the accession.version identifiers and retrieval date of the sequences used.
 - Cock PJA et al. (2009). Biopython: freely available Python tools for computational molecular biology and bioinformatics. *Bioinformatics* 25:1422–1423. [Paper](https://doi.org/10.1093/bioinformatics/btp163) — Sequence parsing, feature extraction and genetic-code infrastructure used by CDSKIT.
+
+## Export all coding features from organelle genomes
+
+```sh
+cdskit parsegb -s organelles.gbff.gz --all_cds_dir cds
+```
+
+This streaming mode creates a new directory. It accepts plain or compressed
+GenBank records and requires unique record IDs. `features.tsv` has one row per
+CDS. It records accession.version, source taxid and specimen qualifiers,
+gene/locus_tag, protein ID, strand, ordered Biopython location (zero-based,
+end-exclusive), frame, translation table, copy status and inclusion reason.
+Source qualifiers come from a unique source feature spanning the CDS. Ambiguous or missing source assignments leave those qualifiers empty. The filename column links to two FASTA collections:
+
+- `copies/` holds each extractable annotated feature in biological order with a
+  unique feature ID, including pseudogenes and discordant copies.
+- `genes/` holds one eligible CDS per record and gene, labeled by record ID.
+  Locus tags are used when the gene name is missing. The codon_start offset
+  is applied and terminal stop codons are retained. Eligible identical copies
+  are represented once. Distinct eligible sequences or translation tables
+  exclude the whole ambiguous choice. Gene names are case-sensitive.
+
+The translation check honors the annotated table and complete alternative
+start codons. Pseudogenes, unresolved translation exceptions, internal stops,
+incomplete codons, invalid frames, unavailable sequences and annotation
+mismatches are recorded for review. A missing annotated protein is marked
+unavailable. Review apparent gene loss and partial mitochondrial stop codons
+against the raw copies. The usual single-FASTA invocation continues to
+extract the first CDS per record.

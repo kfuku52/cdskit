@@ -62,6 +62,7 @@ See [Wiki](https://github.com/kfuku52/cdskit/wiki) for detailed descriptions.
 - [`backalign`](https://github.com/kfuku52/cdskit/wiki/cdskit-backalign): Back-aligning CDS from unaligned CDS + aligned proteins
 - [`backtrim`](https://github.com/kfuku52/cdskit/wiki/cdskit-backtrim): Projecting retained protein columns onto CDS (explicit positions or strict mapping available)
 - [`codonstats`](https://github.com/kfuku52/cdskit/wiki/cdskit-codonstats): Printing codon-aware per-sequence and aggregate codon-usage statistics
+- [`concat`](https://github.com/kfuku52/cdskit/wiki/cdskit-concat): Assemble a codon supermatrix, gene partitions, coverage and site coordinates
 - [`degeneracy`](https://github.com/kfuku52/cdskit/wiki/cdskit-degeneracy): Extracting aligned 0/2/3/4-fold degenerate nucleotide positions
 - [`dnds`](https://github.com/kfuku52/cdskit/wiki/cdskit-dnds): Pairwise dN/dS from aligned CDS, with YN00 and optional GY94 maximum likelihood
 - [`filter`](https://github.com/kfuku52/cdskit/wiki/cdskit-filter): Filtering CDS by sequence-level quality rules

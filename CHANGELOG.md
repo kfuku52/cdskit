@@ -6,6 +6,10 @@ replacement to standard error.
 
 ## Unreleased
 
+## 0.38.0 — 2026-11-20
+
+- Export all GenBank CDS copies and feature decisions, and concatenate codon alignments with occupancy, gene partitions and site maps.
+
 ## 0.37.0 — 2026-11-14
 
 ### Added

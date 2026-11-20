@@ -1666,7 +1666,37 @@ p_parsegb.add_argument(
     action="store",
     help="default=%(default)s: Whether to extract the CDS feature.",
 )
+p_parsegb.add_argument(
+    "--all_cds_dir",
+    metavar="NEW_DIR",
+    help="Stream every CDS into per-gene FASTA, raw copies and features.tsv in a new directory.",
+)
 p_parsegb.set_defaults(handler=command_parsegb)
+
+
+p_concat = subparsers.add_parser(
+    "concat",
+    help="Concatenate aligned codon loci in manifest order",
+    parents=[p_version],
+)
+p_concat.add_argument(
+    "--taxa_tsv", required=True, help="Ordered TSV with taxon IDs in the taxon column"
+)
+p_concat.add_argument(
+    "--genes_tsv",
+    required=True,
+    help="Ordered gene/alignment TSV with optional backtrim_json paths",
+)
+p_concat.add_argument(
+    "--out_dir",
+    required=True,
+    help="New directory for the matrix, gene partitions, coverage and site map",
+)
+p_concat.set_defaults(
+    handler=lazy_command(
+        command="concat", module_name="cdskit.concat", function_name="concat_main"
+    )
+)
 
 
 command_printseq = lazy_command(

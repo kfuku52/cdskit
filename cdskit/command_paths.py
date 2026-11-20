@@ -33,6 +33,7 @@ COMMAND_PATHS = {
 }
 COMMAND_PATHS.update(
     {
+        "concat": CommandPaths(inputs=("genes_tsv", "taxa_tsv"), outputs=()),
         "accession2fasta": CommandPaths(inputs=("accession_file",)),
         "backalign": CommandPaths(inputs=("seqfile", "aa_aln")),
         "backtrim": CommandPaths(

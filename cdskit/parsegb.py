@@ -30,6 +30,10 @@ def parsegb_main(args):
             'parsegb requires --in_seq_format genbank (or gb), but got "{}". Exiting.\n'
         )
         raise ValueError(txt.format(args.inseqformat))
+    if getattr(args, "all_cds_dir", None):
+        from cdskit.genbank_cds import export_cds
+
+        return export_cds(args)
     records = read_seqs(seqfile=args.seqfile, seqformat=args.inseqformat)
     stop_if_not_dna(records=records, label="--seq_file")
     threads = resolve_threads(getattr(args, "threads", 1))
