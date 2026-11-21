@@ -69,6 +69,16 @@ target within a 1.10-fold margin of its own best bitscore, gain at least 10% in 
 on that target, and cover at least as much of the target. The report records
 the baseline, selected sequence and evidence for every group.
 
+With `--orf_transcripts transcripts.fa`, hit-based selection also checks the
+shorter ORF against its source transcript. If both CDSs map uniquely in the
+same orientation and the short CDS lies wholly within the baseline in the
+same reading frame, the longer CDS is retained. A short CDS without a start
+codon can also be held back when at least 98% of its codons match the baseline
+exactly through a shared terminal stop. Use `--codon_table` to match the code
+used for ORF extraction. Source transcript IDs match input CDS IDs after
+removing any `.cdskit-orf-N` suffix. The report records either
+`retain_inframe_containing_baseline` or `retain_shared_stop_baseline`.
+
 ## Citation
 
 No separate method paper is designated for this utility. Report the CDSKIT

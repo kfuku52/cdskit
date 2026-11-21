@@ -6,6 +6,12 @@ replacement to standard error.
 
 ## Unreleased
 
+## 0.38.3 — 2026-11-21
+
+- Use source-transcript coordinates to retain longer, in-frame coding sequences
+  when protein-guided `aggregate` selects a shorter representation of the
+  same ORF. Limit internal-stop scans to candidate pairs with matching sequence.
+
 ## 0.38.2 — 2026-11-21
 
 - Support Swiss-Prot hit tables and alternate ORFs in grouped representative selection.

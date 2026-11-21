@@ -3,6 +3,7 @@
 import sys
 from collections import defaultdict
 from functools import partial
+from pathlib import Path
 
 from Bio.SeqRecord import SeqRecord
 
@@ -63,6 +64,10 @@ def aggregate_with_hits(args, records, names, hit_table, report):
     selections = [
         (name, *select_representative(group, hits)) for name, group in groups.items()
     ]
+    if transcript_fasta := getattr(args, "orf_transcripts", ""):
+        from cdskit.orf_containment import retain_nested_orfs
+
+        retain_nested_orfs(selections, transcript_fasta, getattr(args, "codontable", 1))
     output_records = [selected for _, _, selected, _, _, _ in selections]
     outputs = [path for path in (args.outfile, report) if path not in ("", "-")]
     with atomic_output_paths(outputs) as paths:
@@ -79,15 +84,20 @@ def aggregate_main(args):
     hit_table = getattr(args, "hit_table", "")
     group_table = getattr(args, "group_table", "")
     report = getattr(args, "selection_report", "")
+    transcript_fasta = getattr(args, "orf_transcripts", "")
     if report and (not hit_table or report == "-"):
         raise ValueError("--selection_report requires a file path and --hit_table")
+    if transcript_fasta and (not hit_table or transcript_fasta == "-"):
+        raise ValueError("--orf_transcripts requires a FASTA file path and --hit_table")
+    if transcript_fasta and not Path(transcript_fasta).is_file():
+        raise ValueError(f"Source transcript FASTA does not exist: {transcript_fasta}")
     if hit_table or group_table:
         if hit_table and (not (expressions or group_table) or hit_table == "-"):
             raise ValueError(
                 "--hit_table requires a file path and an aggregation expression or group table"
             )
         validate_distinct_paths(
-            inputs=[args.seqfile, hit_table, group_table],
+            inputs=[args.seqfile, hit_table, group_table, transcript_fasta],
             outputs=[args.outfile, report],
         )
     if len(expressions) == 0:

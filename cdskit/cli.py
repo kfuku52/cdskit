@@ -321,7 +321,7 @@ help_aggregate = "Extracting the longest sequences combined with a sequence name
 p_aggregate = subparsers.add_parser(
     "aggregate",
     help=help_aggregate,
-    parents=[p_version, p_infile, p_outfile, p_seqtype, p_threads],
+    parents=[p_version, p_infile, p_outfile, p_seqtype, p_codon, p_threads],
 )
 p_aggregate.add_argument(
     "-m",
@@ -357,6 +357,11 @@ p_aggregate.add_argument(
 )
 p_aggregate.add_argument(
     "--selection_report", default="", help="Optional TSV recording hit-based decisions."
+)
+p_aggregate.add_argument(
+    "--orf_transcripts",
+    default="",
+    help="Source transcript FASTA used to retain longer in-frame ORFs during hit-based selection.",
 )
 p_aggregate.set_defaults(handler=command_aggregate)
 

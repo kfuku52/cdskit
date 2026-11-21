@@ -3,11 +3,12 @@ Tests for cdskit aggregate command.
 """
 
 import csv
+from random import Random
 
 import pytest
 
 import Bio.SeqIO
-from Bio.Seq import Seq
+from Bio.Seq import Seq, reverse_complement
 from Bio.SeqRecord import SeqRecord
 
 from cdskit.aggregate import aggregate_main, aggregate_name
@@ -61,6 +62,74 @@ def test_aggregate_uses_comparable_protein_hits_and_reports_the_decision(
     assert decisions["gain"]["reason"] == "stronger_shared_target"
     assert decisions["weak"]["reason"] == "no_qualified_hit"
     assert decisions["different"]["selected_id"] == "different.1"
+
+
+@pytest.mark.parametrize(
+    ("case", "reason"),
+    [
+        ("contained", "retain_inframe_containing_baseline"),
+        ("contained_qualified", "retain_inframe_containing_baseline"),
+        ("partial", "retain_shared_stop_baseline"),
+        ("code2_stop", "retain_shared_stop_baseline"),
+        ("opposite", "supported_alternative"),
+        ("out_of_frame", "supported_alternative"),
+        ("different_stop", "supported_alternative"),
+        ("valid_start", "supported_alternative"),
+        ("internal_stop", "supported_alternative"),
+        ("duplicate_transcript", "supported_alternative"),
+    ],
+)
+def test_aggregate_checks_transcript_context_before_shortening(
+    tmp_path, mock_args, case, reason
+):
+    candidates, transcripts, hits, output, report = (
+        tmp_path / name
+        for name in ("orfs.fa", "transcripts.fa", "hits.tsv", "out.fa", "report.tsv")
+    )
+    rng = Random(839)
+    codons = ("GCG", "GCC", "CCG", "CGG", "GGC", "CGC")
+    long = "".join(rng.choices(codons, k=180))
+    short = long[-303:]
+    code = 2 if case == "code2_stop" else 1
+    stop = "AGA" if code == 2 else "TGA"
+    short_stop = "TAA" if case == "different_stop" else stop
+    if case in {"partial", "code2_stop", "different_stop", "valid_start"}:
+        short = ("ATG" if case == "valid_start" else "GAA") + short[3:]
+    if case == "out_of_frame":
+        short = long[-304:-1]
+    if case == "internal_stop":
+        long = long[:30] + "TAA" + long[33:]
+    short_transcript = short + short_stop
+    if case == "opposite":
+        short_transcript = reverse_complement(short_transcript)
+    transcript_text = f">gene.1\n{long}{stop}\n>gene.2\n{short_transcript}\n"
+    if case == "duplicate_transcript":
+        transcript_text += f">gene.2\n{short_transcript}\n"
+    transcripts.write_text(transcript_text)
+    # The alternative ORF has a different identifier from its source transcript.
+    short_id = "gene.2.cdskit-orf-2"
+    candidates.write_text(f">gene.1\n{long}\n>{short_id}\n{short}\n")
+    hit_rows = [f"{short_id}\tref\t1e-20\t110\t1\t100\t101\t1\t100\t101"]
+    if case == "contained_qualified":
+        hit_rows.append("gene.1\tref\t1e-20\t70\t1\t120\t180\t1\t95\t101")
+    hits.write_text("\n".join(["\t".join(HIT_COLUMNS), *hit_rows]) + "\n")
+    args = mock_args(
+        seqfile=str(candidates),
+        outfile=str(output),
+        expression=[r"\.cdskit-orf-\d+$", r"\.[12]$"],
+        mode="longest",
+        hit_table=str(hits),
+        selection_report=str(report),
+        orf_transcripts=str(transcripts),
+        codontable=code,
+    )
+    aggregate_main(args)
+    expected_id = short_id if reason == "supported_alternative" else "gene.1"
+    assert Bio.SeqIO.read(output, "fasta").id == expected_id
+    with report.open() as stream:
+        (row,) = csv.DictReader(stream, delimiter="\t")
+    assert row["selected_id"] == expected_id
+    assert row["reason"] == reason
 
 
 def test_unknown_hit_id_cannot_replace_existing_outputs(tmp_path, mock_args):
