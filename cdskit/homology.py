@@ -81,7 +81,7 @@ def qualifies(hit):
 
 def read_hits(path, query_ids):
     """Keep the best qualifying HSP per query and target."""
-    hits = {}
+    hits: dict[str, dict[str, Hit]] = {}
     with Path(path).open(encoding="utf-8", newline="") as stream:
         reader = csv.reader(stream, delimiter="\t")
         if tuple(next(reader, ())) != HIT_COLUMNS:

@@ -6,6 +6,14 @@ replacement to standard error.
 
 ## Unreleased
 
+## 0.38.2 — 2026-11-21
+
+- Support Swiss-Prot hit tables and alternate ORFs in grouped representative selection.
+- Audit rnaSPAdes transcript groups using graph, locus, or protein-family evidence.
+- Compare supported provisional representatives against the existing peptide catalogue
+  to recover missing representatives while suppressing near-duplicate hits.
+- Avoid rescanning equivalent ORF starts when enumerating alternate reading frames.
+
 ## 0.38.1 — 2026-11-20
 
 - Decode backtrim column maps as UTF-8 on Windows and Unix and accept an optional BOM.

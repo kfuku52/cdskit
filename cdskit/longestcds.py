@@ -795,15 +795,15 @@ def longest_frame_candidates(sequence, codontable, strand, start_policy):
                     False,
                 )
 
-            best = (0, 0)
+            best_startless = (0, 0)
             start = frame
             for stop in (*stops_at, end):
-                key = (stop - start, -start if forward else stop)
-                if key > best:
-                    best = key
+                startless_key = (stop - start, -start if forward else stop)
+                if startless_key > best_startless:
+                    best_startless = startless_key
                     best_start, best_end = start, stop
                 start = stop + 3
-            if best[0] >= 3:
+            if best_startless[0] >= 3:
                 yield make_candidate(
                     oriented,
                     direction,
@@ -1151,7 +1151,7 @@ def candidate_metadata(candidate):
 
 
 def alternate_records(record, baseline, codontable, selection, search_options):
-    best = {}
+    best: dict[tuple[str, int, bool], CdsCandidate] = {}
     for candidate in _selection_candidates(
         str(record.seq), codontable, selection, **search_options
     ):

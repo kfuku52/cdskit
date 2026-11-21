@@ -33,3 +33,14 @@ Junction support is reported as evidence for review.
 
 Use `cdskit aggregate --seq_file cds.fasta --group_table groups.tsv` with
 CDS FASTA IDs that match the source transcript IDs.
+
+Workflows can use the `cdskit.catalog_rescue` Python API to add provisional
+representatives to an existing catalogue. Pass a rescue candidate's
+provisional group ID, parent group, ORF ID, source transcript, and peptide
+to `RescueCandidate`. Supply the existing peptides and source transcript
+IDs keyed by group, and read candidate-to-catalogue DIAMOND alignments
+using `read_catalog_hits` and `CATALOG_DIAMOND_COLUMNS`.
+`decide_catalog_rescues` records which candidates to add. Exact peptide
+matches and hits with at least 90% identity and 90% candidate coverage
+are considered covered by the catalogue. Exact peptide extensions and
+alternative ORFs from published transcripts are flagged for review.

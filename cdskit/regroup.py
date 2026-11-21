@@ -60,7 +60,7 @@ def transcript_groups(path):
 
 
 def edge_lengths(path, kmer_size):
-    lengths = {}
+    lengths: dict[int, int] = {}
     with open_text(path) as stream:
         for line in stream:
             if not line.startswith(">"):
@@ -78,7 +78,7 @@ def edge_lengths(path, kmer_size):
 
 
 def read_paths(path, needed, retained):
-    paths = {}
+    paths: dict[str, list[tuple[str, ...]]] = {}
     seen = set()
     populated = set()
     current = None
@@ -111,7 +111,8 @@ def read_paths(path, needed, retained):
 
 def articulation_points(graph):
     """Find cut vertices in a sparse undirected graph without recursive DFS."""
-    depth, low = {}, {}
+    depth: dict[str | int, int] = {}
+    low: dict[str | int, int] = {}
     cuts = set()
     for root in graph:
         if root in depth:
@@ -247,7 +248,8 @@ def regroup_main(args):
     support = (
         read_junction_support(args.junction_table, paths) if args.junction_table else {}
     )
-    split_assignments, report_rows = {}, []
+    split_assignments: dict[str, str] = {}
+    report_rows = []
     for group, members in groups.items():
         if len(members) < 2:
             continue
