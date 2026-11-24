@@ -33,7 +33,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("check", choices=PROFILES)
     parser.add_argument(
-        "--python", default="3.12", choices=["3.10", "3.11", "3.12", "3.13", "3.14"]
+        "--python", default="3.12", choices=["3.11", "3.12", "3.13", "3.14"]
     )
     parser.add_argument(
         "--ml-backend",

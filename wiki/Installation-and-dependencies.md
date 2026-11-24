@@ -1,7 +1,7 @@
 # Installation and dependencies
 
-The current cdskit source requires **Python 3.10 or newer**; core CI tests
-Python 3.10–3.14 on the supported OS matrix. See
+The current cdskit source requires **Python 3.11 or newer**; core CI tests
+Python 3.11–3.14 on the supported OS matrix. See
 [`pyproject.toml`](https://github.com/kfuku52/cdskit/blob/master/pyproject.toml)
 for package requirements and
 [TESTING.md](https://github.com/kfuku52/cdskit/blob/master/TESTING.md) for developer
@@ -32,7 +32,7 @@ Use [Bioconda's channel order and strict priority](https://bioconda.github.io/in
 
 ```bash
 conda create -n cdskit -c conda-forge -c bioconda --strict-channel-priority \
-  cdskit 'python>=3.10' 'biopython>=1.80' 'numpy>=1.23' 'matplotlib-base>=3.6' 'filelock>=3.12'
+  cdskit 'python>=3.11' 'biopython>=1.80' 'numpy>=1.23' 'matplotlib-base>=3.6' 'filelock>=3.12'
 conda activate cdskit
 cdskit --version
 ```

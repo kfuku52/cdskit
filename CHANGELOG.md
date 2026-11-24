@@ -6,6 +6,11 @@ replacement to standard error.
 
 ## Unreleased
 
+## 0.38.4 — 2026-11-24
+
+- Require Python 3.11 or later to use the security-fixed releases of Pillow and
+  filelock. Update the dependency lock and CI's minimum-version checks.
+
 ## 0.38.3 — 2026-11-21
 
 - Use source-transcript coordinates to retain longer, in-frame coding sequences

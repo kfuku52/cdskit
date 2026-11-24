@@ -3,7 +3,7 @@
 [![Run Tests](https://github.com/kfuku52/cdskit/actions/workflows/test.yml/badge.svg)](https://github.com/kfuku52/cdskit/actions/workflows/test.yml)
 [![GitHub release](https://img.shields.io/github/v/tag/kfuku52/cdskit?label=release)](https://github.com/kfuku52/cdskit/releases)
 [![Bioconda](https://img.shields.io/conda/vn/bioconda/cdskit.svg)](https://anaconda.org/bioconda/cdskit)
-[![Python](https://img.shields.io/badge/python-3.10--3.14-blue)](https://github.com/kfuku52/cdskit)
+[![Python](https://img.shields.io/badge/python-3.11--3.14-blue)](https://github.com/kfuku52/cdskit)
 [![Platforms](https://img.shields.io/conda/pn/bioconda/cdskit.svg)](https://anaconda.org/bioconda/cdskit)
 [![Downloads](https://img.shields.io/conda/dn/bioconda/cdskit.svg)](https://anaconda.org/bioconda/cdskit)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
@@ -17,7 +17,7 @@ Use FASTA for translation and length-changing operations unless the destination
 format's required annotations are preserved.
 
 ## Installation
-The current source requires **Python 3.10 or newer** and is tested on 3.10–3.14.
+The current source requires **Python 3.11 or newer** and is tested on 3.11–3.14.
 Stable packages are available from [Bioconda](https://anaconda.org/bioconda/cdskit);
 `master` can contain newer changes. With conda or
 [Miniforge](https://github.com/conda-forge/miniforge), create an environment using
@@ -25,7 +25,7 @@ Stable packages are available from [Bioconda](https://anaconda.org/bioconda/cdsk
 
 ```bash
 conda create -n cdskit -c conda-forge -c bioconda --strict-channel-priority \
-  cdskit 'python>=3.10' 'biopython>=1.80' 'numpy>=1.23' 'matplotlib-base>=3.6' 'filelock>=3.12'
+  cdskit 'python>=3.11' 'biopython>=1.80' 'numpy>=1.23' 'matplotlib-base>=3.6' 'filelock>=3.12'
 conda activate cdskit
 cdskit --help
 ```

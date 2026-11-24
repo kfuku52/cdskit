@@ -46,9 +46,9 @@ def platform_coverage_required(paths: list[str]) -> bool:
 def core_matrix(event: str, paths: list[str]) -> list[dict[str, str]]:
     exhaustive = event in {"schedule", "workflow_dispatch"}
     platforms = exhaustive or platform_coverage_required(paths)
-    versions = ["3.10", "3.14"]
+    versions = ["3.11", "3.14"]
     if exhaustive or (platforms and event == "push"):
-        versions = ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        versions = ["3.11", "3.12", "3.13", "3.14"]
     matrix = [
         {"os": "ubuntu-latest", "python-version": version} for version in versions
     ]

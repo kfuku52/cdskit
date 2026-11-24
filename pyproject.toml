@@ -7,7 +7,7 @@ name = "cdskit"
 dynamic = ["version"]
 description = "Tools for processing codon sequences"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = "MIT"
 authors = [
   {name = "Kenji Fukushima", email = "kfuku52@gmail.com"},
@@ -16,7 +16,6 @@ keywords = ["bioinformatics", "codon", "coding sequence", "DNA"]
 classifiers = [
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
-  "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
@@ -25,14 +24,11 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Bio-Informatics",
 ]
 dependencies = [
-  # Later 3.x/4.1 releases introduce vulnerable lock implementations, while the
-  # fixed 4.2.1+ releases require Python 3.11. Keep the pre-introduction release
-  # on 3.10 until a patched upstream release supports it or 3.10 support ends.
-  "filelock>=3.20.3,<3.20.4; python_version < '3.11'",
-  "filelock>=4.2.1; python_version >= '3.11'",
+  "filelock>=4.2.1",
   "numpy>=1.23",
   "biopython>=1.80",
   "matplotlib>=3.6",
+  "pillow>=13.0.0",
 ]
 
 [project.optional-dependencies]
@@ -142,7 +138,7 @@ explicit = true
 
 [tool.mypy]
 # Match the interpreter and dependency stubs in the checking environment.
-# The Python 3.10 CI job separately compiles and tests minimum-version support.
+# The Python 3.11 CI job separately compiles and tests minimum-version support.
 files = ["cdskit"]
 check_untyped_defs = true
 explicit_package_bases = true
@@ -217,7 +213,7 @@ show_missing = true
 skip_covered = true
 
 [tool.ruff]
-target-version = "py310"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E4", "E7", "E9", "F", "B", "PERF", "RUF"]

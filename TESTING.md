@@ -2,11 +2,11 @@
 
 The committed `uv.lock` is shared by local checks and GitHub Actions. Install
 [uv](https://docs.astral.sh/uv/getting-started/installation/) and use the same
-entry point as CI from the repository root (Python 3.10+ to launch it):
+entry point as CI from the repository root (Python 3.11+ to launch it):
 
 ```bash
 python scripts/check.py quick
-python scripts/check.py core --python 3.10
+python scripts/check.py core --python 3.11
 python scripts/check.py ml
 python scripts/check.py quality
 python scripts/check.py coverage
@@ -124,8 +124,8 @@ for an unexecuted profile.
 `quality` runs Ruff lint/format checks, mypy, the complexity guard (ceiling 35),
 and high-severity Bandit checks. Mypy checks against the running interpreter and
 its installed dependency stubs, including ML dependencies. Hard-coding a Python
-3.10 target while loading modern NumPy stubs under Python 3.12 is not supported.
-Minimum Python compatibility is instead compiled and exercised by the 3.10
+3.11 target while loading modern NumPy stubs under Python 3.12 is not supported.
+Minimum Python compatibility is instead compiled and exercised by the 3.11
 core check, alongside the newest supported Python.
 
 `coverage` runs all tests with two workers and combined branch/statement
