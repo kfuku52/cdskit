@@ -42,6 +42,25 @@ COMMAND_PATHS.update(
             inputs=("seqfile", "paths", "fastg", "locus_table", "junction_table"),
             outputs=("outfile", "report"),
         ),
+        "align": CommandPaths(
+            inputs=(
+                "seqfile",
+                "aa_file",
+                "query_file",
+                "query_aa_file",
+                "rpsblast_tsv",
+                "domain_manifest",
+                "backbone_file",
+                "species_tsv",
+                "priority_tsv",
+                "db_prefix",
+            ),
+            outputs=("outfile", "backbone_report", "column_map"),
+        ),
+        "rpsblast": CommandPaths(
+            inputs=("seqfile", "aa_file", "db_prefix"),
+            outputs=("outfile", "manifest"),
+        ),
         "backalign": CommandPaths(inputs=("seqfile", "aa_aln")),
         "backtrim": CommandPaths(
             inputs=("seqfile", "trimmed_aa_aln", "kept_sites"),

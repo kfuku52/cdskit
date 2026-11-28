@@ -59,6 +59,7 @@ See [Wiki](https://github.com/kfuku52/cdskit/wiki) for detailed descriptions.
 
 - [`accession2fasta`](https://github.com/kfuku52/cdskit/wiki/cdskit-accession2fasta): Retrieving fasta sequences from a list of GenBank accessions
 - [`aggregate`](https://github.com/kfuku52/cdskit/wiki/cdskit-aggregate): Extracting the longest sequences combined with a sequence name regex
+- [`align`](docs/domain-guided-alignment.md): Aligning DNA, codons, or proteins with MAFFT, with optional domain-informed backbone selection
 - [`backalign`](https://github.com/kfuku52/cdskit/wiki/cdskit-backalign): Back-aligning CDS from unaligned CDS + aligned proteins
 - [`backtrim`](https://github.com/kfuku52/cdskit/wiki/cdskit-backtrim): Projecting retained protein columns onto CDS (explicit positions or strict mapping available)
 - [`codonstats`](https://github.com/kfuku52/cdskit/wiki/cdskit-codonstats): Printing codon-aware per-sequence and aggregate codon-usage statistics
@@ -82,6 +83,7 @@ See [Wiki](https://github.com/kfuku52/cdskit/wiki) for detailed descriptions.
 - [`printseq`](https://github.com/kfuku52/cdskit/wiki/cdskit-printseq): Print a subset of sequences with a regex
 - [`rmseq`](https://github.com/kfuku52/cdskit/wiki/cdskit-rmseq): Removing a subset of sequences by using a sequence name regex and by detecting problematic sequence characters
 - [`split`](https://github.com/kfuku52/cdskit/wiki/cdskit-split): Splitting 1st, 2nd, and 3rd codon positions
+- [`rpsblast`](docs/domain-guided-alignment.md#search-for-conserved-domains): Searching local conserved-domain profiles and saving reusable annotations
 - [`stats`](https://github.com/kfuku52/cdskit/wiki/cdskit-stats): Printing sequence statistics or AMAS-compatible alignment summaries with `--mode alignment`
 - [`translate`](https://github.com/kfuku52/cdskit/wiki/cdskit-translate): Translating CDS nucleotide sequences to amino acids
 - [`trimcodon`](https://github.com/kfuku52/cdskit/wiki/cdskit-trimcodon): Trimming aligned CDS codon columns by clean-codon fraction

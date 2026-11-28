@@ -190,6 +190,99 @@ p_seqtype.add_argument(
 )
 
 
+p_domain_input = CdskitArgumentParser(add_help=False)
+p_domain_input.add_argument("--seq_type", choices=("dna", "codon", "aa"), required=True)
+p_domain_input.add_argument(
+    "--aa_file", help="Precomputed translation of the input CDS."
+)
+p_domain_input.add_argument("--db_prefix", help="Existing RPS-BLAST database prefix.")
+p_domain_input.add_argument(
+    "--db_preferred", action="append", help="Lookup prefix before downloading."
+)
+p_domain_input.add_argument(
+    "--db_cache", help="Shared directory for the locked Pfam cache."
+)
+p_domain_input.add_argument("--db_url", help="Override the Pfam_LE archive URL.")
+p_domain_input.add_argument(
+    "--no_download", action="store_true", help="Use local evidence only."
+)
+p_domain_input.add_argument("--evalue", type=finite_float, default=0.01)
+p_domain_input.add_argument(
+    "--rps_mt_mode", choices=("auto", "queries"), default="auto"
+)
+
+p_align = subparsers.add_parser(
+    "align",
+    help="Align DNA, codons, or proteins with MAFFT",
+    parents=[p_version, p_infile, p_outfile, p_codon, p_threads, p_domain_input],
+)
+p_align.add_argument(
+    "--strategy", choices=("standard", "query_backbone"), default="standard"
+)
+p_align.add_argument(
+    "--query_file", help="Reference sequences with the same sequence type as the input."
+)
+p_align.add_argument(
+    "--query_type",
+    choices=("dna", "codon", "aa"),
+    help="By default the input sequence type. AA can also guide codon alignments.",
+)
+p_align.add_argument(
+    "--query_aa_file", help="Precomputed translation of the reference CDS."
+)
+p_align.add_argument(
+    "--backbone_file", help="Prealigned representative FASTA (AA for codon mode)."
+)
+p_align.add_argument("--backbone_size", type=int, default=100)
+p_align.add_argument(
+    "--rpsblast_tsv", help="Precomputed domain hits with explicit no-hit rows."
+)
+p_align.add_argument(
+    "--domain_manifest", help="Sequence and search identity from cdskit rpsblast."
+)
+p_align.add_argument("--search_missing_domains", action="store_true")
+p_align.add_argument(
+    "--search_translated",
+    action="store_true",
+    help="Use rpstblastn for DNA domain evidence.",
+)
+p_align.add_argument("--species_tsv", help="Optional gene_id and species columns.")
+p_align.add_argument(
+    "--priority_tsv",
+    help="Optional gene_id and integer priority columns. Lower sorts first.",
+)
+p_align.add_argument("--backbone_report", help="Representative selection TSV.")
+p_align.add_argument("--column_map", help="One-based final-to-backbone column map.")
+p_align.set_defaults(
+    handler=lazy_command(
+        command="align", module_name="cdskit.align", function_name="align_main"
+    )
+)
+
+p_rpsblast = subparsers.add_parser(
+    "rpsblast",
+    help="Annotate conserved domains with local RPS-BLAST",
+    parents=[p_version, p_infile, p_codon, p_threads, p_domain_input],
+)
+p_rpsblast.add_argument(
+    "-o",
+    "--out_file",
+    dest="outfile",
+    default="-",
+    help="Domain TSV, or '-' for stdout.",
+)
+p_rpsblast.add_argument(
+    "--manifest", help="Optional JSON with sequence and database identity."
+)
+p_rpsblast.set_defaults(
+    handler=lazy_command(
+        command="rpsblast",
+        module_name="cdskit.domain_search",
+        function_name="rpsblast_main",
+    )
+)
+
+
 def strtobool(val):
     return parse_bool(val)
 

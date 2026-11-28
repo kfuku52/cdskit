@@ -6,6 +6,13 @@ replacement to standard error.
 
 ## Unreleased
 
+## 0.38.5 — 2026-11-28
+
+- Add MAFFT alignment for DNA, amino acids, and codons, with optional reference-guided
+  backbone selection, existing backbone alignments, and a column map.
+- Add local conserved-domain searches, reusable results with sequence and TSV
+  checksums, and lock-protected Pfam database downloads.
+
 ## 0.38.4 — 2026-11-24
 
 - Require Python 3.11 or later to use the security-fixed releases of Pillow and
